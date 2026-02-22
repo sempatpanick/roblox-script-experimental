@@ -74,6 +74,68 @@ do
         Border = true,
     })
 
+    local Workspace = game:GetService("Workspace")
+    local localPlayerCropsList = {}
+
+    local function getCropNumber(crop, key)
+        local v = crop:GetAttribute(key)
+        if v ~= nil and type(v) == "number" then return v end
+        local c = crop:FindFirstChild(key)
+        if c and (c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("DoubleConstrainedValue")) then return c.Value end
+        return nil
+    end
+
+    local function refreshAllCropsByLocalPlayer()
+        local list = {}
+        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
+        if not activeCrops then
+            localPlayerCropsList = list
+            return list
+        end
+        local myUserId = Players.LocalPlayer.UserId
+        for _, crop in ipairs(activeCrops:GetChildren()) do
+            local ownerId = getCropNumber(crop, "OwnerId")
+            if ownerId == nil then ownerId = crop:GetAttribute("OwnerId") end
+            if type(ownerId) ~= "number" or ownerId ~= myUserId then continue end
+            local posX = getCropNumber(crop, "PosX")
+            local posZ = getCropNumber(crop, "PosZ")
+            local groundY = getCropNumber(crop, "GroundY")
+            table.insert(list, {
+                crop = crop,
+                position = Vector3.new(posX or 0, groundY or 0, posZ or 0),
+            })
+        end
+        localPlayerCropsList = list
+        return list
+    end
+
+    local function getAllCropsByLocalPlayer()
+        refreshAllCropsByLocalPlayer()
+        return localPlayerCropsList
+    end
+
+    local function getReadyCropsForLocalPlayer()
+        refreshAllCropsByLocalPlayer()
+        local list = {}
+        for _, entry in ipairs(localPlayerCropsList) do
+            local scaleEnd = getCropNumber(entry.crop, "ScaleEnd")
+            local scaleStart = getCropNumber(entry.crop, "ScaleStart")
+            if scaleEnd ~= nil and scaleStart ~= nil and scaleEnd == scaleStart then
+                table.insert(list, entry)
+            end
+        end
+        return list
+    end
+
+    do
+        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
+        if activeCrops then
+            activeCrops.ChildAdded:Connect(function() refreshAllCropsByLocalPlayer() end)
+            activeCrops.ChildRemoved:Connect(function() refreshAllCropsByLocalPlayer() end)
+        end
+        refreshAllCropsByLocalPlayer()
+    end
+
     local PlantSection = FarmTab:Section({
         Title = "Plant Crops",
         Desc = "Select plant, set quantity and start planting",
@@ -308,8 +370,13 @@ do
                             task.wait(0.5)
                         end
                     end
-                    PlantCropEvent:FireServer(position)
-                    task.wait(1)
+                    local cropCount = #getAllCropsByLocalPlayer()
+                    if cropCount >= 15 then
+                        task.wait(1)
+                    else
+                        PlantCropEvent:FireServer(position)
+                        task.wait(1)
+                    end
                     if gotMaxCrops then
                         gotMaxCrops = false
                         task.wait(9)
@@ -331,39 +398,6 @@ do
 
     local harvestPlantRunning = false
     local harvestTeleportEnabled = false
-    local Workspace = game:GetService("Workspace")
-
-    local function getCropNumber(crop, key)
-        local v = crop:GetAttribute(key)
-        if v ~= nil and type(v) == "number" then return v end
-        local c = crop:FindFirstChild(key)
-        if c and (c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("DoubleConstrainedValue")) then return c.Value end
-        return nil
-    end
-
-    local function getReadyCropsForLocalPlayer()
-        local list = {}
-        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
-        if not activeCrops then return list end
-        local myUserId = Players.LocalPlayer.UserId
-        for _, crop in ipairs(activeCrops:GetChildren()) do
-            local ownerId = getCropNumber(crop, "OwnerId")
-            if ownerId == nil then ownerId = crop:GetAttribute("OwnerId") end
-            if type(ownerId) ~= "number" or ownerId ~= myUserId then continue end
-            local scaleEnd = getCropNumber(crop, "ScaleEnd")
-            local scaleStart = getCropNumber(crop, "ScaleStart")
-            if scaleEnd == nil or scaleStart == nil then continue end
-            if scaleEnd ~= scaleStart then continue end
-            local posX = getCropNumber(crop, "PosX")
-            local posZ = getCropNumber(crop, "PosZ")
-            local groundY = getCropNumber(crop, "GroundY")
-            table.insert(list, {
-                crop = crop,
-                position = Vector3.new(posX or 0, groundY or 0, posZ or 0),
-            })
-        end
-        return list
-    end
 
     local function findHarvestPromptInCrop(crop)
         for _, d in ipairs(crop:GetDescendants()) do
@@ -980,13 +1014,6 @@ do
         Box = true,
         BoxBorder = true,
         Opened = true,
-    })
-
-    local localPlayer = Players.LocalPlayer
-    local ownerIdLabel = MiscSection:Section({
-        Title = "Owner ID: " .. tostring(localPlayer.UserId),
-        Desc = "Name: " .. tostring(localPlayer.Name),
-        TextSize = 14,
     })
 
     local infiniteJumpConnection = nil
