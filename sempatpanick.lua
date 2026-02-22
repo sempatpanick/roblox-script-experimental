@@ -658,7 +658,7 @@ do
                         equipPayung()
                     end
                     local elapsed = 0
-                    while elapsed < 10 and autoPayungRunning do
+                    while elapsed < 2 and autoPayungRunning do
                         task.wait(1)
                         elapsed = elapsed + 1
                     end
@@ -1073,6 +1073,8 @@ do
             end
         end
     })
+
+    LocalPlayerTab:Space()
 
     local WalkSpeedSection = LocalPlayerTab:Section({
         Title = "Walk Speed",
