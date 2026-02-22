@@ -323,7 +323,7 @@ do
 
     local HarvestSection = FarmTab:Section({
         Title = "Harvest Plant",
-        Desc = "Automatically scan and harvest nearest plant",
+        Desc = "Scan ActiveCrops (OwnerId + ScaleEnd==ScaleStart), teleport and harvest",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -331,26 +331,50 @@ do
 
     local harvestPlantRunning = false
     local harvestTeleportEnabled = false
+    local Workspace = game:GetService("Workspace")
 
-    local function findHarvestPrompts()
+    local function getCropNumber(crop, key)
+        local v = crop:GetAttribute(key)
+        if v ~= nil and type(v) == "number" then return v end
+        local c = crop:FindFirstChild(key)
+        if c and (c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("DoubleConstrainedValue")) then return c.Value end
+        return nil
+    end
+
+    local function getReadyCropsForLocalPlayer()
         local list = {}
-        local function scan(parent)
-            for _, child in ipairs(parent:GetDescendants()) do
-                if child:IsA("ProximityPrompt") then
-                    local name = (child.Parent and child.Parent.Name or ""):lower()
-                    if name:find("root") then
-                        table.insert(list, child)
-                    end
-                end
-            end
+        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
+        if not activeCrops then return list end
+        local myUserId = Players.LocalPlayer.UserId
+        for _, crop in ipairs(activeCrops:GetChildren()) do
+            local ownerId = getCropNumber(crop, "OwnerId")
+            if ownerId == nil then ownerId = crop:GetAttribute("OwnerId") end
+            if type(ownerId) ~= "number" or ownerId ~= myUserId then continue end
+            local scaleEnd = getCropNumber(crop, "ScaleEnd")
+            local scaleStart = getCropNumber(crop, "ScaleStart")
+            if scaleEnd == nil or scaleStart == nil then continue end
+            if scaleEnd ~= scaleStart then continue end
+            local posX = getCropNumber(crop, "PosX")
+            local posZ = getCropNumber(crop, "PosZ")
+            local groundY = getCropNumber(crop, "GroundY")
+            table.insert(list, {
+                crop = crop,
+                position = Vector3.new(posX or 0, groundY or 0, posZ or 0),
+            })
         end
-        scan(game:GetService("Workspace"))
         return list
+    end
+
+    local function findHarvestPromptInCrop(crop)
+        for _, d in ipairs(crop:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then return d end
+        end
+        return nil
     end
 
     HarvestSection:Toggle({
         Title = "Teleport",
-        Desc = "Teleport to plant when out of range",
+        Desc = "Teleport to crop when out of range (skip if distance < 5)",
         Callback = function(enabled)
             harvestTeleportEnabled = enabled
         end
@@ -358,7 +382,7 @@ do
 
     HarvestSection:Toggle({
         Title = "Harvest Plant",
-        Desc = "When on, automatically scans and harvests nearest plant",
+        Desc = "Scan ActiveCrops every 2s; harvest ready crops (ScaleEnd==ScaleStart) owned by you",
         Callback = function(enabled)
             harvestPlantRunning = enabled
             if not enabled then return end
@@ -367,57 +391,52 @@ do
                     local character = Players.LocalPlayer.Character
                     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
                     if not rootPart then
-                        task.wait(1)
+                        task.wait(2)
                         continue
                     end
 
-                    local prompts = findHarvestPrompts()
-                    if #prompts == 0 then
-                        task.wait(1)
+                    local readyCrops = getReadyCropsForLocalPlayer()
+                    if #readyCrops == 0 then
+                        task.wait(2)
                         continue
                     end
 
                     local playerPos = rootPart.Position
-                    local function getPromptPosition(p)
-                        if p.Parent and p.Parent:IsA("BasePart") then
-                            return p.Parent.Position
-                        end
-                        if p.Parent and p.Parent:IsA("Model") and p.Parent.PrimaryPart then
-                            return p.Parent.PrimaryPart.Position
-                        end
-                        return playerPos
-                    end
-                    local nearest, nearestDist = nil, math.huge
-                    for _, p in ipairs(prompts) do
-                        local pos = getPromptPosition(p)
-                        local dist = (pos - playerPos).Magnitude
+                    local nearest = nil
+                    local nearestDist = math.huge
+                    for _, entry in ipairs(readyCrops) do
+                        local dist = (entry.position - playerPos).Magnitude
                         if dist < nearestDist then
                             nearestDist = dist
-                            nearest = p
+                            nearest = entry
                         end
                     end
 
-                    local prompt = nearest
-                    if not prompt then
-                        task.wait(1)
+                    if not nearest then
+                        task.wait(2)
                         continue
                     end
 
+                    local cropPos = nearest.position
                     local maxDist = 5
-                    local promptPos = getPromptPosition(prompt)
-                    if harvestTeleportEnabled and (promptPos - playerPos).Magnitude > maxDist then
-                        rootPart.CFrame = CFrame.new(promptPos + (playerPos - promptPos).Unit * math.max(0, maxDist - 2))
-                        task.wait(1)
-                    elseif not harvestTeleportEnabled and (promptPos - playerPos).Magnitude > maxDist then
-                        task.wait(1)
-                        continue
+                    if nearestDist >= maxDist then
+                        if harvestTeleportEnabled then
+                            rootPart.CFrame = CFrame.new(cropPos)
+                            task.wait(0.5)
+                        else
+                            task.wait(2)
+                            continue
+                        end
                     end
 
-                    local originalHold = prompt.HoldDuration
-                    prompt.HoldDuration = 0
-                    prompt:InputHoldBegin()
-                    prompt:InputHoldEnd()
-                    prompt.HoldDuration = originalHold
+                    local prompt = findHarvestPromptInCrop(nearest.crop)
+                    if prompt and prompt:IsA("ProximityPrompt") then
+                        local originalHold = prompt.HoldDuration
+                        prompt.HoldDuration = 0
+                        prompt:InputHoldBegin()
+                        prompt:InputHoldEnd()
+                        prompt.HoldDuration = originalHold
+                    end
 
                     task.wait(2)
                 end
@@ -433,6 +452,13 @@ do
         Box = true,
         BoxBorder = true,
         Opened = false,
+    })
+
+    local lp = Players.LocalPlayer
+    GrowthDurationTestSection:Section({
+        Title = "Owner ID: " .. tostring(lp.UserId),
+        Desc = "Name: " .. tostring(lp.Name),
+        TextSize = 14,
     })
 
     local growthDurationResultLabel = GrowthDurationTestSection:Section({
@@ -954,6 +980,13 @@ do
         Box = true,
         BoxBorder = true,
         Opened = true,
+    })
+
+    local localPlayer = Players.LocalPlayer
+    local ownerIdLabel = MiscSection:Section({
+        Title = "Owner ID: " .. tostring(localPlayer.UserId),
+        Desc = "Name: " .. tostring(localPlayer.Name),
+        TextSize = 14,
     })
 
     local infiniteJumpConnection = nil
