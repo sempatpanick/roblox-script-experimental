@@ -114,13 +114,93 @@ do
         return localPlayerCropsList
     end
 
+    -- Auto-harvest delay per crop type (from game CropConfig); used when Harvest Plant is on
+    local DEFAULT_AUTO_HARVEST_DELAYS = {
+        Padi = 60,
+        Jagung = 90,
+        Tomat = 120,
+        Terong = 150,
+        Strawberry = 200,
+        Sawit = 600,
+    }
+    local FALLBACK_DELAY = 60
+    local CropConfig
+    do
+        local ok, mod = pcall(function()
+            return require(ReplicatedStorage:WaitForChild("Modules", 5):WaitForChild("CropConfig", 5))
+        end)
+        CropConfig = (ok and mod) and mod or nil
+    end
+
+    local function getCropAttribute(crop, key)
+        local v = crop:GetAttribute(key)
+        if v ~= nil then return v end
+        local c = crop:FindFirstChild(key)
+        if c and c:IsA("StringValue") then return c.Value end
+        return nil
+    end
+
+    local function getAutoHarvestDelay(crop)
+        local cropType = getCropAttribute(crop, "CropType") or crop:GetAttribute("CropType")
+        if cropType and type(cropType) == "string" then
+            if CropConfig and CropConfig[cropType] and type(CropConfig[cropType].AutoHarvestDelay) == "number" then
+                return CropConfig[cropType].AutoHarvestDelay
+            end
+            if DEFAULT_AUTO_HARVEST_DELAYS[cropType] then
+                return DEFAULT_AUTO_HARVEST_DELAYS[cropType]
+            end
+        end
+        return FALLBACK_DELAY
+    end
+
+    local function isCropReadyForHarvest(crop)
+        if not crop or not crop.Parent then return false end
+        local harvested = crop:GetAttribute("Harvested") or getCropNumber(crop, "Harvested")
+        if harvested then return false end
+        if crop:GetAttribute("IsReady") == true then return true end
+        local scaleEnd = getCropNumber(crop, "ScaleEnd")
+        local scaleStart = getCropNumber(crop, "ScaleStart")
+        return scaleEnd ~= nil and scaleStart ~= nil and scaleEnd == scaleStart
+    end
+
+    local pendingAutoHarvest = {}
+
+    local function scheduleAutoHarvest(crop)
+        if pendingAutoHarvest[crop] then return end
+        if not isCropReadyForHarvest(crop) then return end
+        local delay = getAutoHarvestDelay(crop)
+        pendingAutoHarvest[crop] = true
+        task.delay(delay, function()
+            pendingAutoHarvest[crop] = nil
+            if not harvestPlantRunning then return end
+            if not crop.Parent then return end
+            if not isCropReadyForHarvest(crop) then return end
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if harvestTeleportEnabled and rootPart then
+                local posX = getCropNumber(crop, "PosX") or 0
+                local posZ = getCropNumber(crop, "PosZ") or 0
+                local groundY = getCropNumber(crop, "GroundY") or 0
+                local cropPos = Vector3.new(posX, groundY, posZ)
+                rootPart.CFrame = CFrame.new(cropPos)
+                task.wait(0.5)
+            end
+            local prompt = findHarvestPromptInCrop(crop)
+            if prompt and prompt:IsA("ProximityPrompt") then
+                local originalHold = prompt.HoldDuration
+                prompt.HoldDuration = 0
+                prompt:InputHoldBegin()
+                prompt:InputHoldEnd()
+                prompt.HoldDuration = originalHold
+            end
+        end)
+    end
+
     local function getReadyCropsForLocalPlayer()
         refreshAllCropsByLocalPlayer()
         local list = {}
         for _, entry in ipairs(localPlayerCropsList) do
-            local scaleEnd = getCropNumber(entry.crop, "ScaleEnd")
-            local scaleStart = getCropNumber(entry.crop, "ScaleStart")
-            if scaleEnd ~= nil and scaleStart ~= nil and scaleEnd == scaleStart then
+            if isCropReadyForHarvest(entry.crop) then
                 table.insert(list, entry)
             end
         end
@@ -390,7 +470,7 @@ do
 
     local HarvestSection = FarmTab:Section({
         Title = "Harvest Plant",
-        Desc = "Scan ActiveCrops (OwnerId + ScaleEnd==ScaleStart), teleport and harvest",
+        Desc = "Scan ready crops every 2s + auto-harvest after delay (per crop type) if not harvested",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -416,10 +496,13 @@ do
 
     HarvestSection:Toggle({
         Title = "Harvest Plant",
-        Desc = "Scan ActiveCrops every 2s; harvest ready crops (ScaleEnd==ScaleStart) owned by you",
+        Desc = "Scan every 2s + auto-harvest after delay (per crop type) if you don't harvest; teleport optional",
         Callback = function(enabled)
             harvestPlantRunning = enabled
-            if not enabled then return end
+            if not enabled then
+                pendingAutoHarvest = {}
+                return
+            end
             task.spawn(function()
                 while harvestPlantRunning do
                     local character = Players.LocalPlayer.Character
@@ -430,6 +513,9 @@ do
                     end
 
                     local readyCrops = getReadyCropsForLocalPlayer()
+                    for _, entry in ipairs(readyCrops) do
+                        scheduleAutoHarvest(entry.crop)
+                    end
                     if #readyCrops == 0 then
                         task.wait(2)
                         continue
