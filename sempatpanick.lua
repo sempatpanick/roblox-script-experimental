@@ -224,6 +224,40 @@ do
         Opened = true,
     })
 
+    -- Farm position: default until user sets current position
+    local DEFAULT_FARM_POSITION = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
+    local farmPosition = DEFAULT_FARM_POSITION
+
+    local function getFarmPosition()
+        return farmPosition
+    end
+
+    PlantSection:Button({
+        Title = "Set current position as farm position",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                farmPosition = rootPart.Position
+                WindUI:Notify({
+                    Title = "Farm position",
+                    Content = string.format("Set to %.1f, %.1f, %.1f", farmPosition.X, farmPosition.Y, farmPosition.Z),
+                    Icon = "check",
+                })
+            else
+                WindUI:Notify({
+                    Title = "Farm position",
+                    Content = "No character. Respawn or wait and try again.",
+                    Icon = "close",
+                })
+            end
+        end,
+    })
+
+    PlantSection:Space()
+
     local function getBackpackToolsForPlants()
         local tools = {}
         local seen = {}
@@ -345,7 +379,7 @@ do
             local qty = tonumber(FarmQuantity) or 1
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
-            local position = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
+            local position = getFarmPosition()
 
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -407,7 +441,7 @@ do
 
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
-            local position = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
+            local position = getFarmPosition()
             local gotMaxCrops = false
 
             autoFarmConnection = NotificationEvent.OnClientEvent:Connect(function(message)
