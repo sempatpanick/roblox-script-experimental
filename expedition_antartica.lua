@@ -59,6 +59,31 @@ local Window = WindUI:CreateWindow({
 -- */  Colors  /* --
 local Green = Color3.fromHex("#10C550")
 
+-- */  Shared helpers (reusable)  /* --
+local function parsePositionString(posStr)
+    if not posStr or type(posStr) ~= "string" then return nil end
+    local s = posStr:gsub(",", " "):gsub("%s+", " ")
+    local parts = {}
+    for part in string.gmatch(s, "[%d%.%-]+") do
+        table.insert(parts, tonumber(part))
+    end
+    if #parts < 3 then return nil end
+    return Vector3.new(parts[1], parts[2], parts[3])
+end
+
+local function getLocalCharacterParts()
+    local character = Players.LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    return character, rootPart, humanoid
+end
+
+local function notify(title, content, icon)
+    if WindUI and WindUI.Notify then
+        WindUI:Notify({ Title = title, Content = content, Icon = icon or "check" })
+    end
+end
+
 -- */  Elements Section  /* --
 local ElementsSection = Window:Section({
     Title = "Elements",
@@ -413,19 +438,18 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
+            local character, _, humanoid = getLocalCharacterParts()
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                notify("Walk Speed", "Character not loaded", "x")
                 return
             end
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                notify("Walk Speed", "Humanoid not found", "x")
                 return
             end
             local speed = tonumber(walkSpeedValue) or defaultWalkSpeed
             humanoid.WalkSpeed = math.max(0, speed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Set to " .. tostring(humanoid.WalkSpeed), Icon = "check" })
+            notify("Walk Speed", "Set to " .. tostring(humanoid.WalkSpeed))
         end
     })
 
@@ -436,19 +460,18 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
+            local character, _, humanoid = getLocalCharacterParts()
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                notify("Walk Speed", "Character not loaded", "x")
                 return
             end
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                notify("Walk Speed", "Humanoid not found", "x")
                 return
             end
             humanoid.WalkSpeed = defaultWalkSpeed
             walkSpeedValue = tostring(defaultWalkSpeed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed), Icon = "check" })
+            notify("Walk Speed", "Reset to " .. tostring(defaultWalkSpeed))
         end
     })
 
@@ -474,18 +497,10 @@ do
                     TeleportService:TeleportToPlaceInstance(placeId, jobId)
                 end)
                 if not ok then
-                    WindUI:Notify({
-                        Title = "Rejoin",
-                        Content = "Failed: " .. tostring(err),
-                        Icon = "close",
-                    })
+                    notify("Rejoin", "Failed: " .. tostring(err), "close")
                 end
             else
-                WindUI:Notify({
-                    Title = "Rejoin",
-                    Content = "Cannot rejoin (missing PlaceId or JobId)",
-                    Icon = "close",
-                })
+                notify("Rejoin", "Cannot rejoin (missing PlaceId or JobId)", "close")
             end
         end,
     })
@@ -503,11 +518,7 @@ do
                 clearFn()
                 cleared = true
             end
-            WindUI:Notify({
-                Title = "Console",
-                Content = cleared and "Console cleared" or "Clear not available (try clearconsole)",
-                Icon = cleared and "check" or "x",
-            })
+            notify("Console", cleared and "Console cleared" or "Clear not available (try clearconsole)", cleared and "check" or "x")
         end
     })
 end
@@ -546,10 +557,9 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                notify("Teleport", "Character not loaded", "x")
                 return
             end
             local pos = rootPart.Position
@@ -560,11 +570,7 @@ do
             elseif TeleportInput and TeleportInput.SetValue then
                 TeleportInput:SetValue(text)
             end
-            WindUI:Notify({
-                Title = "Location",
-                Content = "Position: " .. text,
-                Icon = "check",
-            })
+            notify("Location", "Position: " .. text)
         end
     })
 
@@ -575,32 +581,18 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                notify("Teleport", "Character not loaded", "x")
                 return
             end
-            local s = teleportInputValue:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
-                WindUI:Notify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                    Icon = "x",
-                })
+            local targetPos = parsePositionString(teleportInputValue)
+            if not targetPos then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
                 return
             end
-            local x, y, z = parts[1], parts[2], parts[3]
-            rootPart.CFrame = CFrame.new(x, y, z)
-            WindUI:Notify({
-                Title = "Teleport",
-                Content = string.format("Teleported to %.1f, %.1f, %.1f", x, y, z),
-                Icon = "check",
-            })
+            rootPart.CFrame = CFrame.new(targetPos)
+            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
         end
     })
 
@@ -621,39 +613,48 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                notify("Teleport", "Character not loaded", "x")
                 return
             end
-            local s = teleportInputValue:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
-                WindUI:Notify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                    Icon = "x",
-                })
+            local targetPos = parsePositionString(teleportInputValue)
+            if not targetPos then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
                 return
             end
-            local x, y, z = parts[1], parts[2], parts[3]
-            local targetPos = Vector3.new(x, y, z)
             local duration = tonumber(tweenDurationValue) or 5
             if duration < 0.1 then duration = 0.1 end
             local tweenInfo = TweenInfo.new(duration)
             local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(targetPos) })
             tween:Play()
-            WindUI:Notify({
-                Title = "Teleport",
-                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", x, y, z, duration),
-                Icon = "check",
-            })
+            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", targetPos.X, targetPos.Y, targetPos.Z, duration))
         end
     })
+
+    TeleportSection:Space()
+
+    TeleportSection:Button({
+        Title = "Walk to Location",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local _, rootPart, humanoid = getLocalCharacterParts()
+            if not rootPart or not humanoid then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local targetPos = parsePositionString(teleportInputValue)
+            if not targetPos then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
+                return
+            end
+            humanoid:MoveTo(targetPos)
+            notify("Teleport", string.format("Walking to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
+        end
+    })
+
+    TeleportSection:Space()
 
     -- */  Teleport to Camp  /* --
     TeleportTab:Space()
@@ -697,14 +698,13 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport to Camp", Content = "Character not loaded", Icon = "x" })
+                notify("Teleport to Camp", "Character not loaded", "x")
                 return
             end
             if not selectedCampTeleport then
-                WindUI:Notify({ Title = "Teleport to Camp", Content = "Select a camp first", Icon = "x" })
+                notify("Teleport to Camp", "Select a camp first", "x")
                 return
             end
             local posStr = nil
@@ -715,25 +715,16 @@ do
                 end
             end
             if not posStr then
-                WindUI:Notify({ Title = "Teleport to Camp", Content = "Camp not found", Icon = "x" })
+                notify("Teleport to Camp", "Camp not found", "x")
                 return
             end
-            local s = posStr:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
-                WindUI:Notify({ Title = "Teleport to Camp", Content = "Invalid position", Icon = "x" })
+            local targetPos = parsePositionString(posStr)
+            if not targetPos then
+                notify("Teleport to Camp", "Invalid position", "x")
                 return
             end
-            local x, y, z = parts[1], parts[2], parts[3]
-            rootPart.CFrame = CFrame.new(x, y, z)
-            WindUI:Notify({
-                Title = "Teleport to Camp",
-                Content = "Teleported to " .. selectedCampTeleport,
-                Icon = "check",
-            })
+            rootPart.CFrame = CFrame.new(targetPos)
+            notify("Teleport to Camp", "Teleported to " .. selectedCampTeleport)
         end
     })
 
@@ -774,7 +765,7 @@ do
             end
         end
         if showNotify then
-            WindUI:Notify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)", Icon = "check" })
+            notify("Teleport", "Player list refreshed (" .. #playerList .. " players)")
         end
     end
 
@@ -812,23 +803,22 @@ do
         Icon = "",
         Callback = function()
             if not selectedTeleportPlayer then
-                WindUI:Notify({ Title = "Teleport", Content = "Select a player first", Icon = "x" })
+                notify("Teleport", "Select a player first", "x")
                 return
             end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                notify("Teleport", "Character not loaded", "x")
                 return
             end
             local targetChar = selectedTeleportPlayer.Character
             local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
             if not targetRoot then
-                WindUI:Notify({ Title = "Teleport", Content = "Target player has no character", Icon = "x" })
+                notify("Teleport", "Target player has no character", "x")
                 return
             end
             rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
+            notify("Teleport", "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name))
         end
     })
 end
@@ -859,6 +849,8 @@ do
             defaultDuration = 110, -- 110 = 1 minute 50 seconds
             waterRefillObject = "WaterRefill_Camp1",
             positions = {
+                { position = "-4007.86, 55.13, -575.04", mode = "tween", isDelay = true },
+                { position = "-3747.10, 215.14, -6.94", mode = "tween", isDelay = true },
                 { position = "-3718.86, 240.00, 235.13", mode = "tween", isDelay = true },
             },
         },
@@ -871,13 +863,16 @@ do
                 { position = "-3041.40, 312.49, 2.24", mode = "tween", isDelay = true },
                 { position = "-2740.04, 268.76, -341.26", mode = "tween", isDelay = true },
                 { position = "-2591.64, 244.66, -329.08", mode = "tween", isDelay = true },
-                { position = "-2472.79, 193.05, -368.09", mode = "teleport", isDelay = true },
-                { position = "-2278.87, 101.00, -71.63", mode = "teleport", isDelay = true },
+                { position = "-2472.79, 193.05, -368.09", mode = "walk", isDelay = true },
+                { position = "-2361.14, 167.89, -283.53", mode = "walk", isDelay = true },
+                { position = "-2319.45, 120.66, -157.36", mode = "walk", isDelay = true },
+                { position = "-2278.87, 101.00, -71.63", mode = "walk", isDelay = true },
                 { position = "-1394.26, 111.32, -77.06", mode = "tween", isDelay = true },
                 { position = "-578.56, 86.65, -167.99", mode = "tween", isDelay = true },
                 { position = "882.79, 77.73, -266.99", mode = "tween", isDelay = true },
                 { position = "1534.47, 75.19, -170.83", mode = "tween", isDelay = true },
-                { position = "1789.92, 110.44, -137.28", mode = "tween", isDelay = true },
+                { position = "1685.07, 105.46, -112.99", mode = "walk", isDelay = true },
+                { position = "1789.92, 110.44, -137.28", mode = "walk", isDelay = true },
             },
         },
         {
@@ -886,22 +881,38 @@ do
             defaultDuration = 250, -- 250 = 4 minutes 10 seconds
             waterRefillObject = "WaterRefill_Camp3",
             positions = {
-                { position = "3136.70, 850.61, -201.02", mode = "tween", isDelay = true },
-                { position = "3631.94, 1366.45, 192.92", mode = "tween", isDelay = true },
-                { position = "3732.79, 1508.77, -183.32", mode = "tween", isDelay = true }, -- mount vinson
-                { position = "3829.39, 1419.69, -339.77", mode = "tween", isDelay = true },
-                { position = "3908.43, 1361.83, -404.79", mode = "teleport", isDelay = true },
-                { position = "4069.67, 1203.41, -376.51", mode = "teleport", isDelay = true },
-                { position = "4185.05, 1169.44, -330.00", mode = "tween", isDelay = true },
-                { position = "4328.11, 1164.36, -211.04", mode = "tween", isDelay = true },
-                { position = "4464.23, 1126.56, -109.05", mode = "tween", isDelay = true },
-                { position = "4633.24, 1101.93, 130.08", mode = "tween", isDelay = true },
-                { position = "4703.68, 837.62, 334.12", mode = "teleport", isDelay = false },
-                { position = "5021.11, 770.58, 295.28", mode = "tween", isDelay = true },
-                { position = "5123.25, 739.04, 249.49", mode = "teleport", isDelay = false },
-                { position = "5384.25, 753.53, 9.69", mode = "tween", isDelay = true },
-                { position = "5500.40, 342.59, -57.53", mode = "teleport", isDelay = true },
-                { position = "5892.31, 320.00, -19.92", mode = "tween", isDelay = true },
+                { position = "3136.70, 850.61, -201.02", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "3231.51, 992.40, 5.27", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "3349.81, 1025.13, 279.19", mode = "teleport", isDelay = true, walkWithJump = false },
+                { position = "3338.75, 1030.70, 337.18", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "3365.01, 1036.87, 395.82", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "3389.80, 1132.63, 359.09", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "3631.94, 1366.45, 192.92", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "3732.79, 1508.77, -183.32", mode = "tween", isDelay = true, walkWithJump = false }, -- mount vinson
+                { position = "3829.39, 1419.69, -339.77", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "3908.43, 1361.83, -404.79", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4069.67, 1203.41, -376.51", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4079.11, 1197.26, -372.15", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4185.05, 1169.44, -330.00", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "4328.11, 1164.36, -211.04", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4463.34, 1127.75, -98.33", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4485.26, 1114.58, -81.75", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "4529.68, 1107.42, -63.48", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "4570.83, 1097.78, -6.35", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "4633.24, 1101.93, 130.08", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "4661.15, 1004.77, 218.85", mode = "walk", isDelay = false, walkWithJump = false },
+                { position = "4669.85, 968.70, 246.51", mode = "walk", isDelay = false, walkWithJump = false },
+                { position = "4710.12, 890.76, 270.32", mode = "walk", isDelay = false, walkWithJump = false },
+                { position = "4703.68, 837.62, 334.12", mode = "walk", isDelay = false, walkWithJump = false },
+                { position = "5021.11, 770.58, 295.28", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "5123.25, 739.04, 249.49", mode = "teleport", isDelay = true, walkWithJump = false },
+                { position = "5384.25, 753.53, 9.69", mode = "tween", isDelay = true, walkWithJump = false },
+                { position = "5425.06, 435.53, -3.71", mode = "teleport", isDelay = false, walkWithJump = false },
+                { position = "5500.40, 342.59, -57.53", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "5636.13, 341.10, -51.81", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "5767.25, 321.00, -46.29", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "5864.60, 321.00, -42.19", mode = "walk", isDelay = true, walkWithJump = false },
+                { position = "5892.31, 320.00, -19.92", mode = "walk", isDelay = true, walkWithJump = false },
             },
         },
         {
@@ -962,16 +973,6 @@ do
     end
     local tweenDurationSeconds = getDefaultDurationForCamp(selectedCampName or campNames[1])
 
-    local function parsePositionStr(posStr)
-        local s = posStr:gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        if #parts < 3 then return nil end
-        return Vector3.new(parts[1], parts[2], parts[3])
-    end
-
     local activeSummitTween = nil
     local function runCampRoute(camp, rootPart, totalDurationSeconds, cancelCheckFn, tweenRef)
         local positionsList = camp.positions
@@ -984,9 +985,10 @@ do
             local mode = (type(entry) == "table" and (entry.mode == "teleport" or entry.mode == "walk")) and entry.mode or "tween"
             local isDelay = true
             if type(entry) == "table" and entry.isDelay == false then isDelay = false end
-            local v = parsePositionStr(posStr)
+            local v = parsePositionString(posStr)
             if v then
-                table.insert(waypoints, { pos = v, mode = mode, isDelay = isDelay })
+                local walkWithJump = type(entry) == "table" and entry.walkWithJump == true
+                table.insert(waypoints, { pos = v, mode = mode, isDelay = isDelay, walkWithJump = walkWithJump })
                 if mode == "tween" then tweenCount = tweenCount + 1 end
             end
         end
@@ -995,8 +997,6 @@ do
         if totalDuration < 0.1 then totalDuration = 0.1 end
         local durationPerTween = (tweenCount > 0) and (totalDuration / tweenCount) or totalDuration
         if durationPerTween < 0.05 then durationPerTween = 0.05 end
-        local WALK_ARRIVAL_DIST = 8
-        local WALK_POLL_INTERVAL = 0.2
         for i = 1, #waypoints do
             if type(cancelCheckFn) == "function" and cancelCheckFn() then return end
             local wp = waypoints[i]
@@ -1014,15 +1014,18 @@ do
                 local character = rootPart and rootPart.Parent
                 local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 if humanoid then
-                    humanoid:MoveTo(targetPos)
-                    local maxWait = math.max(tweenDuration, 30)
-                    local waited = 0
-                    while waited < maxWait do
-                        if type(cancelCheckFn) == "function" and cancelCheckFn() then break end
-                        if (rootPart.Position - targetPos).Magnitude <= WALK_ARRIVAL_DIST then break end
-                        task.wait(WALK_POLL_INTERVAL)
-                        waited = waited + WALK_POLL_INTERVAL
+                    local walkWaypointDone = false
+                    if wp.walkWithJump then
+                        task.spawn(function()
+                            while not walkWaypointDone do
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                                task.wait(0.8)
+                            end
+                        end)
                     end
+                    humanoid:MoveTo(targetPos)
+                    humanoid.MoveToFinished:Wait()
+                    walkWaypointDone = true
                 else
                     rootPart.CFrame = CFrame.new(targetPos)
                     task.wait(delayAfter)
@@ -1045,12 +1048,18 @@ do
                 else
                     refillPos = refillObj:GetPivot().Position
                 end
-                local tweenInfo = TweenInfo.new(1)
-                local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(refillPos) })
-                if cancelCheckFn then if tweenRef then tweenRef.tween = tween else activeSummitTween = tween end end
-                tween:Play()
-                tween.Completed:Wait()
-                if cancelCheckFn then if tweenRef then tweenRef.tween = nil else activeSummitTween = nil end end
+                local character = rootPart and rootPart.Parent
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:MoveTo(refillPos)
+                    humanoid.MoveToFinished:Wait()
+                    local dist = (rootPart.Position - refillPos).Magnitude
+                    if dist > 15 then
+                        rootPart.CFrame = CFrame.new(refillPos)
+                    end
+                else
+                    rootPart.CFrame = CFrame.new(refillPos)
+                end
                 if type(cancelCheckFn) == "function" and cancelCheckFn() then return end
                 local Event = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("EnergyHydration")
                 if Event and camp.id then
@@ -1061,7 +1070,7 @@ do
     end
 
     local DurationInput = AutoCampSection:Input({
-        Title = "Duration (seconds)",
+        Title = "Tween Duration (seconds)",
         Placeholder = "e.g. 5",
         Value = tweenDurationSeconds,
         Callback = function(value)
@@ -1086,6 +1095,8 @@ do
         end
     })
 
+    AutoCampSection:Space()
+
     local autoCampTweenRef = { tween = nil }
     local autoCampCancelRequested = false
 
@@ -1094,14 +1105,13 @@ do
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local _, rootPart = getLocalCharacterParts()
             if not rootPart then
-                WindUI:Notify({ Title = "Auto Camp", Content = "Character not loaded", Icon = "x" })
+                notify("Auto Camp", "Character not loaded", "x")
                 return
             end
             if not selectedCampName then
-                WindUI:Notify({ Title = "Auto Camp", Content = "Select a camp first", Icon = "x" })
+                notify("Auto Camp", "Select a camp first", "x")
                 return
             end
             local selectedCamp = nil
@@ -1112,16 +1122,18 @@ do
                 end
             end
             if not selectedCamp then
-                WindUI:Notify({ Title = "Auto Camp", Content = "Camp not found", Icon = "x" })
+                notify("Auto Camp", "Camp not found", "x")
                 return
             end
             autoCampCancelRequested = false
-            WindUI:Notify({ Title = "Auto Camp", Content = "Moving to " .. selectedCampName .. "...", Icon = "check" })
+            notify("Auto Camp", "Moving to " .. selectedCampName .. "...")
             task.spawn(function()
                 runCampRoute(selectedCamp, rootPart, tonumber(tweenDurationSeconds) or 5, function() return autoCampCancelRequested end, autoCampTweenRef)
             end)
         end
     })
+    
+    AutoCampSection:Space()
 
     AutoCampSection:Button({
         Title = "Stop Auto Camp",
@@ -1133,9 +1145,11 @@ do
                 autoCampTweenRef.tween:Cancel()
                 autoCampTweenRef.tween = nil
             end
-            WindUI:Notify({ Title = "Auto Camp", Content = "Stopped", Icon = "x" })
+            notify("Auto Camp", "Stopped", "x")
         end
     })
+
+    AutoCampSection:Space()
 
     AutomationTab:Space()
 
@@ -1216,7 +1230,7 @@ do
             end
             local rootPart = getRootPart()
             if not rootPart then
-                WindUI:Notify({ Title = "Auto Summit", Content = "Character not loaded", Icon = "x" })
+                notify("Auto Summit", "Character not loaded", "x")
                 return
             end
             task.spawn(function()
@@ -1240,7 +1254,7 @@ do
                         task.wait(1)
                         rootPart = getRootPart()
                         if not rootPart then
-                            WindUI:Notify({ Title = "Auto Summit", Content = "Could not get character after respawn", Icon = "x" })
+                            notify("Auto Summit", "Could not get character after respawn", "x")
                             break
                         end
                     end
@@ -1249,12 +1263,12 @@ do
                         if autoSummitRestartFromDeath then break end
                         rootPart = getRootPart()
                         if not rootPart then break end
-                        WindUI:Notify({ Title = "Auto Summit", Content = "Moving to " .. camp.name .. "...", Icon = "check" })
+                        notify("Auto Summit", "Moving to " .. camp.name .. "...")
                         runCampRoute(camp, rootPart, camp.defaultDuration or 5, function() return not autoSummitEnabled or autoSummitRestartFromDeath end)
                         if autoSummitRestartFromDeath then break end
                     end
                     if autoSummitRestartFromDeath then
-                        WindUI:Notify({ Title = "Auto Summit", Content = "Character died — waiting for respawn, then restarting from start...", Icon = "check" })
+                        notify("Auto Summit", "Character died — waiting for respawn, then restarting from start...")
                         -- Wait for new character (respawn); don't use dead body's rootPart
                         local lp = Players.LocalPlayer
                         local char = lp.Character
@@ -1272,7 +1286,7 @@ do
                         end
                         autoSummitRestartFromDeath = false
                     else
-                        WindUI:Notify({ Title = "Auto Summit", Content = "Reached summit! (Run " .. (runCount + 1) .. ")", Icon = "check" })
+                        notify("Auto Summit", "Reached summit! (Run " .. (runCount + 1) .. ")")
                         runCount = runCount + 1
                         if remaining then
                             remaining = remaining - 1
@@ -1295,13 +1309,15 @@ do
                     end
                 until not autoSummitEnabled or (qtyNum and remaining <= 0)
                 if autoSummitEnabled and qtyNum and remaining <= 0 then
-                    WindUI:Notify({ Title = "Auto Summit", Content = "All camps completed (" .. runCount .. " run(s))", Icon = "check" })
+                    notify("Auto Summit", "All camps completed (" .. runCount .. " run(s))")
                 elseif not autoSummitEnabled then
-                    WindUI:Notify({ Title = "Auto Summit", Content = "Stopped", Icon = "x" })
+                    notify("Auto Summit", "Stopped", "x")
                 end
             end)
         end
     })
+
+    AutoSummitSection:Space()
 
     AutomationTab:Space()
 
@@ -1398,4 +1414,6 @@ do
             end
         end
     })
+    
+    AutoDrinkSection:Space()
 end
