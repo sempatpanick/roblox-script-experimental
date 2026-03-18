@@ -1,9 +1,10 @@
-local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
+local baseURL = "http://127.0.0.1:5500"
 
 local games = {
     [83369512629707] = baseURL .. "/sawah_indo.lua",
     [128070940451265] = baseURL .. "/speed_bike_escape.lua",
     [2693023319] = baseURL .. "/expedition_antartica.lua",
+    [14963184269] = baseURL .. "/mount_sumbing.lua",
 }
 
 local fallbackScriptURL = baseURL .. "/others.lua"

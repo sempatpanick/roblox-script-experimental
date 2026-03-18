@@ -32,7 +32,7 @@ end
 
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
-    Title = "sempatpanick | Others",
+    Title = "sempatpanick | Mount Sumbing",
     Folder = "ftgshub",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
@@ -58,6 +58,37 @@ local Window = WindUI:CreateWindow({
 
 -- */  Colors  /* --
 local Green = Color3.fromHex("#10C550")
+
+-- */  Global: format instance for display (Key = Value); isShowDataType == false => Name = Value only; isShowLocation => show Position for BaseParts  /* --
+function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
+    if isShowDataType == false then
+        local ok, val = pcall(function() return inst.Value end)
+        if ok and val ~= nil then
+            if typeof(val) == "Instance" then
+                return inst.Name .. " = " .. (val.Name or tostring(val))
+            else
+                return inst.Name .. " = " .. tostring(val)
+            end
+        else
+            return inst.Name .. " = "
+        end
+    end
+    local base = inst.Name .. " = " .. inst.ClassName
+    local ok, val = pcall(function() return inst.Value end)
+    if ok and val ~= nil then
+        if typeof(val) == "Instance" then
+            base = base .. " (" .. (val.Name or tostring(val)) .. ")"
+        else
+            base = base .. " (" .. tostring(val) .. ")"
+        end
+    end
+    -- Show position for Parts and other BaseParts (MeshPart, etc.) when requested
+    if isShowLocation and inst:IsA("BasePart") then
+        local p = inst.Position
+        base = base .. " [" .. string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z) .. "]"
+    end
+    return base
+end
 
 -- */  Elements Section  /* --
 local ElementsSection = Window:Section({
@@ -749,4 +780,561 @@ do
             WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
         end
     })
+end
+
+-- */  Quest Tab  /* --
+do
+    local QuestTab = ElementsSection:Tab({
+        Title = "Quest",
+        Icon = "solar:folder-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local DepositCatCoinSection = QuestTab:Section({
+        Title = "Deposit Cat Coin",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local CatDataFolderParagraph
+    local catCoinTokenNames = { "Cat Token (Light)", "Cat Token (Dark)" }
+    local CatCoinDropdown
+    local selectedCatCoin = nil
+    local catCoinQty = ""
+
+    local function refreshCatDataFolderDisplay()
+        local folder = Players.LocalPlayer:FindFirstChild("CatDataFolder")
+        local lines = {}
+        if not folder then
+            table.insert(lines, "(CatDataFolder not found)")
+        else
+            for _, child in ipairs(folder:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, false))
+            end
+            if #lines == 0 then
+                table.insert(lines, "(no children)")
+            end
+        end
+        local text = table.concat(lines, "\n")
+        if CatDataFolderParagraph and CatDataFolderParagraph.SetDesc then
+            CatDataFolderParagraph:SetDesc(text)
+        end
+    end
+
+    CatDataFolderParagraph = DepositCatCoinSection:Paragraph({
+        Title = "LocalPlayer.CatDataFolder",
+        Desc = "(loading...)",
+    })
+
+    local function getCatCoinDropdownValues()
+        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+        local counts = {}
+        for _, name in ipairs(catCoinTokenNames) do
+            counts[name] = 0
+        end
+        if backpack then
+            for _, child in ipairs(backpack:GetChildren()) do
+                if counts[child.Name] ~= nil then
+                    counts[child.Name] = counts[child.Name] + 1
+                end
+            end
+        end
+        local values = {}
+        for _, name in ipairs(catCoinTokenNames) do
+            table.insert(values, name .. " (" .. tostring(counts[name]) .. ")")
+        end
+        return values
+    end
+
+    local function refreshCatCoinDropdown()
+        local values = getCatCoinDropdownValues()
+        if CatCoinDropdown and CatCoinDropdown.Refresh then
+            CatCoinDropdown:Refresh(values)
+        end
+    end
+
+    task.defer(function()
+        refreshCatDataFolderDisplay()
+        refreshCatCoinDropdown()
+    end)
+
+    CatCoinDropdown = DepositCatCoinSection:Dropdown({
+        Title = "Token",
+        Desc = "Select token type to deposit (qty from Backpack)",
+        Values = getCatCoinDropdownValues(),
+        Value = nil,
+        AllowNone = true,
+        Callback = function(value)
+            selectedCatCoin = value
+        end
+    })
+
+    DepositCatCoinSection:Input({
+        Title = "Qty",
+        Placeholder = "e.g. 1",
+        Value = catCoinQty,
+        Callback = function(value)
+            catCoinQty = value
+        end
+    })
+
+    DepositCatCoinSection:Button({
+        Title = "Get Nearby Token",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            local catToken = Workspace:FindFirstChild("CatToken")
+            if not catToken or not catToken:IsA("Folder") then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "No CatToken folder found in Workspace", Icon = "x" })
+                return
+            end
+            local playerPos = rootPart.Position
+            local pos = nil
+            local nearestChild = nil
+            local bestDist = math.huge
+            for _, child in ipairs(catToken:GetChildren()) do
+                local childPos = nil
+                if child:IsA("BasePart") then
+                    childPos = child.Position
+                elseif child:IsA("Model") and child.PrimaryPart then
+                    childPos = child.PrimaryPart.Position
+                end
+                if childPos then
+                    local dist = (playerPos - childPos).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        pos = childPos
+                        nearestChild = child
+                    end
+                end
+            end
+
+            if not pos then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Could not get CatToken position", Icon = "x" })
+                return
+            end
+            local yOffset = 3
+            local teleportPos = Vector3.new(pos.X, pos.Y + yOffset, pos.Z)
+            rootPart.CFrame = CFrame.new(teleportPos)
+            task.wait(0.2)
+            -- Trigger pickup: try ClickDetector (simulate mouse/tap) then ProximityPrompt
+            local didInteract = false
+            local clickDetector = nearestChild and (nearestChild:FindFirstChildOfClass("ClickDetector") or nearestChild:FindFirstChild("ClickDetector"))
+            if not clickDetector and nearestChild then
+                for _, d in ipairs(nearestChild:GetDescendants()) do
+                    if d:IsA("ClickDetector") then
+                        clickDetector = d
+                        break
+                    end
+                end
+            end
+            if clickDetector and clickDetector:IsA("ClickDetector") then
+                -- Simulate mouse/tap click: 3D position -> screen position -> VirtualUser click
+                local clickWorldPos = pos
+                local parent = clickDetector.Parent
+                if parent then
+                    if parent:IsA("BasePart") then
+                        clickWorldPos = parent.Position
+                    elseif parent:IsA("Model") and parent.PrimaryPart then
+                        clickWorldPos = parent.PrimaryPart.Position
+                    elseif parent:IsA("Model") then
+                        local cf = parent:GetBoundingBox()
+                        clickWorldPos = cf.Position
+                    end
+                end
+                local camera = Workspace.CurrentCamera
+                if camera then
+                    local screenPos, onScreen = camera:WorldToScreenPoint(clickWorldPos)
+                    if onScreen then
+                        local okClick = pcall(function()
+                            VirtualUser:ClickButton1(screenPos)
+                        end)
+                        if okClick then
+                            didInteract = true
+                        end
+                    end
+                end
+            end
+            if not didInteract then
+                local prompt = nearestChild and (nearestChild:FindFirstChildOfClass("ProximityPrompt") or nearestChild:FindFirstChild("ProximityPrompt"))
+                if not prompt and nearestChild then
+                    for _, d in ipairs(nearestChild:GetDescendants()) do
+                        if d:IsA("ProximityPrompt") then
+                            prompt = d
+                            break
+                        end
+                    end
+                end
+                if prompt and prompt:IsA("ProximityPrompt") then
+                    local holdDuration = prompt.HoldDuration
+                    prompt:InputHoldBegin()
+                    task.wait(holdDuration > 0 and holdDuration or 0.5)
+                    prompt:InputHoldEnd()
+                    didInteract = true
+                end
+            end
+            WindUI:Notify({
+                Title = "Deposit Cat Coin",
+                Content = didInteract and string.format("Teleported and picked up token (%.1f, %.1f, %.1f)", teleportPos.X, teleportPos.Y, teleportPos.Z)
+                    or string.format("Teleported to CatToken (%.1f, %.1f, %.1f)", teleportPos.X, teleportPos.Y, teleportPos.Z),
+                Icon = "check",
+            })
+        end
+    })
+
+    DepositCatCoinSection:Button({
+        Title = "Deposit",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not selectedCatCoin then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Select a token first", Icon = "x" })
+                return
+            end
+            local baseName = selectedCatCoin:match("^(.+) %(%d+%)$") or selectedCatCoin
+            local qty = tonumber(catCoinQty) or 0
+            if qty <= 0 then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Enter a valid quantity", Icon = "x" })
+                return
+            end
+            local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+            local toolToEquip = nil
+            if backpack then
+                for _, child in ipairs(backpack:GetChildren()) do
+                    if child:IsA("Tool") and child.Name == baseName then
+                        toolToEquip = child
+                        break
+                    end
+                end
+            end
+            if not toolToEquip then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "No " .. baseName .. " in Backpack to equip", Icon = "x" })
+                return
+            end
+            local character = Players.LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.EquipTool then
+                humanoid:EquipTool(toolToEquip)
+            end
+            if not rootPart then
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            task.wait(0.2)
+            -- Tween to deposit location
+            local depositPos = Vector3.new(-415.95, 5.41, 186.06)
+            local tweenDuration = 3
+            local tweenInfo = TweenInfo.new(tweenDuration)
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(depositPos) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.3)
+            -- Interact with object nearby (ProximityPrompt)
+            local targetPos = depositPos
+            local interactRadius = 15
+            local foundPrompt = nil
+            for _, descendant in ipairs(Workspace:GetDescendants()) do
+                if descendant:IsA("ProximityPrompt") then
+                    local promptPos = descendant.Parent and descendant.Parent:IsA("BasePart") and descendant.Parent.Position
+                        or (descendant.Parent and descendant.Parent:IsA("Model") and descendant.Parent.PrimaryPart and descendant.Parent.PrimaryPart.Position)
+                    if promptPos and (promptPos - targetPos).Magnitude <= interactRadius then
+                        foundPrompt = descendant
+                        break
+                    end
+                end
+            end
+            if foundPrompt then
+                local holdDuration = foundPrompt.HoldDuration
+                foundPrompt:InputHoldBegin()
+                task.wait(holdDuration > 0 and holdDuration or 0.5)
+                foundPrompt:InputHoldEnd()
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Teleported and interacted", Icon = "check" })
+            else
+                WindUI:Notify({ Title = "Deposit Cat Coin", Content = "Teleported (no ProximityPrompt nearby)", Icon = "check" })
+            end
+        end
+    })
+
+    local DailyRewardSection = QuestTab:Section({
+        Title = "Daily Reward",
+        Box = true,
+        BoxBorder = true,
+    })
+
+    DailyRewardSection:Button({
+        Title = "Claim Daily Reward",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local function GetNil(Name, DebugId)
+                for _, Object in getnilinstances() do
+                    if Object.Name == Name and Object:GetDebugId() == DebugId then
+                        return Object
+                    end
+                end
+            end
+            local Event = GetNil("DailyReward", "1_283461")
+            if Event then
+                Event:FireServer()
+                WindUI:Notify({ Title = "Daily Reward", Content = "Claimed daily reward", Icon = "check" })
+            else
+                WindUI:Notify({ Title = "Daily Reward", Content = "DailyReward event not found", Icon = "x" })
+            end
+        end,
+    })
+end
+
+-- */  Objects Tab  /* --
+do
+    local ObjectsTab = ElementsSection:Tab({
+        Title = "Objects",
+        Icon = "solar:folder-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local ReplicatedStorageSection = ObjectsTab:Section({
+        Title = "ReplicatedStorage",
+        Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local rsDisplayList = {}
+    local rsKeyValueList = {}
+    local ReplicatedStorageDropdown
+    local ReplicatedStorageChildrenParagraph
+
+    local function refreshReplicatedStorageList()
+        rsDisplayList = {}
+        rsKeyValueList = {}
+        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(rsDisplayList, display)
+            rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
+            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+        end
+        WindUI:Notify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
+    end
+
+    ReplicatedStorageDropdown = ReplicatedStorageSection:Dropdown({
+        Title = "ReplicatedStorage (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = rsDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
+                    ReplicatedStorageChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = rsKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
+                ReplicatedStorageChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    ReplicatedStorageSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshReplicatedStorageList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local LocalPlayerSection = ObjectsTab:Section({
+        Title = "Local Player",
+        Desc = "All direct children of Players.LocalPlayer (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local lpDisplayList = {}
+    local lpKeyValueList = {}
+    local LocalPlayerDropdown
+    local LocalPlayerChildrenParagraph
+
+    local function refreshLocalPlayerList()
+        lpDisplayList = {}
+        lpKeyValueList = {}
+        local localPlayer = Players.LocalPlayer
+        for _, child in ipairs(localPlayer:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(lpDisplayList, display)
+            lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
+            LocalPlayerDropdown:Refresh(lpDisplayList)
+        end
+        WindUI:Notify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
+    end
+
+    LocalPlayerDropdown = LocalPlayerSection:Dropdown({
+        Title = "Local Player (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = lpDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
+                    LocalPlayerChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = lpKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
+                LocalPlayerChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    LocalPlayerSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshLocalPlayerList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local WorkspaceSection = ObjectsTab:Section({
+        Title = "Workspace",
+        Desc = "All direct children of Workspace (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local wsDisplayList = {}
+    local wsKeyValueList = {}
+    local WorkspaceDropdown
+    local WorkspaceChildrenParagraph
+
+    local function refreshWorkspaceList()
+        wsDisplayList = {}
+        wsKeyValueList = {}
+        for _, child in ipairs(Workspace:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(wsDisplayList, display)
+            wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if WorkspaceDropdown and WorkspaceDropdown.Refresh then
+            WorkspaceDropdown:Refresh(wsDisplayList)
+        end
+        WindUI:Notify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
+    end
+
+    WorkspaceDropdown = WorkspaceSection:Dropdown({
+        Title = "Workspace (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = wsDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
+                    WorkspaceChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = wsKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
+                WorkspaceChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    WorkspaceSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshWorkspaceList()
+        end
+    })
+
 end
