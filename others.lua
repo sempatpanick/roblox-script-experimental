@@ -59,6 +59,36 @@ local Window = WindUI:CreateWindow({
 -- */  Colors  /* --
 local Green = Color3.fromHex("#10C550")
 
+-- */  Global: format instance for display (Key = Value); isShowDataType == false => Name = Value only; isShowLocation => show Position for BaseParts  /* --
+function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
+    if isShowDataType == false then
+        local ok, val = pcall(function() return inst.Value end)
+        if ok and val ~= nil then
+            if typeof(val) == "Instance" then
+                return inst.Name .. " = " .. (val.Name or tostring(val))
+            else
+                return inst.Name .. " = " .. tostring(val)
+            end
+        else
+            return inst.Name .. " = "
+        end
+    end
+    local base = inst.Name .. " = " .. inst.ClassName
+    local ok, val = pcall(function() return inst.Value end)
+    if ok and val ~= nil then
+        if typeof(val) == "Instance" then
+            base = base .. " (" .. (val.Name or tostring(val)) .. ")"
+        else
+            base = base .. " (" .. tostring(val) .. ")"
+        end
+    end
+    if isShowLocation and inst:IsA("BasePart") then
+        local p = inst.Position
+        base = base .. " [" .. string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z) .. "]"
+    end
+    return base
+end
+
 -- */  Elements Section  /* --
 local ElementsSection = Window:Section({
     Title = "Elements",
@@ -749,4 +779,249 @@ do
             WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
         end
     })
+end
+
+-- */  Objects Tab  /* --
+do
+    local ObjectsTab = ElementsSection:Tab({
+        Title = "Objects",
+        Icon = "solar:folder-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local ReplicatedStorageSection = ObjectsTab:Section({
+        Title = "ReplicatedStorage",
+        Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local rsDisplayList = {}
+    local rsKeyValueList = {}
+    local ReplicatedStorageDropdown
+    local ReplicatedStorageChildrenParagraph
+
+    local function refreshReplicatedStorageList()
+        rsDisplayList = {}
+        rsKeyValueList = {}
+        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(rsDisplayList, display)
+            rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
+            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+        end
+        WindUI:Notify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
+    end
+
+    ReplicatedStorageDropdown = ReplicatedStorageSection:Dropdown({
+        Title = "ReplicatedStorage (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = rsDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
+                    ReplicatedStorageChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = rsKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
+                ReplicatedStorageChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    ReplicatedStorageSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshReplicatedStorageList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local LocalPlayerSection = ObjectsTab:Section({
+        Title = "Local Player",
+        Desc = "All direct children of Players.LocalPlayer (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local lpDisplayList = {}
+    local lpKeyValueList = {}
+    local LocalPlayerDropdown
+    local LocalPlayerChildrenParagraph
+
+    local function refreshLocalPlayerList()
+        lpDisplayList = {}
+        lpKeyValueList = {}
+        local localPlayer = Players.LocalPlayer
+        for _, child in ipairs(localPlayer:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(lpDisplayList, display)
+            lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
+            LocalPlayerDropdown:Refresh(lpDisplayList)
+        end
+        WindUI:Notify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
+    end
+
+    LocalPlayerDropdown = LocalPlayerSection:Dropdown({
+        Title = "Local Player (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = lpDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
+                    LocalPlayerChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = lpKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
+                LocalPlayerChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    LocalPlayerSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshLocalPlayerList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local WorkspaceSection = ObjectsTab:Section({
+        Title = "Workspace",
+        Desc = "All direct children of Workspace (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local wsDisplayList = {}
+    local wsKeyValueList = {}
+    local WorkspaceDropdown
+    local WorkspaceChildrenParagraph
+
+    local function refreshWorkspaceList()
+        wsDisplayList = {}
+        wsKeyValueList = {}
+        for _, child in ipairs(Workspace:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(wsDisplayList, display)
+            wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if WorkspaceDropdown and WorkspaceDropdown.Refresh then
+            WorkspaceDropdown:Refresh(wsDisplayList)
+        end
+        WindUI:Notify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
+    end
+
+    WorkspaceDropdown = WorkspaceSection:Dropdown({
+        Title = "Workspace (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = wsDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
+                    WorkspaceChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = wsKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if child.ClassName == "Folder" then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
+                WorkspaceChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select an object above to list its children",
+    })
+
+    WorkspaceSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshWorkspaceList()
+        end
+    })
+
 end
