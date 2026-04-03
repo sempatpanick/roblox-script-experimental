@@ -536,6 +536,101 @@ do
 
     LocalPlayerTab:Space()
 
+    local JumpHeightSection = LocalPlayerTab:Section({
+        Title = "Jump Height",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local defaultJumpHeight = 7.2
+
+    local function getCurrentCharacterJumpHeight()
+        local character = Players.LocalPlayer.Character
+        if not character then
+            return nil, "Character not loaded"
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            return nil, "Humanoid not found"
+        end
+        return humanoid.JumpHeight
+    end
+
+    local currentJumpHeight = getCurrentCharacterJumpHeight()
+    local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
+
+    local JumpHeightInput = JumpHeightSection:Input({
+        Title = "Height",
+        Placeholder = "e.g. 7.2 or 50",
+        Value = jumpHeightValue,
+        Callback = function(value)
+            jumpHeightValue = value
+        end
+    })
+
+    local function syncJumpHeightInputFromCharacter(showNotify)
+        local jumpHeight, errMessage = getCurrentCharacterJumpHeight()
+        if not jumpHeight then
+            if showNotify then
+                WindUI:Notify({ Title = "Jump Height", Content = errMessage, Icon = "x" })
+            end
+            return false
+        end
+
+        local jumpHeightText = tostring(jumpHeight)
+        jumpHeightValue = jumpHeightText
+        if JumpHeightInput and JumpHeightInput.Set then
+            JumpHeightInput:Set(jumpHeightText)
+        elseif JumpHeightInput and JumpHeightInput.SetValue then
+            JumpHeightInput:SetValue(jumpHeightText)
+        end
+
+        if showNotify then
+            WindUI:Notify({ Title = "Jump Height", Content = "Current jump height: " .. jumpHeightText, Icon = "check" })
+        end
+        return true
+    end
+
+    JumpHeightSection:Space()
+
+    JumpHeightSection:Button({
+        Title = "Get Current Jump Height",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            syncJumpHeightInputFromCharacter(true)
+        end
+    })
+
+    -- Keep the input defaulted to current character jump height when available.
+    syncJumpHeightInputFromCharacter(false)
+
+    JumpHeightSection:Space()
+
+    JumpHeightSection:Button({
+        Title = "Apply",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            if not character then
+                WindUI:Notify({ Title = "Jump Height", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then
+                WindUI:Notify({ Title = "Jump Height", Content = "Humanoid not found", Icon = "x" })
+                return
+            end
+            local jumpHeight = tonumber(jumpHeightValue) or defaultJumpHeight
+            humanoid.JumpHeight = math.max(0, jumpHeight)
+            WindUI:Notify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
+        end
+    })
+
+    LocalPlayerTab:Space()
+
     local ServerSection = LocalPlayerTab:Section({
         Title = "Server",
         Desc = "Server-related actions",

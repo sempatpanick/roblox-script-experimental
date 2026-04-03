@@ -557,6 +557,99 @@ do
 
     LocalPlayerTab:Space()
 
+    local JumpHeightSection = LocalPlayerTab:Section({
+        Title = "Jump Height",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local defaultJumpHeight = 7.2
+
+    local function getCurrentCharacterJumpHeight()
+        local character, _, humanoid = getLocalCharacterParts()
+        if not character then
+            return nil, "Character not loaded"
+        end
+        if not humanoid then
+            return nil, "Humanoid not found"
+        end
+        return humanoid.JumpHeight
+    end
+
+    local currentJumpHeight = getCurrentCharacterJumpHeight()
+    local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
+
+    local JumpHeightInput = JumpHeightSection:Input({
+        Title = "Height",
+        Placeholder = "e.g. 7.2 or 50",
+        Value = jumpHeightValue,
+        Callback = function(value)
+            jumpHeightValue = value
+        end
+    })
+
+    local function syncJumpHeightInputFromCharacter(showNotify)
+        local jumpHeight, errMessage = getCurrentCharacterJumpHeight()
+        if not jumpHeight then
+            if showNotify then
+                notify("Jump Height", errMessage, "x")
+            end
+            return false
+        end
+
+        local jumpHeightText = tostring(jumpHeight)
+        jumpHeightValue = jumpHeightText
+        if JumpHeightInput and JumpHeightInput.Set then
+            JumpHeightInput:Set(jumpHeightText)
+        elseif JumpHeightInput and JumpHeightInput.SetValue then
+            JumpHeightInput:SetValue(jumpHeightText)
+        end
+
+        if showNotify then
+            notify("Jump Height", "Current jump height: " .. jumpHeightText)
+        end
+        return true
+    end
+
+    JumpHeightSection:Space()
+
+    JumpHeightSection:Button({
+        Title = "Get Current Jump Height",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            syncJumpHeightInputFromCharacter(true)
+        end
+    })
+
+    -- Keep the input defaulted to current character jump height when available.
+    syncJumpHeightInputFromCharacter(false)
+
+    JumpHeightSection:Space()
+
+    JumpHeightSection:Button({
+        Title = "Apply",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character, _, humanoid = getLocalCharacterParts()
+            if not character then
+                notify("Jump Height", "Character not loaded", "x")
+                return
+            end
+            if not humanoid then
+                notify("Jump Height", "Humanoid not found", "x")
+                return
+            end
+            local jumpHeight = tonumber(jumpHeightValue) or defaultJumpHeight
+            humanoid.JumpHeight = math.max(0, jumpHeight)
+            notify("Jump Height", "Set to " .. tostring(humanoid.JumpHeight))
+        end
+    })
+
+    LocalPlayerTab:Space()
+
     local ServerSection = LocalPlayerTab:Section({
         Title = "Server",
         Desc = "Server-related actions",
