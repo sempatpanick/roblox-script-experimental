@@ -450,9 +450,22 @@ do
     })
 
     local defaultWalkSpeed = 16
-    local walkSpeedValue = tostring(defaultWalkSpeed)
 
-    WalkSpeedSection:Input({
+    local function getCurrentCharacterWalkSpeed()
+        local character, _, humanoid = getLocalCharacterParts()
+        if not character then
+            return nil, "Character not loaded"
+        end
+        if not humanoid then
+            return nil, "Humanoid not found"
+        end
+        return humanoid.WalkSpeed
+    end
+
+    local currentWalkSpeed = getCurrentCharacterWalkSpeed()
+    local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
+
+    local WalkSpeedInput = WalkSpeedSection:Input({
         Title = "Speed",
         Placeholder = "e.g. 16 or 100",
         Value = walkSpeedValue,
@@ -460,6 +473,43 @@ do
             walkSpeedValue = value
         end
     })
+
+    local function syncWalkSpeedInputFromCharacter(showNotify)
+        local speed, errMessage = getCurrentCharacterWalkSpeed()
+        if not speed then
+            if showNotify then
+                notify("Walk Speed", errMessage, "x")
+            end
+            return false
+        end
+
+        local speedText = tostring(speed)
+        walkSpeedValue = speedText
+        if WalkSpeedInput and WalkSpeedInput.Set then
+            WalkSpeedInput:Set(speedText)
+        elseif WalkSpeedInput and WalkSpeedInput.SetValue then
+            WalkSpeedInput:SetValue(speedText)
+        end
+
+        if showNotify then
+            notify("Walk Speed", "Current speed: " .. speedText)
+        end
+        return true
+    end
+
+    WalkSpeedSection:Space()
+
+    WalkSpeedSection:Button({
+        Title = "Get Current Walk Speed",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            syncWalkSpeedInputFromCharacter(true)
+        end
+    })
+
+    -- Keep the input defaulted to current character speed when available.
+    syncWalkSpeedInputFromCharacter(false)
 
     WalkSpeedSection:Space()
 
