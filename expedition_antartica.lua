@@ -1843,6 +1843,10 @@ do
         Border = true,
     })
 
+    local function shouldNestOneLevelInObjectsList(inst)
+        return inst:IsA("Folder") or inst:IsA("Backpack") or inst:IsA("StarterGear")
+    end
+
     local ReplicatedStorageSection = ObjectsTab:Section({
         Title = "ReplicatedStorage",
         Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
@@ -1889,7 +1893,7 @@ do
             local lines = {}
             for _, child in ipairs(entry.instance:GetChildren()) do
                 table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if child.ClassName == "Folder" then
+                if shouldNestOneLevelInObjectsList(child) then
                     for _, sub in ipairs(child:GetChildren()) do
                         table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
                     end
@@ -1916,6 +1920,84 @@ do
         Icon = "",
         Callback = function()
             refreshReplicatedStorageList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local PlayersServiceSection = ObjectsTab:Section({
+        Title = "Players",
+        Desc = "Players service: all Player instances (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local plrsDisplayList = {}
+    local plrsKeyValueList = {}
+    local PlayersServiceDropdown
+    local PlayersServiceChildrenParagraph
+
+    local function refreshPlayersServiceList()
+        plrsDisplayList = {}
+        plrsKeyValueList = {}
+        for _, child in ipairs(Players:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(plrsDisplayList, display)
+            plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
+            PlayersServiceDropdown:Refresh(plrsDisplayList)
+        end
+        WindUI:Notify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players", Icon = "check" })
+    end
+
+    PlayersServiceDropdown = PlayersServiceSection:Dropdown({
+        Title = "Players (key = value)",
+        Desc = "Select a player to see their top-level children listed below",
+        Values = plrsDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
+                    PlayersServiceChildrenParagraph:SetDesc("Select a player above to list their children")
+                end
+                return
+            end
+            local entry = plrsKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local lines = {}
+            for _, child in ipairs(entry.instance:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, nil, true))
+                if shouldNestOneLevelInObjectsList(child) then
+                    for _, sub in ipairs(child:GetChildren()) do
+                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
+                    end
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if #lines == 0 then
+                text = "(no children)"
+            end
+            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
+                PlayersServiceChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
+        Title = "Children (key = value)",
+        Desc = "Select a player above to list their children",
+    })
+
+    PlayersServiceSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshPlayersServiceList()
         end
     })
 
@@ -1968,7 +2050,7 @@ do
             local lines = {}
             for _, child in ipairs(entry.instance:GetChildren()) do
                 table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if child.ClassName == "Folder" then
+                if shouldNestOneLevelInObjectsList(child) then
                     for _, sub in ipairs(child:GetChildren()) do
                         table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
                     end
@@ -2046,7 +2128,7 @@ do
             local lines = {}
             for _, child in ipairs(entry.instance:GetChildren()) do
                 table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if child.ClassName == "Folder" then
+                if shouldNestOneLevelInObjectsList(child) then
                     for _, sub in ipairs(child:GetChildren()) do
                         table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
                     end
