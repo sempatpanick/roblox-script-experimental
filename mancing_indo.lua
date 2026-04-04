@@ -1841,6 +1841,74 @@ do
     end)
 end
 
+-- */  Event Tab  /* --
+do
+    local EventTab = ElementsSection:Tab({
+        Title = "Event",
+        Icon = "solar:calendar-mark-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local GalatamaSection = EventTab:Section({
+        Title = "Galatama",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    GalatamaSection:Button({
+        Title = "Join Galatama Queue",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if not remotes then
+                WindUI:Notify({ Title = "Galatama", Content = "Remotes folder not found", Icon = "x" })
+                return
+            end
+            local evt = remotes:FindFirstChild("JoinGalatamaQueue")
+            if not (evt and evt:IsA("RemoteEvent")) then
+                WindUI:Notify({ Title = "Galatama", Content = "JoinGalatamaQueue remote not found", Icon = "x" })
+                return
+            end
+            local ok, err = pcall(function()
+                evt:FireServer()
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+    
+    GalatamaSection:Space()
+
+    GalatamaSection:Button({
+        Title = "Leave Galatama Queue",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if not remotes then
+                WindUI:Notify({ Title = "Galatama", Content = "Remotes folder not found", Icon = "x" })
+                return
+            end
+            local evt = remotes:FindFirstChild("LeaveGalatamaQueue")
+            if not (evt and evt:IsA("RemoteEvent")) then
+                WindUI:Notify({ Title = "Galatama", Content = "LeaveGalatamaQueue remote not found", Icon = "x" })
+                return
+            end
+            local ok, err = pcall(function()
+                evt:FireServer()
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+end
+
 -- */  Shop Tab  /* --
 do
     local ShopTab = ElementsSection:Tab({
