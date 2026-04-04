@@ -1,4 +1,4 @@
-local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
+local baseURL = "http://127.0.0.1:5500"
 
 local games = {
     [83369512629707] = baseURL .. "/sawah_indo.lua",
