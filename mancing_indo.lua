@@ -1469,6 +1469,8 @@ do
     })
 
     task.defer(ensureMinigameAutoSolve)
+    
+    MainTab:Space()
 
     local SellSection = MainTab:Section({
         Title = "Sell",
@@ -1589,6 +1591,212 @@ do
             end)
         end,
     })
+    
+    MainTab:Space()
+
+    local SpawnBoatSection = MainTab:Section({
+        Title = "Spawn Boat",
+        Desc = "Owned boats are rows in the boat shop whose Price label is Owned. Spawn uses Remotes.SpawnBoat.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local spawnBoatOwnedIds = {}
+    local spawnBoatDisplayList = {}
+    local spawnBoatIdList = {}
+    local selectedSpawnBoatId = nil
+    local SpawnBoatDropdown
+
+    local function getSpawnBoatShopScrollingFrame()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local gui = pg:FindFirstChild("BoatUI")
+        if not gui then
+            return nil
+        end
+        local canvas = gui:FindFirstChild("Canvas")
+        local container = canvas and canvas:FindFirstChild("Container")
+        local body = container and container:FindFirstChild("Body")
+        return body and body:FindFirstChild("ScrollingFrame")
+    end
+
+    local function spawnBoatPriceLabelPlainText(priceLab)
+        if not (priceLab and priceLab:IsA("TextLabel")) then
+            return ""
+        end
+        local t = priceLab.Text
+        local ok, ct = pcall(function()
+            return priceLab.ContentText
+        end)
+        if ok and typeof(ct) == "string" and ct ~= "" then
+            t = ct
+        end
+        t = t:gsub("\r\n", " "):gsub("\n", " ")
+        return (t:match("^%s*(.-)%s*$") or t)
+    end
+
+    local function isSpawnBoatShopRowOwned(row)
+        local price = row:FindFirstChild("Price")
+        return string.lower(spawnBoatPriceLabelPlainText(price)) == "owned"
+    end
+
+    local function collectOwnedBoatIdsFromShop()
+        spawnBoatOwnedIds = {}
+        local scroll = getSpawnBoatShopScrollingFrame()
+        if not scroll then
+            return
+        end
+        for _, child in ipairs(scroll:GetChildren()) do
+            if (child:IsA("Frame") or child:IsA("TextButton")) and not child.Name:match("_Information$") then
+                if isSpawnBoatShopRowOwned(child) then
+                    table.insert(spawnBoatOwnedIds, child.Name)
+                end
+            end
+        end
+    end
+
+    local function spawnBoatDisplayNameForId(boatId)
+        if not boatId or boatId == "" then
+            return boatId
+        end
+        local scroll = getSpawnBoatShopScrollingFrame()
+        if not scroll then
+            return boatId
+        end
+        local row = scroll:FindFirstChild(boatId)
+        if row and (row:IsA("Frame") or row:IsA("TextButton")) then
+            local nm = row:FindFirstChild("BoatName")
+            if nm and nm:IsA("TextLabel") and nm.Text ~= "" then
+                return nm.Text
+            end
+        end
+        return boatId
+    end
+
+    local function refreshSpawnBoatDropdown()
+        collectOwnedBoatIdsFromShop()
+        spawnBoatDisplayList = {}
+        spawnBoatIdList = {}
+        local sorted = {}
+        for _, id in ipairs(spawnBoatOwnedIds) do
+            table.insert(sorted, id)
+        end
+        table.sort(sorted)
+        for _, id in ipairs(sorted) do
+            if typeof(id) == "string" and id ~= "" then
+                local disp = spawnBoatDisplayNameForId(id)
+                table.insert(spawnBoatIdList, id)
+                table.insert(spawnBoatDisplayList, disp .. " — " .. id)
+            end
+        end
+        if SpawnBoatDropdown and SpawnBoatDropdown.Refresh then
+            SpawnBoatDropdown:Refresh(spawnBoatDisplayList)
+        end
+        if selectedSpawnBoatId and not table.find(spawnBoatIdList, selectedSpawnBoatId) then
+            selectedSpawnBoatId = nil
+            if SpawnBoatDropdown and SpawnBoatDropdown.Select then
+                SpawnBoatDropdown:Select(nil)
+            end
+            if SpawnBoatDropdown and SpawnBoatDropdown.Set then
+                SpawnBoatDropdown:Set(nil)
+            end
+        end
+    end
+
+    SpawnBoatDropdown = SpawnBoatSection:Dropdown({
+        Title = "Owned boat",
+        Desc = "Only boats whose shop row Price is Owned (BoatUI Body.ScrollingFrame)",
+        Values = spawnBoatDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedSpawnBoatId = nil
+            if value then
+                local idx = table.find(spawnBoatDisplayList, value)
+                if idx and spawnBoatIdList[idx] then
+                    selectedSpawnBoatId = spawnBoatIdList[idx]
+                end
+            end
+        end,
+    })
+
+    SpawnBoatSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshSpawnBoatDropdown()
+            local n = #spawnBoatIdList
+            WindUI:Notify({
+                Title = "Spawn Boat",
+                Content = (n == 0) and "No rows with Price = Owned (open BoatUI shop so templates load, then Refresh)"
+                    or ("Updated list (" .. n .. " owned)"),
+                Icon = (n == 0) and "x" or "check",
+            })
+        end,
+    })
+
+    SpawnBoatSection:Button({
+        Title = "Spawn",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not selectedSpawnBoatId or selectedSpawnBoatId == "" then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Select an owned boat from the dropdown first", Icon = "x" })
+                return
+            end
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if not remotes then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Remotes folder not found", Icon = "x" })
+                return
+            end
+            local spawnBoat = remotes:FindFirstChild("SpawnBoat")
+            if not (spawnBoat and spawnBoat:IsA("RemoteFunction")) then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Remotes.SpawnBoat not found", Icon = "x" })
+                return
+            end
+            local ok, success, errMsg = pcall(function()
+                return spawnBoat:InvokeServer(selectedSpawnBoatId)
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Invoke failed: " .. tostring(success), Icon = "x" })
+                return
+            end
+            if success then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Spawn requested", Icon = "check" })
+            else
+                WindUI:Notify({
+                    Title = "Spawn Boat",
+                    Content = (typeof(errMsg) == "string" and errMsg ~= "" and errMsg) or "Spawn failed",
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    task.defer(function()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:WaitForChild("Remotes", 30)
+        if remotes then
+            local ownedBoats = remotes:FindFirstChild("OwnedBoats")
+            if ownedBoats and ownedBoats:IsA("RemoteEvent") then
+                ownedBoats.OnClientEvent:Connect(function()
+                    task.defer(refreshSpawnBoatDropdown)
+                end)
+            end
+        end
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui") or Players.LocalPlayer:WaitForChild("PlayerGui", 15)
+        if pg then
+            pg.ChildAdded:Connect(function(child)
+                if child.Name == "BoatUI" then
+                    refreshSpawnBoatDropdown()
+                end
+            end)
+        end
+    end)
 end
 
 -- */  Shop Tab  /* --
@@ -1923,6 +2131,8 @@ do
             refreshRodList(true)
         end,
     })
+
+    ShopTab:Space()
 
     local BuyBoatSection = ShopTab:Section({
         Title = "Buy Boat",
