@@ -59,16 +59,23 @@ local Window = WindUI:CreateWindow({
 -- */  Colors  /* --
 local Green = Color3.fromHex("#10C550")
 
+-- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
+function formatValueForDisplay(val)
+    if val == nil then
+        return "nil"
+    end
+    if typeof(val) == "Instance" then
+        return val.Name or tostring(val)
+    end
+    return tostring(val)
+end
+
 -- */  Global: format instance for display (Key = Value); isShowDataType == false => Name = Value only; isShowLocation => show Position for BaseParts  /* --
 function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     if isShowDataType == false then
         local ok, val = pcall(function() return inst.Value end)
         if ok and val ~= nil then
-            if typeof(val) == "Instance" then
-                return inst.Name .. " = " .. (val.Name or tostring(val))
-            else
-                return inst.Name .. " = " .. tostring(val)
-            end
+            return inst.Name .. " = " .. formatValueForDisplay(val)
         else
             return inst.Name .. " = "
         end
@@ -76,11 +83,7 @@ function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     local base = inst.Name .. " = " .. inst.ClassName
     local ok, val = pcall(function() return inst.Value end)
     if ok and val ~= nil then
-        if typeof(val) == "Instance" then
-            base = base .. " (" .. (val.Name or tostring(val)) .. ")"
-        else
-            base = base .. " (" .. tostring(val) .. ")"
-        end
+        base = base .. " (" .. formatValueForDisplay(val) .. ")"
     end
     if isShowLocation and inst:IsA("BasePart") then
         local p = inst.Position
@@ -627,6 +630,245 @@ do
             WindUI:Notify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
         end
     })
+
+    LocalPlayerTab:Space()
+
+    local PlayersInfoSection = LocalPlayerTab:Section({
+        Title = "Players Info",
+        Desc = "Pick a player to view username, display name, speed, location, Humanoid properties, and Humanoid children",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local infoPlayerList = {}
+    local infoPlayerDisplayNames = {}
+    local selectedInfoPlayer = nil
+    local PlayersInfoDropdown
+    local PlayersInfoParagraph
+
+    local function playerInfoLabel(player)
+        if not player then return "" end
+        local dn = player.DisplayName
+        if dn and dn ~= "" and dn ~= player.Name then
+            return string.format("%s (@%s)", dn, player.Name)
+        end
+        return player.Name
+    end
+
+    local function formatHumanoidChildLine(child)
+        if child:IsA("ValueBase") then
+            local ok, val = pcall(function()
+                return child.Value
+            end)
+            if not ok then
+                return "  " .. child.Name .. " (" .. child.ClassName .. ") = ?"
+            end
+            return "  " .. child.Name .. " (" .. child.ClassName .. ") = " .. formatValueForDisplay(val)
+        end
+        return "  " .. child.Name .. " = " .. child.ClassName
+    end
+
+    -- Humanoid fields to read via pcall (some may not exist on older clients).
+    local HUMANOID_INSPECT_PROPERTIES = {
+        "AutoJumpEnabled",
+        "AutoRotate",
+        "BreakJointsOnDeath",
+        "CameraOffset",
+        "DisplayDistanceType",
+        "EvaluateStateMachine",
+        "FloorMaterial",
+        "Health",
+        "HealthDisplayType",
+        "HipHeight",
+        "Jump",
+        "JumpHeight",
+        "JumpPower",
+        "MaxHealth",
+        "MaxSlopeAngle",
+        "MeshHeadScale",
+        "MoveDirection",
+        "NameDisplayDistance",
+        "RequiresNeck",
+        "RigType",
+        "RootPart",
+        "SeatPart",
+        "Sit",
+        "TargetPoint",
+        "UseJumpPower",
+        "WalkSpeed",
+        "WalkToPart",
+        "WalkToPoint",
+    }
+
+    local function buildPlayersInfoText(player)
+        if not player then
+            return "Select a player from the list."
+        end
+        local lines = {}
+        table.insert(lines, "Username: " .. player.Name)
+        local dn = player.DisplayName
+        table.insert(lines, "Display name: " .. ((dn and dn ~= "") and dn or "(same as username)"))
+        local character = player.Character
+        if not character then
+            table.insert(lines, "Character: not loaded")
+            table.insert(lines, "Location: —")
+            table.insert(lines, "")
+            table.insert(lines, "Humanoid properties: —")
+            table.insert(lines, "Inside Humanoid (children): —")
+            return table.concat(lines, "\n")
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local root = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+        if root then
+            local p = root.Position
+            table.insert(lines, string.format("Location: %.2f, %.2f, %.2f", p.X, p.Y, p.Z))
+            local okVel, velMag = pcall(function()
+                return root.AssemblyLinearVelocity.Magnitude
+            end)
+            if okVel and velMag then
+                table.insert(lines, string.format("Velocity (mag): %.2f", velMag))
+            end
+        else
+            table.insert(lines, "Location: (no HumanoidRootPart / PrimaryPart)")
+        end
+        table.insert(lines, "")
+        if humanoid then
+            table.insert(lines, "Humanoid properties:")
+            local propRows = {}
+            for _, propName in ipairs(HUMANOID_INSPECT_PROPERTIES) do
+                local ok, val = pcall(function()
+                    return humanoid[propName]
+                end)
+                if ok then
+                    table.insert(propRows, {
+                        key = propName,
+                        text = "  "
+                            .. propName
+                            .. " = "
+                            .. formatValueForDisplay(val),
+                    })
+                end
+            end
+            table.sort(propRows, function(a, b)
+                return string.lower(a.key) < string.lower(b.key)
+            end)
+            for _, row in ipairs(propRows) do
+                table.insert(lines, row.text)
+            end
+        else
+            table.insert(lines, "Humanoid properties: (no Humanoid)")
+        end
+        table.insert(lines, "")
+        table.insert(lines, "Inside Humanoid (children):")
+        if humanoid then
+            local children = humanoid:GetChildren()
+            table.sort(children, function(a, b)
+                return string.lower(a.Name) < string.lower(b.Name)
+            end)
+            if #children == 0 then
+                table.insert(lines, "  (none)")
+            else
+                for _, child in ipairs(children) do
+                    table.insert(lines, formatHumanoidChildLine(child))
+                end
+            end
+        else
+            table.insert(lines, "  (no Humanoid)")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function updatePlayersInfoParagraph()
+        if PlayersInfoParagraph and PlayersInfoParagraph.SetDesc then
+            PlayersInfoParagraph:SetDesc(buildPlayersInfoText(selectedInfoPlayer))
+        end
+    end
+
+    local function refreshPlayersInfoList(showNotify)
+        infoPlayerList = {}
+        infoPlayerDisplayNames = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.ClassName == "Player" then
+                table.insert(infoPlayerList, plr)
+                table.insert(infoPlayerDisplayNames, playerInfoLabel(plr))
+            end
+        end
+        if PlayersInfoDropdown and PlayersInfoDropdown.Refresh then
+            PlayersInfoDropdown:Refresh(infoPlayerDisplayNames)
+        end
+        if selectedInfoPlayer then
+            if not table.find(infoPlayerList, selectedInfoPlayer) then
+                selectedInfoPlayer = nil
+                if PlayersInfoDropdown and PlayersInfoDropdown.Select then PlayersInfoDropdown:Select(nil) end
+                if PlayersInfoDropdown and PlayersInfoDropdown.Set then PlayersInfoDropdown:Set(nil) end
+            end
+        end
+        updatePlayersInfoParagraph()
+        if showNotify then
+            WindUI:Notify({ Title = "Players Info", Content = "Player list refreshed (" .. #infoPlayerList .. ")", Icon = "check" })
+        end
+    end
+
+    PlayersInfoDropdown = PlayersInfoSection:Dropdown({
+        Title = "Player",
+        Desc = "All players in this server",
+        Values = infoPlayerDisplayNames,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedInfoPlayer = nil
+            if value then
+                local idx = table.find(infoPlayerDisplayNames, value)
+                if idx and infoPlayerList[idx] then
+                    selectedInfoPlayer = infoPlayerList[idx]
+                end
+            end
+            updatePlayersInfoParagraph()
+        end,
+    })
+
+    PlayersInfoParagraph = PlayersInfoSection:Paragraph({
+        Title = "Details",
+        Desc = "Select a player from the list.",
+    })
+
+    PlayersInfoSection:Button({
+        Title = "Refresh list",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshPlayersInfoList(true)
+        end,
+    })
+
+    PlayersInfoSection:Space()
+
+    PlayersInfoSection:Button({
+        Title = "Refresh details",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not selectedInfoPlayer then
+                WindUI:Notify({ Title = "Players Info", Content = "Select a player first", Icon = "x" })
+                return
+            end
+            updatePlayersInfoParagraph()
+            WindUI:Notify({ Title = "Players Info", Content = "Details updated", Icon = "check" })
+        end,
+    })
+
+    refreshPlayersInfoList(false)
+
+    Players.PlayerAdded:Connect(function()
+        refreshPlayersInfoList(false)
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(function()
+            refreshPlayersInfoList(false)
+        end)
+    end)
 
     LocalPlayerTab:Space()
 
