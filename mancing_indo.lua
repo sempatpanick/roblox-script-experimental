@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local WindUI
 
@@ -949,6 +950,8 @@ do
 
     local autoFishingEnabled = false
     local autoFishingLoopRunning = false
+    local autoFishingPausedForSell = false
+    local autoFishingCycleRunning = false
     local minigameAutoSolveConn = nil
     -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
     local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
@@ -1051,7 +1054,7 @@ do
         end)
     end
 
-    local function runAutoFishingCycle()
+    local function runAutoFishingCycleImpl()
         ensureMinigameAutoSolve()
         if not select(1, getFishingRemotes()) then
             return false
@@ -1082,8 +1085,25 @@ do
         return true
     end
 
+    local function runAutoFishingCycle()
+        autoFishingCycleRunning = true
+        local ok, res = pcall(runAutoFishingCycleImpl)
+        autoFishingCycleRunning = false
+        if not ok then
+            warn("[Auto fishing] cycle error: ", res)
+            return false
+        end
+        return res
+    end
+
     local function runAutoFishingLoop()
         while autoFishingEnabled do
+            while autoFishingPausedForSell and autoFishingEnabled do
+                task.wait(0.05)
+            end
+            if not autoFishingEnabled then
+                break
+            end
             if not runAutoFishingCycle() then
                 task.wait(0.5)
             end
@@ -1101,6 +1121,7 @@ do
                 ensureMinigameAutoSolve()
             else
                 releaseMinigameSessionWait()
+                autoFishingPausedForSell = false
             end
             if not enabled then
                 return
@@ -1112,6 +1133,425 @@ do
             task.spawn(runAutoFishingLoop)
         end,
     })
+
+    local SellSection = MainTab:Section({
+        Title = "Sell",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local sellMode = "Loop"
+    local sellIntervalSeconds = 60
+    local autoSellEnabled = false
+    local autoSellLoopRunning = false
+    local SELL_TELEPORT_CFRAME = CFrame.new(2623.45, 5.41, -914.57)
+
+    local function fireSellFishAll()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotes then
+            return
+        end
+        local sellFish = remotes:FindFirstChild("SellFish")
+        if not (sellFish and sellFish:IsA("RemoteEvent")) then
+            return
+        end
+        pcall(function()
+            sellFish:FireServer("All")
+        end)
+    end
+
+    local function runAutoSellTeleportSellAndReturn()
+        local character = Players.LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local previousCFrame = nil
+        if root then
+            previousCFrame = root.CFrame
+            root.CFrame = SELL_TELEPORT_CFRAME
+            task.wait(0.2)
+        end
+        fireSellFishAll()
+        task.wait(1)
+        if root and previousCFrame and root.Parent then
+            pcall(function()
+                root.CFrame = previousCFrame
+            end)
+        end
+    end
+
+    -- If auto fishing is on: wait for current cycle (including MGR minigame) to finish, pause fishing, sell, resume.
+    local function runAutoSellWithFishingCoordination()
+        local pauseRequested = false
+        if autoFishingEnabled then
+            autoFishingPausedForSell = true
+            pauseRequested = true
+            while autoFishingCycleRunning do
+                if not autoSellEnabled then
+                    autoFishingPausedForSell = false
+                    return
+                end
+                task.wait(0.05)
+            end
+        end
+        if not autoSellEnabled then
+            if pauseRequested then
+                autoFishingPausedForSell = false
+            end
+            return
+        end
+        runAutoSellTeleportSellAndReturn()
+        if pauseRequested then
+            autoFishingPausedForSell = false
+        end
+    end
+
+    SellSection:Dropdown({
+        Title = "Sell type",
+        Desc = "More modes can be added later",
+        Values = { "Loop" },
+        Value = "Loop",
+        Callback = function(value)
+            sellMode = value or "Loop"
+        end,
+    })
+
+    SellSection:Input({
+        Title = "Duration (seconds)",
+        Placeholder = "e.g. 60",
+        Value = tostring(sellIntervalSeconds),
+        Callback = function(value)
+            local n = tonumber(value)
+            if n and n >= 0 then
+                sellIntervalSeconds = n
+            end
+        end,
+    })
+
+    SellSection:Toggle({
+        Title = "Auto Sell",
+        Desc = "Teleport, SellFish \"All\", return. With auto fishing: waits for minigame, pauses fishing, then resumes",
+        Value = false,
+        Callback = function(enabled)
+            autoSellEnabled = enabled
+            if not enabled then
+                return
+            end
+            if autoSellLoopRunning then
+                return
+            end
+            autoSellLoopRunning = true
+            task.spawn(function()
+                while autoSellEnabled do
+                    if sellMode == "Loop" then
+                        runAutoSellWithFishingCoordination()
+                    end
+                    local dur = math.max(sellIntervalSeconds, 0.05)
+                    task.wait(dur)
+                end
+                autoSellLoopRunning = false
+            end)
+        end,
+    })
+end
+
+-- */  Shop Tab  /* --
+do
+    local ShopTab = ElementsSection:Tab({
+        Title = "Shop",
+        Icon = "solar:shop-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local BuyRodSection = ShopTab:Section({
+        Title = "Buy Rod",
+        Desc = "Rods are read from FishingRodShopGui. Use Refresh if the list is empty.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    -- Parallel lists: dropdown shows rodDisplayList; Buy uses rodIdList[index].
+    local rodDisplayList = {}
+    local rodIdList = {}
+    local selectedRodId = nil
+    local BuyRodDropdown
+    local BuyRodDetailParagraph
+
+    local function getRodShopScrollingFrame()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local gui = pg:FindFirstChild("FishingRodShopGui")
+        if not gui then
+            return nil
+        end
+        local canvas = gui:FindFirstChild("Canvas")
+        local container = canvas and canvas:FindFirstChild("Container")
+        local body = container and container:FindFirstChild("Body")
+        return body and body:FindFirstChild("ScrollingFrame")
+    end
+
+    local function findRodFrame(rodId)
+        if not rodId or rodId == "" then
+            return nil
+        end
+        local scroll = getRodShopScrollingFrame()
+        if not scroll then
+            return nil
+        end
+        local f = scroll:FindFirstChild(rodId)
+        if f and f:IsA("Frame") then
+            return f
+        end
+        return nil
+    end
+
+    local function priceLabelForRodFrame(frame)
+        local attr = frame:GetAttribute("PriceLabel")
+        if typeof(attr) == "string" and attr ~= "" then
+            return attr
+        end
+        local purchaseBtn = frame:FindFirstChild("PurchaseButton")
+        if purchaseBtn then
+            local tl = purchaseBtn:FindFirstChildOfClass("TextLabel")
+            if tl and tl.Text ~= "" and tl.Text ~= "..." then
+                return tl.Text
+            end
+            if purchaseBtn:IsA("TextButton") and purchaseBtn.Text ~= "" and purchaseBtn.Text ~= "..." then
+                return purchaseBtn.Text
+            end
+        end
+        return "?"
+    end
+
+    local function buildRodDetailText(rodId)
+        if not rodId or rodId == "" then
+            return "Select a rod from the dropdown to see name, price, and statistics."
+        end
+        local frame = findRodFrame(rodId)
+        if not frame then
+            return "Rod row \"" .. rodId .. "\" was not found. Use Refresh or open the in-game rod shop."
+        end
+        local price = priceLabelForRodFrame(frame)
+        local lines = {}
+        table.insert(lines, "Rod name: " .. rodId)
+        table.insert(lines, "Price: " .. price)
+        table.insert(lines, "")
+
+        local purchaseBtn = frame:FindFirstChild("PurchaseButton")
+
+        local function appendAttributes(inst, prefix)
+            local attrs = {}
+            pcall(function()
+                attrs = inst:GetAttributes()
+            end)
+            local keys = {}
+            for k in pairs(attrs) do
+                table.insert(keys, k)
+            end
+            table.sort(keys)
+            local out = {}
+            for _, k in ipairs(keys) do
+                table.insert(out, { key = prefix .. k, val = tostring(attrs[k]) })
+            end
+            return out
+        end
+
+        local attrRows = {}
+        for _, row in ipairs(appendAttributes(frame, "")) do
+            table.insert(attrRows, row)
+        end
+        if purchaseBtn then
+            for _, row in ipairs(appendAttributes(purchaseBtn, "purchase.")) do
+                table.insert(attrRows, row)
+            end
+        end
+        if #attrRows > 0 then
+            table.insert(lines, "Attributes:")
+            for _, row in ipairs(attrRows) do
+                table.insert(lines, "  " .. row.key .. ": " .. row.val)
+            end
+            table.insert(lines, "")
+        end
+
+        local seenLabel = {}
+        local statLines = {}
+        for _, desc in ipairs(frame:GetDescendants()) do
+            if desc:IsA("TextLabel") then
+                if purchaseBtn and desc:IsDescendantOf(purchaseBtn) then
+                    continue
+                end
+                local t = desc.Text
+                if typeof(t) ~= "string" then
+                    continue
+                end
+                t = t:gsub("\r\n", " "):gsub("\n", " ")
+                t = t:match("^%s*(.-)%s*$") or t
+                if t == "" or t == "..." then
+                    continue
+                end
+                local key = desc.Name .. "\0" .. t
+                if seenLabel[key] then
+                    continue
+                end
+                seenLabel[key] = true
+                local nm = desc.Name
+                if nm == "TextLabel" or nm == "Label" then
+                    table.insert(statLines, "  • " .. t)
+                else
+                    table.insert(statLines, "  " .. nm .. ": " .. t)
+                end
+            end
+        end
+        if #statLines > 0 then
+            table.insert(lines, "Statistics (from shop UI):")
+            for _, L in ipairs(statLines) do
+                table.insert(lines, L)
+            end
+        elseif #attrRows == 0 then
+            table.insert(lines, "No stat labels or extra attributes on this row.")
+        end
+
+        return table.concat(lines, "\n")
+    end
+
+    local function updateBuyRodDetailParagraph()
+        if BuyRodDetailParagraph and BuyRodDetailParagraph.SetDesc then
+            BuyRodDetailParagraph:SetDesc(buildRodDetailText(selectedRodId))
+        end
+    end
+
+    local function getRodRowsFromShopGui()
+        local scroll = getRodShopScrollingFrame()
+        if not scroll then
+            return {}
+        end
+        local rows = {}
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") then
+                local id = child.Name
+                local price = priceLabelForRodFrame(child)
+                table.insert(rows, {
+                    id = id,
+                    display = id .. " (" .. price .. ")",
+                })
+            end
+        end
+        table.sort(rows, function(a, b)
+            return a.id < b.id
+        end)
+        return rows
+    end
+
+    local function refreshRodList(showNotify)
+        local rows = getRodRowsFromShopGui()
+        rodDisplayList = {}
+        rodIdList = {}
+        for _, r in ipairs(rows) do
+            table.insert(rodDisplayList, r.display)
+            table.insert(rodIdList, r.id)
+        end
+        if BuyRodDropdown and BuyRodDropdown.Refresh then
+            BuyRodDropdown:Refresh(rodDisplayList)
+        end
+        if selectedRodId and not table.find(rodIdList, selectedRodId) then
+            selectedRodId = nil
+            if BuyRodDropdown and BuyRodDropdown.Select then
+                BuyRodDropdown:Select(nil)
+            end
+            if BuyRodDropdown and BuyRodDropdown.Set then
+                BuyRodDropdown:Set(nil)
+            end
+        end
+        updateBuyRodDetailParagraph()
+        if showNotify then
+            WindUI:Notify({
+                Title = "Buy Rod",
+                Content = (#rodIdList == 0) and "No rods found (open the in-game rod shop once or wait for UI to load)" or ("Found " .. #rodIdList .. " rod(s)"),
+                Icon = (#rodIdList == 0) and "x" or "check",
+            })
+        end
+    end
+
+    BuyRodDropdown = BuyRodSection:Dropdown({
+        Title = "Rod",
+        Desc = "Name and price from the rod shop row (PriceLabel or button text)",
+        Values = rodDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedRodId = nil
+            if value then
+                local idx = table.find(rodDisplayList, value)
+                if idx and rodIdList[idx] then
+                    selectedRodId = rodIdList[idx]
+                end
+            end
+            updateBuyRodDetailParagraph()
+        end,
+    })
+
+    BuyRodDetailParagraph = BuyRodSection:Paragraph({
+        Title = "Rod details",
+        Desc = "Select a rod from the dropdown to see name, price, and statistics.",
+    })
+
+    BuyRodSection:Button({
+        Title = "Buy",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not selectedRodId or selectedRodId == "" then
+                WindUI:Notify({ Title = "Buy Rod", Content = "Select a rod from the dropdown first", Icon = "x" })
+                return
+            end
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            local purchaseRod = remotes and remotes:FindFirstChild("PurchaseRod")
+            if not (purchaseRod and purchaseRod:IsA("RemoteFunction")) then
+                WindUI:Notify({ Title = "Buy Rod", Content = "Remotes.PurchaseRod not found", Icon = "x" })
+                return
+            end
+            local ok, result = pcall(function()
+                return purchaseRod:InvokeServer(selectedRodId)
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Buy Rod", Content = "Invoke failed: " .. tostring(result), Icon = "x" })
+                return
+            end
+            if result and result.IsGamepass and result.GamepassId then
+                pcall(function()
+                    MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, result.GamepassId)
+                end)
+                WindUI:Notify({ Title = "Buy Rod", Content = "Game pass purchase prompted", Icon = "check" })
+            elseif result and result.Success then
+                WindUI:Notify({ Title = "Buy Rod", Content = "Purchase successful", Icon = "check" })
+            else
+                WindUI:Notify({
+                    Title = "Buy Rod",
+                    Content = (result and result.Message) or "Purchase failed",
+                    Icon = "x",
+                })
+            end
+            task.defer(updateBuyRodDetailParagraph)
+        end,
+    })
+
+    BuyRodSection:Space()
+
+    BuyRodSection:Button({
+        Title = "Refresh rod list",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshRodList(true)
+        end,
+    })
+
+    refreshRodList(false)
 end
 
 -- */  Teleport Tab  /* --
