@@ -920,6 +920,22 @@ do
         end,
     })
 
+    ServerSection:Button({
+        Title = "Copy game ID",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local paste = setclipboard or toclipboard
+            if not paste then
+                notify("Server", "Clipboard not supported in this environment", "x")
+                return
+            end
+            local id = tostring(game.PlaceId)
+            paste(id)
+            notify("Server", "Copied PlaceId " .. id, "check")
+        end,
+    })
+
     LocalPlayerTab:Space()
 
     LocalPlayerTab:Button({

@@ -1344,6 +1344,30 @@ do
         end,
     })
 
+    ServerSection:Button({
+        Title = "Copy game ID",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local paste = setclipboard or toclipboard
+            if not paste then
+                WindUI:Notify({
+                    Title = "Server",
+                    Content = "Clipboard not supported in this environment",
+                    Icon = "x",
+                })
+                return
+            end
+            local id = tostring(game.PlaceId)
+            paste(id)
+            WindUI:Notify({
+                Title = "Server",
+                Content = "Copied PlaceId " .. id,
+                Icon = "check",
+            })
+        end,
+    })
+
     LocalPlayerTab:Space()
 
     LocalPlayerTab:Button({
