@@ -32,13 +32,13 @@ end
 
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
-    Title = "Yahayuk Mount V3",
-    Folder = "yahayuk_mount_v3",
+    Title = "sempatpanick | Mancing Indo",
+    Folder = "ftgshub",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
     HideSearchBar = false,
     OpenButton = {
-        Title = "Open Yahayuk Mount V3",
+        Title = "Open SempatPanick UI",
         CornerRadius = UDim.new(1,0),
         StrokeThickness = 3,
         Enabled = true,
@@ -97,442 +97,6 @@ local ElementsSection = Window:Section({
     Title = "Elements",
     Opened = true,
 })
-
--- */  Main Tab  /* --
-do
-    local MainTab = ElementsSection:Tab({
-        Title = "Main",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
-
-    local autoSummitEnabled = false
-    local summitQty = ""
-    local autoSummitRestartFromDeath = false
-    local BETWEEN_RUN_DELAY = 10
-
-    local summitTeleportRoute = {
-        { name = "Start", x = -922.94, y = 169.22, z = 856.29, delay = 20 },
-        { name = "Camp 1", x = -407.77, y = 248.20, z = 794.09, delay = 20 },
-        { name = "Camp 2", x = -337.77, y = 388.27, z = 522.16, delay = 25 },
-        { name = "Camp 3", x = 294.19, y = 430.33, z = 494.17, delay = 30 },
-        { name = "Camp 4", x = 323.46, y = 490.24, z = 348.33, delay = 40 },
-        { name = "Camp 5", x = 226.70, y = 314.21, z = -143.64, delay = 70 },
-        { name = "Summit", x = -613.51, y = 905.28, z = -533.45, delay = 1 },
-    }
-
-    local function notifyAutoSummit(content, icon)
-        WindUI:Notify({ Title = "Auto Summit", Content = content, Icon = icon or "check" })
-    end
-
-    local function waitWithCancel(seconds, shouldCancel)
-        local elapsed = 0
-        local step = 0.25
-        while elapsed < seconds do
-            if shouldCancel() then
-                return false
-            end
-            task.wait(math.min(step, seconds - elapsed))
-            elapsed = elapsed + step
-        end
-        return true
-    end
-
-    local AutoSummitSection = MainTab:Section({
-        Title = "Auto Summit",
-        Desc = "Uses your current CP: skips camps you already passed and continues to the next stop, then Summit. Empty qty = unlimited.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local lpAutoSummit = Players.LocalPlayer
-
-    local function getCheckpointIndexFromPlayer(player)
-        local ls = player:FindFirstChild("leaderstats")
-        if ls then
-            local n = ls:FindFirstChild("LastCheckpoint")
-            if n and n:IsA("IntValue") then
-                return n.Value
-            end
-            local s = ls:FindFirstChild("Checkpoint")
-            if s and s:IsA("StringValue") then
-                local v = s.Value
-                if v and v ~= "" then
-                    if v:lower() == "start" then
-                        return 0
-                    end
-                    local d = string.match(v, "%d+")
-                    return (d and tonumber(d)) or 0
-                end
-            end
-        end
-        local a = player:GetAttribute("LastCheckpoint")
-        if typeof(a) == "number" then
-            return a
-        end
-        if typeof(a) == "string" and a ~= "" then
-            if a:lower() == "start" then
-                return 0
-            end
-            local d = string.match(a, "%d+")
-            return (d and tonumber(d)) or 0
-        end
-        return 0
-    end
-
-    local function getCheckpointLabelString(player)
-        local attr = player:GetAttribute("LastCheckpoint")
-        if typeof(attr) == "string" and attr ~= "" then
-            return attr
-        end
-        if typeof(attr) == "number" then
-            return tostring(attr)
-        end
-        local ls = player:FindFirstChild("leaderstats")
-        if ls then
-            local iv = ls:FindFirstChild("LastCheckpoint")
-            if iv and iv:IsA("IntValue") then
-                return tostring(iv.Value)
-            end
-            local sv = ls:FindFirstChild("Checkpoint")
-            if sv and sv:IsA("StringValue") and sv.Value ~= "" then
-                return sv.Value
-            end
-        end
-        return "Start"
-    end
-
-    local function routeLabelForCpIndex(idx)
-        local wp = summitTeleportRoute[idx + 1]
-        if wp then
-            return wp.name
-        end
-        return "CP " .. tostring(idx)
-    end
-
-    -- CP 0 = Start … CP (#route-1) = Summit. Next teleport is route[cp+2] (1-based); at/past Summit nothing to skip.
-    local function getFirstSummitRouteIndexFromCp(cpIdx)
-        local routeN = #summitTeleportRoute
-        local summitCpIndex = routeN - 1
-        local cp = cpIdx
-        if typeof(cp) ~= "number" then
-            cp = 0
-        end
-        cp = math.floor(cp)
-        if cp < 0 then
-            cp = 0
-        end
-        if cp >= summitCpIndex then
-            return nil, cp
-        end
-        local first = cp + 2
-        if first < 1 then
-            first = 1
-        end
-        if first > routeN then
-            return nil, cp
-        end
-        return first, cp
-    end
-
-    local AutoSummitCpParagraph
-    local function updateAutoSummitCpParagraph()
-        if not AutoSummitCpParagraph then
-            return
-        end
-        local posisi = getCheckpointLabelString(lpAutoSummit)
-        local idx = getCheckpointIndexFromPlayer(lpAutoSummit)
-        local routeName = routeLabelForCpIndex(idx)
-        local desc = string.format("POSISI: %s\nCP #%d · %s", string.upper(posisi), idx, routeName)
-        if AutoSummitCpParagraph.SetDesc then
-            AutoSummitCpParagraph:SetDesc(desc)
-        end
-    end
-
-    AutoSummitCpParagraph = AutoSummitSection:Paragraph({
-        Title = "Current camp / CP",
-        Desc = "POSISI: —\nCP #0 · Start",
-    })
-
-    local function attachLeaderstatsForCp(ls)
-        local function onCheckpointValueChanged()
-            updateAutoSummitCpParagraph()
-        end
-        local n = ls:FindFirstChild("LastCheckpoint")
-        if n and n:IsA("IntValue") then
-            n:GetPropertyChangedSignal("Value"):Connect(onCheckpointValueChanged)
-        end
-        local s = ls:FindFirstChild("Checkpoint")
-        if s and s:IsA("StringValue") then
-            s:GetPropertyChangedSignal("Value"):Connect(onCheckpointValueChanged)
-        end
-        ls.ChildAdded:Connect(function(ch)
-            if ch.Name == "LastCheckpoint" and ch:IsA("IntValue") then
-                ch:GetPropertyChangedSignal("Value"):Connect(onCheckpointValueChanged)
-                onCheckpointValueChanged()
-            elseif ch.Name == "Checkpoint" and ch:IsA("StringValue") then
-                ch:GetPropertyChangedSignal("Value"):Connect(onCheckpointValueChanged)
-                onCheckpointValueChanged()
-            end
-        end)
-    end
-
-    lpAutoSummit:GetAttributeChangedSignal("LastCheckpoint"):Connect(updateAutoSummitCpParagraph)
-    local lsSummitCp = lpAutoSummit:FindFirstChild("leaderstats")
-    if lsSummitCp then
-        attachLeaderstatsForCp(lsSummitCp)
-    end
-    lpAutoSummit.ChildAdded:Connect(function(ch)
-        if ch.Name == "leaderstats" then
-            attachLeaderstatsForCp(ch)
-            updateAutoSummitCpParagraph()
-        end
-    end)
-    task.defer(updateAutoSummitCpParagraph)
-
-    local SummitQtyInput = AutoSummitSection:Input({
-        Title = "Qty of summit",
-        Placeholder = "Empty = unlimited",
-        Value = "",
-        Callback = function(value)
-            summitQty = value
-        end,
-    })
-    local autoSummitDeathCheckConn = nil
-
-    local function onAutoSummitDeath()
-        autoSummitRestartFromDeath = true
-    end
-
-    local function connectAutoSummitCharacterDied(character)
-        if not character then
-            return
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then
-            return
-        end
-        humanoid.Died:Connect(onAutoSummitDeath)
-        humanoid.HealthChanged:Connect(function(health)
-            if health <= 0 then
-                onAutoSummitDeath()
-            end
-        end)
-    end
-
-    if lpAutoSummit.Character then
-        connectAutoSummitCharacterDied(lpAutoSummit.Character)
-    end
-    lpAutoSummit.CharacterAdded:Connect(connectAutoSummitCharacterDied)
-
-    AutoSummitSection:Toggle({
-        Title = "Auto Summit",
-        Desc = "Each run reads your CP and teleports only from the next stop onward. After death, waits for respawn and re-reads CP (leaderstats) before continuing. Toggle off to stop.",
-        Value = false,
-        Callback = function(enabled)
-            autoSummitEnabled = enabled
-            if not enabled then
-                if autoSummitDeathCheckConn then
-                    autoSummitDeathCheckConn:Disconnect()
-                    autoSummitDeathCheckConn = nil
-                end
-                return
-            end
-
-            autoSummitRestartFromDeath = false
-
-            if autoSummitDeathCheckConn then
-                autoSummitDeathCheckConn:Disconnect()
-            end
-            autoSummitDeathCheckConn = RunService.Heartbeat:Connect(function()
-                if not autoSummitEnabled then
-                    return
-                end
-                local char = lpAutoSummit.Character
-                if not char then
-                    return
-                end
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health <= 0 then
-                    onAutoSummitDeath()
-                end
-            end)
-
-            local function getRootPart(timeoutSec)
-                local char = lpAutoSummit.Character
-                if not char then
-                    char = lpAutoSummit.CharacterAdded:Wait()
-                end
-                return char:WaitForChild("HumanoidRootPart", timeoutSec or 15)
-            end
-
-            local rootPart = getRootPart()
-            if not rootPart then
-                notifyAutoSummit("Character not loaded", "x")
-                return
-            end
-
-            local function shouldAbort()
-                return not autoSummitEnabled or autoSummitRestartFromDeath
-            end
-
-            task.spawn(function()
-                local qtyNum = tonumber(summitQty and summitQty:gsub("%s+", "") or "")
-                local runCount = 0
-                local remaining = qtyNum
-                local skipNextCpResumeNotify = false
-                repeat
-                    if not autoSummitEnabled then
-                        break
-                    end
-                    rootPart = getRootPart()
-                    if not rootPart then
-                        local char = lpAutoSummit.Character
-                        if char then
-                            char:WaitForChild("HumanoidRootPart", 10)
-                        else
-                            char = lpAutoSummit.CharacterAdded:Wait()
-                            char:WaitForChild("HumanoidRootPart", 10)
-                        end
-                        task.wait(1)
-                        rootPart = getRootPart()
-                        if not rootPart then
-                            notifyAutoSummit("Could not get character after respawn", "x")
-                            break
-                        end
-                    end
-
-                    local routeCompleted = true
-                    local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
-                    local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
-                    local skippedSummitTeleports = firstWpIndex == nil
-                    if skippedSummitTeleports then
-                        skipNextCpResumeNotify = false
-                    elseif not skipNextCpResumeNotify then
-                        notifyAutoSummit(
-                            ("CP #%d (%s) — continuing from %s…"):format(
-                                cpClamped,
-                                routeLabelForCpIndex(cpClamped),
-                                summitTeleportRoute[firstWpIndex].name
-                            )
-                        )
-                    else
-                        skipNextCpResumeNotify = false
-                    end
-                    if not skippedSummitTeleports then
-                        for wi = firstWpIndex, #summitTeleportRoute do
-                            local wp = summitTeleportRoute[wi]
-                            if not autoSummitEnabled or autoSummitRestartFromDeath then
-                                routeCompleted = false
-                                break
-                            end
-                            rootPart = getRootPart()
-                            if not rootPart then
-                                routeCompleted = false
-                                break
-                            end
-                            rootPart.CFrame = CFrame.new(wp.x, wp.y, wp.z)
-                            notifyAutoSummit("Teleported to " .. wp.name .. "…")
-                            if not waitWithCancel(wp.delay, shouldAbort) then
-                                routeCompleted = false
-                                break
-                            end
-                        end
-                    end
-
-                    if autoSummitRestartFromDeath then
-                        notifyAutoSummit("Character died — waiting for respawn…")
-                        local char = lpAutoSummit.Character
-                        if not char then
-                            char = lpAutoSummit.CharacterAdded:Wait()
-                        else
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            if hum and hum.Health <= 0 then
-                                char = lpAutoSummit.CharacterAdded:Wait()
-                            end
-                        end
-                        if char then
-                            char:WaitForChild("HumanoidRootPart", 15)
-                            task.wait(0.5)
-                        end
-                        for _ = 1, 15 do
-                            if lpAutoSummit:FindFirstChild("leaderstats") then
-                                break
-                            end
-                            task.wait(0.1)
-                        end
-                        task.wait(0.35)
-                        local cpRespawn = getCheckpointIndexFromPlayer(lpAutoSummit)
-                        local firstRespawn, cpRespawnClamped = getFirstSummitRouteIndexFromCp(cpRespawn)
-                        task.defer(updateAutoSummitCpParagraph)
-                        autoSummitRestartFromDeath = false
-                        skipNextCpResumeNotify = true
-                        if firstRespawn == nil then
-                            notifyAutoSummit(
-                                ("Respawned — CP #%d (%s). Next leg: Summit / count run (no teleports)."):format(
-                                    cpRespawnClamped,
-                                    routeLabelForCpIndex(cpRespawnClamped)
-                                )
-                            )
-                        else
-                            notifyAutoSummit(
-                                ("Respawned — CP #%d (%s); resuming from %s."):format(
-                                    cpRespawnClamped,
-                                    routeLabelForCpIndex(cpRespawnClamped),
-                                    summitTeleportRoute[firstRespawn].name
-                                )
-                            )
-                        end
-                    elseif routeCompleted and autoSummitEnabled then
-                        if skippedSummitTeleports then
-                            notifyAutoSummit(
-                                ("Already at Summit (CP #%d) — run %d."):format(cpClamped, runCount + 1)
-                            )
-                        else
-                            notifyAutoSummit("Reached Summit! (Run " .. (runCount + 1) .. ")")
-                        end
-                        runCount = runCount + 1
-                        if remaining then
-                            remaining = remaining - 1
-                            summitQty = tostring(remaining)
-                            task.defer(function()
-                                if SummitQtyInput then
-                                    if SummitQtyInput.Set then
-                                        SummitQtyInput:Set(summitQty)
-                                    end
-                                    if SummitQtyInput.SetValue then
-                                        SummitQtyInput:SetValue(summitQty)
-                                    end
-                                end
-                            end)
-                        end
-                        if autoSummitEnabled and (not qtyNum or remaining > 0) then
-                            if not waitWithCancel(BETWEEN_RUN_DELAY, function()
-                                return not autoSummitEnabled
-                            end) then
-                                break
-                            end
-                        end
-                    end
-                until not autoSummitEnabled or (qtyNum and remaining and remaining <= 0)
-
-                if autoSummitEnabled and qtyNum and remaining and remaining <= 0 then
-                    notifyAutoSummit("All runs completed (" .. runCount .. " run(s))")
-                elseif not autoSummitEnabled then
-                    notifyAutoSummit("Stopped", "x")
-                end
-
-                if autoSummitDeathCheckConn then
-                    autoSummitDeathCheckConn:Disconnect()
-                    autoSummitDeathCheckConn = nil
-                end
-            end)
-        end,
-    })
-end
 
 -- */  Local Player Tab  /* --
 do
@@ -1366,6 +930,110 @@ do
     })
 end
 
+-- */  Main Tab  /* --
+do
+    local MainTab = ElementsSection:Tab({
+        Title = "Main",
+        Icon = "solar:home-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local AutoFishingSection = MainTab:Section({
+        Title = "Auto fishing",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local autoFishingEnabled = false
+    local autoFishingLoopRunning = false
+
+    local function getFishingRemotes()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotes then
+            return nil
+        end
+        local equipRod = remotes:FindFirstChild("EquipRod")
+        local castRod = remotes:FindFirstChild("CastRod")
+        local cmgr = remotes:FindFirstChild("CMGR")
+        if equipRod and castRod and cmgr then
+            return equipRod, castRod, cmgr
+        end
+        return nil
+    end
+
+    local function equipFishingRodRemote()
+        local EquipRod = select(1, getFishingRemotes())
+        if not EquipRod then
+            return
+        end
+        pcall(function()
+            EquipRod:FireServer(true, false)
+        end)
+    end
+
+    local function castFishingRodRemote()
+        local _, CastRod = getFishingRemotes()
+        if not CastRod then
+            return
+        end
+        pcall(function()
+            CastRod:FireServer()
+        end)
+    end
+
+    local function setFishingCastResultRemote()
+        local _, _, CMGR = getFishingRemotes()
+        if not CMGR then
+            return
+        end
+        pcall(function()
+            CMGR:FireServer("Result", 1)
+        end)
+    end
+
+    local function runAutoFishingCycle()
+        if not select(1, getFishingRemotes()) then
+            return false
+        end
+        equipFishingRodRemote()
+        task.wait(0.2)
+        castFishingRodRemote()
+        task.wait(0.2)
+        setFishingCastResultRemote()
+        task.wait(1)
+        return true
+    end
+
+    local function runAutoFishingLoop()
+        while autoFishingEnabled do
+            if not runAutoFishingCycle() then
+                task.wait(0.5)
+            end
+        end
+        autoFishingLoopRunning = false
+    end
+
+    AutoFishingSection:Toggle({
+        Title = "Auto fishing",
+        Desc = "Equip rod, cast, and fire CMGR Result (loops while on)",
+        Value = false,
+        Callback = function(enabled)
+            autoFishingEnabled = enabled
+            if not enabled then
+                return
+            end
+            if autoFishingLoopRunning then
+                return
+            end
+            autoFishingLoopRunning = true
+            task.spawn(runAutoFishingLoop)
+        end,
+    })
+end
+
 -- */  Teleport Tab  /* --
 do
     local TeleportTab = ElementsSection:Tab({
@@ -1508,52 +1176,6 @@ do
             })
         end
     })
-
-    TeleportTab:Space()
-
-    local TeleportToCampSection = TeleportTab:Section({
-        Title = "Teleport to camp",
-        Desc = "Quick teleport to camps and summit",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local function teleportToCampCoords(x, y, z, placeName)
-        local character = Players.LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then
-            WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
-            return
-        end
-        rootPart.CFrame = CFrame.new(x, y, z)
-        WindUI:Notify({
-            Title = "Teleport",
-            Content = "Teleported to " .. placeName,
-            Icon = "check",
-        })
-    end
-
-    local campLocations = {
-        { label = "Camp 1", x = -407.77, y = 248.20, z = 794.09 },
-        { label = "Camp 2", x = -337.77, y = 388.27, z = 522.16 },
-        { label = "Camp 3", x = 294.19, y = 430.33, z = 494.17 },
-        { label = "Camp 4", x = 323.46, y = 490.24, z = 348.33 },
-        { label = "Camp 5", x = 226.70, y = 314.21, z = -143.64 },
-        { label = "Summit", x = -613.51, y = 905.28, z = -533.45 },
-    }
-
-    for _, loc in ipairs(campLocations) do
-        local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
-        TeleportToCampSection:Button({
-            Title = label,
-            Justify = "Center",
-            Icon = "",
-            Callback = function()
-                teleportToCampCoords(cx, cy, cz, label)
-            end,
-        })
-    end
 
     -- */  Teleport to Players  /* --
     TeleportTab:Space()

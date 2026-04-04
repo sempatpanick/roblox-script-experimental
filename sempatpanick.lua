@@ -5,7 +5,8 @@ local games = {
     [128070940451265] = baseURL .. "/speed_bike_escape.lua",
     [2693023319] = baseURL .. "/expedition_antartica.lua",
     [14963184269] = baseURL .. "/mount_sumbing.lua",
-    [76964310785698] = baseURL .. "/yahayuk.lua",
+    [76964310785698] = baseURL .. "/mount_yahayuk.lua",
+    [118098747383977] = baseURL .. "/mancing_indo.lua",
 }
 
 local fallbackScriptURL = baseURL .. "/others.lua"
