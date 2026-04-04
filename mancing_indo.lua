@@ -1537,6 +1537,7 @@ do
         end
         runAutoSellTeleportSellAndReturn()
         if pauseRequested then
+            task.wait(1)
             autoFishingPausedForSell = false
         end
     end
@@ -1565,7 +1566,7 @@ do
 
     SellSection:Toggle({
         Title = "Auto Sell",
-        Desc = "Teleport, SellFish \"All\", return. With auto fishing: waits for minigame, pauses fishing, then resumes",
+        Desc = "Teleport, SellFish \"All\", return. With auto fishing: waits for minigame, pauses, sells, then 2s after return resumes",
         Value = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
