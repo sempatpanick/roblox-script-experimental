@@ -1506,7 +1506,7 @@ do
         if root then
             previousCFrame = root.CFrame
             root.CFrame = SELL_TELEPORT_CFRAME
-            task.wait(0.2)
+            task.wait(1)
         end
         fireSellFishAll()
         task.wait(1)
