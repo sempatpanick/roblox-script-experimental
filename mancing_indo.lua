@@ -949,6 +949,63 @@ do
 
     local autoFishingEnabled = false
     local autoFishingLoopRunning = false
+    local minigameAutoSolveConn = nil
+    -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
+    local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
+    local minigameCycleSeq = 0
+    local MINIGAME_SESSION_TIMEOUT = 20
+
+    -- Fishing minigame (circle click/hold) uses Remotes.MGR, not CMGR. On "Spawn", the game
+    -- expects MGR:FireServer("Click", challengeId) after the interaction (see ReplicatedStorage.Modules.Minigames).
+    local function releaseMinigameSessionWait()
+        local pending = minigameSessionWait
+        if not pending then
+            return
+        end
+        minigameSessionWait = nil
+        pending.done:Fire()
+    end
+
+    local function ensureMinigameAutoSolve()
+        if minigameAutoSolveConn then
+            return
+        end
+        local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotesFolder then
+            return
+        end
+        local MGR = remotesFolder:FindFirstChild("MGR")
+        if not (MGR and MGR:IsA("RemoteEvent")) then
+            return
+        end
+        minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, _, challengeId, mode, holdDuration)
+            if not autoFishingEnabled then
+                return
+            end
+            if action == "Stop" then
+                releaseMinigameSessionWait()
+                return
+            end
+            if action ~= "Spawn" or challengeId == nil then
+                return
+            end
+            local m = mode or "Click"
+            local holdSec = typeof(holdDuration) == "number" and holdDuration or 0
+            task.spawn(function()
+                if m == "Hold" and holdSec > 0 then
+                    task.wait(holdSec + 0.03)
+                else
+                    task.wait(0.08)
+                end
+                if not autoFishingEnabled then
+                    return
+                end
+                pcall(function()
+                    MGR:FireServer("Click", challengeId)
+                end)
+            end)
+        end)
+    end
 
     local function getFishingRemotes()
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -995,15 +1052,33 @@ do
     end
 
     local function runAutoFishingCycle()
+        ensureMinigameAutoSolve()
         if not select(1, getFishingRemotes()) then
             return false
         end
+        minigameCycleSeq += 1
+        local cycleSeq = minigameCycleSeq
+
         equipFishingRodRemote()
         task.wait(0.2)
         castFishingRodRemote()
-        task.wait(0.2)
-        setFishingCastResultRemote()
         task.wait(1)
+        setFishingCastResultRemote()
+
+        local waitDone = Instance.new("BindableEvent")
+        minigameSessionWait = { seq = cycleSeq, done = waitDone }
+        task.delay(MINIGAME_SESSION_TIMEOUT, function()
+            if minigameSessionWait and minigameSessionWait.seq == cycleSeq then
+                releaseMinigameSessionWait()
+            end
+        end)
+        waitDone.Event:Wait()
+        waitDone:Destroy()
+
+        if not autoFishingEnabled then
+            return false
+        end
+        task.wait(0.2)
         return true
     end
 
@@ -1018,10 +1093,15 @@ do
 
     AutoFishingSection:Toggle({
         Title = "Auto fishing",
-        Desc = "Equip rod, cast, and fire CMGR Result (loops while on)",
+        Desc = "Equip, cast, CMGR Result, and auto-complete MGR circle (click/hold minigame)",
         Value = false,
         Callback = function(enabled)
             autoFishingEnabled = enabled
+            if enabled then
+                ensureMinigameAutoSolve()
+            else
+                releaseMinigameSessionWait()
+            end
             if not enabled then
                 return
             end
