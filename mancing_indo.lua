@@ -1664,6 +1664,47 @@ do
         return "?"
     end
 
+    local function textLabelPlainText(lab)
+        if lab:IsA("TextLabel") then
+            local ok, ct = pcall(function()
+                return lab.ContentText
+            end)
+            if ok and typeof(ct) == "string" and ct ~= "" then
+                return ct
+            end
+        end
+        return lab.Text
+    end
+
+    -- Avoid "TopSpeed: Top Speed: 54" or "Speed: Speed 6%"; keep "Rarity: Uncommon".
+    local function formatShopStatLine(instanceName, rawText)
+        if typeof(rawText) ~= "string" then
+            return nil
+        end
+        local text = rawText:gsub("\r\n", " "):gsub("\n", " ")
+        text = text:match("^%s*(.-)%s*$") or text
+        if text == "" or text == "..." then
+            return nil
+        end
+        local nm = instanceName
+        if nm == "TextLabel" or nm == "Label" then
+            return "  • " .. text
+        end
+        if text:find(":") then
+            return "  • " .. text
+        end
+        local lowerNm = string.lower(nm)
+        local lowerText = string.lower(text)
+        local escaped = lowerNm:gsub("%%", "%%%%"):gsub("(%W)", "%%%1")
+        if lowerText:match("^" .. escaped .. "%s+") or lowerText == escaped then
+            return "  • " .. text
+        end
+        if nm == "Rarity" then
+            return "  • Rarity: " .. text
+        end
+        return "  " .. nm .. ": " .. text
+    end
+
     local function buildRodDetailText(rodId)
         if not rodId or rodId == "" then
             return "Select a rod from the dropdown to see name, price, and statistics."
@@ -1721,30 +1762,25 @@ do
                 if purchaseBtn and desc:IsDescendantOf(purchaseBtn) then
                     continue
                 end
-                local t = desc.Text
-                if typeof(t) ~= "string" then
+                local nm = desc.Name
+                if nm == "FishingRodName" then
                     continue
                 end
-                t = t:gsub("\r\n", " "):gsub("\n", " ")
-                t = t:match("^%s*(.-)%s*$") or t
-                if t == "" or t == "..." then
+                local t = textLabelPlainText(desc)
+                local line = formatShopStatLine(nm, t)
+                if not line then
                     continue
                 end
-                local key = desc.Name .. "\0" .. t
+                local key = nm .. "\0" .. line
                 if seenLabel[key] then
                     continue
                 end
                 seenLabel[key] = true
-                local nm = desc.Name
-                if nm == "TextLabel" or nm == "Label" then
-                    table.insert(statLines, "  • " .. t)
-                else
-                    table.insert(statLines, "  " .. nm .. ": " .. t)
-                end
+                table.insert(statLines, line)
             end
         end
         if #statLines > 0 then
-            table.insert(lines, "Statistics (from shop UI):")
+            table.insert(lines, "Statistics:")
             for _, L in ipairs(statLines) do
                 table.insert(lines, L)
             end
@@ -1888,7 +1924,303 @@ do
         end,
     })
 
+    local BuyBoatSection = ShopTab:Section({
+        Title = "Buy Boat",
+        Desc = "Boats are read from BoatUI (Body.ScrollingFrame). Use Refresh if the list is empty.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local boatDisplayList = {}
+    local boatIdList = {}
+    local selectedBoatId = nil
+    local BuyBoatDropdown
+    local BuyBoatDetailParagraph
+
+    local function getBoatShopBody()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local gui = pg:FindFirstChild("BoatUI")
+        if not gui then
+            return nil
+        end
+        local canvas = gui:FindFirstChild("Canvas")
+        local container = canvas and canvas:FindFirstChild("Container")
+        return container and container:FindFirstChild("Body")
+    end
+
+    local function getBoatShopScrollingFrame()
+        local body = getBoatShopBody()
+        return body and body:FindFirstChild("ScrollingFrame")
+    end
+
+    local function findBoatRow(boatId)
+        if not boatId or boatId == "" then
+            return nil
+        end
+        local scroll = getBoatShopScrollingFrame()
+        if not scroll then
+            return nil
+        end
+        local row = scroll:FindFirstChild(boatId)
+        if row and (row:IsA("Frame") or row:IsA("TextButton")) then
+            return row
+        end
+        return nil
+    end
+
+    local function boatDisplayNameForRow(row)
+        local nm = row:FindFirstChild("BoatName")
+        if nm and nm:IsA("TextLabel") and nm.Text ~= "" then
+            return nm.Text
+        end
+        return row.Name
+    end
+
+    local function priceLabelForBoatRow(row)
+        local price = row:FindFirstChild("Price")
+        if price and price:IsA("TextLabel") and price.Text ~= "" and price.Text ~= "..." then
+            return price.Text
+        end
+        return "?"
+    end
+
+    local function buildBoatDetailText(boatId)
+        if not boatId or boatId == "" then
+            return "Select a boat from the dropdown to see name, price, and statistics."
+        end
+        local row = findBoatRow(boatId)
+        if not row then
+            return "Boat row \"" .. boatId .. "\" was not found. Use Refresh or open the in-game boat shop."
+        end
+        local displayName = boatDisplayNameForRow(row)
+        local price = priceLabelForBoatRow(row)
+        local lines = {}
+        table.insert(lines, "Display name: " .. displayName)
+        table.insert(lines, "Boat id: " .. boatId)
+        table.insert(lines, "Price: " .. price)
+        table.insert(lines, "")
+
+        local body = getBoatShopBody()
+        local infoFrame = body and body:FindFirstChild(boatId .. "_Information")
+        local purchaseBtn = infoFrame and (infoFrame:FindFirstChild("PurchaseButton") or infoFrame:FindFirstChild("ActionButton"))
+
+        local statNames = { "Rarity", "Passengers", "TopSpeed", "Acceleration", "Handling" }
+        local namedStats = {}
+        for _, statName in ipairs(statNames) do
+            local lab = row:FindFirstChild(statName)
+            if not (lab and lab:IsA("TextLabel")) then
+                lab = row:FindFirstChild(statName, true)
+            end
+            if not (lab and lab:IsA("TextLabel")) and infoFrame then
+                lab = infoFrame:FindFirstChild(statName)
+                if not (lab and lab:IsA("TextLabel")) then
+                    lab = infoFrame:FindFirstChild(statName, true)
+                end
+            end
+            if lab and lab:IsA("TextLabel") then
+                local t = textLabelPlainText(lab)
+                local line = formatShopStatLine(statName, t)
+                if line then
+                    table.insert(namedStats, line)
+                end
+            end
+        end
+        if #namedStats > 0 then
+            table.insert(lines, "Statistics:")
+            for _, L in ipairs(namedStats) do
+                table.insert(lines, L)
+            end
+            table.insert(lines, "")
+        end
+
+        local function appendAttributes(inst, prefix)
+            local attrs = {}
+            pcall(function()
+                attrs = inst:GetAttributes()
+            end)
+            local keys = {}
+            for k in pairs(attrs) do
+                table.insert(keys, k)
+            end
+            table.sort(keys)
+            local out = {}
+            for _, k in ipairs(keys) do
+                table.insert(out, { key = prefix .. k, val = tostring(attrs[k]) })
+            end
+            return out
+        end
+
+        local attrRows = {}
+        for _, ar in ipairs(appendAttributes(row, "row.")) do
+            table.insert(attrRows, ar)
+        end
+        if infoFrame then
+            for _, ar in ipairs(appendAttributes(infoFrame, "info.")) do
+                table.insert(attrRows, ar)
+            end
+        end
+        if purchaseBtn then
+            for _, ar in ipairs(appendAttributes(purchaseBtn, "purchase.")) do
+                table.insert(attrRows, ar)
+            end
+        end
+        if #attrRows > 0 then
+            table.insert(lines, "Attributes:")
+            for _, ar in ipairs(attrRows) do
+                table.insert(lines, "  " .. ar.key .. ": " .. ar.val)
+            end
+            table.insert(lines, "")
+        end
+
+        if #namedStats == 0 and #attrRows == 0 then
+            table.insert(lines, "No statistics or attributes on this boat.")
+        end
+
+        return table.concat(lines, "\n")
+    end
+
+    local function updateBuyBoatDetailParagraph()
+        if BuyBoatDetailParagraph and BuyBoatDetailParagraph.SetDesc then
+            BuyBoatDetailParagraph:SetDesc(buildBoatDetailText(selectedBoatId))
+        end
+    end
+
+    local function getBoatRowsFromShopGui()
+        local scroll = getBoatShopScrollingFrame()
+        if not scroll then
+            return {}
+        end
+        local rows = {}
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextButton") then
+                local id = child.Name
+                if not id:match("_Information$") then
+                    local disp = boatDisplayNameForRow(child)
+                    local price = priceLabelForBoatRow(child)
+                    table.insert(rows, {
+                        id = id,
+                        display = disp .. " — " .. id .. " (" .. price .. ")",
+                    })
+                end
+            end
+        end
+        table.sort(rows, function(a, b)
+            return a.id < b.id
+        end)
+        return rows
+    end
+
+    local function refreshBoatList(showNotify)
+        local rows = getBoatRowsFromShopGui()
+        boatDisplayList = {}
+        boatIdList = {}
+        for _, r in ipairs(rows) do
+            table.insert(boatDisplayList, r.display)
+            table.insert(boatIdList, r.id)
+        end
+        if BuyBoatDropdown and BuyBoatDropdown.Refresh then
+            BuyBoatDropdown:Refresh(boatDisplayList)
+        end
+        if selectedBoatId and not table.find(boatIdList, selectedBoatId) then
+            selectedBoatId = nil
+            if BuyBoatDropdown and BuyBoatDropdown.Select then
+                BuyBoatDropdown:Select(nil)
+            end
+            if BuyBoatDropdown and BuyBoatDropdown.Set then
+                BuyBoatDropdown:Set(nil)
+            end
+        end
+        updateBuyBoatDetailParagraph()
+        if showNotify then
+            WindUI:Notify({
+                Title = "Buy Boat",
+                Content = (#boatIdList == 0) and "No boats found (open the in-game boat shop once or wait for UI to load)" or ("Found " .. #boatIdList .. " boat(s)"),
+                Icon = (#boatIdList == 0) and "x" or "check",
+            })
+        end
+    end
+
+    BuyBoatDropdown = BuyBoatSection:Dropdown({
+        Title = "Boat",
+        Desc = "Display name, id, and price from the boat shop row (BoatName / Price labels)",
+        Values = boatDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedBoatId = nil
+            if value then
+                local idx = table.find(boatDisplayList, value)
+                if idx and boatIdList[idx] then
+                    selectedBoatId = boatIdList[idx]
+                end
+            end
+            updateBuyBoatDetailParagraph()
+        end,
+    })
+
+    BuyBoatDetailParagraph = BuyBoatSection:Paragraph({
+        Title = "Boat details",
+        Desc = "Select a boat from the dropdown to see name, price, and statistics.",
+    })
+
+    BuyBoatSection:Button({
+        Title = "Buy",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not selectedBoatId or selectedBoatId == "" then
+                WindUI:Notify({ Title = "Buy Boat", Content = "Select a boat from the dropdown first", Icon = "x" })
+                return
+            end
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            local purchaseBoat = remotes and remotes:FindFirstChild("PurchaseBoat")
+            if not (purchaseBoat and purchaseBoat:IsA("RemoteFunction")) then
+                WindUI:Notify({ Title = "Buy Boat", Content = "Remotes.PurchaseBoat not found", Icon = "x" })
+                return
+            end
+            local ok, result = pcall(function()
+                return purchaseBoat:InvokeServer(selectedBoatId)
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Buy Boat", Content = "Invoke failed: " .. tostring(result), Icon = "x" })
+                return
+            end
+            if result and result.IsGamepass and result.GamepassId then
+                pcall(function()
+                    MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, result.GamepassId)
+                end)
+                WindUI:Notify({ Title = "Buy Boat", Content = "Game pass purchase prompted", Icon = "check" })
+            elseif result and result.Success then
+                WindUI:Notify({ Title = "Buy Boat", Content = "Purchase successful", Icon = "check" })
+            else
+                WindUI:Notify({
+                    Title = "Buy Boat",
+                    Content = (result and result.Message) or "Purchase failed",
+                    Icon = "x",
+                })
+            end
+            task.defer(updateBuyBoatDetailParagraph)
+        end,
+    })
+
+    BuyBoatSection:Space()
+
+    BuyBoatSection:Button({
+        Title = "Refresh boat list",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshBoatList(true)
+        end,
+    })
+
     refreshRodList(false)
+    refreshBoatList(false)
 end
 
 -- */  Teleport Tab  /* --
