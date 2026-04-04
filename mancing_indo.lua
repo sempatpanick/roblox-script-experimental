@@ -1485,6 +1485,21 @@ do
     local autoSellLoopRunning = false
     local SELL_TELEPORT_CFRAME = CFrame.new(2623.45, 5.41, -914.57)
 
+    -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
+    local function playerBackpackHasFish()
+        local lp = Players.LocalPlayer
+        local bp = lp:FindFirstChild("Backpack")
+        if not (bp and bp:IsA("Backpack")) then
+            return false
+        end
+        for _, child in ipairs(bp:GetChildren()) do
+            if child:IsA("Tool") and child:GetAttribute("FishingRod") == nil and child:GetAttribute("UID") ~= nil then
+                return true
+            end
+        end
+        return false
+    end
+
     local function fireSellFishAll()
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if not remotes then
@@ -1500,6 +1515,9 @@ do
     end
 
     local function runAutoSellTeleportSellAndReturn()
+        if not playerBackpackHasFish() then
+            return
+        end
         local character = Players.LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local previousCFrame = nil
@@ -1568,7 +1586,7 @@ do
 
     SellSection:Toggle({
         Title = "Auto Sell",
-        Desc = "Teleport, SellFish \"All\", return. With auto fishing: waits for minigame, pauses, sells, then 2s after return resumes",
+        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else teleport, SellFish \"All\", return. Auto fishing: waits for minigame, pauses, sells, 1s after return resumes",
         Value = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
