@@ -957,6 +957,95 @@ do
     local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 20
+    -- MGR Spawn payload (challenge id lives only in the game's Minigames module, not on instances).
+    local mgrPendingChallenge = nil :: { id: any, mode: string, hold: number }?
+    -- After enabling auto fishing while already in minigame: extra pause once that minigame finishes.
+    local autoFishDelay2sAfterPreEnableDrain = false
+
+    -- Cosmetic: hide Minigames ScreenGui while still firing MGR (see ensureMinigameAutoSolve).
+    local hideMinigameUi = false
+    local minigameUiRestoreEnabled = true
+    local minigameUiEnforceConn: RBXScriptConnection? = nil
+    local minigameUiPlayerGuiConn: RBXScriptConnection? = nil
+
+    local function disconnectMinigameUiEnforce()
+        if minigameUiEnforceConn then
+            minigameUiEnforceConn:Disconnect()
+            minigameUiEnforceConn = nil
+        end
+    end
+
+    local function disconnectMinigameUiPlayerGui()
+        if minigameUiPlayerGuiConn then
+            minigameUiPlayerGuiConn:Disconnect()
+            minigameUiPlayerGuiConn = nil
+        end
+    end
+
+    local function applyHideToMinigameScreenGui(mg: ScreenGui)
+        disconnectMinigameUiEnforce()
+        if not hideMinigameUi then
+            return
+        end
+        minigameUiRestoreEnabled = mg.Enabled
+        mg.Enabled = false
+        minigameUiEnforceConn = mg:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if hideMinigameUi and mg.Parent and mg.Enabled then
+                mg.Enabled = false
+            end
+        end)
+    end
+
+    local function refreshMinigameUiHide()
+        if not hideMinigameUi then
+            return
+        end
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return
+        end
+        local mg = pg:FindFirstChild("Minigames")
+        if mg and mg:IsA("ScreenGui") then
+            applyHideToMinigameScreenGui(mg)
+        end
+    end
+
+    local function setMinigameUiHidden(hidden: boolean)
+        hideMinigameUi = hidden
+        if hidden then
+            disconnectMinigameUiPlayerGui()
+            local function armPlayerGuiListener(): boolean
+                local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+                if not (pg and pg:IsA("PlayerGui")) then
+                    return false
+                end
+                minigameUiPlayerGuiConn = pg.ChildAdded:Connect(function(child)
+                    if child.Name == "Minigames" and child:IsA("ScreenGui") then
+                        applyHideToMinigameScreenGui(child)
+                    end
+                end)
+                refreshMinigameUiHide()
+                return true
+            end
+            if not armPlayerGuiListener() then
+                task.defer(function()
+                    if hideMinigameUi then
+                        armPlayerGuiListener()
+                    end
+                end)
+            end
+            return
+        end
+        disconnectMinigameUiPlayerGui()
+        disconnectMinigameUiEnforce()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            local mg = pg:FindFirstChild("Minigames")
+            if mg and mg:IsA("ScreenGui") then
+                mg.Enabled = minigameUiRestoreEnabled
+            end
+        end
+    end
 
     -- Fishing minigame (circle click/hold) uses Remotes.MGR, not CMGR. On "Spawn", the game
     -- expects MGR:FireServer("Click", challengeId) after the interaction (see ReplicatedStorage.Modules.Minigames).
@@ -967,6 +1056,122 @@ do
         end
         minigameSessionWait = nil
         pending.done:Fire()
+    end
+
+    local function getMinigamesMgArea(): GuiObject?
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local mg = pg:FindFirstChild("Minigames")
+        if not (mg and mg:IsA("ScreenGui")) then
+            return nil
+        end
+        local canvas = mg:FindFirstChild("Canvas")
+        local area = canvas and canvas:FindFirstChild("MgArea")
+        if area and area:IsA("GuiObject") then
+            return area
+        end
+        return nil
+    end
+
+    -- True when MgArea has a visible challenge clone (siblings of Click/Hold templates).
+    local function isFishingMinigameCircleActive(): boolean
+        local area = getMinigamesMgArea()
+        if not area then
+            return false
+        end
+        local tClick = area:FindFirstChild("Click")
+        local tHold = area:FindFirstChild("Hold")
+        for _, child in area:GetChildren() do
+            if child ~= tClick and child ~= tHold and child:IsA("GuiObject") and child.Visible then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Triggers the game's own MGR:FireServer("Click", id) via its GuiButton connections (works when we missed Spawn args).
+    local function tryActivateMinigameChallengeUi(): boolean
+        local area = getMinigamesMgArea()
+        if not area then
+            return false
+        end
+        local mg = area:FindFirstAncestorWhichIsA("ScreenGui")
+        local hadToEnableScreenGui = false
+        if mg and not mg.Enabled then
+            hadToEnableScreenGui = true
+            if hideMinigameUi then
+                disconnectMinigameUiEnforce()
+            end
+            mg.Enabled = true
+        end
+        local anyOk = false
+        local tClick = area:FindFirstChild("Click")
+        local tHold = area:FindFirstChild("Hold")
+        for _, ch in area:GetChildren() do
+            if ch ~= tClick and ch ~= tHold and ch:IsA("GuiObject") and ch.Visible then
+                if ch:IsA("GuiButton") then
+                    local ok = pcall(function()
+                        ch:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+                local btn = ch:FindFirstChildWhichIsA("GuiButton", true)
+                if btn and btn:IsA("GuiButton") and btn.Visible then
+                    local ok = pcall(function()
+                        btn:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+            end
+        end
+        if not anyOk then
+            for _, d in area:GetDescendants() do
+                local underTemplate = (tClick ~= nil and d:IsDescendantOf(tClick)) or (tHold ~= nil and d:IsDescendantOf(tHold))
+                if not underTemplate and d:IsA("GuiButton") and d.Visible then
+                    local ok = pcall(function()
+                        d:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+            end
+        end
+        if hadToEnableScreenGui and mg then
+            if hideMinigameUi then
+                applyHideToMinigameScreenGui(mg)
+            else
+                mg.Enabled = false
+            end
+        end
+        return anyOk
+    end
+
+    -- Module uses u61(sizeOrFirst, challengeId, mode, hold); server may omit UDim2 and send id as 2nd arg.
+    local function parseMgrSpawnPayload(a2: any, a3: any, a4: any, a5: any): (any?, string, number)
+        if typeof(a2) == "UDim2" then
+            local id = a3
+            local mode = typeof(a4) == "string" and a4 or "Click"
+            local hold = typeof(a5) == "number" and a5 or 0
+            return id, mode, hold
+        end
+        local id = a2
+        local mode = typeof(a3) == "string" and a3 or "Click"
+        local hold = typeof(a4) == "number" and a4 or 0
+        return id, mode, hold
+    end
+
+    local function isValidChallengeId(v: any): boolean
+        return typeof(v) == "string" or typeof(v) == "number"
     end
 
     local function ensureMinigameAutoSolve()
@@ -981,19 +1186,41 @@ do
         if not (MGR and MGR:IsA("RemoteEvent")) then
             return
         end
-        minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, _, challengeId, mode, holdDuration)
+        minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, a3, a4, a5)
+            if action == "Start" then
+                mgrPendingChallenge = nil
+            elseif action == "Spawn" then
+                local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
+                if isValidChallengeId(challengeId) then
+                    mgrPendingChallenge = {
+                        id = challengeId,
+                        mode = mode,
+                        hold = hold,
+                    }
+                end
+            elseif action == "Stop" then
+                mgrPendingChallenge = nil
+            end
+
             if not autoFishingEnabled then
+                if action == "Stop" then
+                    releaseMinigameSessionWait()
+                end
                 return
             end
             if action == "Stop" then
                 releaseMinigameSessionWait()
                 return
             end
-            if action ~= "Spawn" or challengeId == nil then
+            if action ~= "Spawn" then
                 return
             end
-            local m = mode or "Click"
-            local holdSec = typeof(holdDuration) == "number" and holdDuration or 0
+            local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
+            if not isValidChallengeId(challengeId) then
+                return
+            end
+            local m = mode
+            local holdSec = hold
             task.spawn(function()
                 if m == "Hold" and holdSec > 0 then
                     task.wait(holdSec + 0.03)
@@ -1010,6 +1237,77 @@ do
         end)
     end
 
+    local function waitForMinigameCleared(reason: string)
+        local t0 = os.clock()
+        while (mgrPendingChallenge ~= nil or isFishingMinigameCircleActive()) and autoFishingEnabled and os.clock() - t0 < MINIGAME_SESSION_TIMEOUT do
+            task.wait(0.05)
+        end
+        if mgrPendingChallenge ~= nil then
+            warn("[Auto fishing] timed out waiting for minigame to end (" .. reason .. ")")
+            mgrPendingChallenge = nil
+        end
+        if autoFishingEnabled then
+            task.wait(0.2)
+        end
+    end
+
+    local function completeOrWaitMinigameBeforeCast(): boolean
+        if not autoFishingEnabled then
+            return false
+        end
+        ensureMinigameAutoSolve()
+        local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+        local MGR = remotesFolder and remotesFolder:FindFirstChild("MGR")
+        if not (MGR and MGR:IsA("RemoteEvent")) then
+            return false
+        end
+
+        local pending = mgrPendingChallenge
+        if pending then
+            local m = pending.mode
+            local holdSec = pending.hold
+            if m == "Hold" and holdSec > 0 then
+                task.wait(holdSec + 0.03)
+            else
+                task.wait(0.08)
+            end
+            if not autoFishingEnabled then
+                return false
+            end
+            pcall(function()
+                MGR:FireServer("Click", pending.id)
+            end)
+            waitForMinigameCleared("after MGR Click (snapshot)")
+            return true
+        end
+
+        if isFishingMinigameCircleActive() then
+            task.wait(0.05)
+            if not autoFishingEnabled then
+                return false
+            end
+            tryActivateMinigameChallengeUi()
+            local tManual = os.clock()
+            while isFishingMinigameCircleActive() and mgrPendingChallenge == nil and autoFishingEnabled and os.clock() - tManual < 0.35 do
+                task.wait(0.05)
+            end
+            if isFishingMinigameCircleActive() or mgrPendingChallenge ~= nil then
+                waitForMinigameCleared("after UI Activate fallback")
+            else
+                if autoFishingEnabled then
+                    task.wait(0.2)
+                end
+            end
+            return true
+        end
+
+        if mgrPendingChallenge ~= nil then
+            waitForMinigameCleared("pending without circle")
+            return true
+        end
+        return false
+    end
+
     local function getFishingRemotes()
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if not remotes then
@@ -1022,6 +1320,19 @@ do
             return equipRod, castRod, cmgr
         end
         return nil
+    end
+
+    local function playerHasFishingRodEquipped(): boolean
+        local character = Players.LocalPlayer.Character
+        if not character then
+            return false
+        end
+        for _, child in character:GetChildren() do
+            if child:IsA("Tool") and child:GetAttribute("FishingRod") ~= nil then
+                return true
+            end
+        end
+        return false
     end
 
     local function equipFishingRodRemote()
@@ -1055,15 +1366,27 @@ do
     end
 
     local function runAutoFishingCycleImpl()
-        ensureMinigameAutoSolve()
+        local wantPostPreEnableDelay = autoFishDelay2sAfterPreEnableDrain
+        local drainedExistingMinigame = completeOrWaitMinigameBeforeCast()
+        if wantPostPreEnableDelay then
+            autoFishDelay2sAfterPreEnableDrain = false
+        end
+        if wantPostPreEnableDelay and drainedExistingMinigame and autoFishingEnabled then
+            task.wait(2)
+        end
+        if not autoFishingEnabled then
+            return false
+        end
         if not select(1, getFishingRemotes()) then
             return false
         end
         minigameCycleSeq += 1
         local cycleSeq = minigameCycleSeq
 
-        equipFishingRodRemote()
-        task.wait(0.2)
+        if not playerHasFishingRodEquipped() then
+            equipFishingRodRemote()
+            task.wait(0.2)
+        end
         castFishingRodRemote()
         task.wait(1)
         setFishingCastResultRemote()
@@ -1081,7 +1404,7 @@ do
         if not autoFishingEnabled then
             return false
         end
-        task.wait(0.2)
+        task.wait(2)
         return true
     end
 
@@ -1113,15 +1436,17 @@ do
 
     AutoFishingSection:Toggle({
         Title = "Auto fishing",
-        Desc = "Equip, cast, CMGR Result, and auto-complete MGR circle (click/hold minigame)",
+        Desc = "Finishes an in-progress MGR minigame first if needed, then equip/cast/CMGR/MGR as usual",
         Value = false,
         Callback = function(enabled)
             autoFishingEnabled = enabled
             if enabled then
                 ensureMinigameAutoSolve()
+                autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil or isFishingMinigameCircleActive()
             else
                 releaseMinigameSessionWait()
                 autoFishingPausedForSell = false
+                autoFishDelay2sAfterPreEnableDrain = false
             end
             if not enabled then
                 return
@@ -1133,6 +1458,17 @@ do
             task.spawn(runAutoFishingLoop)
         end,
     })
+
+    AutoFishingSection:Toggle({
+        Title = "Hide minigame UI",
+        Desc = "Hides PlayerGui Minigames (circle still runs; MGR auto-solve unchanged)",
+        Value = false,
+        Callback = function(enabled)
+            setMinigameUiHidden(enabled)
+        end,
+    })
+
+    task.defer(ensureMinigameAutoSolve)
 
     local SellSection = MainTab:Section({
         Title = "Sell",
