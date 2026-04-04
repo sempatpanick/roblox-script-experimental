@@ -1859,7 +1859,7 @@ do
     })
 
     GalatamaSection:Button({
-        Title = "Join Galatama Queue",
+        Title = "Join Queue",
         Justify = "Center",
         Icon = "",
         Callback = function()
@@ -1885,7 +1885,7 @@ do
     GalatamaSection:Space()
 
     GalatamaSection:Button({
-        Title = "Leave Galatama Queue",
+        Title = "Leave Queue",
         Justify = "Center",
         Icon = "",
         Callback = function()
