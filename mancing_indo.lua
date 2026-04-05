@@ -1574,7 +1574,7 @@ do
     local sellIntervalSeconds = 60
     local autoSellEnabled = false
     local autoSellLoopRunning = false
-    local SELL_TELEPORT_CFRAME = CFrame.new(2630.21, -15.87, -919.29)
+    local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
 
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
