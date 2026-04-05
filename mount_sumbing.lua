@@ -1516,8 +1516,52 @@ do
         Border = true,
     })
 
-    local function shouldNestOneLevelInObjectsList(inst)
-        return inst:IsA("Folder") or inst:IsA("Backpack") or inst:IsA("StarterGear")
+    -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
+    local OBJECTS_TREE_MAX_DEPTH = 14
+    local OBJECTS_TREE_MAX_LINES = 600
+
+    local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
+        return inst:IsA("Folder")
+            or inst:IsA("Backpack")
+            or inst:IsA("StarterGear")
+            or inst:IsA("PlayerGui")
+            or inst:IsA("ScreenGui")
+            or inst:IsA("Frame")
+    end
+
+    local function buildNestedObjectChildrenListText(root: Instance): string
+        local lines = {}
+
+        local function appendChildren(parent: Instance, depth: number, indentStr: string)
+            if #lines >= OBJECTS_TREE_MAX_LINES or depth >= OBJECTS_TREE_MAX_DEPTH then
+                return
+            end
+            local children = parent:GetChildren()
+            table.sort(children, function(a, b)
+                return string.lower(a.Name) < string.lower(b.Name)
+            end)
+            for _, child in ipairs(children) do
+                if #lines >= OBJECTS_TREE_MAX_LINES then
+                    table.insert(lines, indentStr .. "... (truncated, max " .. OBJECTS_TREE_MAX_LINES .. " lines)")
+                    return
+                end
+                table.insert(lines, indentStr .. formatInstanceDisplay(child, nil, true))
+                local sub = child:GetChildren()
+                if #sub > 0 and shouldNestChildrenInObjectsTree(child) then
+                    if depth + 1 < OBJECTS_TREE_MAX_DEPTH then
+                        appendChildren(child, depth + 1, indentStr .. "  ")
+                    else
+                        table.insert(lines, indentStr .. "  ... (" .. #sub .. " children, max depth " .. OBJECTS_TREE_MAX_DEPTH .. ")")
+                    end
+                end
+            end
+        end
+
+        appendChildren(root, 0, "")
+        if #lines == 0 then
+            return "(no children)"
+        end
+        return table.concat(lines, "\n")
     end
 
     local ReplicatedStorageSection = ObjectsTab:Section({
@@ -1563,19 +1607,7 @@ do
             end
             local entry = rsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
-            local lines = {}
-            for _, child in ipairs(entry.instance:GetChildren()) do
-                table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if shouldNestOneLevelInObjectsList(child) then
-                    for _, sub in ipairs(child:GetChildren()) do
-                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
-                    end
-                end
-            end
-            local text = table.concat(lines, "\n")
-            if #lines == 0 then
-                text = "(no children)"
-            end
+            local text = buildNestedObjectChildrenListText(entry.instance)
             if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
                 ReplicatedStorageChildrenParagraph:SetDesc(text)
             end
@@ -1583,8 +1615,8 @@ do
     })
 
     ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
-        Title = "Children (key = value)",
-        Desc = "Select an object above to list its children",
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
     ReplicatedStorageSection:Button({
@@ -1641,19 +1673,7 @@ do
             end
             local entry = plrsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
-            local lines = {}
-            for _, child in ipairs(entry.instance:GetChildren()) do
-                table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if shouldNestOneLevelInObjectsList(child) then
-                    for _, sub in ipairs(child:GetChildren()) do
-                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
-                    end
-                end
-            end
-            local text = table.concat(lines, "\n")
-            if #lines == 0 then
-                text = "(no children)"
-            end
+            local text = buildNestedObjectChildrenListText(entry.instance)
             if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
                 PlayersServiceChildrenParagraph:SetDesc(text)
             end
@@ -1661,8 +1681,8 @@ do
     })
 
     PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
-        Title = "Children (key = value)",
-        Desc = "Select a player above to list their children",
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
     PlayersServiceSection:Button({
@@ -1720,19 +1740,7 @@ do
             end
             local entry = lpKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
-            local lines = {}
-            for _, child in ipairs(entry.instance:GetChildren()) do
-                table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if shouldNestOneLevelInObjectsList(child) then
-                    for _, sub in ipairs(child:GetChildren()) do
-                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
-                    end
-                end
-            end
-            local text = table.concat(lines, "\n")
-            if #lines == 0 then
-                text = "(no children)"
-            end
+            local text = buildNestedObjectChildrenListText(entry.instance)
             if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
                 LocalPlayerChildrenParagraph:SetDesc(text)
             end
@@ -1740,8 +1748,8 @@ do
     })
 
     LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
-        Title = "Children (key = value)",
-        Desc = "Select an object above to list its children",
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
     LocalPlayerSection:Button({
@@ -1798,19 +1806,7 @@ do
             end
             local entry = wsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
-            local lines = {}
-            for _, child in ipairs(entry.instance:GetChildren()) do
-                table.insert(lines, formatInstanceDisplay(child, nil, true))
-                if shouldNestOneLevelInObjectsList(child) then
-                    for _, sub in ipairs(child:GetChildren()) do
-                        table.insert(lines, "  " .. formatInstanceDisplay(sub, nil, true))
-                    end
-                end
-            end
-            local text = table.concat(lines, "\n")
-            if #lines == 0 then
-                text = "(no children)"
-            end
+            local text = buildNestedObjectChildrenListText(entry.instance)
             if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
                 WorkspaceChildrenParagraph:SetDesc(text)
             end
@@ -1818,8 +1814,8 @@ do
     })
 
     WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
-        Title = "Children (key = value)",
-        Desc = "Select an object above to list its children",
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
     WorkspaceSection:Button({
