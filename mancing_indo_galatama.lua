@@ -1018,7 +1018,7 @@ do
     local MINIGAME_SESSION_TIMEOUT = 20
     -- Galatama ReplicatedStorage.Modules.Minigames: reel UI fills u31 via E/Q + knob drag; the module
     -- calls MGR:FireServer("Complete", Token) when the bar reaches 1 — we simulate inputs, not that remote.
-    local mgrReelSessionActive = false
+    local reelAutoplayLoopRunning = false
     local REEL_AUTO_COMPLETE_DELAY = 0.35
     local REEL_AUTOPLAY_TIMEOUT = 55
     -- Knob orbit: angular speed (rad/s) and how many mouse-move samples per frame (more = snappier rotation).
@@ -1130,6 +1130,19 @@ do
             end
         end
         return out
+    end
+
+    -- Galatama reel minigame: multiple ReelUI ScreenGuis under PlayerGui at once.
+    local function galatamaReelMinigameActiveByReelUiCount(): boolean
+        local lp = Players.LocalPlayer
+        if not lp then
+            return false
+        end
+        local pg = lp:FindFirstChildOfClass("PlayerGui")
+        if not pg then
+            return false
+        end
+        return #galatamaGetReelUIScreenGuis(pg) > 1
     end
 
     -- Knob / E·Q autoplay targets the first ReelUI when there is more than one.
@@ -1365,6 +1378,7 @@ do
     end
 
     -- Matches reel UI strings: TAHAN/MELAWAN = idle; ULUR = reel_out + Q; PUTAR/SIAP = spin; empty status → spin.
+    local scheduleGalatamaReelAutoplayIfNeeded: () -> ()
     local function runGalatamaReelAutoplayLoop()
         local keysWork = true
         local eHeld, qHeld = false, false
@@ -1458,7 +1472,7 @@ do
         local canExecutorMouse = type(mousemoveabs) == "function"
         local t0 = os.clock()
         local lastReelNotifyKey: string? = nil
-        while mgrReelSessionActive and autoFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
+        while galatamaReelMinigameActiveByReelUiCount() and autoFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
             local dt = RunService.Heartbeat:Wait()
             local _, status, knob, fill = galatamaResolveReelParts()
             if fill then
@@ -1537,9 +1551,99 @@ do
         releaseMouseGrab(knobEnd)
 
         local timedOut = os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT
-        if timedOut and mgrReelSessionActive and autoFishingEnabled then
+        if timedOut and galatamaReelMinigameActiveByReelUiCount() and autoFishingEnabled then
             warn(
                 "[Auto fishing] reel autoplay timed out — need VirtualInputManager key/mouse APIs or executor globals mousemoveabs/mouse1down/mouse1up."
+            )
+        end
+        task.defer(function()
+            if autoFishingEnabled then
+                scheduleGalatamaReelAutoplayIfNeeded()
+            end
+        end)
+    end
+
+    scheduleGalatamaReelAutoplayIfNeeded = function()
+        if reelAutoplayLoopRunning or not autoFishingEnabled then
+            return
+        end
+        if not galatamaReelMinigameActiveByReelUiCount() then
+            return
+        end
+        reelAutoplayLoopRunning = true
+        task.spawn(function()
+            task.wait(REEL_AUTO_COMPLETE_DELAY)
+            local ok, err = pcall(function()
+                if autoFishingEnabled and galatamaReelMinigameActiveByReelUiCount() then
+                    runGalatamaReelAutoplayLoop()
+                end
+            end)
+            reelAutoplayLoopRunning = false
+            if not ok then
+                warn("[Auto fishing] reel autoplay error: ", err)
+            end
+        end)
+    end
+
+    local autoFishingReelMinigameWatcherConns: { RBXScriptConnection } = {}
+
+    local function stopAutoFishingReelMinigameWatcher()
+        for _, c in autoFishingReelMinigameWatcherConns do
+            pcall(function()
+                c:Disconnect()
+            end)
+        end
+        table.clear(autoFishingReelMinigameWatcherConns)
+    end
+
+    local function onPlayerGuiReelUiCountChangedForAutoplay()
+        if not autoFishingEnabled then
+            return
+        end
+        scheduleGalatamaReelAutoplayIfNeeded()
+    end
+
+    local function armPlayerGuiForAutoFishingReelMinigameWatcher(pg: PlayerGui)
+        table.insert(
+            autoFishingReelMinigameWatcherConns,
+            pg.ChildAdded:Connect(function(ch)
+                if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
+                    onPlayerGuiReelUiCountChangedForAutoplay()
+                end
+            end)
+        )
+        table.insert(
+            autoFishingReelMinigameWatcherConns,
+            pg.ChildRemoved:Connect(function(ch)
+                if ch.Name == "ReelUI" then
+                    onPlayerGuiReelUiCountChangedForAutoplay()
+                end
+            end)
+        )
+        onPlayerGuiReelUiCountChangedForAutoplay()
+    end
+
+    local function startAutoFishingReelMinigameWatcher()
+        stopAutoFishingReelMinigameWatcher()
+        if not autoFishingEnabled then
+            return
+        end
+        local lp = Players.LocalPlayer
+        if not lp then
+            task.defer(startAutoFishingReelMinigameWatcher)
+            return
+        end
+        local pg = lp:FindFirstChildOfClass("PlayerGui")
+        if pg then
+            armPlayerGuiForAutoFishingReelMinigameWatcher(pg)
+        else
+            table.insert(
+                autoFishingReelMinigameWatcherConns,
+                lp.ChildAdded:Connect(function(ch)
+                    if ch:IsA("PlayerGui") then
+                        armPlayerGuiForAutoFishingReelMinigameWatcher(ch)
+                    end
+                end)
             )
         end
     end
@@ -1558,20 +1662,11 @@ do
         end
         minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, payload)
             if action == "Start" then
-                if type(payload) == "table" and payload.Token ~= nil then
-                    mgrReelSessionActive = true
-                    if autoFishingEnabled then
-                        task.spawn(function()
-                            task.wait(REEL_AUTO_COMPLETE_DELAY)
-                            if not autoFishingEnabled or not mgrReelSessionActive then
-                                return
-                            end
-                            runGalatamaReelAutoplayLoop()
-                        end)
-                    end
+                -- Reel autoplay is driven by PlayerGui ReelUI count > 1 while Auto fishing is on (see startAutoFishingReelMinigameWatcher).
+                if autoFishingEnabled then
+                    onPlayerGuiReelUiCountChangedForAutoplay()
                 end
             elseif action == "Stop" then
-                mgrReelSessionActive = false
                 releaseMinigameSessionWait()
             end
         end)
@@ -1701,7 +1796,7 @@ do
 
     local AutoFishingReelStatusParagraph = AutoFishingSection:Paragraph({
         Title = "Reel minigame status",
-        Desc = "Status = ReelUI terakhir di PlayerGui. Knob/autoplay memakai ReelUI pertama. Semua ReelUI didengar untuk refresh.",
+        Desc = "Minigame aktif saat jumlah ReelUI di PlayerGui > 1. Status = ReelUI terakhir. Knob/autoplay = ReelUI pertama.",
     })
 
     local autoFishingReelMirrorLastText = ""
@@ -1856,8 +1951,10 @@ do
             autoFishingEnabled = enabled
             if enabled then
                 ensureMinigameAutoSolve()
-                autoFishDelay2sAfterPreEnableDrain = mgrReelSessionActive or isGalatamaReelUiOpen()
+                startAutoFishingReelMinigameWatcher()
+                autoFishDelay2sAfterPreEnableDrain = galatamaReelMinigameActiveByReelUiCount()
             else
+                stopAutoFishingReelMinigameWatcher()
                 releaseMinigameSessionWait()
                 autoFishDelay2sAfterPreEnableDrain = false
             end
