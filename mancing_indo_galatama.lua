@@ -1021,6 +1021,9 @@ do
     local mgrReelSessionActive = false
     local REEL_AUTO_COMPLETE_DELAY = 0.35
     local REEL_AUTOPLAY_TIMEOUT = 55
+    -- Knob orbit: angular speed (rad/s) and how many mouse-move samples per frame (more = snappier rotation).
+    local REEL_KNOB_ORBIT_RAD_PER_SEC = 1000
+    local REEL_KNOB_ORBIT_SUBSTEPS = 6
     -- After enabling auto fishing while already in minigame: extra pause once that minigame finishes.
     local autoFishDelay2sAfterPreEnableDrain = false
 
@@ -1248,44 +1251,6 @@ do
         return t
     end
 
-    -- Minigames.lua sets Bar.Fill.BackgroundColor3 per phase; when the bar is green it clears Status.Text.
-    local function galatamaRgb8(c: Color3): (number, number, number)
-        return math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)
-    end
-
-    local function galatamaInferReelPhaseFromFill(fill: GuiObject?): ("idle" | "reel_out" | "spin")?
-        if not fill then
-            return nil
-        end
-        local r, g, b = galatamaRgb8(fill.BackgroundColor3)
-        -- ULUR: fromRGB(220, 55, 55)
-        if r >= 170 and g <= 95 and b <= 95 then
-            return "reel_out"
-        end
-        -- TAHAN: fromRGB(55, 120, 220)
-        if r <= 95 and g >= 70 and g <= 170 and b >= 150 then
-            return "idle"
-        end
-        -- PUTAR: fromRGB(110, 110, 110)
-        if r >= 80 and r <= 155 and g >= 80 and g <= 155 and b >= 80 and b <= 155 then
-            if math.abs(r - g) <= 35 and math.abs(g - b) <= 35 then
-                return "spin"
-            end
-        end
-        -- Green sweet spot (text cleared): fromRGB(65, 195, 105)
-        if g >= 130 and r <= 110 and b <= 140 then
-            return "spin"
-        end
-        -- SIAP countdown: fromRGB(200, 160, 40) vs MELAWAN: fromRGB(220, 160, 0) — blue channel separates them
-        if r >= 180 and g >= 115 and b <= 60 then
-            if b <= 18 then
-                return "idle"
-            end
-            return "spin"
-        end
-        return nil
-    end
-
     -- Uses first ReelUI under PlayerGui (knob / fill / status for autoplay).
     local function galatamaResolveReelParts(): (ScreenGui?, GuiObject?, GuiObject?, GuiObject?)
         local lp = Players.LocalPlayer
@@ -1350,15 +1315,6 @@ do
         if txt ~= "" then
             return txt
         end
-        local bar = canvas:FindFirstChild("Bar")
-        local fill = bar and bar:FindFirstChild("Fill")
-        local fillGui = (fill and fill:IsA("GuiObject")) and (fill :: GuiObject) or nil
-        if fillGui then
-            local r, g, b = galatamaRgb8(fillGui.BackgroundColor3)
-            if g >= 130 and r <= 110 and b <= 140 then
-                return ""
-            end
-        end
         return "Reel minigame aktif…"
     end
 
@@ -1408,9 +1364,7 @@ do
         return false
     end
 
-    -- Matches ReplicatedStorage.Modules.Minigames reel loop: TAHAN/MELAWAN = idle; ULUR = reel_out + Q;
-    -- PUTAR/SIAP/green bar = spin (knob orbit or E). The module clears Status.Text while the bar is green
-    -- (sweet spot); then we infer phase from Bar.Fill.BackgroundColor3 (see galatamaInferReelPhaseFromFill).
+    -- Matches reel UI strings: TAHAN/MELAWAN = idle; ULUR = reel_out + Q; PUTAR/SIAP = spin; empty status → spin.
     local function runGalatamaReelAutoplayLoop()
         local keysWork = true
         local eHeld, qHeld = false, false
@@ -1494,13 +1448,9 @@ do
             return "spin"
         end
 
-        local function galatamaResolveReelPhase(st: string, fill: GuiObject?): "idle" | "reel_out" | "spin"
+        local function galatamaResolveReelPhase(st: string): "idle" | "reel_out" | "spin"
             if st ~= "" then
                 return classifyReelPhase(st)
-            end
-            local inferred = galatamaInferReelPhaseFromFill(fill)
-            if inferred then
-                return inferred
             end
             return "spin"
         end
@@ -1509,6 +1459,7 @@ do
         local t0 = os.clock()
         local lastReelNotifyKey: string? = nil
         while mgrReelSessionActive and autoFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
+            local dt = RunService.Heartbeat:Wait()
             local _, status, knob, fill = galatamaResolveReelParts()
             if fill then
                 local fillScale = fill.Size.X.Scale
@@ -1520,7 +1471,7 @@ do
             local stFirst = galatamaGetReelStatusText(status)
             local stLast = galatamaGetLastReelUIStatusTextOnly()
             local st = stLast ~= "" and stLast or stFirst
-            local phase = galatamaResolveReelPhase(st, fill)
+            local phase = galatamaResolveReelPhase(st)
             if galatamaReelStatusRequiresNoKnobSpin(st) then
                 if string.find(st, "ULUR", 1, true) then
                     phase = "reel_out"
@@ -1528,15 +1479,10 @@ do
                     phase = "idle"
                 end
             end
-            local fr, fg, fb = 0, 0, 0
-            if fill then
-                fr, fg, fb = galatamaRgb8(fill.BackgroundColor3)
-            end
-            local notifyKey = table.concat({ st, phase, string.format("%d,%d,%d", fr, fg, fb) }, "\0")
+            local notifyKey = st .. "\0" .. phase
             if notifyKey ~= lastReelNotifyKey then
                 lastReelNotifyKey = notifyKey
-                local content = st ~= "" and st
-                    or string.format("No status text (inferred %s · fill RGB %d,%d,%d)", phase, fr, fg, fb)
+                local content = st ~= "" and st or string.format("No status text (phase %s)", phase)
                 WindUI:Notify({
                     Title = "Reel status",
                     Content = content,
@@ -1556,10 +1502,11 @@ do
                 if knob then
                     setE(false)
                     local c = knob.AbsolutePosition + knob.AbsoluteSize * 0.5
-                    orbitAngle -= 0.4
                     local r = math.clamp(knob.AbsoluteSize.X * 0.85, 32, 140)
-                    local tx = c.X + math.cos(orbitAngle) * r
-                    local ty = c.Y + math.sin(orbitAngle) * r
+                    local dtOrbit = math.clamp(dt, 1 / 240, 1 / 12)
+                    local angleThisFrame = REEL_KNOB_ORBIT_RAD_PER_SEC * dtOrbit
+                    local n = math.max(1, REEL_KNOB_ORBIT_SUBSTEPS)
+                    local dAngle = angleThisFrame / n
                     galatamaExecutorMouseAbs(c.X, c.Y)
                     galatamaVimMouseMove(c.X, c.Y)
                     if not mouseGrabbed then
@@ -1570,16 +1517,19 @@ do
                         end
                     end
                     if mouseGrabbed then
-                        galatamaExecutorMouseAbs(tx, ty)
-                        galatamaVimMouseMove(tx, ty)
+                        for _ = 1, n do
+                            orbitAngle -= dAngle
+                            local tx = c.X + math.cos(orbitAngle) * r
+                            local ty = c.Y + math.sin(orbitAngle) * r
+                            galatamaExecutorMouseAbs(tx, ty)
+                            galatamaVimMouseMove(tx, ty)
+                        end
                     end
                 end
                 if not mouseGrabbed then
                     setE(true)
                 end
             end
-
-            RunService.Heartbeat:Wait()
         end
 
         releaseKeys()
@@ -1820,11 +1770,6 @@ do
                 wireStatus(ch)
             end
         end))
-        local bar = cnv:FindFirstChild("Bar")
-        local fill = bar and bar:FindFirstChild("Fill")
-        if fill and fill:IsA("GuiObject") then
-            addAutoFishingReelMirrorDynConn(fill:GetPropertyChangedSignal("BackgroundColor3"):Connect(tickAutoFishingReelStatusMirror))
-        end
         tickAutoFishingReelStatusMirror()
     end
 
