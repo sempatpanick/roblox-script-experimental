@@ -135,6 +135,9 @@ local ElementsSection = Window:Section({
     Opened = true,
 })
 
+-- Bridged from Local Player tab: temporary fly + no clip for underground auto-sell (Main tab).
+local autoSellTripAssist = {}
+
 -- */  Local Player Tab  /* --
 do
     local LocalPlayerTab = ElementsSection:Tab({
@@ -989,6 +992,34 @@ do
             })
         end
     })
+
+    autoSellTripAssist.begin = function()
+        local savedFly = flyEnabled
+        local savedNoClip = noClipEnabled
+        flyEnabled = true
+        noClipEnabled = true
+        local lp = Players.LocalPlayer
+        local ch = lp.Character
+        if ch then
+            applyNoClip(ch, true)
+        end
+        startFly()
+        return function()
+            flyEnabled = savedFly
+            noClipEnabled = savedNoClip
+            local ch2 = lp.Character
+            if ch2 then
+                applyNoClip(ch2, savedNoClip)
+            end
+            if savedFly then
+                task.defer(function()
+                    startFly()
+                end)
+            else
+                stopFly()
+            end
+        end
+    end
 end
 
 -- */  Main Tab  /* --
@@ -1543,7 +1574,7 @@ do
     local sellIntervalSeconds = 60
     local autoSellEnabled = false
     local autoSellLoopRunning = false
-    local SELL_TELEPORT_CFRAME = CFrame.new(2623.45, 5.41, -914.57)
+    local SELL_TELEPORT_CFRAME = CFrame.new(2630.21, -15.87, -919.29)
 
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
@@ -1581,17 +1612,24 @@ do
         local character = Players.LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local previousCFrame = nil
-        if root then
-            previousCFrame = root.CFrame
-            root.CFrame = SELL_TELEPORT_CFRAME
-            task.wait(1)
+        local restoreAssist = nil
+        if type(autoSellTripAssist.begin) == "function" then
+            restoreAssist = autoSellTripAssist.begin()
         end
-        fireSellFishAll()
-        task.wait(1)
-        if root and previousCFrame and root.Parent then
-            pcall(function()
+        pcall(function()
+            if root then
+                previousCFrame = root.CFrame
+                root.CFrame = SELL_TELEPORT_CFRAME
+                task.wait(1)
+            end
+            fireSellFishAll()
+            task.wait(1)
+            if root and previousCFrame and root.Parent then
                 root.CFrame = previousCFrame
-            end)
+            end
+        end)
+        if restoreAssist then
+            pcall(restoreAssist)
         end
     end
 
@@ -1646,7 +1684,7 @@ do
 
     SellSection:Toggle({
         Title = "Auto Sell",
-        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else teleport, SellFish \"All\", return. Auto fishing: waits for minigame, pauses, sells, 1s after return resumes",
+        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Auto fishing: waits for minigame, pauses, sells, 1s after return resumes",
         Value = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
