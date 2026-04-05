@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local MarketplaceService = game:GetService("MarketplaceService")
 
 local WindUI
@@ -1039,6 +1040,9 @@ do
         Opened = true,
     })
 
+    local AutoFishStatusParagraph
+    local AutoFishMinigameSwitchButton
+
     local autoFishingEnabled = false
     local autoFishingLoopRunning = false
     local autoFishingPausedForSell = false
@@ -1048,10 +1052,205 @@ do
     local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 20
+    -- Reel minigame: drive the real client (MinigamesReel) via VirtualInputManager E/Q — same phases as galatama, no knob orbit.
+    local REEL_AUTOPLAY_START_DELAY = 0.35
+    local REEL_AUTOPLAY_TIMEOUT = 55
+    local reelAutoplayLoopRunning = false
     -- MGR Spawn payload (challenge id lives only in the game's Minigames module, not on instances).
     local mgrPendingChallenge = nil :: { id: any, mode: string, hold: number }?
+    local mgrReelPendingToken: any = nil
     -- After enabling auto fishing while already in minigame: extra pause once that minigame finishes.
     local autoFishDelay2sAfterPreEnableDrain = false
+
+    -- Last MGR minigame branch seen (StartReel / StartTap); settings UI overrides when available.
+    local lastMinigamePreferenceFromMGR: string? = nil
+    local settingsMinigameTextConn: RBXScriptConnection? = nil
+    local watchedSettingsMinigameLabel: TextLabel? = nil
+    local settingsGuiDescendantConn: RBXScriptConnection? = nil
+
+    local function findSettingsMinigamesActionLabel(): TextLabel?
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local settingsGui = pg:FindFirstChild("SettingsGui")
+        if not (settingsGui and settingsGui:IsA("ScreenGui")) then
+            return nil
+        end
+        local canvas = settingsGui:FindFirstChild("Canvas")
+        if not canvas then
+            return nil
+        end
+        local container = canvas:FindFirstChild("Container")
+        if not container then
+            return nil
+        end
+        local body = container:FindFirstChild("Body")
+        if not body then
+            return nil
+        end
+        local scroll = body:FindFirstChild("ScrollingFrame")
+        if not (scroll and scroll:IsA("ScrollingFrame")) then
+            return nil
+        end
+        local minigames = scroll:FindFirstChild("Minigames")
+        if not minigames then
+            return nil
+        end
+        local actionBtn = minigames:FindFirstChild("ActionButton")
+        if not (actionBtn and actionBtn:IsA("GuiButton")) then
+            return nil
+        end
+        local tl = actionBtn:FindFirstChildOfClass("TextLabel")
+        if tl and tl:IsA("TextLabel") then
+            return tl
+        end
+        return nil
+    end
+
+    local function tryGetSettingsMinigameLabelText(): string?
+        local tl = findSettingsMinigamesActionLabel()
+        if not tl then
+            return nil
+        end
+        local t = formatGuiInstanceTextForDisplay(tl)
+        return t
+    end
+
+    local function classifyMinigameLabel(primary: string): "reel" | "tap" | nil
+        local p = string.lower(primary)
+        if string.find(p, "tap", 1, true) then
+            return "tap"
+        end
+        if string.find(p, "reel", 1, true) then
+            return "reel"
+        end
+        return nil
+    end
+
+    local function getMinigameKindResolved(): "reel" | "tap" | nil
+        local guiText = tryGetSettingsMinigameLabelText()
+        if guiText and guiText ~= "" then
+            local k = classifyMinigameLabel(guiText)
+            if k then
+                return k
+            end
+        end
+        if lastMinigamePreferenceFromMGR and lastMinigamePreferenceFromMGR ~= "" then
+            return classifyMinigameLabel(lastMinigamePreferenceFromMGR)
+        end
+        return nil
+    end
+
+    local function getMinigameKindForAutoSolve(): "reel" | "tap"
+        return getMinigameKindResolved() or "tap"
+    end
+
+    local function disconnectSettingsMinigameLabelWatcher()
+        if settingsMinigameTextConn then
+            settingsMinigameTextConn:Disconnect()
+            settingsMinigameTextConn = nil
+        end
+        watchedSettingsMinigameLabel = nil
+    end
+
+    local function updateAutoFishStatusParagraph()
+        local pgRoot = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if pgRoot then
+            local sg = pgRoot:FindFirstChild("SettingsGui")
+            if sg and sg:IsA("ScreenGui") and not settingsGuiDescendantConn then
+                settingsGuiDescendantConn = sg.DescendantAdded:Connect(function()
+                    task.defer(updateAutoFishStatusParagraph)
+                end)
+            end
+        end
+
+        local guiText = tryGetSettingsMinigameLabelText()
+        local tl = findSettingsMinigamesActionLabel()
+        if tl and tl ~= watchedSettingsMinigameLabel then
+            disconnectSettingsMinigameLabelWatcher()
+            watchedSettingsMinigameLabel = tl
+            settingsMinigameTextConn = tl:GetPropertyChangedSignal("Text"):Connect(updateAutoFishStatusParagraph)
+        elseif not tl and watchedSettingsMinigameLabel then
+            disconnectSettingsMinigameLabelWatcher()
+        end
+
+        local primary = (guiText and guiText ~= "") and guiText or nil
+        if not primary and lastMinigamePreferenceFromMGR then
+            primary = lastMinigamePreferenceFromMGR
+        end
+        if not primary then
+            primary = "Unknown — open SettingsGui (Minigames row) or wait for a bite"
+        end
+        if AutoFishStatusParagraph and AutoFishStatusParagraph.SetDesc then
+            AutoFishStatusParagraph:SetDesc("Minigame: " .. primary)
+        end
+
+        local kind = getMinigameKindResolved()
+        if AutoFishMinigameSwitchButton and AutoFishMinigameSwitchButton.SetTitle then
+            if kind == "reel" then
+                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Tap & Hold")
+            elseif kind == "tap" then
+                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Reel")
+            else
+                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Reel")
+            end
+        end
+    end
+
+    AutoFishStatusParagraph = AutoFishingSection:Paragraph({
+        Title = "Status",
+        Desc = "Minigame: …",
+    })
+
+    AutoFishMinigameSwitchButton = AutoFishingSection:Button({
+        Title = "Change Minigame to Reel",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local k = getMinigameKindResolved()
+            local targetRemote = (k == "reel") and "Tap" or "Reel"
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            local cp = remotes and remotes:FindFirstChild("ChangePreference")
+            if cp and cp:IsA("RemoteEvent") then
+                pcall(function()
+                    (cp :: RemoteEvent):FireServer(targetRemote)
+                end)
+            end
+            local tl = findSettingsMinigamesActionLabel()
+            if tl then
+                tl.Text = targetRemote == "Reel" and "Reel" or "Tap & Hold"
+            end
+            lastMinigamePreferenceFromMGR = targetRemote == "Reel" and "Reel" or "Tap & Hold"
+            updateAutoFishStatusParagraph()
+        end,
+    })
+
+    task.defer(updateAutoFishStatusParagraph)
+
+    local pgForMinigamePref = Players.LocalPlayer:FindFirstChild("PlayerGui")
+    if pgForMinigamePref and pgForMinigamePref:IsA("PlayerGui") then
+        pgForMinigamePref.ChildAdded:Connect(function()
+            task.defer(updateAutoFishStatusParagraph)
+        end)
+    else
+        task.defer(function()
+            local pg = Players.LocalPlayer:WaitForChild("PlayerGui", 30)
+            if pg and pg:IsA("PlayerGui") then
+                pg.ChildAdded:Connect(function()
+                    task.defer(updateAutoFishStatusParagraph)
+                end)
+                updateAutoFishStatusParagraph()
+            end
+        end)
+    end
+
+    task.spawn(function()
+        for _ = 1, 8 do
+            task.wait(1)
+            updateAutoFishStatusParagraph()
+        end
+    end)
 
     -- Cosmetic: hide Minigames ScreenGui while still firing MGR (see ensureMinigameAutoSolve).
     local hideMinigameUi = false
@@ -1138,8 +1337,8 @@ do
         end
     end
 
-    -- Fishing minigame (circle click/hold) uses Remotes.MGR, not CMGR. On "Spawn", the game
-    -- expects MGR:FireServer("Click", challengeId) after the interaction (see ReplicatedStorage.Modules.Minigames).
+    -- Tap minigame: MGR "Spawn" then FireServer("Click", challengeId). Reel: VirtualInput E/Q drives
+    -- MinigamesReel (same status phases as galatama script; no remote Complete).
     local function releaseMinigameSessionWait()
         local pending = minigameSessionWait
         if not pending then
@@ -1180,6 +1379,249 @@ do
             end
         end
         return false
+    end
+
+    local function isReelMinigameActive(): boolean
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return false
+        end
+        local ru = pg:FindFirstChild("ReelUI")
+        if not (ru and ru:IsA("ScreenGui")) then
+            return false
+        end
+        return ru.Enabled
+    end
+
+    local function mancingFindNamedDescendant(root: Instance, name: string): Instance?
+        local direct = root:FindFirstChild(name)
+        if direct then
+            return direct
+        end
+        for _, d in root:GetDescendants() do
+            if d.Name == name then
+                return d
+            end
+        end
+        return nil
+    end
+
+    local function mancingVimKey(isDown: boolean, keyCode: Enum.KeyCode): boolean
+        local ok = pcall(function()
+            VirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
+        end)
+        return ok
+    end
+
+    local function mancingGetReelStatusText(statusGui: GuiObject?): string
+        if not statusGui then
+            return ""
+        end
+        local t = ""
+        if statusGui:IsA("TextLabel") then
+            local lbl = statusGui :: TextLabel
+            t = lbl.Text
+            if t == "" then
+                local okCt, ct = pcall(function()
+                    return lbl.ContentText
+                end)
+                if okCt and type(ct) == "string" then
+                    t = ct
+                end
+            end
+        elseif statusGui:IsA("TextButton") then
+            local btn = statusGui :: TextButton
+            t = btn.Text
+            if t == "" then
+                local okCt, ct = pcall(function()
+                    return btn.ContentText
+                end)
+                if okCt and type(ct) == "string" then
+                    t = ct
+                end
+            end
+        end
+        return t
+    end
+
+    -- Main game: one PlayerGui.ReelUI (Canvas → Bar/Fill, Reel/Handle/Knob, Status).
+    local function mancingResolveReelParts(): (ScreenGui?, GuiObject?, GuiObject?, GuiObject?)
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil, nil, nil, nil
+        end
+        local reelUi = pg:FindFirstChild("ReelUI")
+        if not (reelUi and reelUi:IsA("ScreenGui") and reelUi.Enabled) then
+            return nil, nil, nil, nil
+        end
+        local canvas = mancingFindNamedDescendant(reelUi, "Canvas")
+        if not canvas then
+            return reelUi, nil, nil, nil
+        end
+        local reelFrame = mancingFindNamedDescendant(canvas, "Reel")
+        local inner = reelFrame and mancingFindNamedDescendant(reelFrame, "Reel")
+        local _handle = inner and mancingFindNamedDescendant(inner, "Handle")
+        local _knob = _handle and mancingFindNamedDescendant(_handle, "Knob")
+        local bar = mancingFindNamedDescendant(canvas, "Bar")
+        local fill = bar and mancingFindNamedDescendant(bar, "Fill")
+        local status = mancingFindNamedDescendant(canvas, "Status")
+        if status and not (status:IsA("TextLabel") or status:IsA("TextButton")) then
+            status = nil
+        end
+        local f = (fill and fill:IsA("GuiObject")) and (fill :: GuiObject) or nil
+        local sgui = (status and status:IsA("GuiObject")) and (status :: GuiObject) or nil
+        return reelUi, sgui, nil, f
+    end
+
+    local function mancingReelStatusRequiresNoKnobSpin(st: string): boolean
+        if st == "" then
+            return false
+        end
+        if string.find(st, "ULUR", 1, true) then
+            return true
+        end
+        if string.find(st, "TAHAN", 1, true) then
+            return true
+        end
+        if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
+            return true
+        end
+        return false
+    end
+
+    local function mancingClassifyReelPhase(st: string): "idle" | "reel_out" | "spin"
+        if string.find(st, "ULUR", 1, true) then
+            return "reel_out"
+        end
+        if string.find(st, "TAHAN", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "TERTANGKAP", 1, true) or string.find(st, "KABUR", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "PUTAR", 1, true) then
+            return "spin"
+        end
+        if string.find(st, "SIAP", 1, true) then
+            return "spin"
+        end
+        return "spin"
+    end
+
+    local function mancingResolveReelPhase(st: string): "idle" | "reel_out" | "spin"
+        if st ~= "" then
+            return mancingClassifyReelPhase(st)
+        end
+        return "spin"
+    end
+
+    -- E = reel in (clockwise assist); Q = reel out during ULUR (matches MinigamesReel InputBegan).
+    local function runMancingReelAutoplayLoop()
+        local keysWork = true
+        local eHeld, qHeld = false, false
+
+        local function releaseKeys()
+            if eHeld then
+                mancingVimKey(false, Enum.KeyCode.E)
+                eHeld = false
+            end
+            if qHeld then
+                mancingVimKey(false, Enum.KeyCode.Q)
+                qHeld = false
+            end
+        end
+
+        local function setE(want: boolean)
+            if want == eHeld or not keysWork then
+                return
+            end
+            if not mancingVimKey(want, Enum.KeyCode.E) then
+                keysWork = false
+                releaseKeys()
+                return
+            end
+            eHeld = want
+        end
+
+        local function setQ(want: boolean)
+            if want == qHeld or not keysWork then
+                return
+            end
+            if not mancingVimKey(want, Enum.KeyCode.Q) then
+                keysWork = false
+                releaseKeys()
+                return
+            end
+            qHeld = want
+        end
+
+        local t0 = os.clock()
+        while isReelMinigameActive() and autoFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
+            RunService.Heartbeat:Wait()
+            local _, status, _, fill = mancingResolveReelParts()
+            if fill then
+                local fillScale = fill.Size.X.Scale
+                if fillScale >= 0.998 then
+                    break
+                end
+            end
+
+            local st = mancingGetReelStatusText(status)
+            local phase = mancingResolveReelPhase(st)
+            if mancingReelStatusRequiresNoKnobSpin(st) then
+                if string.find(st, "ULUR", 1, true) then
+                    phase = "reel_out"
+                else
+                    phase = "idle"
+                end
+            end
+
+            if phase == "idle" then
+                releaseKeys()
+            elseif phase == "reel_out" then
+                setE(false)
+                setQ(true)
+            else
+                setQ(false)
+                setE(true)
+            end
+        end
+
+        releaseKeys()
+
+        if
+            autoFishingEnabled
+            and os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT
+            and isReelMinigameActive()
+        then
+            warn(
+                "[Auto fishing] reel autoplay timed out — VirtualInputManager:SendKeyEvent may be blocked in this environment."
+            )
+        end
+    end
+
+    local function scheduleMancingReelAutoplayIfNeeded()
+        if reelAutoplayLoopRunning or not autoFishingEnabled then
+            return
+        end
+        reelAutoplayLoopRunning = true
+        task.spawn(function()
+            task.wait(REEL_AUTOPLAY_START_DELAY)
+            if not autoFishingEnabled or not isReelMinigameActive() then
+                reelAutoplayLoopRunning = false
+                return
+            end
+            local ok, err = pcall(function()
+                runMancingReelAutoplayLoop()
+            end)
+            reelAutoplayLoopRunning = false
+            if not ok then
+                warn("[Auto fishing] reel autoplay error: ", err)
+            end
+        end)
     end
 
     -- Triggers the game's own MGR:FireServer("Click", id) via its GuiButton connections (works when we missed Spawn args).
@@ -1278,19 +1720,34 @@ do
             return
         end
         minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, a3, a4, a5)
+            if action == "StartReel" then
+                lastMinigamePreferenceFromMGR = "Reel"
+                task.defer(updateAutoFishStatusParagraph)
+                if type(a2) == "table" and a2.Token ~= nil then
+                    mgrReelPendingToken = a2.Token
+                end
+            elseif action == "StartTap" then
+                lastMinigamePreferenceFromMGR = "Tap & Hold"
+                task.defer(updateAutoFishStatusParagraph)
+            end
+
             if action == "Start" then
                 mgrPendingChallenge = nil
+                mgrReelPendingToken = nil
             elseif action == "Spawn" then
-                local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
-                if isValidChallengeId(challengeId) then
-                    mgrPendingChallenge = {
-                        id = challengeId,
-                        mode = mode,
-                        hold = hold,
-                    }
+                if getMinigameKindForAutoSolve() ~= "reel" then
+                    local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
+                    if isValidChallengeId(challengeId) then
+                        mgrPendingChallenge = {
+                            id = challengeId,
+                            mode = mode,
+                            hold = hold,
+                        }
+                    end
                 end
             elseif action == "Stop" then
                 mgrPendingChallenge = nil
+                mgrReelPendingToken = nil
             end
 
             if not autoFishingEnabled then
@@ -1303,7 +1760,14 @@ do
                 releaseMinigameSessionWait()
                 return
             end
+            if action == "StartReel" and getMinigameKindForAutoSolve() == "reel" then
+                task.defer(scheduleMancingReelAutoplayIfNeeded)
+                return
+            end
             if action ~= "Spawn" then
+                return
+            end
+            if getMinigameKindForAutoSolve() == "reel" then
                 return
             end
             local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
@@ -1330,12 +1794,31 @@ do
 
     local function waitForMinigameCleared(reason: string)
         local t0 = os.clock()
-        while (mgrPendingChallenge ~= nil or isFishingMinigameCircleActive()) and autoFishingEnabled and os.clock() - t0 < MINIGAME_SESSION_TIMEOUT do
+        while
+            (
+                mgrPendingChallenge ~= nil
+                or isFishingMinigameCircleActive()
+                or mgrReelPendingToken ~= nil
+                or isReelMinigameActive()
+            )
+            and autoFishingEnabled
+            and os.clock() - t0 < MINIGAME_SESSION_TIMEOUT
+        do
             task.wait(0.05)
         end
-        if mgrPendingChallenge ~= nil then
+        if
+            autoFishingEnabled
+            and os.clock() - t0 >= MINIGAME_SESSION_TIMEOUT
+            and (
+                mgrPendingChallenge ~= nil
+                or mgrReelPendingToken ~= nil
+                or isFishingMinigameCircleActive()
+                or isReelMinigameActive()
+            )
+        then
             warn("[Auto fishing] timed out waiting for minigame to end (" .. reason .. ")")
             mgrPendingChallenge = nil
+            mgrReelPendingToken = nil
         end
         if autoFishingEnabled then
             task.wait(0.2)
@@ -1351,6 +1834,14 @@ do
         local MGR = remotesFolder and remotesFolder:FindFirstChild("MGR")
         if not (MGR and MGR:IsA("RemoteEvent")) then
             return false
+        end
+
+        if getMinigameKindForAutoSolve() == "reel" then
+            if mgrReelPendingToken ~= nil or isReelMinigameActive() then
+                task.defer(scheduleMancingReelAutoplayIfNeeded)
+                waitForMinigameCleared("reel E/Q autoplay drain")
+                return true
+            end
         end
 
         local pending = mgrPendingChallenge
@@ -1533,7 +2024,10 @@ do
             autoFishingEnabled = enabled
             if enabled then
                 ensureMinigameAutoSolve()
-                autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil or isFishingMinigameCircleActive()
+                autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil
+                    or isFishingMinigameCircleActive()
+                    or mgrReelPendingToken ~= nil
+                    or isReelMinigameActive()
             else
                 releaseMinigameSessionWait()
                 autoFishingPausedForSell = false
