@@ -2330,6 +2330,7 @@ do
     AutoFishingSection:Toggle({
         Title = "Auto Fishing",
         Desc = "Finishes an in-progress MGR minigame first if needed, then equip/cast/CMGR/MGR as usual",
+        Flag = "mancing_main_autoFishing",
         Value = false,
         Callback = function(enabled)
             autoFishingEnabled = enabled
@@ -2361,6 +2362,7 @@ do
     AutoFishingSection:Toggle({
         Title = "Hide minigame UI",
         Desc = "Hides PlayerGui Minigames (circle still runs; MGR auto-solve unchanged)",
+        Flag = "mancing_main_hideMinigameUi",
         Value = false,
         Callback = function(enabled)
             setMinigameUiHidden(enabled)
@@ -2379,6 +2381,7 @@ do
     InstantFishingSection:Input({
         Title = "Delay (seconds)",
         Placeholder = "e.g. 0.5",
+        Flag = "mancing_main_instantFishingDelaySec",
         Value = tostring(instantFishingDelaySec),
         Callback = function(value)
             local n = tonumber(value)
@@ -2391,6 +2394,7 @@ do
     InstantFishingSection:Toggle({
         Title = "Instant fishing",
         Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Turns off Auto Fishing. Delay is the wait after each minigame.",
+        Flag = "mancing_main_instantFishing",
         Value = false,
         Callback = function(enabled)
             if enabled then
@@ -2532,6 +2536,7 @@ do
     SellSection:Dropdown({
         Title = "Sell type",
         Desc = "More modes can be added later",
+        Flag = "mancing_main_sellType",
         Values = { "Loop" },
         Value = "Loop",
         Callback = function(value)
@@ -2542,6 +2547,7 @@ do
     SellSection:Input({
         Title = "Duration (seconds)",
         Placeholder = "e.g. 60",
+        Flag = "mancing_main_sellIntervalSec",
         Value = tostring(sellIntervalSeconds),
         Callback = function(value)
             local n = tonumber(value)
@@ -2554,6 +2560,7 @@ do
     SellSection:Toggle({
         Title = "Auto Sell",
         Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Auto Fishing: waits for minigame, pauses, sells, 1s after return resumes",
+        Flag = "mancing_main_autoSell",
         Value = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
@@ -2694,6 +2701,7 @@ do
     SpawnBoatDropdown = SpawnBoatSection:Dropdown({
         Title = "Owned boat",
         Desc = "Only boats whose shop row Price is Owned (BoatUI Body.ScrollingFrame)",
+        Flag = "mancing_main_spawnBoatPick",
         Values = spawnBoatDisplayList,
         Value = nil,
         AllowNone = true,
@@ -3113,6 +3121,7 @@ do
     BuyRodDropdown = BuyRodSection:Dropdown({
         Title = "Rod",
         Desc = "Name and price from the rod shop row (PriceLabel or button text)",
+        Flag = "mancing_shop_rodPick",
         Values = rodDisplayList,
         Value = nil,
         AllowNone = true,
@@ -3410,6 +3419,7 @@ do
     BuyBoatDropdown = BuyBoatSection:Dropdown({
         Title = "Boat",
         Desc = "Display name, id, and price from the boat shop row (BoatName / Price labels)",
+        Flag = "mancing_shop_boatPick",
         Values = boatDisplayList,
         Value = nil,
         AllowNone = true,
@@ -3509,6 +3519,7 @@ do
     local TeleportInput = TeleportSection:Input({
         Title = "Location",
         Placeholder = "e.g. 100, 5, 200 or 100 5 200",
+        Flag = "mancing_tp_location",
         Value = teleportInputValue,
         Callback = function(value)
             teleportInputValue = value
@@ -3584,6 +3595,7 @@ do
     TeleportSection:Input({
         Title = "Tween Duration",
         Placeholder = "e.g. 5",
+        Flag = "mancing_tp_tweenDurationSec",
         Value = tweenDurationValue,
         Callback = function(value)
             tweenDurationValue = value
@@ -3673,6 +3685,7 @@ do
     PlayerTeleportDropdown = TeleportToPlayersSection:Dropdown({
         Title = "Player",
         Desc = "Select player to teleport to",
+        Flag = "mancing_tp_playerPick",
         Values = playerDisplayNames,
         Value = nil,
         AllowNone = true,
@@ -4046,4 +4059,492 @@ do
         end
     })
 
+end
+
+-- */  Config Tab  /* --
+do
+    local ConfigTab = ElementsSection:Tab({
+        Title = "Config",
+        Icon = "solar:file-text-bold",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local ConfigManagementSection = ConfigTab:Section({
+        Title = "Config management",
+        Desc = "Named profiles in WindUI/" .. tostring(Window.Folder or "sempatpanick") .. "/config (executor file APIs). Main, Shop, and Teleport options use Flags. Event tab is actions only (nothing to save).",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local configMgmtName = ""
+    local savedConfigList = {}
+    local selectedSavedConfigName = nil
+    local SavedConfigsDropdown
+    local ConfigNameInput
+    local autoLoadPickerSelection = nil
+    local AutoLoadSavedDropdown
+
+    local function sanitizeConfigName(raw)
+        local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        s = s:gsub("[/\\]", "")
+        return s
+    end
+
+    local function getConfigManager()
+        local cm = Window.ConfigManager
+        if cm == false or cm == nil then
+            return nil
+        end
+        return cm
+    end
+
+    local function autoLoadMetaPath(cm)
+        return (cm.Path or "") .. "mancing_indo_autoload.json"
+    end
+
+    local function readAutoLoadPersistedName()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" or type(readfile) ~= "function" then
+            return ""
+        end
+        local path = autoLoadMetaPath(cm)
+        if not isfile(path) then
+            return ""
+        end
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(path))
+        end)
+        if ok and type(data) == "table" then
+            return sanitizeConfigName(tostring(data.name or data.profile or ""))
+        end
+        return ""
+    end
+
+    local function writeAutoLoadPersistedName(name)
+        local cm = getConfigManager()
+        if not cm or type(writefile) ~= "function" then
+            return false
+        end
+        local path = autoLoadMetaPath(cm)
+        local trimmed = sanitizeConfigName(name)
+        if trimmed == "" then
+            if type(delfile) == "function" and type(isfile) == "function" and isfile(path) then
+                pcall(function()
+                    delfile(path)
+                end)
+            end
+            return true
+        end
+        local ok = pcall(function()
+            writefile(path, HttpService:JSONEncode({ name = trimmed }))
+        end)
+        return ok
+    end
+
+    local function refreshSavedConfigDropdowns(showNotify)
+        local cm = getConfigManager()
+        if not cm then
+            if showNotify then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+            end
+            return
+        end
+        savedConfigList = cm:AllConfigs() or {}
+        table.sort(savedConfigList)
+        if SavedConfigsDropdown and SavedConfigsDropdown.Refresh then
+            SavedConfigsDropdown:Refresh(savedConfigList)
+        end
+        if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Refresh then
+            AutoLoadSavedDropdown:Refresh(savedConfigList)
+        end
+        if autoLoadPickerSelection and not table.find(savedConfigList, autoLoadPickerSelection) then
+            autoLoadPickerSelection = nil
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                AutoLoadSavedDropdown:Select(nil)
+            end
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                AutoLoadSavedDropdown:Set(nil)
+            end
+        end
+        if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
+            selectedSavedConfigName = nil
+            if SavedConfigsDropdown and SavedConfigsDropdown.Select then
+                SavedConfigsDropdown:Select(nil)
+            end
+            if SavedConfigsDropdown and SavedConfigsDropdown.Set then
+                SavedConfigsDropdown:Set(nil)
+            end
+        end
+        if showNotify then
+            WindUI:Notify({
+                Title = "Config",
+                Content = "Found " .. tostring(#savedConfigList) .. " saved profile(s).",
+                Icon = "check",
+            })
+        end
+    end
+
+    ConfigNameInput = ConfigManagementSection:Input({
+        Title = "Config name",
+        Desc = "File name without .json",
+        Placeholder = "e.g. main or pvp",
+        Value = configMgmtName,
+        Callback = function(value)
+            configMgmtName = sanitizeConfigName(value)
+        end,
+    })
+
+    SavedConfigsDropdown = ConfigManagementSection:Dropdown({
+        Title = "Config Saved",
+        Desc = "Profiles on disk; choosing one fills Config name. Delete Config removes the selected entry.",
+        Values = savedConfigList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedSavedConfigName = (value and value ~= "") and value or nil
+            if value and value ~= "" then
+                configMgmtName = sanitizeConfigName(value)
+                if ConfigNameInput and ConfigNameInput.Set then
+                    ConfigNameInput:Set(configMgmtName)
+                elseif ConfigNameInput and ConfigNameInput.SetValue then
+                    ConfigNameInput:SetValue(configMgmtName)
+                end
+            end
+        end,
+    })
+
+    -- WindUI Init may store raw JSON in Configs[name]; only reuse a real config object so Save
+    -- does not call CreateConfig again (that would replace the profile and drop element bindings).
+    local function isWindUIConfigObject(v)
+        return type(v) == "table" and type(v.Save) == "function" and type(v.Load) == "function"
+    end
+
+    local function getConfigObject(cm, name)
+        local existing = cm:GetConfig(name)
+        if isWindUIConfigObject(existing) then
+            return existing
+        end
+        return cm:Config(name, false)
+    end
+
+    local function syncPersistedAutoLoadToUi()
+        if not AutoLoadSavedDropdown then
+            return
+        end
+        local persisted = readAutoLoadPersistedName()
+        if persisted == "" or not table.find(savedConfigList, persisted) then
+            return
+        end
+        autoLoadPickerSelection = persisted
+        if AutoLoadSavedDropdown.Set then
+            AutoLoadSavedDropdown:Set(persisted)
+        elseif AutoLoadSavedDropdown.Select then
+            AutoLoadSavedDropdown:Select(persisted)
+        end
+    end
+
+    local function runStartupAutoLoadProfile()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" then
+            return
+        end
+        local name = readAutoLoadPersistedName()
+        if name == "" then
+            return
+        end
+        if not isfile(cm.Path .. name .. ".json") then
+            return
+        end
+        local cfg = getConfigObject(cm, name)
+        Window:SetCurrentConfig(cfg)
+        local pok, loadResult, loadErr = pcall(function()
+            return cfg:Load()
+        end)
+        if not pok then
+            warn("[Mancing Indo] Auto-load failed: ", loadResult)
+            return
+        end
+        if loadResult == false then
+            warn("[Mancing Indo] Auto-load: ", loadErr)
+            return
+        end
+        WindUI:Notify({
+            Title = "Config",
+            Content = "Auto-loaded \"" .. name .. "\"",
+            Icon = "check",
+        })
+    end
+
+    ConfigManagementSection:Space()
+
+    local ConfigSaveRefreshGroup = ConfigManagementSection:Group({})
+    ConfigSaveRefreshGroup:Button({
+        Title = "Refresh Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshSavedConfigDropdowns(true)
+        end,
+    })
+    ConfigSaveRefreshGroup:Space()
+    ConfigSaveRefreshGroup:Button({
+        Title = "Save Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                WindUI:Notify({ Title = "Config", Content = "Enter a config name first", Icon = "x" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            Window:SetCurrentConfig(cfg)
+            local ok, err = pcall(function()
+                cfg:Save()
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Config", Content = "Save failed: " .. tostring(err), Icon = "x" })
+                return
+            end
+            refreshSavedConfigDropdowns(false)
+            WindUI:Notify({ Title = "Config", Content = "Saved \"" .. name .. "\"", Icon = "check" })
+        end,
+    })
+
+    local ConfigLoadDeleteGroup = ConfigManagementSection:Group({})
+    ConfigLoadDeleteGroup:Button({
+        Title = "Load Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                WindUI:Notify({ Title = "Config", Content = "Enter or select a config name first", Icon = "x" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            Window:SetCurrentConfig(cfg)
+            local pok, loadResult, loadErr = pcall(function()
+                return cfg:Load()
+            end)
+            if not pok then
+                WindUI:Notify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult), Icon = "x" })
+                return
+            end
+            if loadResult == false then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(loadErr) == "string" and loadErr or "Config file not found or invalid",
+                    Icon = "x",
+                })
+                return
+            end
+            WindUI:Notify({ Title = "Config", Content = "Loaded \"" .. name .. "\"", Icon = "check" })
+        end,
+    })
+    ConfigLoadDeleteGroup:Space()
+    ConfigLoadDeleteGroup:Button({
+        Title = "Delete Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            if not selectedSavedConfigName or selectedSavedConfigName == "" then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(selectedSavedConfigName)
+            if name == "" then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                    Icon = "x",
+                })
+                return
+            end
+            local okDel, msg = cm:DeleteConfig(name)
+            refreshSavedConfigDropdowns(false)
+            if okDel then
+                if readAutoLoadPersistedName() == name then
+                    writeAutoLoadPersistedName("")
+                    autoLoadPickerSelection = nil
+                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                        AutoLoadSavedDropdown:Select(nil)
+                    end
+                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                        AutoLoadSavedDropdown:Set(nil)
+                    end
+                end
+                selectedSavedConfigName = nil
+                if SavedConfigsDropdown and SavedConfigsDropdown.Select then
+                    SavedConfigsDropdown:Select(nil)
+                end
+                if SavedConfigsDropdown and SavedConfigsDropdown.Set then
+                    SavedConfigsDropdown:Set(nil)
+                end
+                if sanitizeConfigName(configMgmtName) == name then
+                    configMgmtName = ""
+                    if ConfigNameInput and ConfigNameInput.Set then
+                        ConfigNameInput:Set("")
+                    elseif ConfigNameInput and ConfigNameInput.SetValue then
+                        ConfigNameInput:SetValue("")
+                    end
+                end
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or ("Deleted \"" .. name .. "\""),
+                    Icon = "check",
+                })
+            else
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or "Delete failed",
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    ConfigTab:Space()
+
+    local AutoLoadSection = ConfigTab:Section({
+        Title = "Auto Load",
+        Desc = "Set stores which profile loads automatically on the next script run (mancing_indo_autoload.json next to your WindUI configs).",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    AutoLoadSavedDropdown = AutoLoadSection:Dropdown({
+        Title = "Config Saved",
+        Desc = "Choose a profile, then Set. Refresh lists from Config management if empty.",
+        Values = savedConfigList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            autoLoadPickerSelection = (value and value ~= "") and value or nil
+        end,
+    })
+
+    AutoLoadSection:Space()
+
+    local AutoLoadSetResetGroup = AutoLoadSection:Group({})
+    AutoLoadSetResetGroup:Button({
+        Title = "Set",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not autoLoadPickerSelection or autoLoadPickerSelection == "" then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Select a config in Config Saved first",
+                    Icon = "x",
+                })
+                return
+            end
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local pick = sanitizeConfigName(autoLoadPickerSelection)
+            if pick == "" or not table.find(savedConfigList, pick) then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Selected profile is not in the list (try Refresh Config)",
+                    Icon = "x",
+                })
+                return
+            end
+            if not isfile or not isfile(cm.Path .. pick .. ".json") then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "That config file is not on disk yet (Save Config first)",
+                    Icon = "x",
+                })
+                return
+            end
+            if not writeAutoLoadPersistedName(pick) then
+                WindUI:Notify({ Title = "Auto Load", Content = "Failed to write autoload file", Icon = "x" })
+                return
+            end
+            WindUI:Notify({
+                Title = "Auto Load",
+                Content = "Next run will load \"" .. pick .. "\"",
+                Icon = "check",
+            })
+        end,
+    })
+    AutoLoadSetResetGroup:Space()
+    AutoLoadSetResetGroup:Button({
+        Title = "Reset",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            writeAutoLoadPersistedName("")
+            autoLoadPickerSelection = nil
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                AutoLoadSavedDropdown:Select(nil)
+            end
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                AutoLoadSavedDropdown:Set(nil)
+            end
+            WindUI:Notify({
+                Title = "Auto Load",
+                Content = "Auto-load on startup disabled",
+                Icon = "check",
+            })
+        end,
+    })
+
+    refreshSavedConfigDropdowns(false)
+    syncPersistedAutoLoadToUi()
+
+    task.defer(function()
+        task.wait(0.45)
+        runStartupAutoLoadProfile()
+    end)
 end
