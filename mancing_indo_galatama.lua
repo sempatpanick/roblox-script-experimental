@@ -9,11 +9,9 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
-local MarketplaceService = game:GetService("MarketplaceService")
-local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
 
 local WindUI
 
@@ -136,6 +134,681 @@ local ElementsSection = Window:Section({
     Title = "Elements",
     Opened = true,
 })
+
+-- */  Main Tab (Auto fishing — Reel only, same flow as mancing_indo.lua reel mode)  /* --
+do
+    local MainTab = ElementsSection:Tab({
+        Title = "Main",
+        Icon = "solar:home-2-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local AutoFishingSection = MainTab:Section({
+        Title = "Auto fishing",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local autoFishingEnabled = false
+    local autoFishingLoopRunning = false
+    local minigameAutoSolveConn = nil
+    local minigameCycleSeq = 0
+    local MINIGAME_SESSION_TIMEOUT = 20
+    local REEL_AUTOPLAY_START_DELAY = 0.06
+    local REEL_AUTOPLAY_TIMEOUT = 55
+    local reelAutoplayLoopRunning = false
+    local mgrReelPendingToken = nil
+    local autoFishDelay2sAfterPreEnableDrain = false
+    local minigameSessionWait = nil
+    local AutoFishStatusParagraph
+
+    local function fishingAutomationActive()
+        return autoFishingEnabled
+    end
+
+    local function releaseMinigameSessionWait()
+        local pending = minigameSessionWait
+        if not pending then
+            return
+        end
+        minigameSessionWait = nil
+        pending.done:Fire()
+    end
+
+    local function getMinigamesMgArea()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local mg = pg:FindFirstChild("Minigames")
+        if not (mg and mg:IsA("ScreenGui")) then
+            return nil
+        end
+        local canvas = mg:FindFirstChild("Canvas")
+        local area = canvas and canvas:FindFirstChild("MgArea")
+        if area and area:IsA("GuiObject") then
+            return area
+        end
+        return nil
+    end
+
+    local function isFishingMinigameCircleActive()
+        local area = getMinigamesMgArea()
+        if not area then
+            return false
+        end
+        local tClick = area:FindFirstChild("Click")
+        local tHold = area:FindFirstChild("Hold")
+        for _, child in area:GetChildren() do
+            if child ~= tClick and child ~= tHold and child:IsA("GuiObject") and child.Visible then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function countReelUiScreenGuis(pg)
+        local n = 0
+        for _, ch in pg:GetChildren() do
+            if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
+    -- Galatama: minigame is active when PlayerGui has more than one ReelUI (e.g. template + live instance).
+    local function isReelMinigameActive()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return false
+        end
+        return countReelUiScreenGuis(pg) > 1
+    end
+
+    -- Status / reel parts: only when multiple ReelUIs (minigame active); use the last sibling named ReelUI.
+    local function getReelUiScreenGuiForResolve()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local lastReel = nil
+        for _, ch in pg:GetChildren() do
+            if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
+                lastReel = ch
+            end
+        end
+        if not lastReel then
+            return nil
+        end
+        if countReelUiScreenGuis(pg) > 1 then
+            return lastReel
+        end
+        return nil
+    end
+
+    local function mancingFindNamedDescendant(root, name)
+        local direct = root:FindFirstChild(name)
+        if direct then
+            return direct
+        end
+        for _, d in root:GetDescendants() do
+            if d.Name == name then
+                return d
+            end
+        end
+        return nil
+    end
+
+    local function mancingVimKey(isDown, keyCode)
+        local ok = pcall(function()
+            VirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
+        end)
+        return ok
+    end
+
+    local function mancingResolveReelParts()
+        local reelUi = getReelUiScreenGuiForResolve()
+        if not (reelUi and reelUi:IsA("ScreenGui") and reelUi.Enabled) then
+            return nil, nil, nil, nil
+        end
+        local canvas = mancingFindNamedDescendant(reelUi, "Canvas")
+        if not canvas then
+            return reelUi, nil, nil, nil
+        end
+        local bar = mancingFindNamedDescendant(canvas, "Bar")
+        local fill = bar and mancingFindNamedDescendant(bar, "Fill")
+        local status = mancingFindNamedDescendant(canvas, "Status")
+        if status and not (status:IsA("TextLabel") or status:IsA("TextButton")) then
+            status = nil
+        end
+        local f = (fill and fill:IsA("GuiObject")) and fill or nil
+        local sgui = (status and status:IsA("GuiObject")) and status or nil
+        return reelUi, sgui, nil, f
+    end
+
+    local function mancingGetReelStatusText(statusGui)
+        if not statusGui then
+            return ""
+        end
+        local t = ""
+        if statusGui:IsA("TextLabel") then
+            t = statusGui.Text
+            if t == "" then
+                local okCt, ct = pcall(function()
+                    return statusGui.ContentText
+                end)
+                if okCt and type(ct) == "string" then
+                    t = ct
+                end
+            end
+        elseif statusGui:IsA("TextButton") then
+            t = statusGui.Text
+            if t == "" then
+                local okCt, ct = pcall(function()
+                    return statusGui.ContentText
+                end)
+                if okCt and type(ct) == "string" then
+                    t = ct
+                end
+            end
+        end
+        return t
+    end
+
+    local function mancingReelStatusRequiresNoKnobSpin(st)
+        if st == "" then
+            return false
+        end
+        if string.find(st, "ULUR", 1, true) then
+            return true
+        end
+        if string.find(st, "TAHAN", 1, true) then
+            return true
+        end
+        if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
+            return true
+        end
+        return false
+    end
+
+    local function mancingClassifyReelPhase(st)
+        if string.find(st, "ULUR", 1, true) then
+            return "reel_out"
+        end
+        if string.find(st, "TAHAN", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "TERTANGKAP", 1, true) or string.find(st, "KABUR", 1, true) then
+            return "idle"
+        end
+        if string.find(st, "PUTAR", 1, true) then
+            return "spin"
+        end
+        if string.find(st, "SIAP", 1, true) then
+            return "spin"
+        end
+        return "spin"
+    end
+
+    local function mancingResolveReelPhase(st)
+        if st ~= "" then
+            return mancingClassifyReelPhase(st)
+        end
+        return "spin"
+    end
+
+    local function updateAutoFishStatusParagraphs()
+        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+
+        local reelBits = {}
+        if not pg then
+            table.insert(reelBits, "PlayerGui: missing")
+        else
+            local n = countReelUiScreenGuis(pg)
+            table.insert(reelBits, (n > 1) and "Minigame: active" or "Minigame: not active")
+            local _, statusGui, _, fill = mancingResolveReelParts()
+            local st = mancingGetReelStatusText(statusGui)
+            if st ~= "" then
+                local phase = mancingResolveReelPhase(st)
+                table.insert(reelBits, "Status: " .. st)
+                table.insert(reelBits, "Phase: " .. phase)
+            else
+                table.insert(reelBits, "Status: —")
+            end
+            if fill then
+                table.insert(
+                    reelBits,
+                    string.format("Fill: %.0f%%", math.clamp(fill.Size.X.Scale, 0, 1) * 100)
+                )
+            else
+                table.insert(reelBits, "Fill: —")
+            end
+        end
+        local reelText = table.concat(reelBits, "\n")
+
+        if AutoFishStatusParagraph and AutoFishStatusParagraph.SetDesc then
+            AutoFishStatusParagraph:SetDesc(reelText)
+        end
+    end
+
+    local function runMancingReelAutoplayLoop()
+        local keysWork = true
+        local eHeld, qHeld = false, false
+
+        local function releaseKeys()
+            if eHeld then
+                mancingVimKey(false, Enum.KeyCode.E)
+                eHeld = false
+            end
+            if qHeld then
+                mancingVimKey(false, Enum.KeyCode.Q)
+                qHeld = false
+            end
+        end
+
+        local function setE(want)
+            if want == eHeld or not keysWork then
+                return
+            end
+            if not mancingVimKey(want, Enum.KeyCode.E) then
+                keysWork = false
+                releaseKeys()
+                return
+            end
+            eHeld = want
+        end
+
+        local function setQ(want)
+            if want == qHeld or not keysWork then
+                return
+            end
+            if not mancingVimKey(want, Enum.KeyCode.Q) then
+                keysWork = false
+                releaseKeys()
+                return
+            end
+            qHeld = want
+        end
+
+        local t0 = os.clock()
+        while isReelMinigameActive() and fishingAutomationActive() and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
+            RunService.Heartbeat:Wait()
+            local _, status, _, fill = mancingResolveReelParts()
+            if fill then
+                local fillScale = fill.Size.X.Scale
+                if fillScale >= 0.998 then
+                    break
+                end
+            end
+
+            local st = mancingGetReelStatusText(status)
+            local phase = mancingResolveReelPhase(st)
+
+            if phase == "idle" then
+                releaseKeys()
+            elseif phase == "reel_out" then
+                setE(false)
+                setQ(true)
+            else
+                setQ(false)
+                setE(true)
+            end
+        end
+
+        releaseKeys()
+
+        if fishingAutomationActive() and os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT and isReelMinigameActive() then
+            warn(
+                "[Auto fishing] reel autoplay timed out — check VirtualInputManager E/Q support, or executor compatibility."
+            )
+        end
+    end
+
+    local function scheduleMancingReelAutoplayIfNeeded()
+        if reelAutoplayLoopRunning or not fishingAutomationActive() then
+            return
+        end
+        reelAutoplayLoopRunning = true
+        task.spawn(function()
+            task.wait(REEL_AUTOPLAY_START_DELAY)
+            if not fishingAutomationActive() or not isReelMinigameActive() then
+                reelAutoplayLoopRunning = false
+                return
+            end
+            local ok, err = pcall(function()
+                runMancingReelAutoplayLoop()
+            end)
+            reelAutoplayLoopRunning = false
+            if not ok then
+                warn("[Auto fishing] reel autoplay error: ", err)
+            end
+        end)
+    end
+
+    local function tryActivateMinigameChallengeUi()
+        local area = getMinigamesMgArea()
+        if not area then
+            return false
+        end
+        local mg = area:FindFirstAncestorWhichIsA("ScreenGui")
+        local hadToEnableScreenGui = false
+        if mg and not mg.Enabled then
+            hadToEnableScreenGui = true
+            mg.Enabled = true
+        end
+        local anyOk = false
+        local tClick = area:FindFirstChild("Click")
+        local tHold = area:FindFirstChild("Hold")
+        for _, ch in area:GetChildren() do
+            if ch ~= tClick and ch ~= tHold and ch:IsA("GuiObject") and ch.Visible then
+                if ch:IsA("GuiButton") then
+                    local ok = pcall(function()
+                        ch:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+                local btn = ch:FindFirstChildWhichIsA("GuiButton", true)
+                if btn and btn:IsA("GuiButton") and btn.Visible then
+                    local ok = pcall(function()
+                        btn:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+            end
+        end
+        if not anyOk then
+            for _, d in area:GetDescendants() do
+                local underTemplate = (tClick ~= nil and d:IsDescendantOf(tClick)) or (tHold ~= nil and d:IsDescendantOf(tHold))
+                if not underTemplate and d:IsA("GuiButton") and d.Visible then
+                    local ok = pcall(function()
+                        d:Activate()
+                    end)
+                    if ok then
+                        anyOk = true
+                        break
+                    end
+                end
+            end
+        end
+        if hadToEnableScreenGui and mg then
+            mg.Enabled = false
+        end
+        return anyOk
+    end
+
+    local function ensureMinigameAutoSolve()
+        if minigameAutoSolveConn then
+            return
+        end
+        local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotesFolder then
+            return
+        end
+        local MGR = remotesFolder:FindFirstChild("MGR")
+        if not (MGR and MGR:IsA("RemoteEvent")) then
+            return
+        end
+        minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, _a3, _a4, _a5)
+            if action == "Start" then
+                if type(a2) == "table" and a2.Token ~= nil then
+                    mgrReelPendingToken = a2.Token
+                end
+            elseif action == "Start" then
+                mgrReelPendingToken = nil
+            elseif action == "Stop" then
+                mgrReelPendingToken = nil
+            end
+
+            if not fishingAutomationActive() then
+                if action == "Stop" then
+                    releaseMinigameSessionWait()
+                end
+                return
+            end
+            if action == "Stop" then
+                releaseMinigameSessionWait()
+                return
+            end
+            if action == "Start" then
+                task.defer(scheduleMancingReelAutoplayIfNeeded)
+            end
+        end)
+    end
+
+    local function waitForMinigameCleared(reason)
+        local t0 = os.clock()
+        while
+            (isFishingMinigameCircleActive() or mgrReelPendingToken ~= nil or isReelMinigameActive())
+            and fishingAutomationActive()
+            and os.clock() - t0 < MINIGAME_SESSION_TIMEOUT
+        do
+            task.wait(0.05)
+        end
+        if
+            fishingAutomationActive()
+            and os.clock() - t0 >= MINIGAME_SESSION_TIMEOUT
+            and (isFishingMinigameCircleActive() or mgrReelPendingToken ~= nil or isReelMinigameActive())
+        then
+            warn("[Auto fishing] timed out waiting for minigame to end (" .. reason .. ")")
+            mgrReelPendingToken = nil
+        end
+        if fishingAutomationActive() then
+            task.wait(0.2)
+        end
+    end
+
+    local function completeOrWaitMinigameBeforeCast()
+        if not fishingAutomationActive() then
+            return false
+        end
+        ensureMinigameAutoSolve()
+
+        if mgrReelPendingToken ~= nil or isReelMinigameActive() then
+            task.defer(scheduleMancingReelAutoplayIfNeeded)
+            waitForMinigameCleared("reel E/Q autoplay drain")
+            return true
+        end
+
+        if isFishingMinigameCircleActive() then
+            task.wait(0.05)
+            if not fishingAutomationActive() then
+                return false
+            end
+            tryActivateMinigameChallengeUi()
+            local tManual = os.clock()
+            while isFishingMinigameCircleActive() and fishingAutomationActive() and os.clock() - tManual < 0.35 do
+                task.wait(0.05)
+            end
+            if isFishingMinigameCircleActive() then
+                waitForMinigameCleared("after UI Activate fallback")
+            else
+                if fishingAutomationActive() then
+                    task.wait(0.2)
+                end
+            end
+            return true
+        end
+
+        return false
+    end
+
+    local function getFishingRemotes()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotes then
+            return nil
+        end
+        local equipRod = remotes:FindFirstChild("EquipRod")
+        local castRod = remotes:FindFirstChild("CastRod")
+        local cmgr = remotes:FindFirstChild("CMGR")
+        if equipRod and castRod and cmgr then
+            return equipRod, castRod, cmgr
+        end
+        return nil
+    end
+
+    local function playerHasFishingRodEquipped()
+        local character = Players.LocalPlayer.Character
+        if not character then
+            return false
+        end
+        for _, child in character:GetChildren() do
+            if child:IsA("Tool") and child:GetAttribute("FishingRod") ~= nil then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function equipFishingRodRemote()
+        local EquipRod = select(1, getFishingRemotes())
+        if not EquipRod then
+            return
+        end
+        pcall(function()
+            EquipRod:FireServer(true, false)
+        end)
+    end
+
+    local function castFishingRodRemote()
+        local _, CastRod = getFishingRemotes()
+        if not CastRod then
+            return
+        end
+        pcall(function()
+            CastRod:FireServer()
+        end)
+    end
+
+    local function setFishingCastResultRemote()
+        local _, _, CMGR = getFishingRemotes()
+        if not CMGR then
+            return
+        end
+        pcall(function()
+            CMGR:FireServer("Result", 1)
+        end)
+    end
+
+    local function runFishingCycleImpl(equipWait, castToCmgrWait, afterMinigameWait, afterDrainWait)
+        local wantPostPreEnableDelay = autoFishDelay2sAfterPreEnableDrain
+        local drainedExistingMinigame = completeOrWaitMinigameBeforeCast()
+        if wantPostPreEnableDelay then
+            autoFishDelay2sAfterPreEnableDrain = false
+        end
+        if wantPostPreEnableDelay and drainedExistingMinigame and fishingAutomationActive() then
+            task.wait(afterDrainWait)
+        end
+        if not fishingAutomationActive() then
+            return false
+        end
+        if not select(1, getFishingRemotes()) then
+            return false
+        end
+        minigameCycleSeq = minigameCycleSeq + 1
+        local cycleSeq = minigameCycleSeq
+
+        if not playerHasFishingRodEquipped() then
+            equipFishingRodRemote()
+            task.wait(equipWait)
+        end
+        castFishingRodRemote()
+        task.wait(castToCmgrWait)
+        setFishingCastResultRemote()
+
+        local waitDone = Instance.new("BindableEvent")
+        minigameSessionWait = { seq = cycleSeq, done = waitDone }
+        task.delay(MINIGAME_SESSION_TIMEOUT, function()
+            if minigameSessionWait and minigameSessionWait.seq == cycleSeq then
+                releaseMinigameSessionWait()
+            end
+        end)
+        waitDone.Event:Wait()
+        waitDone:Destroy()
+
+        if not fishingAutomationActive() then
+            return false
+        end
+        task.wait(afterMinigameWait)
+        return true
+    end
+
+    local function runAutoFishingCycleImpl()
+        return runFishingCycleImpl(0.2, 1, 2.5, 2)
+    end
+
+    local function runAutoFishingCycle()
+        local ok, res = pcall(runAutoFishingCycleImpl)
+        if not ok then
+            warn("[Auto fishing] cycle error: ", res)
+            return false
+        end
+        return res
+    end
+
+    local function runAutoFishingLoop()
+        while autoFishingEnabled do
+            if not runAutoFishingCycle() then
+                task.wait(0.5)
+            end
+        end
+        autoFishingLoopRunning = false
+    end
+
+    AutoFishStatusParagraph = AutoFishingSection:Paragraph({
+        Title = "Status",
+        Desc = "…",
+    })
+
+    AutoFishingSection:Toggle({
+        Title = "Auto fishing",
+        Desc = "Finishes an in-progress reel minigame if needed, then equip → cast → CMGR Result → wait for MGR Stop (same timing as main script auto mode).",
+        Value = false,
+        Callback = function(enabled)
+            autoFishingEnabled = enabled
+            if enabled then
+                releaseMinigameSessionWait()
+                ensureMinigameAutoSolve()
+                autoFishDelay2sAfterPreEnableDrain = isFishingMinigameCircleActive()
+                    or mgrReelPendingToken ~= nil
+                    or isReelMinigameActive()
+            else
+                releaseMinigameSessionWait()
+                autoFishDelay2sAfterPreEnableDrain = false
+            end
+            if not enabled then
+                return
+            end
+            if autoFishingLoopRunning then
+                return
+            end
+            autoFishingLoopRunning = true
+            task.spawn(runAutoFishingLoop)
+        end,
+    })
+
+    task.defer(updateAutoFishStatusParagraphs)
+    task.spawn(function()
+        while true do
+            task.wait(0.25)
+            pcall(updateAutoFishStatusParagraphs)
+        end
+    end)
+
+    task.defer(ensureMinigameAutoSolve)
+end
 
 -- */  Local Player Tab  /* --
 do
@@ -990,995 +1663,6 @@ do
             })
         end
     })
-end
-
--- */  Main Tab  /* --
-do
-    local MainTab = ElementsSection:Tab({
-        Title = "Main",
-        Icon = "solar:home-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
-
-    local AutoFishingSection = MainTab:Section({
-        Title = "Auto fishing",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local autoFishingEnabled = false
-    local autoFishingLoopRunning = false
-    local minigameAutoSolveConn = nil
-    -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
-    local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
-    local minigameCycleSeq = 0
-    local MINIGAME_SESSION_TIMEOUT = 20
-    -- Galatama ReplicatedStorage.Modules.Minigames: reel UI fills u31 via E/Q + knob drag; the module
-    -- calls MGR:FireServer("Complete", Token) when the bar reaches 1 — we simulate inputs, not that remote.
-    local reelAutoplayLoopRunning = false
-    local REEL_AUTO_COMPLETE_DELAY = 0.35
-    local REEL_AUTOPLAY_TIMEOUT = 55
-    -- Knob orbit: angular speed (rad/s) and how many mouse-move samples per frame (more = snappier rotation).
-    local REEL_KNOB_ORBIT_RAD_PER_SEC = 1000
-    local REEL_KNOB_ORBIT_SUBSTEPS = 6
-    -- After enabling auto fishing while already in minigame: extra pause once that minigame finishes.
-    local autoFishDelay2sAfterPreEnableDrain = false
-
-    -- Cosmetic: hide Minigames ScreenGui while still firing MGR (see ensureMinigameAutoSolve).
-    local hideMinigameUi = false
-    local minigameUiRestoreEnabled = true
-    local minigameUiEnforceConn: RBXScriptConnection? = nil
-    local minigameUiPlayerGuiConn: RBXScriptConnection? = nil
-
-    local function disconnectMinigameUiEnforce()
-        if minigameUiEnforceConn then
-            minigameUiEnforceConn:Disconnect()
-            minigameUiEnforceConn = nil
-        end
-    end
-
-    local function disconnectMinigameUiPlayerGui()
-        if minigameUiPlayerGuiConn then
-            minigameUiPlayerGuiConn:Disconnect()
-            minigameUiPlayerGuiConn = nil
-        end
-    end
-
-    local function applyHideToMinigameScreenGui(mg: ScreenGui)
-        disconnectMinigameUiEnforce()
-        if not hideMinigameUi then
-            return
-        end
-        minigameUiRestoreEnabled = mg.Enabled
-        mg.Enabled = false
-        minigameUiEnforceConn = mg:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if hideMinigameUi and mg.Parent and mg.Enabled then
-                mg.Enabled = false
-            end
-        end)
-    end
-
-    local function refreshMinigameUiHide()
-        if not hideMinigameUi then
-            return
-        end
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then
-            return
-        end
-        local mg = pg:FindFirstChild("Minigames")
-        if mg and mg:IsA("ScreenGui") then
-            applyHideToMinigameScreenGui(mg)
-        end
-    end
-
-    local function setMinigameUiHidden(hidden: boolean)
-        hideMinigameUi = hidden
-        if hidden then
-            disconnectMinigameUiPlayerGui()
-            local function armPlayerGuiListener(): boolean
-                local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-                if not (pg and pg:IsA("PlayerGui")) then
-                    return false
-                end
-                minigameUiPlayerGuiConn = pg.ChildAdded:Connect(function(child)
-                    if child.Name == "Minigames" and child:IsA("ScreenGui") then
-                        applyHideToMinigameScreenGui(child)
-                    end
-                end)
-                refreshMinigameUiHide()
-                return true
-            end
-            if not armPlayerGuiListener() then
-                task.defer(function()
-                    if hideMinigameUi then
-                        armPlayerGuiListener()
-                    end
-                end)
-            end
-            return
-        end
-        disconnectMinigameUiPlayerGui()
-        disconnectMinigameUiEnforce()
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            local mg = pg:FindFirstChild("Minigames")
-            if mg and mg:IsA("ScreenGui") then
-                mg.Enabled = minigameUiRestoreEnabled
-            end
-        end
-    end
-
-    local function releaseMinigameSessionWait()
-        local pending = minigameSessionWait
-        if not pending then
-            return
-        end
-        minigameSessionWait = nil
-        pending.done:Fire()
-    end
-
-    -- PlayerGui may hold multiple siblings named "ReelUI" (ScreenGui), in GetChildren order.
-    local function galatamaGetReelUIScreenGuis(pg: PlayerGui): { ScreenGui }
-        local out: { ScreenGui } = {}
-        for _, ch in pg:GetChildren() do
-            if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
-                table.insert(out, ch)
-            end
-        end
-        return out
-    end
-
-    -- Galatama reel minigame: multiple ReelUI ScreenGuis under PlayerGui at once.
-    local function galatamaReelMinigameActiveByReelUiCount(): boolean
-        local lp = Players.LocalPlayer
-        if not lp then
-            return false
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if not pg then
-            return false
-        end
-        return #galatamaGetReelUIScreenGuis(pg) > 1
-    end
-
-    -- Knob / E·Q autoplay targets the first ReelUI when there is more than one.
-    local function galatamaPickFirstReelUIForMinigame(candidates: { ScreenGui }): ScreenGui?
-        if #candidates == 0 then
-            return nil
-        end
-        return candidates[1]
-    end
-
-    -- Reel status paragraph reads the last ReelUI when there is more than one.
-    local function galatamaPickLastReelUIForStatus(candidates: { ScreenGui }): ScreenGui?
-        local n = #candidates
-        if n == 0 then
-            return nil
-        end
-        return candidates[n]
-    end
-
-    -- Cloned ReelUI under PlayerGui while the reel minigame runs (same module as MGR Start).
-    local function isGalatamaReelUiOpen(): boolean
-        local lp = Players.LocalPlayer
-        if not lp then
-            return false
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if not pg then
-            return false
-        end
-        local reel = galatamaPickFirstReelUIForMinigame(galatamaGetReelUIScreenGuis(pg))
-        return reel ~= nil and reel.Enabled
-    end
-
-    local function galatamaVimKey(isDown: boolean, keyCode: Enum.KeyCode): boolean
-        local ok = pcall(function()
-            VirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
-        end)
-        return ok
-    end
-
-    local function galatamaVimMouseMove(x: number, y: number): boolean
-        local ok = pcall(function()
-            VirtualInputManager:SendMouseMoveEvent(x, y, game)
-        end)
-        return ok
-    end
-
-    local function galatamaVimMouseButton(isDown: boolean, x: number, y: number): boolean
-        local ok = pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, isDown, game, 1)
-        end)
-        return ok
-    end
-
-    local function galatamaExecutorMouseAbs(x: number, y: number)
-        if type(mousemoveabs) == "function" then
-            pcall(function()
-                mousemoveabs(math.floor(x + 0.5), math.floor(y + 0.5))
-            end)
-        end
-    end
-
-    local function galatamaExecutorMouseDown()
-        if type(mouse1down) == "function" then
-            pcall(mouse1down)
-        elseif type(mouse1press) == "function" then
-            pcall(mouse1press)
-        end
-    end
-
-    local function galatamaExecutorMouseUp()
-        if type(mouse1up) == "function" then
-            pcall(mouse1up)
-        end
-    end
-
-    -- First direct child named `name`; if missing, first descendant with that name (UI layout tweaks).
-    local function galatamaFindNamedDescendant(root: Instance, name: string): Instance?
-        local direct = root:FindFirstChild(name)
-        if direct then
-            return direct
-        end
-        for _, d in root:GetDescendants() do
-            if d.Name == name then
-                return d
-            end
-        end
-        return nil
-    end
-
-    local function galatamaGetReelStatusText(statusGui: GuiObject?): string
-        if not statusGui then
-            return ""
-        end
-        local t = ""
-        if statusGui:IsA("TextLabel") then
-            local lbl = statusGui :: TextLabel
-            t = lbl.Text
-            if t == "" then
-                local ok, ct = pcall(function()
-                    return lbl.ContentText
-                end)
-                if ok and type(ct) == "string" then
-                    t = ct
-                end
-            end
-        elseif statusGui:IsA("TextButton") then
-            local btn = statusGui :: TextButton
-            t = btn.Text
-            if t == "" then
-                local ok, ct = pcall(function()
-                    return btn.ContentText
-                end)
-                if ok and type(ct) == "string" then
-                    t = ct
-                end
-            end
-        end
-        return t
-    end
-
-    -- Uses first ReelUI under PlayerGui (knob / fill / status for autoplay).
-    local function galatamaResolveReelParts(): (ScreenGui?, GuiObject?, GuiObject?, GuiObject?)
-        local lp = Players.LocalPlayer
-        if not lp then
-            return nil, nil, nil, nil
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if not pg then
-            return nil, nil, nil, nil
-        end
-        local reelUi = galatamaPickFirstReelUIForMinigame(galatamaGetReelUIScreenGuis(pg))
-        if not reelUi or not reelUi.Enabled then
-            return nil, nil, nil, nil
-        end
-        local canvas = galatamaFindNamedDescendant(reelUi, "Canvas")
-        if not canvas then
-            return reelUi, nil, nil, nil
-        end
-        local reelFrame = galatamaFindNamedDescendant(canvas, "Reel")
-        local inner = reelFrame and galatamaFindNamedDescendant(reelFrame, "Reel")
-        local handle = inner and galatamaFindNamedDescendant(inner, "Handle")
-        local knob = handle and galatamaFindNamedDescendant(handle, "Knob")
-        local bar = galatamaFindNamedDescendant(canvas, "Bar")
-        local fill = bar and galatamaFindNamedDescendant(bar, "Fill")
-        local status = galatamaFindNamedDescendant(canvas, "Status")
-        if status and not (status:IsA("TextLabel") or status:IsA("TextButton")) then
-            status = nil
-        end
-        local k = (knob and knob:IsA("GuiObject")) and (knob :: GuiObject) or nil
-        local f = (fill and fill:IsA("GuiObject")) and (fill :: GuiObject) or nil
-        local sgui = (status and status:IsA("GuiObject")) and (status :: GuiObject) or nil
-        return reelUi, sgui, k, f
-    end
-
-    -- Mirror Status text: LocalPlayer → PlayerGui → ReelUI → Canvas → Status (direct children only; same as game UI path).
-    local function galatamaReelMinigameMirrorText(): string
-        local lp = Players.LocalPlayer
-        if not lp then
-            return "Tidak dalam minigame reel (LocalPlayer tidak ada)."
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if not pg then
-            return "Tidak dalam minigame reel (PlayerGui tidak ada)."
-        end
-        local allReel = galatamaGetReelUIScreenGuis(pg)
-        if #allReel == 0 then
-            return "Tidak dalam minigame reel (ReelUI tidak ada)."
-        end
-        local reelUi = galatamaPickLastReelUIForStatus(allReel)
-        if not reelUi.Enabled then
-            return "Tidak dalam minigame reel (ReelUI terakhir tidak aktif)."
-        end
-        local canvas = reelUi:FindFirstChild("Canvas")
-        if not (canvas and canvas:IsA("GuiObject")) then
-            return "ReelUI aktif (Canvas tidak ditemukan di ReelUI)."
-        end
-        local statusInst = canvas:FindFirstChild("Status")
-        if not (statusInst and (statusInst:IsA("TextLabel") or statusInst:IsA("TextButton"))) then
-            return "ReelUI aktif (Status tidak ditemukan di Canvas)."
-        end
-        local txt = galatamaGetReelStatusText(statusInst :: GuiObject)
-        if txt ~= "" then
-            return txt
-        end
-        return "Reel minigame aktif…"
-    end
-
-    -- Same path as status paragraph: last ReelUI → Canvas → Status (for autoplay phase when multiple ReelUIs).
-    local function galatamaGetLastReelUIStatusTextOnly(): string
-        local lp = Players.LocalPlayer
-        if not lp then
-            return ""
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if not pg then
-            return ""
-        end
-        local allReel = galatamaGetReelUIScreenGuis(pg)
-        if #allReel == 0 then
-            return ""
-        end
-        local reelUi = galatamaPickLastReelUIForStatus(allReel)
-        if not reelUi or not reelUi.Enabled then
-            return ""
-        end
-        local canvas = reelUi:FindFirstChild("Canvas")
-        if not (canvas and canvas:IsA("GuiObject")) then
-            return ""
-        end
-        local statusInst = canvas:FindFirstChild("Status")
-        if not (statusInst and (statusInst:IsA("TextLabel") or statusInst:IsA("TextButton"))) then
-            return ""
-        end
-        return galatamaGetReelStatusText(statusInst :: GuiObject)
-    end
-
-    -- Never orbit the knob for these on-screen statuses (Q-only for ULUR).
-    local function galatamaReelStatusRequiresNoKnobSpin(st: string): boolean
-        if st == "" then
-            return false
-        end
-        if string.find(st, "ULUR", 1, true) then
-            return true
-        end
-        if string.find(st, "TAHAN", 1, true) then
-            return true
-        end
-        if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
-            return true
-        end
-        return false
-    end
-
-    -- Matches reel UI strings: TAHAN/MELAWAN = idle; ULUR = reel_out + Q; PUTAR/SIAP = spin; empty status → spin.
-    local scheduleGalatamaReelAutoplayIfNeeded: () -> ()
-    local function runGalatamaReelAutoplayLoop()
-        local keysWork = true
-        local eHeld, qHeld = false, false
-        local orbitAngle = 0
-        local mouseGrabbed = false
-
-        local function releaseKeys()
-            if eHeld then
-                galatamaVimKey(false, Enum.KeyCode.E)
-                eHeld = false
-            end
-            if qHeld then
-                galatamaVimKey(false, Enum.KeyCode.Q)
-                qHeld = false
-            end
-        end
-
-        local function setE(want: boolean)
-            if want == eHeld then
-                return
-            end
-            if not keysWork then
-                return
-            end
-            if not galatamaVimKey(want, Enum.KeyCode.E) then
-                keysWork = false
-                releaseKeys()
-                return
-            end
-            eHeld = want
-        end
-
-        local function setQ(want: boolean)
-            if want == qHeld then
-                return
-            end
-            if not keysWork then
-                return
-            end
-            if not galatamaVimKey(want, Enum.KeyCode.Q) then
-                keysWork = false
-                releaseKeys()
-                return
-            end
-            qHeld = want
-        end
-
-        local function releaseMouseGrab(knob: GuiObject?)
-            if not mouseGrabbed then
-                return
-            end
-            local cx, cy = 0, 0
-            if knob then
-                local c = knob.AbsolutePosition + knob.AbsoluteSize * 0.5
-                cx, cy = c.X, c.Y
-            end
-            galatamaVimMouseButton(false, cx, cy)
-            galatamaExecutorMouseUp()
-            mouseGrabbed = false
-        end
-
-        local function classifyReelPhase(st: string): "idle" | "reel_out" | "spin"
-            if string.find(st, "ULUR", 1, true) then
-                return "reel_out"
-            end
-            if string.find(st, "TAHAN", 1, true) then
-                return "idle"
-            end
-            if string.find(st, "MELAWAN", 1, true) or string.find(st, "IKANNYA", 1, true) then
-                return "idle"
-            end
-            if string.find(st, "TERTANGKAP", 1, true) or string.find(st, "KABUR", 1, true) then
-                return "idle"
-            end
-            if string.find(st, "PUTAR", 1, true) then
-                return "spin"
-            end
-            if string.find(st, "SIAP", 1, true) then
-                return "spin"
-            end
-            return "spin"
-        end
-
-        local function galatamaResolveReelPhase(st: string): "idle" | "reel_out" | "spin"
-            if st ~= "" then
-                return classifyReelPhase(st)
-            end
-            return "spin"
-        end
-
-        local canExecutorMouse = type(mousemoveabs) == "function"
-        local t0 = os.clock()
-        local lastReelNotifyKey: string? = nil
-        while galatamaReelMinigameActiveByReelUiCount() and autoFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
-            local dt = RunService.Heartbeat:Wait()
-            local _, status, knob, fill = galatamaResolveReelParts()
-            if fill then
-                local fillScale = fill.Size.X.Scale
-                if fillScale >= 0.998 then
-                    break
-                end
-            end
-
-            local stFirst = galatamaGetReelStatusText(status)
-            local stLast = galatamaGetLastReelUIStatusTextOnly()
-            local st = stLast ~= "" and stLast or stFirst
-            local phase = galatamaResolveReelPhase(st)
-            if galatamaReelStatusRequiresNoKnobSpin(st) then
-                if string.find(st, "ULUR", 1, true) then
-                    phase = "reel_out"
-                else
-                    phase = "idle"
-                end
-            end
-            local notifyKey = st .. "\0" .. phase
-            if notifyKey ~= lastReelNotifyKey then
-                lastReelNotifyKey = notifyKey
-                local content = st ~= "" and st or string.format("No status text (phase %s)", phase)
-                WindUI:Notify({
-                    Title = "Reel status",
-                    Content = content,
-                    Icon = "check",
-                })
-            end
-
-            if phase == "idle" then
-                releaseKeys()
-                releaseMouseGrab(knob)
-            elseif phase == "reel_out" then
-                setE(false)
-                setQ(true)
-                releaseMouseGrab(knob)
-            else
-                setQ(false)
-                if knob then
-                    setE(false)
-                    local c = knob.AbsolutePosition + knob.AbsoluteSize * 0.5
-                    local r = math.clamp(knob.AbsoluteSize.X * 0.85, 32, 140)
-                    local dtOrbit = math.clamp(dt, 1 / 240, 1 / 12)
-                    local angleThisFrame = REEL_KNOB_ORBIT_RAD_PER_SEC * dtOrbit
-                    local n = math.max(1, REEL_KNOB_ORBIT_SUBSTEPS)
-                    local dAngle = angleThisFrame / n
-                    galatamaExecutorMouseAbs(c.X, c.Y)
-                    galatamaVimMouseMove(c.X, c.Y)
-                    if not mouseGrabbed then
-                        local vimDown = galatamaVimMouseButton(true, c.X, c.Y)
-                        if vimDown or canExecutorMouse then
-                            galatamaExecutorMouseDown()
-                            mouseGrabbed = true
-                        end
-                    end
-                    if mouseGrabbed then
-                        for _ = 1, n do
-                            orbitAngle -= dAngle
-                            local tx = c.X + math.cos(orbitAngle) * r
-                            local ty = c.Y + math.sin(orbitAngle) * r
-                            galatamaExecutorMouseAbs(tx, ty)
-                            galatamaVimMouseMove(tx, ty)
-                        end
-                    end
-                end
-                if not mouseGrabbed then
-                    setE(true)
-                end
-            end
-        end
-
-        releaseKeys()
-        local _, _, knobEnd = galatamaResolveReelParts()
-        releaseMouseGrab(knobEnd)
-
-        local timedOut = os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT
-        if timedOut and galatamaReelMinigameActiveByReelUiCount() and autoFishingEnabled then
-            warn(
-                "[Auto fishing] reel autoplay timed out — need VirtualInputManager key/mouse APIs or executor globals mousemoveabs/mouse1down/mouse1up."
-            )
-        end
-        task.defer(function()
-            if autoFishingEnabled then
-                scheduleGalatamaReelAutoplayIfNeeded()
-            end
-        end)
-    end
-
-    scheduleGalatamaReelAutoplayIfNeeded = function()
-        if reelAutoplayLoopRunning or not autoFishingEnabled then
-            return
-        end
-        if not galatamaReelMinigameActiveByReelUiCount() then
-            return
-        end
-        reelAutoplayLoopRunning = true
-        task.spawn(function()
-            task.wait(REEL_AUTO_COMPLETE_DELAY)
-            local ok, err = pcall(function()
-                if autoFishingEnabled and galatamaReelMinigameActiveByReelUiCount() then
-                    runGalatamaReelAutoplayLoop()
-                end
-            end)
-            reelAutoplayLoopRunning = false
-            if not ok then
-                warn("[Auto fishing] reel autoplay error: ", err)
-            end
-        end)
-    end
-
-    local autoFishingReelMinigameWatcherConns: { RBXScriptConnection } = {}
-
-    local function stopAutoFishingReelMinigameWatcher()
-        for _, c in autoFishingReelMinigameWatcherConns do
-            pcall(function()
-                c:Disconnect()
-            end)
-        end
-        table.clear(autoFishingReelMinigameWatcherConns)
-    end
-
-    local function onPlayerGuiReelUiCountChangedForAutoplay()
-        if not autoFishingEnabled then
-            return
-        end
-        scheduleGalatamaReelAutoplayIfNeeded()
-    end
-
-    local function armPlayerGuiForAutoFishingReelMinigameWatcher(pg: PlayerGui)
-        table.insert(
-            autoFishingReelMinigameWatcherConns,
-            pg.ChildAdded:Connect(function(ch)
-                if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
-                    onPlayerGuiReelUiCountChangedForAutoplay()
-                end
-            end)
-        )
-        table.insert(
-            autoFishingReelMinigameWatcherConns,
-            pg.ChildRemoved:Connect(function(ch)
-                if ch.Name == "ReelUI" then
-                    onPlayerGuiReelUiCountChangedForAutoplay()
-                end
-            end)
-        )
-        onPlayerGuiReelUiCountChangedForAutoplay()
-    end
-
-    local function startAutoFishingReelMinigameWatcher()
-        stopAutoFishingReelMinigameWatcher()
-        if not autoFishingEnabled then
-            return
-        end
-        local lp = Players.LocalPlayer
-        if not lp then
-            task.defer(startAutoFishingReelMinigameWatcher)
-            return
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if pg then
-            armPlayerGuiForAutoFishingReelMinigameWatcher(pg)
-        else
-            table.insert(
-                autoFishingReelMinigameWatcherConns,
-                lp.ChildAdded:Connect(function(ch)
-                    if ch:IsA("PlayerGui") then
-                        armPlayerGuiForAutoFishingReelMinigameWatcher(ch)
-                    end
-                end)
-            )
-        end
-    end
-
-    local function ensureMinigameAutoSolve()
-        if minigameAutoSolveConn then
-            return
-        end
-        local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-        if not remotesFolder then
-            return
-        end
-        local MGR = remotesFolder:FindFirstChild("MGR")
-        if not (MGR and MGR:IsA("RemoteEvent")) then
-            return
-        end
-        minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, payload)
-            if action == "Start" then
-                -- Reel autoplay is driven by PlayerGui ReelUI count > 1 while Auto fishing is on (see startAutoFishingReelMinigameWatcher).
-                if autoFishingEnabled then
-                    onPlayerGuiReelUiCountChangedForAutoplay()
-                end
-            elseif action == "Stop" then
-                releaseMinigameSessionWait()
-            end
-        end)
-    end
-
-    local function getFishingRemotes()
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if not remotes then
-            return nil
-        end
-        local equipRod = remotes:FindFirstChild("EquipRod")
-        local castRod = remotes:FindFirstChild("CastRod")
-        local cmgr = remotes:FindFirstChild("CMGR")
-        if equipRod and castRod and cmgr then
-            return equipRod, castRod, cmgr
-        end
-        return nil
-    end
-
-    local function playerHasFishingRodEquipped(): boolean
-        local character = Players.LocalPlayer.Character
-        if not character then
-            return false
-        end
-        for _, child in character:GetChildren() do
-            if child:IsA("Tool") and child:GetAttribute("FishingRod") ~= nil then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function equipRodMobileTouchMode(): boolean
-        if UserInputService.TouchEnabled then
-            return not UserInputService.KeyboardEnabled
-        end
-        return false
-    end
-
-    local function equipFishingRodRemote()
-        local EquipRod = select(1, getFishingRemotes())
-        if not EquipRod then
-            return
-        end
-        pcall(function()
-            EquipRod:FireServer(true, equipRodMobileTouchMode())
-        end)
-    end
-
-    local function castFishingRodRemote()
-        local _, CastRod = getFishingRemotes()
-        if not CastRod then
-            return
-        end
-        pcall(function()
-            CastRod:FireServer()
-        end)
-    end
-
-    -- CastingIndicator client sends CMGR:FireServer("Result", barY) with barY in 0..1 from the moving fill; 1 is max (strong cast).
-    local function setFishingCastResultRemote()
-        local _, _, CMGR = getFishingRemotes()
-        if not CMGR then
-            return
-        end
-        pcall(function()
-            CMGR:FireServer("Result", 1)
-        end)
-    end
-
-    local function runAutoFishingCycleImpl()
-        if autoFishDelay2sAfterPreEnableDrain and autoFishingEnabled then
-            autoFishDelay2sAfterPreEnableDrain = false
-            task.wait(2)
-        end
-        if not autoFishingEnabled then
-            return false
-        end
-        if not select(1, getFishingRemotes()) then
-            return false
-        end
-        minigameCycleSeq += 1
-        local cycleSeq = minigameCycleSeq
-
-        if not playerHasFishingRodEquipped() then
-            equipFishingRodRemote()
-            task.wait(0.2)
-        end
-        castFishingRodRemote()
-        task.wait(1)
-        setFishingCastResultRemote()
-
-        local waitDone = Instance.new("BindableEvent")
-        minigameSessionWait = { seq = cycleSeq, done = waitDone }
-        task.delay(MINIGAME_SESSION_TIMEOUT, function()
-            if minigameSessionWait and minigameSessionWait.seq == cycleSeq then
-                releaseMinigameSessionWait()
-            end
-        end)
-        waitDone.Event:Wait()
-        waitDone:Destroy()
-
-        if not autoFishingEnabled then
-            return false
-        end
-        task.wait(2)
-        return true
-    end
-
-    local function runAutoFishingCycle()
-        local ok, res = pcall(runAutoFishingCycleImpl)
-        if not ok then
-            warn("[Auto fishing] cycle error: ", res)
-            return false
-        end
-        return res
-    end
-
-    local function runAutoFishingLoop()
-        while autoFishingEnabled do
-            if not runAutoFishingCycle() then
-                task.wait(0.5)
-            end
-        end
-        autoFishingLoopRunning = false
-    end
-
-    local AutoFishingReelStatusParagraph = AutoFishingSection:Paragraph({
-        Title = "Reel minigame status",
-        Desc = "Minigame aktif saat jumlah ReelUI di PlayerGui > 1. Status = ReelUI terakhir. Knob/autoplay = ReelUI pertama.",
-    })
-
-    local autoFishingReelMirrorLastText = ""
-    local autoFishingReelMirrorPgConns: { RBXScriptConnection } = {}
-    local autoFishingReelMirrorDynamicConns: { RBXScriptConnection } = {}
-
-    local function disconnectAutoFishingReelMirrorDynamic()
-        for _, c in autoFishingReelMirrorDynamicConns do
-            pcall(function()
-                c:Disconnect()
-            end)
-        end
-        table.clear(autoFishingReelMirrorDynamicConns)
-    end
-
-    local function disconnectAutoFishingReelMirrorPg()
-        for _, c in autoFishingReelMirrorPgConns do
-            pcall(function()
-                c:Disconnect()
-            end)
-        end
-        table.clear(autoFishingReelMirrorPgConns)
-    end
-
-    local function disconnectAutoFishingReelMirrorAll()
-        disconnectAutoFishingReelMirrorDynamic()
-        disconnectAutoFishingReelMirrorPg()
-    end
-
-    local function addAutoFishingReelMirrorPgConn(conn: RBXScriptConnection)
-        table.insert(autoFishingReelMirrorPgConns, conn)
-    end
-
-    local function addAutoFishingReelMirrorDynConn(conn: RBXScriptConnection)
-        table.insert(autoFishingReelMirrorDynamicConns, conn)
-    end
-
-    local function tickAutoFishingReelStatusMirror()
-        if not (AutoFishingReelStatusParagraph and AutoFishingReelStatusParagraph.SetDesc) then
-            return
-        end
-        local s = galatamaReelMinigameMirrorText()
-        if s == autoFishingReelMirrorLastText then
-            return
-        end
-        autoFishingReelMirrorLastText = s
-        AutoFishingReelStatusParagraph:SetDesc(s)
-    end
-
-    local function wireCanvasForAutoFishingReelMirror(cnv: Instance)
-        if not cnv:IsA("GuiObject") then
-            return
-        end
-        local function wireStatus(st: Instance)
-            if st:IsA("TextLabel") or st:IsA("TextButton") then
-                addAutoFishingReelMirrorDynConn(st:GetPropertyChangedSignal("Text"):Connect(tickAutoFishingReelStatusMirror))
-            end
-            tickAutoFishingReelStatusMirror()
-        end
-        local st0 = cnv:FindFirstChild("Status")
-        if st0 then
-            wireStatus(st0)
-        end
-        addAutoFishingReelMirrorDynConn(cnv.ChildAdded:Connect(function(ch)
-            if ch.Name == "Status" then
-                wireStatus(ch)
-            end
-        end))
-        tickAutoFishingReelStatusMirror()
-    end
-
-    local armAllAutoFishingReelUIsForMirror: (PlayerGui) -> ()
-
-    local function armSingleAutoFishingReelUIForMirror(reelUi: ScreenGui, pg: PlayerGui)
-        addAutoFishingReelMirrorDynConn(reelUi:GetPropertyChangedSignal("Enabled"):Connect(tickAutoFishingReelStatusMirror))
-        addAutoFishingReelMirrorDynConn(reelUi.Destroying:Connect(function()
-            task.defer(function()
-                if pg.Parent then
-                    armAllAutoFishingReelUIsForMirror(pg)
-                else
-                    disconnectAutoFishingReelMirrorDynamic()
-                end
-                tickAutoFishingReelStatusMirror()
-            end)
-        end))
-        local cnv = reelUi:FindFirstChild("Canvas")
-        if cnv and cnv:IsA("GuiObject") then
-            wireCanvasForAutoFishingReelMirror(cnv)
-        else
-            addAutoFishingReelMirrorDynConn(reelUi.ChildAdded:Connect(function(ch)
-                if ch.Name == "Canvas" then
-                    wireCanvasForAutoFishingReelMirror(ch)
-                end
-            end))
-        end
-    end
-
-    armAllAutoFishingReelUIsForMirror = function(pg: PlayerGui)
-        disconnectAutoFishingReelMirrorDynamic()
-        for _, reelUi in galatamaGetReelUIScreenGuis(pg) do
-            armSingleAutoFishingReelUIForMirror(reelUi, pg)
-        end
-        tickAutoFishingReelStatusMirror()
-    end
-
-    local function armPlayerGuiForAutoFishingReelMirror(pg: PlayerGui)
-        addAutoFishingReelMirrorPgConn(pg.ChildAdded:Connect(function(ch)
-            if ch.Name == "ReelUI" and ch:IsA("ScreenGui") then
-                armAllAutoFishingReelUIsForMirror(pg)
-            end
-        end))
-        addAutoFishingReelMirrorPgConn(pg.ChildRemoved:Connect(function(ch)
-            if ch.Name == "ReelUI" then
-                armAllAutoFishingReelUIsForMirror(pg)
-            end
-        end))
-        armAllAutoFishingReelUIsForMirror(pg)
-    end
-
-    local function stopAutoFishingReelStatusListener()
-        disconnectAutoFishingReelMirrorAll()
-    end
-
-    local function startAutoFishingReelStatusListener()
-        disconnectAutoFishingReelMirrorAll()
-        autoFishingReelMirrorLastText = ""
-        local lp = Players.LocalPlayer
-        if not lp then
-            task.defer(startAutoFishingReelStatusListener)
-            return
-        end
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if pg then
-            armPlayerGuiForAutoFishingReelMirror(pg)
-        else
-            addAutoFishingReelMirrorPgConn(lp.ChildAdded:Connect(function(ch)
-                if ch:IsA("PlayerGui") then
-                    armPlayerGuiForAutoFishingReelMirror(ch)
-                end
-            end))
-            tickAutoFishingReelStatusMirror()
-        end
-    end
-
-    startAutoFishingReelStatusListener()
-
-    AutoFishingSection:Toggle({
-        Title = "Auto fishing",
-        Desc = "Galatama: simulates reel (E/Q via VirtualInputManager or knob orbit via mouse globals); cast EquipRod → CastRod → CMGR Result → wait MGR Stop",
-        Value = false,
-        Callback = function(enabled)
-            autoFishingEnabled = enabled
-            if enabled then
-                ensureMinigameAutoSolve()
-                startAutoFishingReelMinigameWatcher()
-                autoFishDelay2sAfterPreEnableDrain = galatamaReelMinigameActiveByReelUiCount()
-            else
-                stopAutoFishingReelMinigameWatcher()
-                releaseMinigameSessionWait()
-                autoFishDelay2sAfterPreEnableDrain = false
-            end
-            if not enabled then
-                return
-            end
-            if autoFishingLoopRunning then
-                return
-            end
-            autoFishingLoopRunning = true
-            task.spawn(runAutoFishingLoop)
-        end,
-    })
-
-    AutoFishingSection:Toggle({
-        Title = "Hide minigame UI",
-        Desc = "Hides PlayerGui Minigames if present (Galatama reel uses ReelUI from Modules.Minigames; MGR auto-solve unchanged)",
-        Value = false,
-        Callback = function(enabled)
-            setMinigameUiHidden(enabled)
-        end,
-    })
-
-    task.defer(ensureMinigameAutoSolve)
 end
 
 -- */  Teleport Tab  /* --
