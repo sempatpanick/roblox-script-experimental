@@ -2793,6 +2793,13 @@ do
 
     local locationPresetRows = {
         { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38) },
+        { name = "Bagang Teluk Dalam", pos = Vector3.new(967.70, 7.95, 1269.47) },
+        { name = "Bagang Teluk Tengah", pos = Vector3.new(3324.97, 7.95, -4416.49) },
+        { name = "Bagang Teluk Luar", pos = Vector3.new(-1901.70, 7.95, -1312.37) },
+        { name = "Bagang Ujung", pos = Vector3.new(-2927.68, 7.95, 4303.74) },
+        { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45) },
+        { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86) },
+        { name = "Pulau Batu Karang", pos = Vector3.new(-798.12, 11.92, -3334.50) },
     }
 
     local locationDisplayList: { string } = {}
