@@ -34,7 +34,7 @@ end
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
     Title = "sempatpanick | Mancing Indo",
-    Folder = "ftgshub",
+    Folder = "sempatpanick",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
     HideSearchBar = false,
@@ -156,7 +156,6 @@ do
     local autoFishingLoopRunning = false
     local instantFishingEnabled = false
     local instantFishingLoopRunning = false
-    local instantFishingCycleRunning = false
     local instantFishingDelaySec = 4
     local instantFishingArmSeq = 0
     local minigameAutoSolveConn = nil

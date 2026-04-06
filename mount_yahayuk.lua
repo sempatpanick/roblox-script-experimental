@@ -33,7 +33,7 @@ end
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
     Title = "sempatpanick | Mount Yahayuk",
-    Folder = "ftgshub",
+    Folder = "sempatpanick",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
     HideSearchBar = false,
