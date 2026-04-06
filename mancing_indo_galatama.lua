@@ -154,11 +154,19 @@ do
 
     local autoFishingEnabled = false
     local autoFishingLoopRunning = false
+    local instantFishingEnabled = false
+    local instantFishingLoopRunning = false
+    local instantFishingCycleRunning = false
+    local instantFishingDelaySec = 4
+    local instantFishingArmSeq = 0
     local minigameAutoSolveConn = nil
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 20
     local REEL_AUTOPLAY_START_DELAY = 0.06
     local REEL_AUTOPLAY_TIMEOUT = 55
+    local REEL_DEEP_NUKE_AFTER = 0.45
+    local REEL_AUTOPLAY_RS_HOOK_NAME = "MancingIndoGalatamaReelDeepHack"
+    local REEL_TRY_FAST_REMOTE_COMPLETE = true
     local reelAutoplayLoopRunning = false
     local mgrReelPendingToken = nil
     local autoFishDelay2sAfterPreEnableDrain = false
@@ -166,7 +174,11 @@ do
     local AutoFishStatusParagraph
 
     local function fishingAutomationActive()
-        return autoFishingEnabled
+        return autoFishingEnabled or instantFishingEnabled
+    end
+
+    local function ensureMinigamePreferenceIsReel()
+        -- Galatama match is reel-only; no SettingsGui minigame switch.
     end
 
     local function releaseMinigameSessionWait()
@@ -364,6 +376,189 @@ do
         return "spin"
     end
 
+    -- Instant fishing only: getconnections + debug.setupvalue; optional fast MGR Complete.
+    local reelDeepHookCachedRenderFns = {}
+    local reelDeepHookCachedConns = {}
+
+    local function mancingExploitGetConnections(sig)
+        local g = rawget(_G, "getconnections")
+        local synTbl = rawget(_G, "syn")
+        if type(g) ~= "function" and type(synTbl) == "table" then
+            g = synTbl.getconnections
+        end
+        if type(g) ~= "function" and type(getgenv) == "function" then
+            g = rawget(getgenv(), "getconnections")
+        end
+        if type(g) ~= "function" then
+            return nil
+        end
+        local ok, res = pcall(g, sig)
+        if ok and type(res) == "table" then
+            return res
+        end
+        return nil
+    end
+
+    local function mancingExploitConnFunction(conn)
+        if type(conn) ~= "table" then
+            return nil
+        end
+        return conn.Function or rawget(conn, "f")
+    end
+
+    local function mancingFnReferencesInstance(fn, inst)
+        if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
+            return false
+        end
+        local ok, found = pcall(function()
+            local i = 1
+            while true do
+                local name, val = debug.getupvalue(fn, i)
+                if name == nil then
+                    break
+                end
+                if val == inst then
+                    return true
+                end
+                i = i + 1
+            end
+            return false
+        end)
+        return ok and found == true
+    end
+
+    local function mancingReelDeepHackBuildCache(mgr)
+        table.clear(reelDeepHookCachedRenderFns)
+        table.clear(reelDeepHookCachedConns)
+        local list = mancingExploitGetConnections(RunService.RenderStepped)
+        if not list then
+            return false
+        end
+        for _, c in list do
+            local fn = mancingExploitConnFunction(c)
+            if type(fn) == "function" and mancingFnReferencesInstance(fn, mgr) then
+                table.insert(reelDeepHookCachedRenderFns, fn)
+                table.insert(reelDeepHookCachedConns, c)
+            end
+        end
+        return #reelDeepHookCachedRenderFns > 0
+    end
+
+    local function mancingReelDeepHackEnsureCache(mgr)
+        if #reelDeepHookCachedRenderFns > 0 then
+            local f0 = reelDeepHookCachedRenderFns[1]
+            if type(f0) == "function" and mancingFnReferencesInstance(f0, mgr) then
+                return true
+            end
+        end
+        return mancingReelDeepHackBuildCache(mgr)
+    end
+
+    local function mancingReelDeepHackTrySetupvalueU32(fn)
+        if type(debug) ~= "table" or type(debug.getupvalue) ~= "function" or type(debug.setupvalue) ~= "function" then
+            return false
+        end
+        local candidates = {}
+        local okSet, did = pcall(function()
+            local i = 1
+            while true do
+                local name, val = debug.getupvalue(fn, i)
+                if name == nil then
+                    break
+                end
+                if name == "u32" and type(val) == "number" then
+                    debug.setupvalue(fn, i, 1)
+                    return true
+                end
+                if type(val) == "number" and val >= 0 and val <= 1 then
+                    table.insert(candidates, i)
+                end
+                i = i + 1
+            end
+            if #candidates == 1 then
+                debug.setupvalue(fn, candidates[1], 1)
+                return true
+            end
+            if #candidates > 1 then
+                local _, _, _, fill = mancingResolveReelParts()
+                if fill then
+                    local target = fill.Size.X.Scale
+                    local bestIdx = nil
+                    local bestD = math.huge
+                    for _, idx in candidates do
+                        local _, v = debug.getupvalue(fn, idx)
+                        if type(v) == "number" then
+                            local d = math.abs(v - target)
+                            if d < bestD then
+                                bestD = d
+                                bestIdx = idx
+                            end
+                        end
+                    end
+                    if bestIdx and bestD < 0.55 then
+                        debug.setupvalue(fn, bestIdx, 1)
+                        return true
+                    end
+                end
+                local maxIdx = nil
+                local maxV = -math.huge
+                for _, idx in candidates do
+                    local _, v = debug.getupvalue(fn, idx)
+                    if type(v) == "number" and v >= 0 and v <= 1 and v > maxV then
+                        maxV = v
+                        maxIdx = idx
+                    end
+                end
+                if maxIdx ~= nil then
+                    debug.setupvalue(fn, maxIdx, 1)
+                    return true
+                end
+            end
+            return false
+        end)
+        return okSet and did == true
+    end
+
+    local function mancingReelDeepHackTryDisableAndComplete(mgr, token)
+        if token == nil then
+            return false
+        end
+        mancingReelDeepHackEnsureCache(mgr)
+        for _, c in reelDeepHookCachedConns do
+            if type(c) == "table" and type(c.Disable) == "function" and type(c.Enable) == "function" then
+                local ok = pcall(function()
+                    c:Disable()
+                    mgr:FireServer("Complete", token)
+                    task.wait(0.04)
+                    c:Enable()
+                end)
+                if ok then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local function mancingReelDeepHackTrySetupvalueWin(mgr)
+        mancingReelDeepHackEnsureCache(mgr)
+        for _, fn in reelDeepHookCachedRenderFns do
+            if mancingReelDeepHackTrySetupvalueU32(fn) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function mancingReelDeepHackTryNukeComplete(mgr)
+        return mancingReelDeepHackTryDisableAndComplete(mgr, mgrReelPendingToken)
+    end
+
+    local function mancingReelDeepHookClearCache()
+        table.clear(reelDeepHookCachedRenderFns)
+        table.clear(reelDeepHookCachedConns)
+    end
+
     local function updateAutoFishStatusParagraphs()
         local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
 
@@ -398,9 +593,29 @@ do
         end
     end
 
+    -- Auto: VIM E/Q only. Instant: deep hack + optional fast MGR Complete + E/Q loop.
     local function runMancingReelAutoplayLoop()
+        local useReelDeepHack = instantFishingEnabled
         local keysWork = true
         local eHeld, qHeld = false, false
+        local rem = ReplicatedStorage:FindFirstChild("Remotes")
+        local mgrEv = rem and rem:FindFirstChild("MGR")
+        local deepNukeDone = false
+
+        if useReelDeepHack and REEL_TRY_FAST_REMOTE_COMPLETE and mgrEv and mgrEv:IsA("RemoteEvent") and mgrReelPendingToken ~= nil then
+            task.delay(math.max(0, instantFishingDelaySec), function()
+                if not fishingAutomationActive() or not isReelMinigameActive() then
+                    return
+                end
+                local tok = mgrReelPendingToken
+                if tok == nil then
+                    return
+                end
+                pcall(function()
+                    mgrEv:FireServer("Complete", tok)
+                end)
+            end)
+        end
 
         local function releaseKeys()
             if eHeld then
@@ -438,8 +653,38 @@ do
         end
 
         local t0 = os.clock()
+        local rsBound = false
+        if useReelDeepHack and mgrEv and mgrEv:IsA("RemoteEvent") then
+            rsBound = pcall(function()
+                RunService:BindToRenderStep(
+                    REEL_AUTOPLAY_RS_HOOK_NAME,
+                    Enum.RenderPriority.Last.Value,
+                    function()
+                        if not fishingAutomationActive() or not isReelMinigameActive() then
+                            return
+                        end
+                        mancingReelDeepHackTrySetupvalueWin(mgrEv)
+                        task.defer(function()
+                            if fishingAutomationActive() and isReelMinigameActive() then
+                                mancingReelDeepHackTrySetupvalueWin(mgrEv)
+                            end
+                        end)
+                    end
+                )
+            end)
+        end
+
         while isReelMinigameActive() and fishingAutomationActive() and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
             RunService.Heartbeat:Wait()
+            if useReelDeepHack and mgrEv and mgrEv:IsA("RemoteEvent") then
+                if not rsBound then
+                    mancingReelDeepHackTrySetupvalueWin(mgrEv)
+                end
+                if not deepNukeDone and os.clock() - t0 > REEL_DEEP_NUKE_AFTER then
+                    deepNukeDone = true
+                    mancingReelDeepHackTryNukeComplete(mgrEv)
+                end
+            end
             local _, status, _, fill = mancingResolveReelParts()
             if fill then
                 local fillScale = fill.Size.X.Scale
@@ -450,6 +695,13 @@ do
 
             local st = mancingGetReelStatusText(status)
             local phase = mancingResolveReelPhase(st)
+            if mancingReelStatusRequiresNoKnobSpin(st) then
+                if string.find(st, "ULUR", 1, true) then
+                    phase = "reel_out"
+                else
+                    phase = "idle"
+                end
+            end
 
             if phase == "idle" then
                 releaseKeys()
@@ -463,10 +715,16 @@ do
         end
 
         releaseKeys()
+        if rsBound then
+            pcall(function()
+                RunService:UnbindFromRenderStep(REEL_AUTOPLAY_RS_HOOK_NAME)
+            end)
+        end
+        mancingReelDeepHookClearCache()
 
         if fishingAutomationActive() and os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT and isReelMinigameActive() then
             warn(
-                "[Auto Fishing] reel autoplay timed out — check VirtualInputManager E/Q support, or executor compatibility."
+                "[Fishing] reel autoplay timed out — VirtualInputManager E/Q, getconnections/debug, or MGR Complete token."
             )
         end
     end
@@ -487,7 +745,7 @@ do
             end)
             reelAutoplayLoopRunning = false
             if not ok then
-                warn("[Auto Fishing] reel autoplay error: ", err)
+                warn("[Fishing] reel autoplay error: ", err)
             end
         end)
     end
@@ -561,13 +819,18 @@ do
         if not (MGR and MGR:IsA("RemoteEvent")) then
             return
         end
+        -- Galatama: "Start" + table { Token }; main game may use "StartReel" + table.
         minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, _a3, _a4, _a5)
-            if action == "Start" then
+            if action == "StartReel" then
                 if type(a2) == "table" and a2.Token ~= nil then
                     mgrReelPendingToken = a2.Token
                 end
             elseif action == "Start" then
-                mgrReelPendingToken = nil
+                if type(a2) == "table" and a2.Token ~= nil then
+                    mgrReelPendingToken = a2.Token
+                else
+                    mgrReelPendingToken = nil
+                end
             elseif action == "Stop" then
                 mgrReelPendingToken = nil
             end
@@ -582,7 +845,11 @@ do
                 releaseMinigameSessionWait()
                 return
             end
-            if action == "Start" then
+            if action == "StartReel" then
+                task.defer(scheduleMancingReelAutoplayIfNeeded)
+                return
+            end
+            if action == "Start" and type(a2) == "table" and a2.Token ~= nil then
                 task.defer(scheduleMancingReelAutoplayIfNeeded)
             end
         end)
@@ -602,7 +869,7 @@ do
             and os.clock() - t0 >= MINIGAME_SESSION_TIMEOUT
             and (isFishingMinigameCircleActive() or mgrReelPendingToken ~= nil or isReelMinigameActive())
         then
-            warn("[Auto Fishing] timed out waiting for minigame to end (" .. reason .. ")")
+            warn("[Fishing] timed out waiting for minigame to end (" .. reason .. ")")
             mgrReelPendingToken = nil
         end
         if fishingAutomationActive() then
@@ -727,6 +994,12 @@ do
         castFishingRodRemote()
         task.wait(castToCmgrWait)
         setFishingCastResultRemote()
+        task.defer(function()
+            task.wait(0.12)
+            if fishingAutomationActive() and isReelMinigameActive() then
+                scheduleMancingReelAutoplayIfNeeded()
+            end
+        end)
 
         local waitDone = Instance.new("BindableEvent")
         minigameSessionWait = { seq = cycleSeq, done = waitDone }
@@ -752,7 +1025,7 @@ do
     local function runAutoFishingCycle()
         local ok, res = pcall(runAutoFishingCycleImpl)
         if not ok then
-            warn("[Auto Fishing] cycle error: ", res)
+            warn("[Auto fishing] cycle error: ", res)
             return false
         end
         return res
@@ -767,6 +1040,30 @@ do
         autoFishingLoopRunning = false
     end
 
+    local function runInstantFishingCycleImpl()
+        return runFishingCycleImpl(0.12, 0.18, 2, 0.25)
+    end
+
+    local function runInstantFishingCycle()
+        instantFishingCycleRunning = true
+        local ok, res = pcall(runInstantFishingCycleImpl)
+        instantFishingCycleRunning = false
+        if not ok then
+            warn("[Instant fishing] cycle error: ", res)
+            return false
+        end
+        return res
+    end
+
+    local function runInstantFishingLoop()
+        while instantFishingEnabled do
+            if not runInstantFishingCycle() then
+                task.wait(0.25)
+            end
+        end
+        instantFishingLoopRunning = false
+    end
+
     AutoFishStatusParagraph = AutoFishingSection:Paragraph({
         Title = "Status",
         Desc = "…",
@@ -779,6 +1076,8 @@ do
         Callback = function(enabled)
             autoFishingEnabled = enabled
             if enabled then
+                instantFishingArmSeq = instantFishingArmSeq + 1
+                instantFishingEnabled = false
                 releaseMinigameSessionWait()
                 ensureMinigameAutoSolve()
                 autoFishDelay2sAfterPreEnableDrain = isFishingMinigameCircleActive()
@@ -796,6 +1095,63 @@ do
             end
             autoFishingLoopRunning = true
             task.spawn(runAutoFishingLoop)
+        end,
+    })
+
+    MainTab:Space()
+
+    local InstantFishingSection = MainTab:Section({
+        Title = "Instant fishing",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    InstantFishingSection:Input({
+        Title = "Delay (seconds)",
+        Placeholder = "e.g. 4",
+        Value = tostring(instantFishingDelaySec),
+        Callback = function(value)
+            local n = tonumber(value)
+            if n and n >= 0 then
+                instantFishingDelaySec = n
+            end
+        end,
+    })
+
+    InstantFishingSection:Toggle({
+        Title = "Instant fishing",
+        Desc = "Galatama reel only: faster cast/CMGR loop, getconnections/debug reel hack, optional fast MGR Complete after Delay. Turns off Auto Fishing.",
+        Value = false,
+        Callback = function(enabled)
+            if enabled then
+                autoFishingEnabled = false
+                releaseMinigameSessionWait()
+                instantFishingArmSeq = instantFishingArmSeq + 1
+                local armSeq = instantFishingArmSeq
+                task.spawn(function()
+                    ensureMinigamePreferenceIsReel()
+                    task.wait(0.15)
+                    if armSeq ~= instantFishingArmSeq then
+                        return
+                    end
+                    instantFishingEnabled = true
+                    ensureMinigameAutoSolve()
+                    autoFishDelay2sAfterPreEnableDrain = isFishingMinigameCircleActive()
+                        or mgrReelPendingToken ~= nil
+                        or isReelMinigameActive()
+                    if instantFishingLoopRunning then
+                        return
+                    end
+                    instantFishingLoopRunning = true
+                    runInstantFishingLoop()
+                end)
+            else
+                instantFishingArmSeq = instantFishingArmSeq + 1
+                instantFishingEnabled = false
+                releaseMinigameSessionWait()
+                autoFishDelay2sAfterPreEnableDrain = false
+            end
         end,
     })
 
