@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
@@ -34,7 +35,7 @@ end
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
     Title = "sempatpanick | Mancing Indo",
-    Folder = "sempatpanick",
+    Folder = "sempatpanick_mancing_indo_galatama",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
     HideSearchBar = false,
@@ -144,6 +145,99 @@ do
         IconShape = "Square",
         Border = true,
     })
+
+    local LookDirectionSection = MainTab:Section({
+        Title = "Look Direction",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local POOL_CORNERS = {
+        Vector3.new(563.48, 4.20, 346.40),
+        Vector3.new(563.54, 4.03, 473.97),
+        Vector3.new(752.70, 4.06, 473.99),
+        Vector3.new(752.90, 4.34, 346.39),
+    }
+    local autoLookPoolEnabled = false
+    local autoLookPoolConnection = nil
+
+    local function nearestPointOnSegmentXZ(pointPos, a, b)
+        local ap = Vector3.new(pointPos.X - a.X, 0, pointPos.Z - a.Z)
+        local ab = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+        local abLenSq = ab.X * ab.X + ab.Z * ab.Z
+        if abLenSq <= 1e-8 then
+            return Vector3.new(a.X, pointPos.Y, a.Z)
+        end
+        local t = (ap.X * ab.X + ap.Z * ab.Z) / abLenSq
+        t = math.clamp(t, 0, 1)
+        return Vector3.new(a.X + ab.X * t, pointPos.Y, a.Z + ab.Z * t)
+    end
+
+    local function getNearestPoolSidePoint(pointPos)
+        local bestPoint = nil
+        local bestDistSq = math.huge
+        for i = 1, #POOL_CORNERS do
+            local a = POOL_CORNERS[i]
+            local b = POOL_CORNERS[(i % #POOL_CORNERS) + 1]
+            local candidate = nearestPointOnSegmentXZ(pointPos, a, b)
+            local dx = candidate.X - pointPos.X
+            local dz = candidate.Z - pointPos.Z
+            local distSq = dx * dx + dz * dz
+            if distSq < bestDistSq then
+                bestDistSq = distSq
+                bestPoint = candidate
+            end
+        end
+        return bestPoint
+    end
+
+    local function stopAutoLookPool()
+        if autoLookPoolConnection then
+            autoLookPoolConnection:Disconnect()
+            autoLookPoolConnection = nil
+        end
+    end
+
+    local function startAutoLookPool()
+        stopAutoLookPool()
+        autoLookPoolConnection = RunService.Heartbeat:Connect(function()
+            if not autoLookPoolEnabled then
+                stopAutoLookPool()
+                return
+            end
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                return
+            end
+            local target = getNearestPoolSidePoint(rootPart.Position)
+            if not target then
+                return
+            end
+            if (target - rootPart.Position).Magnitude < 0.05 then
+                return
+            end
+            rootPart.CFrame = CFrame.lookAt(rootPart.Position, target)
+        end)
+    end
+
+    LookDirectionSection:Toggle({
+        Title = "Auto Look to Pool",
+        Desc = "Continuously face the nearest mapped side of the pool.",
+        Flag = "galatama_main_autoLookPool",
+        Value = false,
+        Callback = function(enabled)
+            autoLookPoolEnabled = enabled
+            if enabled then
+                startAutoLookPool()
+            else
+                stopAutoLookPool()
+            end
+        end,
+    })
+
+    MainTab:Space()
 
     local AutoFishingSection = MainTab:Section({
         Title = "Auto Fishing",
@@ -1071,6 +1165,7 @@ do
     AutoFishingSection:Toggle({
         Title = "Auto Fishing",
         Desc = "Finishes an in-progress reel minigame if needed, then equip → cast → CMGR Result → wait for MGR Stop (same timing as main script auto mode).",
+        Flag = "galatama_main_autoFishing",
         Value = false,
         Callback = function(enabled)
             autoFishingEnabled = enabled
@@ -1109,6 +1204,7 @@ do
     InstantFishingSection:Input({
         Title = "Delay (seconds)",
         Placeholder = "e.g. 4",
+        Flag = "galatama_main_instantFishingDelaySec",
         Value = tostring(instantFishingDelaySec),
         Callback = function(value)
             local n = tonumber(value)
@@ -1121,6 +1217,7 @@ do
     InstantFishingSection:Toggle({
         Title = "Instant fishing",
         Desc = "Galatama reel only: faster cast/CMGR loop, getconnections/debug reel hack, optional fast MGR Complete after Delay. Turns off Auto Fishing.",
+        Flag = "galatama_main_instantFishing",
         Value = false,
         Callback = function(enabled)
             if enabled then
@@ -1286,6 +1383,7 @@ do
     MiscSection:Toggle({
         Title = "Anti AFK",
         Desc = "Prevent kick for inactivity (resets idle when Roblox detects AFK)",
+        Flag = "galatama_lp_antiAfk",
         Value = true,
         Callback = function(enabled)
             if enabled then
@@ -1298,6 +1396,7 @@ do
 
     MiscSection:Toggle({
         Title = "Infinite Jump",
+        Flag = "galatama_lp_infiniteJump",
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -1320,6 +1419,7 @@ do
     MiscSection:Toggle({
         Title = "No Clip",
         Desc = "Pass through walls (disables character collision)",
+        Flag = "galatama_lp_noClip",
         Callback = function(enabled)
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
@@ -1343,6 +1443,7 @@ do
     MiscSection:Toggle({
         Title = "Fly",
         Desc = "WASD + Space (up) / Ctrl (down), camera direction",
+        Flag = "galatama_lp_fly",
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -1456,6 +1557,7 @@ do
     MiscSection:Toggle({
         Title = "Free Camera",
         Desc = "Detach camera. Hold LMB/RMB + drag to look; WASD + Space/Ctrl to move. Character stays in place; cursor visible when not dragging.",
+        Flag = "galatama_lp_freeCamera",
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -1514,6 +1616,7 @@ do
     local WalkSpeedInput = WalkSpeedSection:Input({
         Title = "Speed",
         Placeholder = "e.g. 16 or 100",
+        Flag = "galatama_lp_walkSpeed",
         Value = walkSpeedValue,
         Callback = function(value)
             walkSpeedValue = value
@@ -1632,6 +1735,7 @@ do
     local JumpHeightInput = JumpHeightSection:Input({
         Title = "Height",
         Placeholder = "e.g. 7.2 or 50",
+        Flag = "galatama_lp_jumpHeight",
         Value = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
@@ -2266,6 +2370,7 @@ do
     TeleportSection:Input({
         Title = "Tween Duration",
         Placeholder = "e.g. 5",
+        Flag = "galatama_tp_tweenDurationSec",
         Value = tweenDurationValue,
         Callback = function(value)
             tweenDurationValue = value
@@ -2350,6 +2455,7 @@ do
     PlayerTeleportDropdown = TeleportToPlayersSection:Dropdown({
         Title = "Player",
         Desc = "Select player to teleport to",
+        Flag = "galatama_tp_playerPick",
         Values = playerDisplayNames,
         Value = nil,
         AllowNone = true,
@@ -2723,4 +2829,490 @@ do
         end
     })
 
+end
+
+-- */  Config Tab  /* --
+do
+    local ConfigTab = ElementsSection:Tab({
+        Title = "Config",
+        Icon = "solar:file-text-bold",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local ConfigManagementSection = ConfigTab:Section({
+        Title = "Config management",
+        Desc = "Named profiles in WindUI/" .. tostring(Window.Folder or "sempatpanick") .. "/config (executor file APIs). Only Main tab options are persisted.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local configMgmtName = ""
+    local savedConfigList = {}
+    local selectedSavedConfigName = nil
+    local SavedConfigsDropdown
+    local ConfigNameInput
+    local autoLoadPickerSelection = nil
+    local AutoLoadSavedDropdown
+
+    local function sanitizeConfigName(raw)
+        local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        s = s:gsub("[/\\]", "")
+        return s
+    end
+
+    local function getConfigManager()
+        local cm = Window.ConfigManager
+        if cm == false or cm == nil then
+            return nil
+        end
+        return cm
+    end
+
+    local function autoLoadMetaPath(cm)
+        return (cm.Path or "") .. "mancing_indo_galatama_autoload.json"
+    end
+
+    local function readAutoLoadPersistedName()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" or type(readfile) ~= "function" then
+            return ""
+        end
+        local path = autoLoadMetaPath(cm)
+        if not isfile(path) then
+            return ""
+        end
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(path))
+        end)
+        if ok and type(data) == "table" then
+            return sanitizeConfigName(tostring(data.name or data.profile or ""))
+        end
+        return ""
+    end
+
+    local function writeAutoLoadPersistedName(name)
+        local cm = getConfigManager()
+        if not cm or type(writefile) ~= "function" then
+            return false
+        end
+        local path = autoLoadMetaPath(cm)
+        local trimmed = sanitizeConfigName(name)
+        if trimmed == "" then
+            if type(delfile) == "function" and type(isfile) == "function" and isfile(path) then
+                pcall(function()
+                    delfile(path)
+                end)
+            end
+            return true
+        end
+        local ok = pcall(function()
+            writefile(path, HttpService:JSONEncode({ name = trimmed }))
+        end)
+        return ok
+    end
+
+    local function refreshSavedConfigDropdowns(showNotify)
+        local cm = getConfigManager()
+        if not cm then
+            if showNotify then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+            end
+            return
+        end
+        savedConfigList = cm:AllConfigs() or {}
+        table.sort(savedConfigList)
+        if SavedConfigsDropdown and SavedConfigsDropdown.Refresh then
+            SavedConfigsDropdown:Refresh(savedConfigList)
+        end
+        if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Refresh then
+            AutoLoadSavedDropdown:Refresh(savedConfigList)
+        end
+        if autoLoadPickerSelection and not table.find(savedConfigList, autoLoadPickerSelection) then
+            autoLoadPickerSelection = nil
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                AutoLoadSavedDropdown:Select(nil)
+            end
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                AutoLoadSavedDropdown:Set(nil)
+            end
+        end
+        if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
+            selectedSavedConfigName = nil
+            if SavedConfigsDropdown and SavedConfigsDropdown.Select then
+                SavedConfigsDropdown:Select(nil)
+            end
+            if SavedConfigsDropdown and SavedConfigsDropdown.Set then
+                SavedConfigsDropdown:Set(nil)
+            end
+        end
+        if showNotify then
+            WindUI:Notify({
+                Title = "Config",
+                Content = "Found " .. tostring(#savedConfigList) .. " saved profile(s).",
+                Icon = "check",
+            })
+        end
+    end
+
+    ConfigNameInput = ConfigManagementSection:Input({
+        Title = "Config name",
+        Desc = "File name without .json",
+        Placeholder = "e.g. main or pvp",
+        Value = configMgmtName,
+        Callback = function(value)
+            configMgmtName = sanitizeConfigName(value)
+        end,
+    })
+
+    SavedConfigsDropdown = ConfigManagementSection:Dropdown({
+        Title = "Config Saved",
+        Desc = "Profiles on disk; choosing one fills Config name. Delete Config removes the selected entry.",
+        Values = savedConfigList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedSavedConfigName = (value and value ~= "") and value or nil
+            if value and value ~= "" then
+                configMgmtName = sanitizeConfigName(value)
+                if ConfigNameInput and ConfigNameInput.Set then
+                    ConfigNameInput:Set(configMgmtName)
+                elseif ConfigNameInput and ConfigNameInput.SetValue then
+                    ConfigNameInput:SetValue(configMgmtName)
+                end
+            end
+        end,
+    })
+
+    local function isWindUIConfigObject(v)
+        return type(v) == "table" and type(v.Save) == "function" and type(v.Load) == "function"
+    end
+
+    local function getConfigObject(cm, name)
+        local existing = cm:GetConfig(name)
+        if isWindUIConfigObject(existing) then
+            return existing
+        end
+        return cm:Config(name, false)
+    end
+
+    local function syncPersistedAutoLoadToUi()
+        if not AutoLoadSavedDropdown then
+            return
+        end
+        local persisted = readAutoLoadPersistedName()
+        if persisted == "" or not table.find(savedConfigList, persisted) then
+            return
+        end
+        autoLoadPickerSelection = persisted
+        if AutoLoadSavedDropdown.Set then
+            AutoLoadSavedDropdown:Set(persisted)
+        elseif AutoLoadSavedDropdown.Select then
+            AutoLoadSavedDropdown:Select(persisted)
+        end
+    end
+
+    local function runStartupAutoLoadProfile()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" then
+            return
+        end
+        local name = readAutoLoadPersistedName()
+        if name == "" then
+            return
+        end
+        if not isfile(cm.Path .. name .. ".json") then
+            return
+        end
+        local cfg = getConfigObject(cm, name)
+        Window:SetCurrentConfig(cfg)
+        local pok, loadResult, loadErr = pcall(function()
+            return cfg:Load()
+        end)
+        if not pok then
+            warn("[Mancing Indo Galatama] Auto-load failed: ", loadResult)
+            return
+        end
+        if loadResult == false then
+            warn("[Mancing Indo Galatama] Auto-load: ", loadErr)
+            return
+        end
+        WindUI:Notify({
+            Title = "Config",
+            Content = "Auto-loaded \"" .. name .. "\"",
+            Icon = "check",
+        })
+    end
+
+    ConfigManagementSection:Space()
+
+    local ConfigSaveRefreshGroup = ConfigManagementSection:Group({})
+    ConfigSaveRefreshGroup:Button({
+        Title = "Refresh Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshSavedConfigDropdowns(true)
+        end,
+    })
+    ConfigSaveRefreshGroup:Space()
+    ConfigSaveRefreshGroup:Button({
+        Title = "Save Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                WindUI:Notify({ Title = "Config", Content = "Enter a config name first", Icon = "x" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            Window:SetCurrentConfig(cfg)
+            local ok, err = pcall(function()
+                cfg:Save()
+            end)
+            if not ok then
+                WindUI:Notify({ Title = "Config", Content = "Save failed: " .. tostring(err), Icon = "x" })
+                return
+            end
+            refreshSavedConfigDropdowns(false)
+            WindUI:Notify({ Title = "Config", Content = "Saved \"" .. name .. "\"", Icon = "check" })
+        end,
+    })
+
+    local ConfigLoadDeleteGroup = ConfigManagementSection:Group({})
+    ConfigLoadDeleteGroup:Button({
+        Title = "Load Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                WindUI:Notify({ Title = "Config", Content = "Enter or select a config name first", Icon = "x" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            Window:SetCurrentConfig(cfg)
+            local pok, loadResult, loadErr = pcall(function()
+                return cfg:Load()
+            end)
+            if not pok then
+                WindUI:Notify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult), Icon = "x" })
+                return
+            end
+            if loadResult == false then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(loadErr) == "string" and loadErr or "Config file not found or invalid",
+                    Icon = "x",
+                })
+                return
+            end
+            WindUI:Notify({ Title = "Config", Content = "Loaded \"" .. name .. "\"", Icon = "check" })
+        end,
+    })
+    ConfigLoadDeleteGroup:Space()
+    ConfigLoadDeleteGroup:Button({
+        Title = "Delete Config",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            if not selectedSavedConfigName or selectedSavedConfigName == "" then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                    Icon = "x",
+                })
+                return
+            end
+            local name = sanitizeConfigName(selectedSavedConfigName)
+            if name == "" then
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                    Icon = "x",
+                })
+                return
+            end
+            local okDel, msg = cm:DeleteConfig(name)
+            refreshSavedConfigDropdowns(false)
+            if okDel then
+                if readAutoLoadPersistedName() == name then
+                    writeAutoLoadPersistedName("")
+                    autoLoadPickerSelection = nil
+                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                        AutoLoadSavedDropdown:Select(nil)
+                    end
+                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                        AutoLoadSavedDropdown:Set(nil)
+                    end
+                end
+                selectedSavedConfigName = nil
+                if SavedConfigsDropdown and SavedConfigsDropdown.Select then
+                    SavedConfigsDropdown:Select(nil)
+                end
+                if SavedConfigsDropdown and SavedConfigsDropdown.Set then
+                    SavedConfigsDropdown:Set(nil)
+                end
+                if sanitizeConfigName(configMgmtName) == name then
+                    configMgmtName = ""
+                    if ConfigNameInput and ConfigNameInput.Set then
+                        ConfigNameInput:Set("")
+                    elseif ConfigNameInput and ConfigNameInput.SetValue then
+                        ConfigNameInput:SetValue("")
+                    end
+                end
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or ("Deleted \"" .. name .. "\""),
+                    Icon = "check",
+                })
+            else
+                WindUI:Notify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or "Delete failed",
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    ConfigTab:Space()
+
+    local AutoLoadSection = ConfigTab:Section({
+        Title = "Auto Load",
+        Desc = "Set stores which profile loads automatically on the next script run (mancing_indo_galatama_autoload.json next to your WindUI configs).",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    AutoLoadSavedDropdown = AutoLoadSection:Dropdown({
+        Title = "Config Saved",
+        Desc = "Choose a profile, then Set. Refresh lists from Config management if empty.",
+        Values = savedConfigList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            autoLoadPickerSelection = (value and value ~= "") and value or nil
+        end,
+    })
+
+    AutoLoadSection:Space()
+
+    local AutoLoadSetResetGroup = AutoLoadSection:Group({})
+    AutoLoadSetResetGroup:Button({
+        Title = "Set",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if not autoLoadPickerSelection or autoLoadPickerSelection == "" then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Select a config in Config Saved first",
+                    Icon = "x",
+                })
+                return
+            end
+            local cm = getConfigManager()
+            if not cm then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                    Icon = "x",
+                })
+                return
+            end
+            local pick = sanitizeConfigName(autoLoadPickerSelection)
+            if pick == "" or not table.find(savedConfigList, pick) then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "Selected profile is not in the list (try Refresh Config)",
+                    Icon = "x",
+                })
+                return
+            end
+            if not isfile or not isfile(cm.Path .. pick .. ".json") then
+                WindUI:Notify({
+                    Title = "Auto Load",
+                    Content = "That config file is not on disk yet (Save Config first)",
+                    Icon = "x",
+                })
+                return
+            end
+            if not writeAutoLoadPersistedName(pick) then
+                WindUI:Notify({ Title = "Auto Load", Content = "Failed to write autoload file", Icon = "x" })
+                return
+            end
+            WindUI:Notify({
+                Title = "Auto Load",
+                Content = "Next run will load \"" .. pick .. "\"",
+                Icon = "check",
+            })
+        end,
+    })
+    AutoLoadSetResetGroup:Space()
+    AutoLoadSetResetGroup:Button({
+        Title = "Reset",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            writeAutoLoadPersistedName("")
+            autoLoadPickerSelection = nil
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
+                AutoLoadSavedDropdown:Select(nil)
+            end
+            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
+                AutoLoadSavedDropdown:Set(nil)
+            end
+            WindUI:Notify({
+                Title = "Auto Load",
+                Content = "Auto-load on startup disabled",
+                Icon = "check",
+            })
+        end,
+    })
+
+    refreshSavedConfigDropdowns(false)
+    syncPersistedAutoLoadToUi()
+
+    task.defer(function()
+        task.wait(0.45)
+        runStartupAutoLoadProfile()
+    end)
 end
