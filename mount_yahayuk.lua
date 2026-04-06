@@ -1173,6 +1173,34 @@ do
         "WalkToPoint",
     }
 
+    local PLAYER_INSPECT_PROPERTIES = {
+        "AccountAge",
+        "AutoJumpEnabled",
+        "CanLoadCharacterAppearance",
+        "CharacterAppearanceId",
+        "DataComplexity",
+        "DataReady",
+        "DevComputerCameraMode",
+        "DevComputerMovementMode",
+        "DevEnableMouseLock",
+        "DevTouchCameraMode",
+        "DevTouchMovementMode",
+        "DisplayName",
+        "FollowUserId",
+        "GameplayPaused",
+        "HasVerifiedBadge",
+        "HealthDisplayDistance",
+        "LocaleId",
+        "MembershipType",
+        "Name",
+        "Neutral",
+        "RespawnLocation",
+        "SimulationRadius",
+        "Team",
+        "TeamColor",
+        "UserId",
+    }
+
     local function buildPlayersInfoText(player)
         if not player then
             return "Select a player from the list."
@@ -1181,6 +1209,59 @@ do
         table.insert(lines, "Username: " .. player.Name)
         local dn = player.DisplayName
         table.insert(lines, "Display name: " .. ((dn and dn ~= "") and dn or "(same as username)"))
+        table.insert(lines, "")
+        table.insert(lines, "LocalPlayer attributes:")
+        local localPlayer = Players.LocalPlayer
+        if localPlayer then
+            local attrs = localPlayer:GetAttributes()
+            local attrRows = {}
+            for key, val in pairs(attrs) do
+                table.insert(attrRows, {
+                    key = tostring(key),
+                    text = "  " .. tostring(key) .. " = " .. formatValueForDisplay(val),
+                })
+            end
+            table.sort(attrRows, function(a, b)
+                return string.lower(a.key) < string.lower(b.key)
+            end)
+            if #attrRows == 0 then
+                table.insert(lines, "  (none)")
+            else
+                for _, row in ipairs(attrRows) do
+                    table.insert(lines, row.text)
+                end
+            end
+        else
+            table.insert(lines, "  (LocalPlayer not found)")
+        end
+        table.insert(lines, "")
+        table.insert(lines, "LocalPlayer properties:")
+        if localPlayer then
+            local propRows = {}
+            for _, propName in ipairs(PLAYER_INSPECT_PROPERTIES) do
+                local ok, val = pcall(function()
+                    return localPlayer[propName]
+                end)
+                if ok then
+                    table.insert(propRows, {
+                        key = propName,
+                        text = "  " .. propName .. " = " .. formatValueForDisplay(val),
+                    })
+                end
+            end
+            table.sort(propRows, function(a, b)
+                return string.lower(a.key) < string.lower(b.key)
+            end)
+            if #propRows == 0 then
+                table.insert(lines, "  (none readable)")
+            else
+                for _, row in ipairs(propRows) do
+                    table.insert(lines, row.text)
+                end
+            end
+        else
+            table.insert(lines, "  (LocalPlayer not found)")
+        end
         local character = player.Character
         if not character then
             table.insert(lines, "Character: not loaded")
@@ -1203,6 +1284,30 @@ do
             end
         else
             table.insert(lines, "Location: (no HumanoidRootPart / PrimaryPart)")
+        end
+        table.insert(lines, "")
+        table.insert(lines, "Humanoid attributes:")
+        if humanoid then
+            local humAttrs = humanoid:GetAttributes()
+            local humAttrRows = {}
+            for key, val in pairs(humAttrs) do
+                table.insert(humAttrRows, {
+                    key = tostring(key),
+                    text = "  " .. tostring(key) .. " = " .. formatValueForDisplay(val),
+                })
+            end
+            table.sort(humAttrRows, function(a, b)
+                return string.lower(a.key) < string.lower(b.key)
+            end)
+            if #humAttrRows == 0 then
+                table.insert(lines, "  (none)")
+            else
+                for _, row in ipairs(humAttrRows) do
+                    table.insert(lines, row.text)
+                end
+            end
+        else
+            table.insert(lines, "  (no Humanoid)")
         end
         table.insert(lines, "")
         if humanoid then
