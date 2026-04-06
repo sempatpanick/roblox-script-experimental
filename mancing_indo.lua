@@ -3663,13 +3663,40 @@ do
 
     local TeleportSection = TeleportTab:Section({
         Title = "Teleport",
-        Desc = "Enter position as X, Y, Z or use Get current location",
+        Desc = "Location = X, Y, Z. Look direction = root LookVector (X, Y, Z); leave blank or 0,0,0 to ignore facing. Get fills both.",
         Box = true,
         BoxBorder = true,
         Opened = true,
     })
 
     local teleportInputValue = ""
+    local teleportLookInputValue = ""
+
+    local function teleportParseNumberTriple(str)
+        local s = str:gsub(",", " "):gsub("%s+", " ")
+        local parts = {}
+        for part in string.gmatch(s, "[%d%.%-]+") do
+            table.insert(parts, tonumber(part))
+        end
+        return parts
+    end
+
+    local function teleportCFrameFromInputs(posStr, lookStr): CFrame?
+        local posParts = teleportParseNumberTriple(posStr)
+        if #posParts < 3 then
+            return nil
+        end
+        local pos = Vector3.new(posParts[1], posParts[2], posParts[3])
+        local lookParts = teleportParseNumberTriple(lookStr)
+        if #lookParts < 3 then
+            return CFrame.new(pos)
+        end
+        local dir = Vector3.new(lookParts[1], lookParts[2], lookParts[3])
+        if dir.Magnitude < 1e-5 then
+            return CFrame.new(pos)
+        end
+        return CFrame.lookAt(pos, pos + dir.Unit)
+    end
 
     local TeleportInput = TeleportSection:Input({
         Title = "Location",
@@ -3679,6 +3706,17 @@ do
         Callback = function(value)
             teleportInputValue = value
         end
+    })
+
+    local TeleportLookInput = TeleportSection:Input({
+        Title = "Look direction",
+        Desc = "HumanoidRootPart look vector (X, Y, Z). Used with Teleport / Tween / Get.",
+        Placeholder = "e.g. 0, 0, -1 or leave empty for position only",
+        Flag = "mancing_tp_lookDirection",
+        Value = teleportLookInputValue,
+        Callback = function(value)
+            teleportLookInputValue = value
+        end,
     })
 
     TeleportSection:Button({
@@ -3700,9 +3738,17 @@ do
             elseif TeleportInput and TeleportInput.SetValue then
                 TeleportInput:SetValue(text)
             end
+            local look = rootPart.CFrame.LookVector
+            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
+            teleportLookInputValue = lookText
+            if TeleportLookInput and TeleportLookInput.Set then
+                TeleportLookInput:Set(lookText)
+            elseif TeleportLookInput and TeleportLookInput.SetValue then
+                TeleportLookInput:SetValue(lookText)
+            end
             WindUI:Notify({
                 Title = "Location",
-                Content = "Position: " .. text,
+                Content = "Position: " .. text .. " · Look: " .. lookText,
                 Icon = "check",
             })
         end
@@ -3721,12 +3767,8 @@ do
                 WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
-            local s = teleportInputValue:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
+            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not cf then
                 WindUI:Notify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
@@ -3734,11 +3776,11 @@ do
                 })
                 return
             end
-            local x, y, z = parts[1], parts[2], parts[3]
-            rootPart.CFrame = CFrame.new(x, y, z)
+            rootPart.CFrame = cf
+            local p = cf.Position
             WindUI:Notify({
                 Title = "Teleport",
-                Content = string.format("Teleported to %.1f, %.1f, %.1f", x, y, z),
+                Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
                 Icon = "check",
             })
         end
@@ -3768,12 +3810,8 @@ do
                 WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
-            local s = teleportInputValue:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
+            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not targetCf then
                 WindUI:Notify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
@@ -3781,16 +3819,15 @@ do
                 })
                 return
             end
-            local x, y, z = parts[1], parts[2], parts[3]
-            local targetPos = Vector3.new(x, y, z)
             local duration = tonumber(tweenDurationValue) or 5
             if duration < 0.1 then duration = 0.1 end
             local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(targetPos) })
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
             tween:Play()
+            local p = targetCf.Position
             WindUI:Notify({
                 Title = "Teleport",
-                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", x, y, z, duration),
+                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
                 Icon = "check",
             })
         end

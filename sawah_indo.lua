@@ -1019,6 +1019,179 @@ do
         Border = true,
     })
 
+    local CoordinateTeleportSection = TeleportTab:Section({
+        Title = "Coordinates",
+        Desc = "Location = X, Y, Z. Look direction = root LookVector; blank or 0,0,0 = position only. Get fills both.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local coordTeleportInputValue = ""
+    local coordTeleportLookInputValue = ""
+
+    local function coordTeleportParseNumberTriple(str)
+        local s = str:gsub(",", " "):gsub("%s+", " ")
+        local parts = {}
+        for part in string.gmatch(s, "[%d%.%-]+") do
+            table.insert(parts, tonumber(part))
+        end
+        return parts
+    end
+
+    local function coordTeleportCFrameFromInputs(posStr, lookStr)
+        local posParts = coordTeleportParseNumberTriple(posStr)
+        if #posParts < 3 then
+            return nil
+        end
+        local pos = Vector3.new(posParts[1], posParts[2], posParts[3])
+        local lookParts = coordTeleportParseNumberTriple(lookStr)
+        if #lookParts < 3 then
+            return CFrame.new(pos)
+        end
+        local dir = Vector3.new(lookParts[1], lookParts[2], lookParts[3])
+        if dir.Magnitude < 1e-5 then
+            return CFrame.new(pos)
+        end
+        return CFrame.lookAt(pos, pos + dir.Unit)
+    end
+
+    local CoordTeleportInput = CoordinateTeleportSection:Input({
+        Title = "Location",
+        Placeholder = "e.g. 100, 5, 200",
+        Flag = "sawah_tp_location",
+        Value = coordTeleportInputValue,
+        Callback = function(value)
+            coordTeleportInputValue = value
+        end,
+    })
+
+    local CoordTeleportLookInput = CoordinateTeleportSection:Input({
+        Title = "Look direction",
+        Desc = "HumanoidRootPart look vector (X, Y, Z)",
+        Placeholder = "e.g. 0, 0, -1 or empty",
+        Flag = "sawah_tp_lookDirection",
+        Value = coordTeleportLookInputValue,
+        Callback = function(value)
+            coordTeleportLookInputValue = value
+        end,
+    })
+
+    CoordinateTeleportSection:Button({
+        Title = "Get Current Location",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            local pos = rootPart.Position
+            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
+            coordTeleportInputValue = text
+            if CoordTeleportInput and CoordTeleportInput.Set then
+                CoordTeleportInput:Set(text)
+            elseif CoordTeleportInput and CoordTeleportInput.SetValue then
+                CoordTeleportInput:SetValue(text)
+            end
+            local look = rootPart.CFrame.LookVector
+            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
+            coordTeleportLookInputValue = lookText
+            if CoordTeleportLookInput and CoordTeleportLookInput.Set then
+                CoordTeleportLookInput:Set(lookText)
+            elseif CoordTeleportLookInput and CoordTeleportLookInput.SetValue then
+                CoordTeleportLookInput:SetValue(lookText)
+            end
+            WindUI:Notify({
+                Title = "Location",
+                Content = "Position: " .. text .. " · Look: " .. lookText,
+                Icon = "check",
+            })
+        end,
+    })
+
+    CoordinateTeleportSection:Space()
+
+    CoordinateTeleportSection:Button({
+        Title = "Teleport",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            local cf = coordTeleportCFrameFromInputs(coordTeleportInputValue, coordTeleportLookInputValue)
+            if not cf then
+                WindUI:Notify({
+                    Title = "Teleport",
+                    Content = "Enter position as X, Y, Z",
+                    Icon = "x",
+                })
+                return
+            end
+            rootPart.CFrame = cf
+            local p = cf.Position
+            WindUI:Notify({
+                Title = "Teleport",
+                Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
+                Icon = "check",
+            })
+        end,
+    })
+
+    CoordinateTeleportSection:Space()
+
+    local coordTweenDurationValue = "5"
+    CoordinateTeleportSection:Input({
+        Title = "Tween Duration",
+        Placeholder = "e.g. 5",
+        Value = coordTweenDurationValue,
+        Callback = function(value)
+            coordTweenDurationValue = value
+        end,
+    })
+
+    CoordinateTeleportSection:Button({
+        Title = "Tween to Location",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                return
+            end
+            local targetCf = coordTeleportCFrameFromInputs(coordTeleportInputValue, coordTeleportLookInputValue)
+            if not targetCf then
+                WindUI:Notify({
+                    Title = "Teleport",
+                    Content = "Enter position as X, Y, Z",
+                    Icon = "x",
+                })
+                return
+            end
+            local duration = tonumber(coordTweenDurationValue) or 5
+            if duration < 0.1 then duration = 0.1 end
+            local tweenInfo = TweenInfo.new(duration)
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
+            tween:Play()
+            local p = targetCf.Position
+            WindUI:Notify({
+                Title = "Teleport",
+                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
+                Icon = "check",
+            })
+        end,
+    })
+
+    TeleportTab:Space()
+
     local TeleportToObjectSection = TeleportTab:Section({
         Title = "Teleport to Object",
         Desc = "Select a ProximityPrompt object and teleport to it",

@@ -1002,13 +1002,34 @@ do
 
     local TeleportSection = TeleportTab:Section({
         Title = "Teleport",
-        Desc = "Enter position as X, Y, Z or use Get current location",
+        Desc = "Location = X, Y, Z. Look direction = root LookVector; blank or 0,0,0 = position only. Get fills both. Walk uses position only.",
         Box = true,
         BoxBorder = true,
         Opened = true,
     })
 
     local teleportInputValue = ""
+    local teleportLookInputValue = ""
+
+    local function teleportCFrameFromInputs(posStr, lookStr)
+        local pos = parsePositionString(posStr)
+        if not pos then
+            return nil
+        end
+        local s = (lookStr or ""):gsub(",", " "):gsub("%s+", " ")
+        local parts = {}
+        for part in string.gmatch(s, "[%d%.%-]+") do
+            table.insert(parts, tonumber(part))
+        end
+        if #parts < 3 then
+            return CFrame.new(pos)
+        end
+        local dir = Vector3.new(parts[1], parts[2], parts[3])
+        if dir.Magnitude < 1e-5 then
+            return CFrame.new(pos)
+        end
+        return CFrame.lookAt(pos, pos + dir.Unit)
+    end
 
     local TeleportInput = TeleportSection:Input({
         Title = "Location",
@@ -1017,6 +1038,16 @@ do
         Callback = function(value)
             teleportInputValue = value
         end
+    })
+
+    local TeleportLookInput = TeleportSection:Input({
+        Title = "Look direction",
+        Desc = "HumanoidRootPart look vector (X, Y, Z)",
+        Placeholder = "e.g. 0, 0, -1 or leave empty",
+        Value = teleportLookInputValue,
+        Callback = function(value)
+            teleportLookInputValue = value
+        end,
     })
 
     TeleportSection:Button({
@@ -1037,7 +1068,15 @@ do
             elseif TeleportInput and TeleportInput.SetValue then
                 TeleportInput:SetValue(text)
             end
-            notify("Location", "Position: " .. text)
+            local look = rootPart.CFrame.LookVector
+            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
+            teleportLookInputValue = lookText
+            if TeleportLookInput and TeleportLookInput.Set then
+                TeleportLookInput:Set(lookText)
+            elseif TeleportLookInput and TeleportLookInput.SetValue then
+                TeleportLookInput:SetValue(lookText)
+            end
+            notify("Location", "Position: " .. text .. " · Look: " .. lookText)
         end
     })
 
@@ -1053,13 +1092,14 @@ do
                 notify("Teleport", "Character not loaded", "x")
                 return
             end
-            local targetPos = parsePositionString(teleportInputValue)
-            if not targetPos then
+            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not cf then
                 notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
                 return
             end
-            rootPart.CFrame = CFrame.new(targetPos)
-            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
+            rootPart.CFrame = cf
+            local p = cf.Position
+            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
         end
     })
 
@@ -1085,17 +1125,18 @@ do
                 notify("Teleport", "Character not loaded", "x")
                 return
             end
-            local targetPos = parsePositionString(teleportInputValue)
-            if not targetPos then
+            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not targetCf then
                 notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
                 return
             end
             local duration = tonumber(tweenDurationValue) or 5
             if duration < 0.1 then duration = 0.1 end
             local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(targetPos) })
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
             tween:Play()
-            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", targetPos.X, targetPos.Y, targetPos.Z, duration))
+            local p = targetCf.Position
+            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration))
         end
     })
 
