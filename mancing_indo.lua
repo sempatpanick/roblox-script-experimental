@@ -1180,84 +1180,32 @@ do
     -- After enabling auto Fishing while already in minigame: extra pause once that minigame finishes.
     local autoFishDelay2sAfterPreEnableDrain = false
 
-    -- Last MGR minigame branch seen (StartReel / StartTap); settings UI overrides when available.
-    local lastMinigamePreferenceFromMGR: string? = nil
-    local settingsMinigameTextConn: RBXScriptConnection? = nil
-    local watchedSettingsMinigameLabel: TextLabel? = nil
-    local settingsGuiDescendantConn: RBXScriptConnection? = nil
+    local minigamePreferenceAttrConn: RBXScriptConnection? = nil
 
-    local function findSettingsMinigamesActionLabel(): TextLabel?
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then
-            return nil
-        end
-        local settingsGui = pg:FindFirstChild("SettingsGui")
-        if not (settingsGui and settingsGui:IsA("ScreenGui")) then
-            return nil
-        end
-        local canvas = settingsGui:FindFirstChild("Canvas")
-        if not canvas then
-            return nil
-        end
-        local container = canvas:FindFirstChild("Container")
-        if not container then
-            return nil
-        end
-        local body = container:FindFirstChild("Body")
-        if not body then
-            return nil
-        end
-        local scroll = body:FindFirstChild("ScrollingFrame")
-        if not (scroll and scroll:IsA("ScrollingFrame")) then
-            return nil
-        end
-        local minigames = scroll:FindFirstChild("Minigames")
-        if not minigames then
-            return nil
-        end
-        local actionBtn = minigames:FindFirstChild("ActionButton")
-        if not (actionBtn and actionBtn:IsA("GuiButton")) then
-            return nil
-        end
-        local tl = actionBtn:FindFirstChildOfClass("TextLabel")
-        if tl and tl:IsA("TextLabel") then
-            return tl
-        end
-        return nil
-    end
-
-    local function tryGetSettingsMinigameLabelText(): string?
-        local tl = findSettingsMinigamesActionLabel()
-        if not tl then
-            return nil
-        end
-        local t = formatGuiInstanceTextForDisplay(tl)
-        return t
-    end
-
-    local function classifyMinigameLabel(primary: string): "reel" | "tap" | nil
+    local function classifyMinigamePreference(primary: string): "reel" | "tap" | nil
         local p = string.lower(primary)
-        if string.find(p, "tap", 1, true) then
-            return "tap"
-        end
-        if string.find(p, "reel", 1, true) then
+        if p == "reel" then
             return "reel"
         end
+        if p == "tap" then
+            return "tap"
+        end
         return nil
+    end
+
+    local function getMinigamePreferenceFromAttribute(): (string?, "reel" | "tap" | nil)
+        local lp = Players.LocalPlayer
+        local raw = lp and lp:GetAttribute("MinigamePreference") or nil
+        if type(raw) ~= "string" then
+            return nil, nil
+        end
+        local normalized = classifyMinigamePreference(raw)
+        return raw, normalized
     end
 
     local function getMinigameKindResolved(): "reel" | "tap" | nil
-        local guiText = tryGetSettingsMinigameLabelText()
-        if guiText and guiText ~= "" then
-            local k = classifyMinigameLabel(guiText)
-            if k then
-                return k
-            end
-        end
-        if lastMinigamePreferenceFromMGR and lastMinigamePreferenceFromMGR ~= "" then
-            return classifyMinigameLabel(lastMinigamePreferenceFromMGR)
-        end
-        return nil
+        local _, kind = getMinigamePreferenceFromAttribute()
+        return kind
     end
 
     local function getMinigameKindForAutoSolve(): "reel" | "tap"
@@ -1267,47 +1215,15 @@ do
         return getMinigameKindResolved() or "tap"
     end
 
-    local function disconnectSettingsMinigameLabelWatcher()
-        if settingsMinigameTextConn then
-            settingsMinigameTextConn:Disconnect()
-            settingsMinigameTextConn = nil
-        end
-        watchedSettingsMinigameLabel = nil
-    end
-
     local function updateAutoFishStatusParagraph()
-        local pgRoot = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if pgRoot then
-            local sg = pgRoot:FindFirstChild("SettingsGui")
-            if sg and sg:IsA("ScreenGui") and not settingsGuiDescendantConn then
-                settingsGuiDescendantConn = sg.DescendantAdded:Connect(function()
-                    task.defer(updateAutoFishStatusParagraph)
-                end)
-            end
-        end
-
-        local guiText = tryGetSettingsMinigameLabelText()
-        local tl = findSettingsMinigamesActionLabel()
-        if tl and tl ~= watchedSettingsMinigameLabel then
-            disconnectSettingsMinigameLabelWatcher()
-            watchedSettingsMinigameLabel = tl
-            settingsMinigameTextConn = tl:GetPropertyChangedSignal("Text"):Connect(updateAutoFishStatusParagraph)
-        elseif not tl and watchedSettingsMinigameLabel then
-            disconnectSettingsMinigameLabelWatcher()
-        end
-
-        local primary = (guiText and guiText ~= "") and guiText or nil
-        if not primary and lastMinigamePreferenceFromMGR then
-            primary = lastMinigamePreferenceFromMGR
-        end
+        local primary, kind = getMinigamePreferenceFromAttribute()
         if not primary then
-            primary = "Unknown — open SettingsGui (Minigames row) or wait for a bite"
+            primary = "Unknown — wait until MinigamePreference is Reel or Tap"
         end
         if AutoFishStatusParagraph and AutoFishStatusParagraph.SetDesc then
             AutoFishStatusParagraph:SetDesc("Minigame: " .. primary)
         end
 
-        local kind = getMinigameKindResolved()
         if AutoFishMinigameSwitchButton and AutoFishMinigameSwitchButton.SetTitle then
             if kind == "reel" then
                 AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Tap & Hold")
@@ -1338,31 +1254,17 @@ do
                     (cp :: RemoteEvent):FireServer(targetRemote)
                 end)
             end
-            local tl = findSettingsMinigamesActionLabel()
-            if tl then
-                tl.Text = targetRemote == "Reel" and "Reel" or "Tap & Hold"
-            end
-            lastMinigamePreferenceFromMGR = targetRemote == "Reel" and "Reel" or "Tap & Hold"
+            pcall(function()
+                Players.LocalPlayer:SetAttribute("MinigamePreference", targetRemote)
+            end)
             updateAutoFishStatusParagraph()
         end,
     })
 
     task.defer(updateAutoFishStatusParagraph)
-
-    local pgForMinigamePref = Players.LocalPlayer:FindFirstChild("PlayerGui")
-    if pgForMinigamePref and pgForMinigamePref:IsA("PlayerGui") then
-        pgForMinigamePref.ChildAdded:Connect(function()
+    if not minigamePreferenceAttrConn then
+        minigamePreferenceAttrConn = Players.LocalPlayer:GetAttributeChangedSignal("MinigamePreference"):Connect(function()
             task.defer(updateAutoFishStatusParagraph)
-        end)
-    else
-        task.defer(function()
-            local pg = Players.LocalPlayer:WaitForChild("PlayerGui", 30)
-            if pg and pg:IsA("PlayerGui") then
-                pg.ChildAdded:Connect(function()
-                    task.defer(updateAutoFishStatusParagraph)
-                end)
-                updateAutoFishStatusParagraph()
-            end
         end)
     end
 
@@ -2079,13 +1981,11 @@ do
         end
         minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, a3, a4, a5)
             if action == "StartReel" then
-                lastMinigamePreferenceFromMGR = "Reel"
                 task.defer(updateAutoFishStatusParagraph)
                 if type(a2) == "table" and a2.Token ~= nil then
                     mgrReelPendingToken = a2.Token
                 end
             elseif action == "StartTap" then
-                lastMinigamePreferenceFromMGR = "Tap & Hold"
                 task.defer(updateAutoFishStatusParagraph)
             end
 
@@ -2424,11 +2324,9 @@ do
                 (cp :: RemoteEvent):FireServer("Reel")
             end)
         end
-        local tl = findSettingsMinigamesActionLabel()
-        if tl then
-            tl.Text = "Reel"
-        end
-        lastMinigamePreferenceFromMGR = "Reel"
+        pcall(function()
+            Players.LocalPlayer:SetAttribute("MinigamePreference", "Reel")
+        end)
         task.defer(updateAutoFishStatusParagraph)
     end
 
