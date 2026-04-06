@@ -2785,28 +2785,33 @@ do
 
     local LocationSection = MainTab:Section({
         Title = "Location",
-        Desc = "Preset spots; Teleport to Location pins your character to the selected position while on",
+        Desc = "Preset spots with facing; Teleport to Location pins you to the preset position and look direction while on",
         Box = true,
         BoxBorder = true,
         Opened = true,
     })
 
     local locationPresetRows = {
-        { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38) },
-        { name = "Bagang Teluk Dalam", pos = Vector3.new(967.70, 7.95, 1269.47) },
-        { name = "Bagang Teluk Tengah", pos = Vector3.new(3324.97, 7.95, -4416.49) },
-        { name = "Bagang Teluk Luar", pos = Vector3.new(-1901.70, 7.95, -1312.37) },
-        { name = "Bagang Ujung", pos = Vector3.new(-2927.68, 7.95, 4303.74) },
-        { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45) },
-        { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86) },
-        { name = "Pulau Batu Karang", pos = Vector3.new(-798.12, 11.92, -3334.50) },
+        { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38), look = Vector3.new(-0.8572, -0.0000, -0.5150) },
+        { name = "Bagang Teluk Dalam", pos = Vector3.new(967.70, 7.95, 1269.47), look = Vector3.new(-0.8870, -0.0000, -0.4618) },
+        { name = "Bagang Teluk Tengah", pos = Vector3.new(3324.97, 7.95, -4416.49), look = Vector3.new(-0.3504, -0.0000, 0.9366) },
+        { name = "Bagang Teluk Luar", pos = Vector3.new(-1901.70, 7.95, -1312.37), look = Vector3.new(-0.9483, -0.0000, -0.3174) },
+        { name = "Bagang Ujung", pos = Vector3.new(-2927.68, 7.95, 4303.74), look = Vector3.new(0.3254, -0.0000, -0.9456) },
+        { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45), look = Vector3.new(-0.1478, -0.0000, -0.9890) },
+        { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86), look = Vector3.new(-0.0348, -0.0000, -0.9994) },
+        { name = "Pulau Batu Karang", pos = Vector3.new(-798.19, 11.92, -3331.46), look = Vector3.new(0.3664, -0.0000, 0.9304) },
     }
 
     local locationDisplayList: { string } = {}
-    local locationPosByName: { [string]: Vector3 } = {}
+    local locationHoldCfByName: { [string]: CFrame } = {}
     for _, row in ipairs(locationPresetRows) do
         table.insert(locationDisplayList, row.name)
-        locationPosByName[row.name] = row.pos
+        local look = row.look
+        if typeof(look) == "Vector3" and look.Magnitude >= 1e-5 then
+            locationHoldCfByName[row.name] = CFrame.lookAt(row.pos, row.pos + look.Unit)
+        else
+            locationHoldCfByName[row.name] = CFrame.new(row.pos)
+        end
     end
 
     local selectedLocationName: string? = nil
@@ -2827,8 +2832,8 @@ do
         if not selectedLocationName or selectedLocationName == "" then
             return
         end
-        local pos = locationPosByName[selectedLocationName]
-        if not pos then
+        local holdCf = locationHoldCfByName[selectedLocationName]
+        if not holdCf then
             return
         end
         local character = Players.LocalPlayer.Character
@@ -2838,7 +2843,7 @@ do
         end
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
-        rootPart.CFrame = CFrame.new(pos)
+        rootPart.CFrame = holdCf
     end
 
     local function startLocationHold()
@@ -2864,7 +2869,7 @@ do
         if not selectedLocationName or selectedLocationName == "" then
             return
         end
-        if not locationPosByName[selectedLocationName] then
+        if not locationHoldCfByName[selectedLocationName] then
             return
         end
         startLocationHold()
@@ -2887,7 +2892,7 @@ do
     local TeleportLocationToggle
     TeleportLocationToggle = LocationSection:Toggle({
         Title = "Teleport to Location",
-        Desc = "While on, every frame snaps you to the preset and clears root velocity (character stays fixed there)",
+        Desc = "While on, every frame snaps you to the preset position, facing, and clears root velocity",
         Flag = "mancing_main_teleportToLocation",
         Value = false,
         Callback = function(enabled)
@@ -2906,7 +2911,7 @@ do
                 WindUI:Notify({ Title = "Location", Content = "Select a location first", Icon = "x" })
                 return
             end
-            if not locationPosByName[selectedLocationName] then
+            if not locationHoldCfByName[selectedLocationName] then
                 teleportToLocationEnabled = false
                 task.defer(function()
                     if TeleportLocationToggle and TeleportLocationToggle.Set then
