@@ -2800,6 +2800,7 @@ do
         { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45), look = Vector3.new(-0.1478, -0.0000, -0.9890) },
         { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86), look = Vector3.new(-0.0348, -0.0000, -0.9994) },
         { name = "Pulau Batu Karang", pos = Vector3.new(-798.19, 11.92, -3331.46), look = Vector3.new(0.3664, -0.0000, 0.9304) },
+        { name = "Ocean", pos = Vector3.new(-3832.58, 5, -2252.42), look = Vector3.new(0.7629, 0.0000, 0.6465) },
     }
 
     local locationDisplayList: { string } = {}
