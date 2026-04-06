@@ -135,7 +135,7 @@ local ElementsSection = Window:Section({
     Opened = true,
 })
 
--- */  Main Tab (Auto fishing — Reel only, same flow as mancing_indo.lua reel mode)  /* --
+-- */  Main Tab (Auto Fishing — Reel only, same flow as mancing_indo.lua reel mode)  /* --
 do
     local MainTab = ElementsSection:Tab({
         Title = "Main",
@@ -146,7 +146,7 @@ do
     })
 
     local AutoFishingSection = MainTab:Section({
-        Title = "Auto fishing",
+        Title = "Auto Fishing",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -466,7 +466,7 @@ do
 
         if fishingAutomationActive() and os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT and isReelMinigameActive() then
             warn(
-                "[Auto fishing] reel autoplay timed out — check VirtualInputManager E/Q support, or executor compatibility."
+                "[Auto Fishing] reel autoplay timed out — check VirtualInputManager E/Q support, or executor compatibility."
             )
         end
     end
@@ -487,7 +487,7 @@ do
             end)
             reelAutoplayLoopRunning = false
             if not ok then
-                warn("[Auto fishing] reel autoplay error: ", err)
+                warn("[Auto Fishing] reel autoplay error: ", err)
             end
         end)
     end
@@ -602,7 +602,7 @@ do
             and os.clock() - t0 >= MINIGAME_SESSION_TIMEOUT
             and (isFishingMinigameCircleActive() or mgrReelPendingToken ~= nil or isReelMinigameActive())
         then
-            warn("[Auto fishing] timed out waiting for minigame to end (" .. reason .. ")")
+            warn("[Auto Fishing] timed out waiting for minigame to end (" .. reason .. ")")
             mgrReelPendingToken = nil
         end
         if fishingAutomationActive() then
@@ -752,7 +752,7 @@ do
     local function runAutoFishingCycle()
         local ok, res = pcall(runAutoFishingCycleImpl)
         if not ok then
-            warn("[Auto fishing] cycle error: ", res)
+            warn("[Auto Fishing] cycle error: ", res)
             return false
         end
         return res
@@ -773,7 +773,7 @@ do
     })
 
     AutoFishingSection:Toggle({
-        Title = "Auto fishing",
+        Title = "Auto Fishing",
         Desc = "Finishes an in-progress reel minigame if needed, then equip → cast → CMGR Result → wait for MGR Stop (same timing as main script auto mode).",
         Value = false,
         Callback = function(enabled)
