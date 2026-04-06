@@ -11,8 +11,14 @@ local games = {
 }
 
 local fallbackScriptURL = baseURL .. "/others.lua"
+local excludedGameIds = {
+    [121864768012064] = true,
+}
 
 local currentID = game.PlaceId
+if excludedGameIds[currentID] then
+    return
+end
 local scriptURL = games[currentID] or fallbackScriptURL
 
 loadstring(game:HttpGet(scriptURL))()
