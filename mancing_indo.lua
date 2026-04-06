@@ -2973,31 +2973,136 @@ do
         Opened = true,
     })
 
+    local GALATAMA_QUEUE_MIN_X = 2557
+    local GALATAMA_QUEUE_MAX_X = 2577.50
+    local GALATAMA_QUEUE_MIN_Y = 2.7
+    local GALATAMA_QUEUE_MAX_Y = 8.00
+    local GALATAMA_QUEUE_MIN_Z = -801
+    local GALATAMA_QUEUE_MAX_Z = -775
+
+    local GalatamaQueueStatusParagraph = GalatamaSection:Paragraph({
+        Title = "Status",
+        Desc = "Queue: Checking...",
+    })
+
+    local function isInsideGalatamaQueueArea(pos: Vector3): boolean
+        return pos.X >= GALATAMA_QUEUE_MIN_X
+            and pos.X <= GALATAMA_QUEUE_MAX_X
+            and pos.Y >= GALATAMA_QUEUE_MIN_Y
+            and pos.Y <= GALATAMA_QUEUE_MAX_Y
+            and pos.Z >= GALATAMA_QUEUE_MIN_Z
+            and pos.Z <= GALATAMA_QUEUE_MAX_Z
+    end
+
+    local function getLocalPlayerRootPart()
+        local character = Players.LocalPlayer.Character
+        if not character then
+            return nil
+        end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+        local pp = character.PrimaryPart
+        if pp and pp:IsA("BasePart") then
+            return pp
+        end
+        return nil
+    end
+
+    local function updateGalatamaQueueStatus()
+        if not (GalatamaQueueStatusParagraph and GalatamaQueueStatusParagraph.SetDesc) then
+            return
+        end
+        local root = getLocalPlayerRootPart()
+        if not root then
+            GalatamaQueueStatusParagraph:SetDesc("Queue: Unknown (character/root not ready)")
+            return
+        end
+        local inQueue = isInsideGalatamaQueueArea(root.Position)
+        if inQueue then
+            GalatamaQueueStatusParagraph:SetDesc("Queue: In queue")
+        else
+            GalatamaQueueStatusParagraph:SetDesc("Queue: Not in queue")
+        end
+    end
+
+    local autoJoinGalatamaQueueEnabled = false
+    local autoJoinGalatamaQueueLoopRunning = false
+    local AUTO_JOIN_GALATAMA_RETRY_SEC = 1.0
+
+    local function fireJoinGalatamaQueue(): (boolean, string?)
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotes then
+            return false, "Remotes folder not found"
+        end
+        local evt = remotes:FindFirstChild("JoinGalatamaQueue")
+        if not (evt and evt:IsA("RemoteEvent")) then
+            return false, "JoinGalatamaQueue remote not found"
+        end
+        local ok, err = pcall(function()
+            evt:FireServer()
+        end)
+        if not ok then
+            return false, "FireServer failed: " .. tostring(err)
+        end
+        return true, nil
+    end
+
+    local function isLocalPlayerInGalatamaQueue(): boolean?
+        local root = getLocalPlayerRootPart()
+        if not root then
+            return nil
+        end
+        return isInsideGalatamaQueueArea(root.Position)
+    end
+
+    local function ensureAutoJoinGalatamaQueueLoop()
+        if autoJoinGalatamaQueueLoopRunning then
+            return
+        end
+        autoJoinGalatamaQueueLoopRunning = true
+        task.spawn(function()
+            while autoJoinGalatamaQueueEnabled do
+                local inQueue = isLocalPlayerInGalatamaQueue()
+                if inQueue == false then
+                    local ok, err = fireJoinGalatamaQueue()
+                    if not ok then
+                        WindUI:Notify({ Title = "Galatama", Content = tostring(err), Icon = "x" })
+                    end
+                    task.defer(updateGalatamaQueueStatus)
+                end
+                task.wait(AUTO_JOIN_GALATAMA_RETRY_SEC)
+            end
+            autoJoinGalatamaQueueLoopRunning = false
+        end)
+    end
+
+    do
+        local elapsed = 0
+        RunService.Heartbeat:Connect(function(dt)
+            elapsed += dt
+            if elapsed >= 0.2 then
+                elapsed = 0
+                updateGalatamaQueueStatus()
+            end
+        end)
+    end
+    task.defer(updateGalatamaQueueStatus)
+
     GalatamaSection:Button({
         Title = "Join Queue",
         Justify = "Center",
         Icon = "",
         Callback = function()
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            if not remotes then
-                WindUI:Notify({ Title = "Galatama", Content = "Remotes folder not found", Icon = "x" })
-                return
-            end
-            local evt = remotes:FindFirstChild("JoinGalatamaQueue")
-            if not (evt and evt:IsA("RemoteEvent")) then
-                WindUI:Notify({ Title = "Galatama", Content = "JoinGalatamaQueue remote not found", Icon = "x" })
-                return
-            end
-            local ok, err = pcall(function()
-                evt:FireServer()
-            end)
+            local ok, err = fireJoinGalatamaQueue()
             if not ok then
-                WindUI:Notify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err), Icon = "x" })
+                WindUI:Notify({ Title = "Galatama", Content = tostring(err), Icon = "x" })
+            else
+                task.defer(updateGalatamaQueueStatus)
             end
         end,
     })
-    
-    GalatamaSection:Space()
 
     GalatamaSection:Button({
         Title = "Leave Queue",
@@ -3019,6 +3124,23 @@ do
             end)
             if not ok then
                 WindUI:Notify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err), Icon = "x" })
+            else
+                task.defer(updateGalatamaQueueStatus)
+            end
+        end,
+    })
+
+    GalatamaSection:Space()
+
+    GalatamaSection:Toggle({
+        Title = "Auto Join Queue",
+        Desc = "Automatically calls Join Queue when status is Not in queue",
+        Flag = "mancing_event_autoJoinGalatamaQueue",
+        Value = false,
+        Callback = function(enabled)
+            autoJoinGalatamaQueueEnabled = enabled
+            if enabled then
+                ensureAutoJoinGalatamaQueueLoop()
             end
         end,
     })
