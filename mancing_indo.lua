@@ -2478,9 +2478,16 @@ do
         end)
     end
 
+    -- Filled in by Location section: pause/resume pin while Auto Sell teleports.
+    local locationHoldApi: { pauseForAutoSell: (() -> boolean)?, resumeAfterAutoSell: ((boolean) -> ())? } = {}
+
     local function runAutoSellTeleportSellAndReturn()
         if not playerBackpackHasFish() then
             return
+        end
+        local holdPausedForAutoSell = false
+        if locationHoldApi.pauseForAutoSell then
+            holdPausedForAutoSell = locationHoldApi.pauseForAutoSell()
         end
         local character = Players.LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -2503,6 +2510,9 @@ do
         end)
         if restoreAssist then
             pcall(restoreAssist)
+        end
+        if locationHoldApi.resumeAfterAutoSell then
+            locationHoldApi.resumeAfterAutoSell(holdPausedForAutoSell)
         end
     end
 
@@ -2768,6 +2778,144 @@ do
                     Icon = "x",
                 })
             end
+        end,
+    })
+
+    MainTab:Space()
+
+    local LocationSection = MainTab:Section({
+        Title = "Location",
+        Desc = "Preset spots; Teleport to Location pins your character to the selected position while on",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local locationPresetRows = {
+        { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38) },
+    }
+
+    local locationDisplayList: { string } = {}
+    local locationPosByName: { [string]: Vector3 } = {}
+    for _, row in ipairs(locationPresetRows) do
+        table.insert(locationDisplayList, row.name)
+        locationPosByName[row.name] = row.pos
+    end
+
+    local selectedLocationName: string? = nil
+    local teleportToLocationEnabled = false
+    local locationHoldConn: RBXScriptConnection? = nil
+
+    local function stopLocationHold()
+        if locationHoldConn then
+            locationHoldConn:Disconnect()
+            locationHoldConn = nil
+        end
+    end
+
+    local function tickPinCharacterToPreset()
+        if not teleportToLocationEnabled then
+            return
+        end
+        if not selectedLocationName or selectedLocationName == "" then
+            return
+        end
+        local pos = locationPosByName[selectedLocationName]
+        if not pos then
+            return
+        end
+        local character = Players.LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart or not rootPart:IsA("BasePart") then
+            return
+        end
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        rootPart.CFrame = CFrame.new(pos)
+    end
+
+    local function startLocationHold()
+        stopLocationHold()
+        locationHoldConn = RunService.Heartbeat:Connect(tickPinCharacterToPreset)
+    end
+
+    function locationHoldApi.pauseForAutoSell(): boolean
+        if not teleportToLocationEnabled then
+            return false
+        end
+        stopLocationHold()
+        return true
+    end
+
+    function locationHoldApi.resumeAfterAutoSell(wasPaused: boolean)
+        if not wasPaused then
+            return
+        end
+        if not teleportToLocationEnabled then
+            return
+        end
+        if not selectedLocationName or selectedLocationName == "" then
+            return
+        end
+        if not locationPosByName[selectedLocationName] then
+            return
+        end
+        startLocationHold()
+        tickPinCharacterToPreset()
+    end
+
+    LocationSection:Dropdown({
+        Title = "Location",
+        Desc = "Preset world positions",
+        Flag = "mancing_main_locationPick",
+        Values = locationDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            selectedLocationName = (value and value ~= "") and value or nil
+        end,
+    })
+
+    local TeleportLocationToggle
+    TeleportLocationToggle = LocationSection:Toggle({
+        Title = "Teleport to Location",
+        Desc = "While on, every frame snaps you to the preset and clears root velocity (character stays fixed there)",
+        Flag = "mancing_main_teleportToLocation",
+        Value = false,
+        Callback = function(enabled)
+            teleportToLocationEnabled = enabled
+            if not enabled then
+                stopLocationHold()
+                return
+            end
+            if not selectedLocationName or selectedLocationName == "" then
+                teleportToLocationEnabled = false
+                task.defer(function()
+                    if TeleportLocationToggle and TeleportLocationToggle.Set then
+                        TeleportLocationToggle:Set(false)
+                    end
+                end)
+                WindUI:Notify({ Title = "Location", Content = "Select a location first", Icon = "x" })
+                return
+            end
+            if not locationPosByName[selectedLocationName] then
+                teleportToLocationEnabled = false
+                task.defer(function()
+                    if TeleportLocationToggle and TeleportLocationToggle.Set then
+                        TeleportLocationToggle:Set(false)
+                    end
+                end)
+                WindUI:Notify({ Title = "Location", Content = "Unknown location", Icon = "x" })
+                return
+            end
+            startLocationHold()
+            tickPinCharacterToPreset()
+            WindUI:Notify({
+                Title = "Location",
+                Content = "Holding at " .. tostring(selectedLocationName),
+                Icon = "check",
+            })
         end,
     })
 
