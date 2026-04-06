@@ -1034,7 +1034,7 @@ do
     })
 
     local AutoFishingSection = MainTab:Section({
-        Title = "Auto fishing",
+        Title = "Auto Fishing",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -1061,7 +1061,7 @@ do
     local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 20
-    -- Reel: deep hack + fast Complete are Instant fishing only. Auto fishing uses VIM E/Q only.
+    -- Reel: deep hack + fast Complete are Instant fishing only. Auto Fishing uses VIM E/Q only.
     local REEL_AUTOPLAY_START_DELAY = 0.06
     local REEL_AUTOPLAY_TIMEOUT = 55
     local REEL_DEEP_NUKE_AFTER = 0.45
@@ -1072,7 +1072,7 @@ do
     -- MGR Spawn payload (challenge id lives only in the game's Minigames module, not on instances).
     local mgrPendingChallenge = nil :: { id: any, mode: string, hold: number }?
     local mgrReelPendingToken: any = nil
-    -- After enabling auto fishing while already in minigame: extra pause once that minigame finishes.
+    -- After enabling auto Fishing while already in minigame: extra pause once that minigame finishes.
     local autoFishDelay2sAfterPreEnableDrain = false
 
     -- Last MGR minigame branch seen (StartReel / StartTap); settings UI overrides when available.
@@ -1851,7 +1851,7 @@ do
             and isReelMinigameActive()
         then
             warn(
-                "[Auto fishing] reel autoplay timed out — need getconnections + debug, VirtualInputManager E/Q, or valid MGR token for nuke Complete."
+                "[Auto Fishing] reel autoplay timed out — need getconnections + debug, VirtualInputManager E/Q, or valid MGR token for nuke Complete."
             )
         end
     end
@@ -1872,7 +1872,7 @@ do
             end)
             reelAutoplayLoopRunning = false
             if not ok then
-                warn("[Auto fishing] reel autoplay error: ", err)
+                warn("[Auto Fishing] reel autoplay error: ", err)
             end
         end)
     end
@@ -2069,7 +2069,7 @@ do
                 or isReelMinigameActive()
             )
         then
-            warn("[Auto fishing] timed out waiting for minigame to end (" .. reason .. ")")
+            warn("[Auto Fishing] timed out waiting for minigame to end (" .. reason .. ")")
             mgrPendingChallenge = nil
             mgrReelPendingToken = nil
         end
@@ -2261,7 +2261,7 @@ do
         local ok, res = pcall(runAutoFishingCycleImpl)
         autoFishingCycleRunning = false
         if not ok then
-            warn("[Auto fishing] cycle error: ", res)
+            warn("[Auto Fishing] cycle error: ", res)
             return false
         end
         return res
@@ -2328,7 +2328,7 @@ do
     end
 
     AutoFishingSection:Toggle({
-        Title = "Auto fishing",
+        Title = "Auto Fishing",
         Desc = "Finishes an in-progress MGR minigame first if needed, then equip/cast/CMGR/MGR as usual",
         Value = false,
         Callback = function(enabled)
@@ -2390,7 +2390,7 @@ do
 
     InstantFishingSection:Toggle({
         Title = "Instant fishing",
-        Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Turns off Auto fishing. Delay is the wait after each minigame.",
+        Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Turns off Auto Fishing. Delay is the wait after each minigame.",
         Value = false,
         Callback = function(enabled)
             if enabled then
@@ -2553,7 +2553,7 @@ do
 
     SellSection:Toggle({
         Title = "Auto Sell",
-        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Auto fishing: waits for minigame, pauses, sells, 1s after return resumes",
+        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Auto Fishing: waits for minigame, pauses, sells, 1s after return resumes",
         Value = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
