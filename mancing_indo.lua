@@ -35,7 +35,7 @@ end
 -- */  Window  /* --
 local Window = WindUI:CreateWindow({
     Title = "sempatpanick | Mancing Indo",
-    Folder = "sempatpanick",
+    Folder = "sempatpanick_mancing_indo",
     Icon = "solar:folder-2-bold-duotone",
     NewElements = true,
     HideSearchBar = false,
@@ -2953,6 +2953,320 @@ do
                 end
             end)
         end
+    end)
+end
+
+-- */  Backpack Tab  /* --
+-- Rarity strings: game client uses these in FishCatchNotification + FishingRodGui (RodBackpackHandler);
+-- live data from Remotes.OwnedRods catalog (.Rarity per rod), GetBestiary entries, and fish Tools (UID, Rarity attr).
+do
+    local BackpackTab = ElementsSection:Tab({
+        Title = "Backpack",
+        Icon = "solar:backpack-bold-duotone",
+        IconColor = Green,
+        IconShape = "Square",
+        Border = true,
+    })
+
+    local MANCING_DEFAULT_RARITY_ORDER = {
+        "Common",
+        "Uncommon",
+        "Rare",
+        "Epic",
+        "Legendary",
+        "Mythical",
+    }
+
+    local rarityRankLookup: { [string]: number } = {}
+    for i, name in ipairs(MANCING_DEFAULT_RARITY_ORDER) do
+        rarityRankLookup[name] = i
+    end
+
+    local function copyStringArray(arr: { string }): { string }
+        local out: { string } = {}
+        for i, v in ipairs(arr) do
+            out[i] = v
+        end
+        return out
+    end
+
+    local function compareRarityNames(a: string, b: string): boolean
+        local ra = rarityRankLookup[a]
+        local rb = rarityRankLookup[b]
+        if ra and rb then
+            return ra < rb
+        end
+        if ra and not rb then
+            return true
+        end
+        if not ra and rb then
+            return false
+        end
+        return string.lower(a) < string.lower(b)
+    end
+
+    local function sortRarityNameList(names: { string })
+        table.sort(names, compareRarityNames)
+    end
+
+    local function mergeRarityString(set: { [string]: boolean }, s: string?)
+        if type(s) ~= "string" then
+            return
+        end
+        s = string.gsub(string.gsub(s, "^%s+", ""), "%s+$", "")
+        if s == "" then
+            return
+        end
+        set[s] = true
+    end
+
+    local function collectRarityFromValue(value: any, depth: number, set: { [string]: boolean }, visited: { [any]: boolean })
+        if depth > 6 or type(value) ~= "table" then
+            return
+        end
+        if visited[value] then
+            return
+        end
+        visited[value] = true
+        mergeRarityString(set, value.Rarity)
+        for _, child in pairs(value) do
+            if type(child) == "table" then
+                collectRarityFromValue(child, depth + 1, set, visited)
+            end
+        end
+    end
+
+    local lastOwnedRodsCatalog: { [any]: any }? = nil
+
+    local function mergeRaritiesFromOwnedRodsCatalog(set: { [string]: boolean }, catalog: { [any]: any }?)
+        if type(catalog) ~= "table" then
+            return
+        end
+        for _, info in pairs(catalog) do
+            if type(info) == "table" then
+                mergeRarityString(set, info.Rarity)
+            end
+        end
+    end
+
+    local function mergeRaritiesFromFishTools(set: { [string]: boolean }, player: Player)
+        local function scan(container: Instance?)
+            if not container then
+                return
+            end
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Tool") and child:GetAttribute("FishingRod") == nil and child:GetAttribute("UID") ~= nil then
+                    local rAttr = child:GetAttribute("Rarity")
+                    if type(rAttr) == "string" then
+                        mergeRarityString(set, rAttr)
+                    end
+                end
+            end
+        end
+        scan(player:FindFirstChild("Backpack"))
+        local ch = player.Character
+        if ch then
+            scan(ch)
+        end
+    end
+
+    local function mergeRaritiesFromBestiary(set: { [string]: boolean })
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if not remotes then
+            return
+        end
+        local gb = remotes:FindFirstChild("GetBestiary")
+        if not (gb and gb:IsA("RemoteFunction")) then
+            return
+        end
+        local ok, list = pcall(function()
+            return (gb :: RemoteFunction):InvokeServer()
+        end)
+        if not ok or type(list) ~= "table" then
+            return
+        end
+        local visited: { [any]: boolean } = {}
+        for _, entry in pairs(list) do
+            if type(entry) == "table" then
+                collectRarityFromValue(entry, 0, set, visited)
+            end
+        end
+    end
+
+    local function buildRarityValuesList(): { string }
+        local set: { [string]: boolean } = {}
+        for _, name in ipairs(MANCING_DEFAULT_RARITY_ORDER) do
+            set[name] = true
+        end
+        mergeRaritiesFromOwnedRodsCatalog(set, lastOwnedRodsCatalog)
+        mergeRaritiesFromBestiary(set)
+        mergeRaritiesFromFishTools(set, Players.LocalPlayer)
+        local names: { string } = {}
+        for name in pairs(set) do
+            table.insert(names, name)
+        end
+        sortRarityNameList(names)
+        return names
+    end
+
+    -- Lowercase keys → true; favors fish whose Rarity matches any selected tier (exact, case-insensitive).
+    local favoriteAutoFavoriteRarityKeys: { [string]: boolean } = {
+        [string.lower("Rare")] = true,
+    }
+    local autoFavoriteEnabled = false
+
+    local function trimRarityString(s: string): string
+        return string.gsub(string.gsub(s, "^%s+", ""), "%s+$", "")
+    end
+
+    local function syncFavoriteKeysFromMultiDropdownValue(value: any)
+        local keys: { [string]: boolean } = {}
+        if type(value) == "table" then
+            for _, item in ipairs(value) do
+                local s = (type(item) == "table" and item.Title) or item
+                if type(s) == "string" then
+                    local t = trimRarityString(s)
+                    if t ~= "" then
+                        keys[string.lower(t)] = true
+                    end
+                end
+            end
+        elseif type(value) == "string" and value ~= "" then
+            keys[string.lower(trimRarityString(value))] = true
+        end
+        favoriteAutoFavoriteRarityKeys = keys
+    end
+
+    local function fishRarityMatchesAutoFavoriteSelections(fishRarityRaw: any): boolean
+        if type(fishRarityRaw) ~= "string" then
+            return false
+        end
+        local fishR = trimRarityString(fishRarityRaw)
+        if fishR == "" then
+            return false
+        end
+        if next(favoriteAutoFavoriteRarityKeys) == nil then
+            return false
+        end
+        return favoriteAutoFavoriteRarityKeys[string.lower(fishR)] == true
+    end
+
+    local function onBackpackAddClientPayload(payload: any)
+        if not autoFavoriteEnabled then
+            return
+        end
+        if type(payload) ~= "table" then
+            return
+        end
+        if not fishRarityMatchesAutoFavoriteSelections(payload.Rarity) then
+            return
+        end
+        if payload.IsLocked == true then
+            return
+        end
+        local uidRaw = payload.UID
+        if type(uidRaw) ~= "string" then
+            return
+        end
+        local uid = trimRarityString(uidRaw)
+        if uid == "" then
+            return
+        end
+        local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+        local toggleLock = remotesFolder and remotesFolder:FindFirstChild("ToggleLock")
+        if not (toggleLock and toggleLock:IsA("RemoteEvent")) then
+            return
+        end
+        pcall(function()
+            (toggleLock :: RemoteEvent):FireServer(uid)
+        end)
+    end
+
+    local FavoriteSection = BackpackTab:Section({
+        Title = "Favorite",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local FavoriteByRarityDropdown
+    FavoriteByRarityDropdown = FavoriteSection:Dropdown({
+        Title = "By Rarity",
+        Desc = "Multi-select. Auto Favorite runs ToggleLock(UID) when fish Rarity matches any selected tier.",
+        Flag = "mancing_backpack_favoriteByRarity",
+        Values = copyStringArray(MANCING_DEFAULT_RARITY_ORDER),
+        Value = { "Rare" },
+        Multi = true,
+        AllowNone = false,
+        Callback = function(value)
+            syncFavoriteKeysFromMultiDropdownValue(value)
+        end,
+    })
+
+    local function applyFavoriteRarityDropdownPicks(canonicalNames: { string })
+        if not FavoriteByRarityDropdown then
+            return
+        end
+        syncFavoriteKeysFromMultiDropdownValue(canonicalNames)
+        if FavoriteByRarityDropdown.Select then
+            FavoriteByRarityDropdown:Select(canonicalNames)
+        elseif FavoriteByRarityDropdown.Set then
+            FavoriteByRarityDropdown:Set(canonicalNames)
+        end
+    end
+
+    local function refreshFavoriteRarityDropdown()
+        local list = buildRarityValuesList()
+        if #list == 0 then
+            list = copyStringArray(MANCING_DEFAULT_RARITY_ORDER)
+        end
+        if FavoriteByRarityDropdown and FavoriteByRarityDropdown.Refresh then
+            FavoriteByRarityDropdown:Refresh(list)
+        end
+        local newPicks: { string } = {}
+        for _, name in ipairs(list) do
+            if favoriteAutoFavoriteRarityKeys[string.lower(name)] then
+                table.insert(newPicks, name)
+            end
+        end
+        if #newPicks == 0 then
+            if table.find(list, "Rare") then
+                newPicks = { "Rare" }
+            else
+                newPicks = { list[1] }
+            end
+        end
+        applyFavoriteRarityDropdownPicks(newPicks)
+    end
+
+    FavoriteSection:Toggle({
+        Title = "Auto Favorite",
+        Desc = "BackpackAdd: if Rarity is one of the selected tiers → ToggleLock(UID). Skips IsLocked.",
+        Flag = "mancing_backpack_autoFavorite",
+        Value = false,
+        Callback = function(enabled)
+            autoFavoriteEnabled = enabled
+        end,
+    })
+
+    task.defer(function()
+        local remotes = ReplicatedStorage:WaitForChild("Remotes", 60)
+        if remotes then
+            local owned = remotes:FindFirstChild("OwnedRods")
+            if owned and owned:IsA("RemoteEvent") then
+                owned.OnClientEvent:Connect(function(_rodNames: any, catalog: any)
+                    if type(catalog) == "table" then
+                        lastOwnedRodsCatalog = catalog
+                        refreshFavoriteRarityDropdown()
+                    end
+                end)
+            end
+            local backpackAdd = remotes:FindFirstChild("BackpackAdd") or remotes:WaitForChild("BackpackAdd", 30)
+            if backpackAdd and backpackAdd:IsA("RemoteEvent") then
+                backpackAdd.OnClientEvent:Connect(onBackpackAddClientPayload)
+            end
+        end
+        refreshFavoriteRarityDropdown()
     end)
 end
 
