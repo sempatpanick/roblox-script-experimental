@@ -2609,7 +2609,7 @@ do
     end
 
     local function runInstantFishingCycleImpl(): boolean
-        return runFishingCycleImpl(0.12, 0.18, 2, 0.25)
+        return runFishingCycleImpl(0, 0, 0, 0)
     end
 
     local function runAutoFishingCycle()
