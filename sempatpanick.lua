@@ -13,6 +13,7 @@ local games = {
 local fallbackScriptURL = baseURL .. "/others.lua"
 local excludedGameIds = {
     [121864768012064] = true,
+    [79378095465365] = true,
 }
 
 local currentID = game.PlaceId
