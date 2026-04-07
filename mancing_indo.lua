@@ -160,6 +160,8 @@ do
     local antiAfkConnection = nil
     local noClipEnabled = false
     local noClipConnection = nil
+    local cameraPenetrateEnabled = false
+    local defaultCameraOcclusionMode = Players.LocalPlayer.DevCameraOcclusionMode
     local flyEnabled = false
     local flySpeed = 50
     local flyBV, flyBG = nil, nil
@@ -456,6 +458,20 @@ do
                 startFreeCamera()
             else
                 stopFreeCamera()
+            end
+        end
+    })
+
+    MiscSection:Toggle({
+        Title = "Camera Penetrate",
+        Desc = "Allow camera zoom to pass objects",
+        Callback = function(enabled)
+            cameraPenetrateEnabled = enabled
+            local lp = Players.LocalPlayer
+            if cameraPenetrateEnabled then
+                lp.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+            else
+                lp.DevCameraOcclusionMode = defaultCameraOcclusionMode
             end
         end
     })

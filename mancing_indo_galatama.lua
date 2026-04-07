@@ -1282,6 +1282,8 @@ do
     local infiniteJumpConnection = nil
     local antiAfkConnection = nil
     local noClipEnabled = false
+    local cameraPenetrateEnabled = false
+    local defaultCameraOcclusionMode = Players.LocalPlayer.DevCameraOcclusionMode
     local flyEnabled = false
     local flySpeed = 50
     local flyBV, flyBG = nil, nil
@@ -1424,6 +1426,21 @@ do
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
             applyNoClip(character, enabled)
+        end
+    })
+
+    MiscSection:Toggle({
+        Title = "Camera Penetrate",
+        Desc = "Allow camera zoom to pass objects (Invisicam occlusion)",
+        Flag = "galatama_lp_cameraPenetrate",
+        Callback = function(enabled)
+            cameraPenetrateEnabled = enabled
+            local lp = Players.LocalPlayer
+            if cameraPenetrateEnabled then
+                lp.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+            else
+                lp.DevCameraOcclusionMode = defaultCameraOcclusionMode
+            end
         end
     })
 
