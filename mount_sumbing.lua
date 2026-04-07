@@ -670,6 +670,271 @@ do
 
     LocalPlayerTab:Space()
 
+    local ESPSection = LocalPlayerTab:Section({
+        Title = "ESP",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local espNamesEnabled = false
+    local espDistanceEnabled = false
+    local espCharacterEnabled = false
+    local espLinesEnabled = false
+    local espMaxDistance = 10000
+    local espPlayerState: { [Player]: { highlight: Highlight?, nameGui: BillboardGui?, lineBeam: Beam?, lineFrom: Attachment?, lineTo: Attachment? } } = {}
+    local espPlayerAddedConn: RBXScriptConnection? = nil
+    local espPlayerRemovingConn: RBXScriptConnection? = nil
+    local espLocalCharacterConn: RBXScriptConnection? = nil
+    local espRenderStepConn: RBXScriptConnection? = nil
+
+    local function espGetPlayerRoot(player: Player): BasePart?
+        local character = player.Character
+        if not character then return nil end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then return root end
+        return nil
+    end
+
+    local function espGetState(player: Player)
+        local state = espPlayerState[player]
+        if not state then state = {} espPlayerState[player] = state end
+        return state
+    end
+
+    local function espClearVisualsForPlayer(player: Player)
+        local state = espPlayerState[player]
+        if not state then return end
+        if state.highlight then state.highlight:Destroy() state.highlight = nil end
+        if state.nameGui then state.nameGui:Destroy() state.nameGui = nil end
+        if state.lineBeam then state.lineBeam:Destroy() state.lineBeam = nil end
+        if state.lineFrom then state.lineFrom:Destroy() state.lineFrom = nil end
+        if state.lineTo then state.lineTo:Destroy() state.lineTo = nil end
+    end
+
+    local function espApplyForPlayer(player: Player)
+        if player == Players.LocalPlayer then return end
+        local character = player.Character
+        local root = espGetPlayerRoot(player)
+        if not character or not root then
+            espClearVisualsForPlayer(player)
+            return
+        end
+        local state = espGetState(player)
+        local localRoot = espGetPlayerRoot(Players.LocalPlayer)
+        local distToLocal: number? = nil
+        if localRoot then distToLocal = (localRoot.Position - root.Position).Magnitude end
+        local withinMaxDistance = (espMaxDistance <= 0) or (distToLocal ~= nil and distToLocal <= espMaxDistance)
+
+        if espCharacterEnabled and withinMaxDistance then
+            if not state.highlight then
+                local h = Instance.new("Highlight")
+                h.Name = "SempatPanickESPHighlight"
+                h.FillColor = Color3.fromRGB(16, 197, 80)
+                h.FillTransparency = 0.7
+                h.OutlineColor = Color3.fromRGB(255, 255, 255)
+                h.OutlineTransparency = 0
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                h.Parent = character
+                state.highlight = h
+            end
+            state.highlight.Adornee = character
+            state.highlight.Enabled = true
+        elseif state.highlight then
+            state.highlight:Destroy()
+            state.highlight = nil
+        end
+
+        if (espNamesEnabled or espDistanceEnabled) and withinMaxDistance then
+            if not state.nameGui then
+                local nameGui = Instance.new("BillboardGui")
+                nameGui.Name = "SempatPanickESPName"
+                nameGui.Size = UDim2.fromOffset(220, 44)
+                nameGui.StudsOffset = Vector3.new(0, 3.5, 0)
+                nameGui.AlwaysOnTop = true
+                nameGui.MaxDistance = espMaxDistance
+                local label = Instance.new("TextLabel")
+                label.Name = "Label"
+                label.BackgroundTransparency = 1
+                label.Size = UDim2.fromScale(1, 1)
+                label.Font = Enum.Font.GothamBold
+                label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                label.TextStrokeTransparency = 0
+                label.TextScaled = true
+                label.TextWrapped = true
+                label.Parent = nameGui
+                state.nameGui = nameGui
+            end
+            state.nameGui.MaxDistance = espMaxDistance
+            local label = state.nameGui:FindFirstChild("Label")
+            if label and label:IsA("TextLabel") then
+                local baseName = player.DisplayName and player.DisplayName ~= "" and player.DisplayName or player.Name
+                if espDistanceEnabled and distToLocal then
+                    label.Text = string.format("%s\n[%.0fm]", baseName, distToLocal)
+                else
+                    label.Text = baseName
+                end
+            end
+            state.nameGui.Adornee = root
+            state.nameGui.Parent = root
+            state.nameGui.Enabled = true
+        elseif state.nameGui then
+            state.nameGui:Destroy()
+            state.nameGui = nil
+        end
+
+        if espLinesEnabled then
+            if localRoot then
+                if not state.lineFrom then
+                    local a0 = Instance.new("Attachment")
+                    a0.Name = "SempatPanickESPFrom"
+                    a0.Parent = localRoot
+                    state.lineFrom = a0
+                elseif state.lineFrom.Parent ~= localRoot then
+                    state.lineFrom.Parent = localRoot
+                end
+                if not state.lineTo then
+                    local a1 = Instance.new("Attachment")
+                    a1.Name = "SempatPanickESPTo"
+                    a1.Parent = root
+                    state.lineTo = a1
+                elseif state.lineTo.Parent ~= root then
+                    state.lineTo.Parent = root
+                end
+                if not state.lineBeam then
+                    local beam = Instance.new("Beam")
+                    beam.Name = "SempatPanickESPLine"
+                    beam.FaceCamera = true
+                    beam.Width0 = 0.06
+                    beam.Width1 = 0.06
+                    beam.Color = ColorSequence.new(Color3.fromRGB(16, 197, 80))
+                    beam.Transparency = NumberSequence.new(0.2)
+                    beam.LightEmission = 1
+                    beam.Parent = Workspace.Terrain
+                    state.lineBeam = beam
+                end
+                if withinMaxDistance then
+                    state.lineBeam.Attachment0 = state.lineFrom
+                    state.lineBeam.Attachment1 = state.lineTo
+                    state.lineBeam.Enabled = true
+                else
+                    state.lineBeam.Enabled = false
+                end
+            elseif state.lineBeam then
+                state.lineBeam.Enabled = false
+            end
+        else
+            if state.lineBeam then state.lineBeam:Destroy() state.lineBeam = nil end
+            if state.lineFrom then state.lineFrom:Destroy() state.lineFrom = nil end
+            if state.lineTo then state.lineTo:Destroy() state.lineTo = nil end
+        end
+    end
+
+    local function espApplyForAllPlayers()
+        for _, p in ipairs(Players:GetPlayers()) do espApplyForPlayer(p) end
+    end
+
+    local function espAnyEnabled(): boolean
+        return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled
+    end
+
+    ESPSection:Input({
+        Title = "ESP Max Distance",
+        Placeholder = "0 = unlimited, e.g. 10000",
+        Value = tostring(espMaxDistance),
+        Callback = function(value)
+            local n = tonumber(value)
+            if not n then return end
+            espMaxDistance = math.max(0, n)
+            if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+
+    ESPSection:Space()
+
+    local function espOnRenderStep()
+        if not espAnyEnabled() then return end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= Players.LocalPlayer then espApplyForPlayer(p) end
+        end
+    end
+
+    local function espSetRuntimeEnabled(enabled: boolean)
+        if enabled then
+            if not espPlayerAddedConn then
+                espPlayerAddedConn = Players.PlayerAdded:Connect(function(player)
+                    player.CharacterAdded:Connect(function() task.wait(0.15) espApplyForPlayer(player) end)
+                    espApplyForPlayer(player)
+                end)
+            end
+            if not espPlayerRemovingConn then
+                espPlayerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+                    espClearVisualsForPlayer(player)
+                    espPlayerState[player] = nil
+                end)
+            end
+            if not espLocalCharacterConn then
+                espLocalCharacterConn = Players.LocalPlayer.CharacterAdded:Connect(function()
+                    task.wait(0.2)
+                    espApplyForAllPlayers()
+                end)
+            end
+            if not espRenderStepConn then
+                espRenderStepConn = RunService.RenderStepped:Connect(espOnRenderStep)
+            end
+            espApplyForAllPlayers()
+            return
+        end
+        if espPlayerAddedConn then espPlayerAddedConn:Disconnect() espPlayerAddedConn = nil end
+        if espPlayerRemovingConn then espPlayerRemovingConn:Disconnect() espPlayerRemovingConn = nil end
+        if espLocalCharacterConn then espLocalCharacterConn:Disconnect() espLocalCharacterConn = nil end
+        if espRenderStepConn then espRenderStepConn:Disconnect() espRenderStepConn = nil end
+        for player in pairs(espPlayerState) do espClearVisualsForPlayer(player) espPlayerState[player] = nil end
+    end
+
+    ESPSection:Toggle({
+        Title = "ESP Player Names",
+        Desc = "Show player name above character",
+        Value = false,
+        Callback = function(enabled)
+            espNamesEnabled = enabled
+            espSetRuntimeEnabled(espAnyEnabled())
+            if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+    ESPSection:Toggle({
+        Title = "ESP Player Distance",
+        Desc = "Show player distance in meters (below name)",
+        Value = false,
+        Callback = function(enabled)
+            espDistanceEnabled = enabled
+            espSetRuntimeEnabled(espAnyEnabled())
+            if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+    ESPSection:Toggle({
+        Title = "ESP Player Character",
+        Desc = "Highlight player character",
+        Value = false,
+        Callback = function(enabled)
+            espCharacterEnabled = enabled
+            espSetRuntimeEnabled(espAnyEnabled())
+            if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+    ESPSection:Toggle({
+        Title = "ESP Player Lines",
+        Desc = "Draw line from your character to players",
+        Value = false,
+        Callback = function(enabled)
+            espLinesEnabled = enabled
+            espSetRuntimeEnabled(espAnyEnabled())
+            if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+
+    LocalPlayerTab:Space()
+
     local PlayersInfoSection = LocalPlayerTab:Section({
         Title = "Players Info",
         Desc = "Pick a player to view username, display name, speed, location, Humanoid properties, and Humanoid children",
