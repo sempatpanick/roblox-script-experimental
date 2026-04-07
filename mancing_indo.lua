@@ -3461,9 +3461,7 @@ do
     end
 
     -- Lowercase keys → true; favors fish whose Rarity matches any selected tier (exact, case-insensitive).
-    local favoriteAutoFavoriteRarityKeys: { [string]: boolean } = {
-        [string.lower("Rare")] = true,
-    }
+    local favoriteAutoFavoriteRarityKeys: { [string]: boolean } = {}
     local autoFavoriteEnabled = false
 
     local function trimRarityString(s: string): string
@@ -3546,9 +3544,9 @@ do
         Desc = "Multi-select. Auto Favorite runs ToggleLock(UID) when fish Rarity matches any selected tier.",
         Flag = "mancing_backpack_favoriteByRarity",
         Values = copyStringArray(MANCING_DEFAULT_RARITY_ORDER),
-        Value = { "Rare" },
+        Value = {},
         Multi = true,
-        AllowNone = false,
+        AllowNone = true,
         Callback = function(value)
             syncFavoriteKeysFromMultiDropdownValue(value)
         end,
@@ -3578,13 +3576,6 @@ do
         for _, name in ipairs(list) do
             if favoriteAutoFavoriteRarityKeys[string.lower(name)] then
                 table.insert(newPicks, name)
-            end
-        end
-        if #newPicks == 0 then
-            if table.find(list, "Rare") then
-                newPicks = { "Rare" }
-            else
-                newPicks = { list[1] }
             end
         end
         applyFavoriteRarityDropdownPicks(newPicks)
