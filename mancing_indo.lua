@@ -3291,6 +3291,29 @@ do
         locationHoldConn = RunService.Heartbeat:Connect(tickPinCharacterToPreset)
     end
 
+    local function tryActivateLocationHold(showFailureNotify: boolean): boolean
+        if not teleportToLocationEnabled then
+            return false
+        end
+        if not selectedLocationName or selectedLocationName == "" then
+            stopLocationHold()
+            if showFailureNotify then
+                WindUI:Notify({ Title = "Location", Content = "Select a location first", Icon = "x" })
+            end
+            return false
+        end
+        if not locationHoldCfByName[selectedLocationName] then
+            stopLocationHold()
+            if showFailureNotify then
+                WindUI:Notify({ Title = "Location", Content = "Unknown location", Icon = "x" })
+            end
+            return false
+        end
+        startLocationHold()
+        tickPinCharacterToPreset()
+        return true
+    end
+
     function locationHoldApi.pauseForAutoSell(): boolean
         if not teleportToLocationEnabled then
             return false
@@ -3326,6 +3349,9 @@ do
         SearchBarEnabled = true,
         Callback = function(value)
             selectedLocationName = (value and value ~= "") and value or nil
+            if teleportToLocationEnabled then
+                tryActivateLocationHold(false)
+            end
         end,
     })
 
@@ -3341,33 +3367,13 @@ do
                 stopLocationHold()
                 return
             end
-            if not selectedLocationName or selectedLocationName == "" then
-                teleportToLocationEnabled = false
-                task.defer(function()
-                    if TeleportLocationToggle and TeleportLocationToggle.Set then
-                        TeleportLocationToggle:Set(false)
-                    end
-                end)
-                WindUI:Notify({ Title = "Location", Content = "Select a location first", Icon = "x" })
-                return
+            if tryActivateLocationHold(true) then
+                WindUI:Notify({
+                    Title = "Location",
+                    Content = "Holding at " .. tostring(selectedLocationName),
+                    Icon = "check",
+                })
             end
-            if not locationHoldCfByName[selectedLocationName] then
-                teleportToLocationEnabled = false
-                task.defer(function()
-                    if TeleportLocationToggle and TeleportLocationToggle.Set then
-                        TeleportLocationToggle:Set(false)
-                    end
-                end)
-                WindUI:Notify({ Title = "Location", Content = "Unknown location", Icon = "x" })
-                return
-            end
-            startLocationHold()
-            tickPinCharacterToPreset()
-            WindUI:Notify({
-                Title = "Location",
-                Content = "Holding at " .. tostring(selectedLocationName),
-                Icon = "check",
-            })
         end,
     })
 
@@ -5380,6 +5386,12 @@ do
             end
             local cfg = getConfigObject(cm, name)
             Window:SetCurrentConfig(cfg)
+            local cfgPath = cm.Path .. name .. ".json"
+            if type(isfile) == "function" and isfile(cfgPath) and type(delfile) == "function" then
+                pcall(function()
+                    delfile(cfgPath)
+                end)
+            end
             local ok, err = pcall(function()
                 cfg:Save()
             end)
