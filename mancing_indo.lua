@@ -159,6 +159,7 @@ do
     local infiniteJumpConnection = nil
     local antiAfkConnection = nil
     local noClipEnabled = false
+    local noClipConnection = nil
     local flyEnabled = false
     local flySpeed = 50
     local flyBV, flyBG = nil, nil
@@ -236,6 +237,27 @@ do
         end
     end
 
+    local function setNoClipActive(enabled)
+        noClipEnabled = enabled
+        if noClipConnection then
+            noClipConnection:Disconnect()
+            noClipConnection = nil
+        end
+        local character = Players.LocalPlayer.Character
+        applyNoClip(character, enabled)
+        if enabled then
+            noClipConnection = RunService.Stepped:Connect(function()
+                if not noClipEnabled then
+                    return
+                end
+                local ch = Players.LocalPlayer.Character
+                if ch then
+                    applyNoClip(ch, true)
+                end
+            end)
+        end
+    end
+
     local function startAntiAfk()
         if antiAfkConnection then
             antiAfkConnection:Disconnect()
@@ -295,9 +317,7 @@ do
         Title = "No Clip",
         Desc = "Pass through walls (disables character collision)",
         Callback = function(enabled)
-            noClipEnabled = enabled
-            local character = Players.LocalPlayer.Character
-            applyNoClip(character, enabled)
+            setNoClipActive(enabled)
         end
     })
 
@@ -446,11 +466,8 @@ do
                 task.defer(function() startFly() end)
             end
             if noClipEnabled then
-                applyNoClip(character, true)
-                character.DescendantAdded:Connect(function(part)
-                    if noClipEnabled and part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
+                task.defer(function()
+                    applyNoClip(character, true)
                 end)
             end
         end)
@@ -1454,19 +1471,34 @@ do
         local savedFly = flyEnabled
         local savedNoClip = noClipEnabled
         flyEnabled = true
-        noClipEnabled = true
         local lp = Players.LocalPlayer
         local ch = lp.Character
+        local tripNoClipConnection = nil
         if ch then
             applyNoClip(ch, true)
+        end
+        if not savedNoClip then
+            tripNoClipConnection = RunService.Stepped:Connect(function()
+                local chNow = lp.Character
+                if chNow then
+                    applyNoClip(chNow, true)
+                end
+            end)
         end
         startFly()
         return function()
             flyEnabled = savedFly
-            noClipEnabled = savedNoClip
+            if tripNoClipConnection then
+                tripNoClipConnection:Disconnect()
+                tripNoClipConnection = nil
+            end
             local ch2 = lp.Character
             if ch2 then
-                applyNoClip(ch2, savedNoClip)
+                if savedNoClip then
+                    applyNoClip(ch2, true)
+                else
+                    applyNoClip(ch2, false)
+                end
             end
             if savedFly then
                 task.defer(function()
@@ -2801,7 +2833,9 @@ do
     local sellIntervalSeconds = 60
     local autoSellEnabled = false
     local autoSellLoopRunning = false
+    local autoSellLoopToken = 0
     local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
+    local AUTO_SELL_PAUSE_DETECT_SEC = 3
 
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
@@ -2839,12 +2873,27 @@ do
         if not playerBackpackHasFish() then
             return
         end
+        local function getCurrentRoot()
+            local ch = Players.LocalPlayer.Character
+            return ch and ch:FindFirstChild("HumanoidRootPart")
+        end
+        local function waitWithPauseDetect(seconds: number, label: string)
+            local startedAt = os.clock()
+            task.wait(seconds)
+            local elapsed = os.clock() - startedAt
+            if elapsed >= (seconds + AUTO_SELL_PAUSE_DETECT_SEC) then
+                WindUI:Notify({
+                    Title = "Auto Sell",
+                    Content = string.format("Detected long pause while %s (%.1fs). Recovering...", label, elapsed),
+                    Icon = "info",
+                })
+            end
+        end
         local holdPausedForAutoSell = false
         if locationHoldApi.pauseForAutoSell then
             holdPausedForAutoSell = locationHoldApi.pauseForAutoSell()
         end
-        local character = Players.LocalPlayer.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local root = getCurrentRoot()
         local previousCFrame = nil
         local restoreAssist = nil
         if type(autoSellTripAssist.begin) == "function" then
@@ -2854,12 +2903,19 @@ do
             if root then
                 previousCFrame = root.CFrame
                 root.CFrame = SELL_TELEPORT_CFRAME
-                task.wait(1)
+                waitWithPauseDetect(1, "teleporting to sell point")
             end
             fireSellFishAll()
-            task.wait(1)
+            waitWithPauseDetect(1, "selling fish")
+            root = getCurrentRoot()
             if root and previousCFrame and root.Parent then
                 root.CFrame = previousCFrame
+            elseif previousCFrame then
+                WindUI:Notify({
+                    Title = "Auto Sell",
+                    Content = "Could not return to previous position (character/root changed after pause)",
+                    Icon = "x",
+                })
             end
         end)
         if restoreAssist then
@@ -2929,21 +2985,25 @@ do
         Callback = function(enabled)
             autoSellEnabled = enabled
             if not enabled then
+                autoSellLoopToken += 1
                 return
             end
             if autoSellLoopRunning then
-                return
+                autoSellLoopToken += 1
             end
+            local myToken = autoSellLoopToken
             autoSellLoopRunning = true
             task.spawn(function()
-                while autoSellEnabled do
+                while autoSellEnabled and myToken == autoSellLoopToken do
                     if sellMode == "Loop" then
                         runAutoSellWithFishingCoordination()
                     end
                     local dur = math.max(sellIntervalSeconds, 0.05)
                     task.wait(dur)
                 end
-                autoSellLoopRunning = false
+                if myToken == autoSellLoopToken then
+                    autoSellLoopRunning = false
+                end
             end)
         end,
     })
