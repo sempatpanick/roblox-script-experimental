@@ -1486,10 +1486,12 @@ do
     autoSellTripAssist.begin = function()
         local savedFly = flyEnabled
         local savedNoClip = noClipEnabled
+        local savedOcclusionMode = Players.LocalPlayer.DevCameraOcclusionMode
         flyEnabled = true
         local lp = Players.LocalPlayer
         local ch = lp.Character
         local tripNoClipConnection = nil
+        lp.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
         if ch then
             applyNoClip(ch, true)
         end
@@ -1507,6 +1509,13 @@ do
             if tripNoClipConnection then
                 tripNoClipConnection:Disconnect()
                 tripNoClipConnection = nil
+            end
+            if cameraPenetrateEnabled then
+                lp.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
+            elseif savedOcclusionMode ~= nil then
+                lp.DevCameraOcclusionMode = savedOcclusionMode
+            else
+                lp.DevCameraOcclusionMode = defaultCameraOcclusionMode
             end
             local ch2 = lp.Character
             if ch2 then
