@@ -1573,7 +1573,7 @@ do
     -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
     local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
     local minigameCycleSeq = 0
-    local MINIGAME_SESSION_TIMEOUT = 20
+    local MINIGAME_SESSION_TIMEOUT = 10
     -- Reel: deep hack + fast Complete are Instant fishing only. Auto Fishing uses VIM E/Q only.
     local REEL_AUTOPLAY_START_DELAY = 0.06
     local REEL_AUTOPLAY_TIMEOUT = 55
@@ -2666,7 +2666,7 @@ do
     end
 
     local function runInstantFishingCycleImpl(): boolean
-        return runFishingCycleImpl(0, 0, 0, 0)
+        return runFishingCycleImpl(0.5, 0, 0, 0)
     end
 
     local function runAutoFishingCycle()
