@@ -3366,6 +3366,12 @@ do
             end
             local cfg = getConfigObject(cm, name)
             Window:SetCurrentConfig(cfg)
+            local cfgPath = cm.Path .. name .. ".json"
+            if type(isfile) == "function" and isfile(cfgPath) and type(delfile) == "function" then
+                pcall(function()
+                    delfile(cfgPath)
+                end)
+            end
             local ok, err = pcall(function()
                 cfg:Save()
             end)
