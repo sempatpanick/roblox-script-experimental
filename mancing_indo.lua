@@ -3131,7 +3131,6 @@ do
     local autoSellLoopRunning = false
     local autoSellLoopToken = 0
     local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
-    local AUTO_SELL_PAUSE_DETECT_SEC = 3
 
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
@@ -3174,15 +3173,40 @@ do
             return ch and ch:FindFirstChild("HumanoidRootPart")
         end
         local function waitWithPauseDetect(seconds: number, label: string)
-            local startedAt = os.clock()
+            local lp = Players.LocalPlayer
+            local pauseConn = nil
+            local wasPausedDuringWait = false
+
+            local function onPauseStateChanged()
+                local paused = false
+                pcall(function()
+                    paused = lp.GameplayPaused == true
+                end)
+                if paused then
+                    wasPausedDuringWait = true
+                end
+            end
+
+            pcall(function()
+                pauseConn = lp:GetPropertyChangedSignal("GameplayPaused"):Connect(onPauseStateChanged)
+            end)
+
+            onPauseStateChanged()
             task.wait(seconds)
-            local elapsed = os.clock() - startedAt
-            if elapsed >= (seconds + AUTO_SELL_PAUSE_DETECT_SEC) then
-                WindUI:Notify({
-                    Title = "Auto Sell",
-                    Content = string.format("Detected long pause while %s (%.1fs). Recovering...", label, elapsed),
-                    Icon = "info",
-                })
+
+            local stillPaused = false
+            pcall(function()
+                stillPaused = lp.GameplayPaused == true
+            end)
+            while stillPaused do
+                task.wait(0.25)
+                pcall(function()
+                    stillPaused = lp.GameplayPaused == true
+                end)
+            end
+
+            if pauseConn then
+                pauseConn:Disconnect()
             end
         end
         local holdPausedForAutoSell = false
