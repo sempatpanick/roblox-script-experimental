@@ -1462,6 +1462,183 @@ do
         end,
     })
 
+    local animationOptions = { "Hair Grab (R6)" }
+    local selectedAnimationName = animationOptions[1]
+    local animationRunning = false
+
+    local function findHairAccessory(character: Model)
+        local accessories = {}
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Accessory") then
+                table.insert(accessories, child)
+            end
+        end
+
+        for _, accessory in ipairs(accessories) do
+            local okType, accType = pcall(function()
+                return accessory.AccessoryType
+            end)
+            if okType and accType == Enum.AccessoryType.Hair then
+                local handle = accessory:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    return accessory, handle
+                end
+            end
+        end
+
+        for _, accessory in ipairs(accessories) do
+            if string.find(string.lower(accessory.Name), "hair", 1, true) then
+                local handle = accessory:FindFirstChild("Handle")
+                if handle and handle:IsA("BasePart") then
+                    return accessory, handle
+                end
+            end
+        end
+
+        return nil, nil
+    end
+
+    local function playHairGrabAnimationR6()
+        if animationRunning then
+            return
+        end
+        animationRunning = true
+
+        local player = Players.LocalPlayer
+        local character = player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local torso = character and character:FindFirstChild("Torso")
+        local rightArm = character and character:FindFirstChild("Right Arm")
+        local head = character and character:FindFirstChild("Head")
+        if not character or not humanoid or humanoid.RigType ~= Enum.HumanoidRigType.R6 or not torso or not rightArm or not head then
+            animationRunning = false
+            WindUI:Notify({ Title = "Animation", Content = "R6 character parts not ready", Icon = "x" })
+            return
+        end
+
+        local rightShoulder = torso:FindFirstChild("Right Shoulder")
+        local neck = torso:FindFirstChild("Neck")
+        if not (rightShoulder and rightShoulder:IsA("Motor6D") and neck and neck:IsA("Motor6D")) then
+            animationRunning = false
+            WindUI:Notify({ Title = "Animation", Content = "R6 joints not found", Icon = "x" })
+            return
+        end
+
+        local accessory, hairHandle = findHairAccessory(character)
+        if not accessory or not hairHandle then
+            animationRunning = false
+            WindUI:Notify({ Title = "Animation", Content = "No hair accessory found", Icon = "x" })
+            return
+        end
+
+        local originalShoulderC0 = rightShoulder.C0
+        local originalNeckC0 = neck.C0
+        local originalHairCFrame = hairHandle.CFrame
+        local originalWeld = hairHandle:FindFirstChild("AccessoryWeld")
+        if not (originalWeld and originalWeld:IsA("JointInstance")) then
+            originalWeld = hairHandle:FindFirstChildOfClass("JointInstance")
+        end
+
+        local grabWeld = nil
+        local restoreDone = false
+        local function restoreAll()
+            if restoreDone then
+                return
+            end
+            restoreDone = true
+            pcall(function()
+                if grabWeld then
+                    grabWeld:Destroy()
+                    grabWeld = nil
+                end
+                hairHandle.CFrame = originalHairCFrame
+                if originalWeld and originalWeld.Parent then
+                    originalWeld.Enabled = true
+                end
+                rightShoulder.C0 = originalShoulderC0
+                neck.C0 = originalNeckC0
+            end)
+            animationRunning = false
+        end
+
+        local moveInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local backInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        local targetShoulderC0 = originalShoulderC0
+            * CFrame.Angles(math.rad(-95), math.rad(8), math.rad(28))
+        local targetNeckC0 = originalNeckC0
+            * CFrame.Angles(math.rad(8), math.rad(-16), 0)
+
+        local shoulderTween = TweenService:Create(rightShoulder, moveInfo, { C0 = targetShoulderC0 })
+        local neckTween = TweenService:Create(neck, moveInfo, { C0 = targetNeckC0 })
+
+        pcall(function()
+            if originalWeld and originalWeld.Parent then
+                originalWeld.Enabled = false
+            end
+            hairHandle.CanCollide = false
+            hairHandle.Massless = true
+            grabWeld = Instance.new("Weld")
+            grabWeld.Name = "HairGrabWeld"
+            grabWeld.Part0 = rightArm
+            grabWeld.Part1 = hairHandle
+            grabWeld.C0 = CFrame.new(0, -1.05, -0.1) * CFrame.Angles(math.rad(80), math.rad(0), math.rad(6))
+            grabWeld.Parent = rightArm
+        end)
+
+        shoulderTween:Play()
+        neckTween:Play()
+
+        task.spawn(function()
+            task.wait(0.95)
+            if not character.Parent then
+                restoreAll()
+                return
+            end
+            local shoulderBack = TweenService:Create(rightShoulder, backInfo, { C0 = originalShoulderC0 })
+            local neckBack = TweenService:Create(neck, backInfo, { C0 = originalNeckC0 })
+            shoulderBack:Play()
+            neckBack:Play()
+            task.wait(0.24)
+            restoreAll()
+        end)
+    end
+
+    LocalPlayerTab:Space()
+
+    local AnimationSection = LocalPlayerTab:Section({
+        Title = "Animation",
+        Desc = "R6 local animations with accessory interaction",
+        Box = true,
+        BoxBorder = true,
+    })
+
+    AnimationSection:Dropdown({
+        Title = "Animation list",
+        Desc = "Select one animation",
+        Values = animationOptions,
+        Value = selectedAnimationName,
+        AllowNone = false,
+        SearchBarEnabled = false,
+        Callback = function(value)
+            if value then
+                selectedAnimationName = value
+            end
+        end,
+    })
+
+    AnimationSection:Button({
+        Title = "Animate",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            if selectedAnimationName == "Hair Grab (R6)" then
+                playHairGrabAnimationR6()
+                return
+            end
+            WindUI:Notify({ Title = "Animation", Content = "Unknown animation selected", Icon = "x" })
+        end,
+    })
+
     LocalPlayerTab:Space()
 
     LocalPlayerTab:Button({
