@@ -4166,10 +4166,35 @@ do
         Desc = "Select a fish to show details from GetBestiary.",
     })
 
+    BackpackTab:Space()
+
+    local FishByPlaceSection = BackpackTab:Section({
+        Title = "Fish by Place",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local FishByPlaceParagraph = FishByPlaceSection:Paragraph({
+        Title = "Fish List",
+        Desc = "Select a location to see fish from that biome.",
+    })
+
     local fishInfoSelectedName: string? = nil
     local fishInfoDisplayByName: { [string]: string } = {}
     local fishInfoNameByDisplay: { [string]: string } = {}
+    local fishByPlaceSelectedBiome: string? = nil
+    local fishByPlaceOrderBy = "Rarity"
+    local fishByPlaceRarityOrderRank: { [string]: number } = {
+        Common = 1,
+        Uncommon = 2,
+        Rare = 3,
+        Epic = 4,
+        Legendary = 5,
+        Mythic = 6,
+    }
     local FishInformationDropdown
+    local FishByPlaceDropdown
 
     local function buildFishInfoDisplay(name: string): string
         local row = GLOBAL_BESTIARY_FISH_BY_NAME[name]
@@ -4218,15 +4243,81 @@ do
         )
     end
 
+    local function getDistinctBiomeValues(): { string }
+        local biomeSet: { [string]: boolean } = {}
+        for _, row in pairs(GLOBAL_BESTIARY_FISH_BY_NAME) do
+            if type(row) == "table" and type(row.Biome) == "table" then
+                for _, biomeName in ipairs(row.Biome) do
+                    if type(biomeName) == "string" then
+                        local b = string.gsub(string.gsub(biomeName, "^%s+", ""), "%s+$", "")
+                        if b ~= "" and b ~= "???" then
+                            biomeSet[b] = true
+                        end
+                    end
+                end
+            end
+        end
+        local out: { string } = {}
+        for biomeName in pairs(biomeSet) do
+            table.insert(out, biomeName)
+        end
+        table.sort(out, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        return out
+    end
+
+    local function fishListByBiomeDescription(biomeName: string?): string
+        if not biomeName or biomeName == "" then
+            return "Select a location to see fish from that biome."
+        end
+        local matchedRows: { { name: string, rarity: string, rank: number } } = {}
+        for _, fishName in ipairs(getGlobalBestiaryFishList()) do
+            local row = GLOBAL_BESTIARY_FISH_BY_NAME[fishName]
+            if type(row) == "table" and type(row.Biome) == "table" then
+                local matches = false
+                for _, b in ipairs(row.Biome) do
+                    if type(b) == "string" and b == biomeName then
+                        matches = true
+                        break
+                    end
+                end
+                if matches then
+                    local rarity = (type(row.Rarity) == "string" and row.Rarity ~= "") and row.Rarity or "Unknown"
+                    local rank = fishByPlaceRarityOrderRank[rarity] or 999
+                    table.insert(matchedRows, { name = fishName, rarity = rarity, rank = rank })
+                end
+            end
+        end
+        if #matchedRows == 0 then
+            return "No fish found for " .. tostring(biomeName)
+        end
+        if fishByPlaceOrderBy == "Name" then
+            table.sort(matchedRows, function(a, b)
+                return string.lower(a.name) < string.lower(b.name)
+            end)
+        else
+            table.sort(matchedRows, function(a, b)
+                if a.rank ~= b.rank then
+                    return a.rank < b.rank
+                end
+                return string.lower(a.name) < string.lower(b.name)
+            end)
+        end
+        local lines: { string } = {}
+        for _, row in ipairs(matchedRows) do
+            table.insert(lines, string.format("- %s (%s)", row.name, row.rarity))
+        end
+        return table.concat(lines, "\n")
+    end
+
     local function refreshFishInformationSection(): boolean
         local changed = fetchAndMergeGlobalBestiaryFish()
         local names = getGlobalBestiaryFishList()
-        fishInfoDisplayByName = {}
         fishInfoNameByDisplay = {}
         local displayValues: { string } = {}
         for _, name in ipairs(names) do
             local display = buildFishInfoDisplay(name)
-            fishInfoDisplayByName[name] = display
             fishInfoNameByDisplay[display] = name
             table.insert(displayValues, display)
         end
@@ -4244,6 +4335,22 @@ do
         if FishInformationParagraph and FishInformationParagraph.SetDesc then
             FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
         end
+
+        local biomes = getDistinctBiomeValues()
+        if FishByPlaceDropdown and FishByPlaceDropdown.Refresh then
+            FishByPlaceDropdown:Refresh(biomes)
+        end
+        if fishByPlaceSelectedBiome and not table.find(biomes, fishByPlaceSelectedBiome) then
+            fishByPlaceSelectedBiome = nil
+            if FishByPlaceDropdown and FishByPlaceDropdown.Select then
+                FishByPlaceDropdown:Select(nil)
+            elseif FishByPlaceDropdown and FishByPlaceDropdown.Set then
+                FishByPlaceDropdown:Set(nil)
+            end
+        end
+        if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
+            FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
+        end
         return changed
     end
 
@@ -4259,6 +4366,41 @@ do
             fishInfoSelectedName = (type(value) == "string" and fishInfoNameByDisplay[value]) or nil
             if FishInformationParagraph and FishInformationParagraph.SetDesc then
                 FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
+            end
+        end,
+    })
+
+    FishByPlaceDropdown = FishByPlaceSection:Dropdown({
+        Title = "Location",
+        Desc = "Distinct biome values from bestiary",
+        Flag = "mancing_backpack_fishByPlaceBiome",
+        Values = {},
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            fishByPlaceSelectedBiome = (type(value) == "string" and value ~= "") and value or nil
+            if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
+                FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
+            end
+        end,
+    })
+
+    FishByPlaceSection:Dropdown({
+        Title = "Order By",
+        Desc = "Sort fish list by Name or Rarity",
+        Flag = "mancing_backpack_fishByPlaceOrderBy",
+        Values = { "Name", "Rarity" },
+        Value = "Rarity",
+        AllowNone = false,
+        Callback = function(value)
+            if value == "Name" or value == "Rarity" then
+                fishByPlaceOrderBy = value
+            else
+                fishByPlaceOrderBy = "Rarity"
+            end
+            if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
+                FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
             end
         end,
     })
