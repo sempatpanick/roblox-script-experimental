@@ -102,7 +102,7 @@ wax.shared.getrawmetatable = wax.shared.ExecutorSupport["getrawmetatable"].IsWor
 	end
 
 wax.shared.newcclosure = wax.shared.ExecutorName == "AWP"
-		and function(f)
+		and function(f, name)
 			local env = getfenv(f)
 			local x = setmetatable({
 				__F = f,
@@ -116,7 +116,7 @@ wax.shared.newcclosure = wax.shared.ExecutorName == "AWP"
 			end
 
 			setfenv(nf, x) -- set func env (env of nf gets deoptimized)
-			return newcclosure(nf)
+			return newcclosure(nf, name)
 		end
 	or newcclosure
 wax.shared.queue_on_teleport = queue_on_teleport or queueonteleport or function(...) end
@@ -183,6 +183,19 @@ end
 
 wax.shared.Unloaded = false
 wax.shared.Unload = function()
+	local PluginManager = wax.shared.CobaltPluginManager
+	if PluginManager then
+		for _, Plugin in PluginManager.Registry.Plugins do
+			if not Plugin.UnloadCallbacks then
+				continue
+			end
+			
+			for _, Callback in Plugin.UnloadCallbacks or {} do
+				task.spawn(pcall, Callback)
+			end
+		end
+	end
+
 	for _, Connection in pairs(wax.shared.Connections) do
 		wax.shared.Disconnect(Connection)
 	end
@@ -219,6 +232,7 @@ wax.shared.Unload = function()
 	end
 
 	getgenv().CobaltInitialized = false
+	getgenv().Cobalt = nil
 
 	wax.shared.Communicator:Destroy()
 	wax.shared.ScreenGui:Destroy()
@@ -336,6 +350,11 @@ end
 
 require(script.Window)
 require(script.Spy.Init)
+
+local PluginManager = require(script.Utils.Plugins.Manager)
+PluginManager.SetupPlugins()
+
+wax.shared.CobaltPluginManager = PluginManager
 
 wax.shared.Connect(wax.shared.LocalPlayer.OnTeleport:Connect(function()
 	if not wax.shared.SaveManager:GetState("ExecuteOnTeleport", false) then
@@ -658,7 +677,9 @@ test("getcallbackvalue", function()
 	assert(typeof(getcallbackvalue) == "function", "getcallbackvalue is not a function")
 
 	local bindable = Instance.new("BindableFunction")
+	local InvokeRan = false
 	local InvokeFunction = function(value)
+		InvokeRan = true
 		return value * 2
 	end
 	bindable.OnInvoke = InvokeFunction
@@ -669,15 +690,7 @@ test("getcallbackvalue", function()
 	assert(typeof(FetchedInvoke) == "function", "getcallbackvalue did not return a function")
 
 	assert(FetchedInvoke(5) == 10, "getcallbackvalue's function return did not match expected value")
-	assert(FetchedInvoke == InvokeFunction, "getcallbackvalue did not return the original function")
-
-	local success, didNoValueReturnNil = pcall(function() 
-		local remoteFunction = Instance.new("RemoteFunction")
-		task.delay(1, remoteFunction.Destroy, remoteFunction)
-		return getcallbackvalue(remoteFunction, "OnClientInvoke") == nil
-	end)
-
-	assert(success and didNoValueReturnNil, "getcallbackvalue raised an error instead of returning nil, the function is not supposed to raise an error when there is no callback.")
+	assert(InvokeRan, "getcallbackvalue's function did not run")
 end)
 test("getnilinstances", function()
 	assert(typeof(getnilinstances) == "function", "getnilinstances is not a function")
@@ -817,1507 +830,6 @@ end
 return ExecutorSupport
 
 end)() end,
-    [17] = function()local wax,script,require=ImportGlobals(17)local ImportGlobals return (function(...)--[[
-    Bypasses for popular roblox anticheats
-]]
-
-local AnticheatData = {
-	Disabled = false,
-	Name = "N/A",
-}
-
-local BypassEnabled = wax.shared.SaveManager:GetState("AnticheatBypass", true)
-if not BypassEnabled then
-	return AnticheatData
-end
-
-type Bypass = {
-	Name: string,
-	Game: string | number | { number } | { string },
-	Detect: () -> boolean,
-	Bypass: () -> boolean,
-}
-
-local GeneralPurposeBypasses: { Bypass } = {}
-local DedicatedPlaceACBypass: Bypass = nil
-
-local AnticheatBypasses = script.Parent.impl
-for _, Anticheat in AnticheatBypasses:GetChildren() do
-	local Data = require(Anticheat) :: Bypass
-
-	local IsDedicatedACBypass = (
-		if typeof(Data.Game) == "table"
-			then (table.find(Data.Game, game.PlaceId) or table.find(Data.Game, tostring(game.PlaceId)))
-			else (tostring(Data.Game) == tostring(game.PlaceId))
-	)
-
-	if IsDedicatedACBypass then
-		DedicatedPlaceACBypass = Data
-		break
-	end
-
-	if Data.Game ~= "*" then
-		continue
-	end
-
-	table.insert(GeneralPurposeBypasses, Data)
-end
-
-if DedicatedPlaceACBypass and DedicatedPlaceACBypass.Detect() then
-	DedicatedPlaceACBypass.Bypass()
-
-	AnticheatData.Name = DedicatedPlaceACBypass.Name
-	AnticheatData.Disabled = true
-	return AnticheatData
-end
-
-for _, Data in GeneralPurposeBypasses do
-	if not Data.Detect() then
-		continue
-	end
-
-	if Data.Bypass() then
-		AnticheatData.Name = Data.Name
-		AnticheatData.Disabled = true
-		break
-	end
-end
-
-return AnticheatData
-
-end)() end,
-    [40] = function()local wax,script,require=ImportGlobals(40)local ImportGlobals return (function(...)local Resize = {}
-Resize.__index = Resize
-
-local Interface = require(script.Parent.Interface)
-local Drag = require(script.Parent.Drag)
-
-local HANDLE_SIZE = 6
-local CORNER_HANDLE_SIZE = 20
-
-function Resize.new(Options: {
-	MainFrame: Frame,
-	MinimumSize: Vector2? | UDim2?,
-	MaximumSize: UDim2?,
-	HandleSize: number?,
-	CornerHandleSize: number?,
-	Mirrored: boolean?,
-	LockedPosition: boolean? | UDim2?,
-})
-	local MainFrame = Options.MainFrame
-	local HandleSize = Options.HandleSize or HANDLE_SIZE
-	local CornerHandleSize = Options.CornerHandleSize or CORNER_HANDLE_SIZE
-	local Mirrored = Options.Mirrored or false
-	local LockedPosition = Options.LockedPosition
-
-	local MinimumSize
-	if typeof(Options.MinimumSize) == "Vector2" then
-		MinimumSize = UDim2.fromOffset(Options.MinimumSize.X, Options.MinimumSize.Y)
-	elseif typeof(Options.MinimumSize) == "UDim2" then
-		MinimumSize = Options.MinimumSize
-	else
-		MinimumSize = UDim2.fromOffset(100, 100)
-	end
-
-	local MaximumSize = Options.MaximumSize
-
-	local self = setmetatable({
-		MainFrame = MainFrame,
-		ScreenGui = MainFrame:FindFirstAncestorOfClass("ScreenGui"),
-		Parent = MainFrame.Parent,
-	}, Resize)
-
-	local function CalculateResizeProperties(
-		initialFramePosition: UDim2,
-		initialFrameSize: UDim2,
-		mouseDelta: Vector2,
-		resizeTypeX: string?,
-		resizeTypeY: string?
-	)
-		if Mirrored then
-			local parentAbsSize = self.Parent.AbsoluteSize
-
-			local newSizeOffsetX = initialFrameSize.X.Offset
-			local newSizeOffsetY = initialFrameSize.Y.Offset
-
-			if resizeTypeX then
-				local deltaX = 0
-				if resizeTypeX == "Right" then
-					deltaX = 2 * mouseDelta.X
-				elseif resizeTypeX == "Left" then
-					deltaX = -2 * mouseDelta.X
-				end
-				newSizeOffsetX = initialFrameSize.X.Offset + deltaX
-
-				local minWidthAbs = MinimumSize.X.Scale * parentAbsSize.X + MinimumSize.X.Offset
-				local maxWidthAbs = (MaximumSize and (MaximumSize.X.Scale * parentAbsSize.X + MaximumSize.X.Offset))
-					or math.huge
-				local scaleContributionX = initialFrameSize.X.Scale * parentAbsSize.X
-				local minAllowedTotalOffsetX = minWidthAbs - scaleContributionX
-				local maxAllowedTotalOffsetX = maxWidthAbs - scaleContributionX
-				newSizeOffsetX = math.clamp(newSizeOffsetX, minAllowedTotalOffsetX, maxAllowedTotalOffsetX)
-			end
-
-			if resizeTypeY then
-				local deltaY = 0
-				if resizeTypeY == "Bottom" then
-					deltaY = 2 * mouseDelta.Y
-				elseif resizeTypeY == "Top" then
-					deltaY = -2 * mouseDelta.Y
-				end
-				newSizeOffsetY = initialFrameSize.Y.Offset + deltaY
-
-				local minHeightAbs = MinimumSize.Y.Scale * parentAbsSize.Y + MinimumSize.Y.Offset
-				local maxHeightAbs = (MaximumSize and (MaximumSize.Y.Scale * parentAbsSize.Y + MaximumSize.Y.Offset))
-					or math.huge
-				local scaleContributionY = initialFrameSize.Y.Scale * parentAbsSize.Y
-				local minAllowedTotalOffsetY = minHeightAbs - scaleContributionY
-				local maxAllowedTotalOffsetY = maxHeightAbs - scaleContributionY
-				newSizeOffsetY = math.clamp(newSizeOffsetY, minAllowedTotalOffsetY, maxAllowedTotalOffsetY)
-			end
-
-			local finalNewSize =
-				UDim2.new(initialFrameSize.X.Scale, newSizeOffsetX, initialFrameSize.Y.Scale, newSizeOffsetY)
-			local finalNewPosition = initialFramePosition
-			if typeof(LockedPosition) == "UDim2" then
-				finalNewPosition = LockedPosition
-			end
-			return finalNewSize, finalNewPosition
-		else
-			-- Non-mirrored logic
-			local currentScreenGuiAbsSize = self.ScreenGui.AbsoluteSize
-			local parentAbsSizeForMinMax = currentScreenGuiAbsSize -- As per original non-mirrored logic for min/max context
-
-			-- These will store the final UDim offset values for position and the absolute pixel values for size calculation
-			local finalPosOffsetX = initialFramePosition.X.Offset
-			local finalPosOffsetY = initialFramePosition.Y.Offset
-
-			-- Initial absolute pixel size of the frame
-			local initialAbsWidthPx = initialFrameSize.X.Scale * self.Parent.AbsoluteSize.X + initialFrameSize.X.Offset
-			local initialAbsHeightPx = initialFrameSize.Y.Scale * self.Parent.AbsoluteSize.Y + initialFrameSize.Y.Offset
-
-			local newAbsWidthPx = initialAbsWidthPx
-			local newAbsHeightPx = initialAbsHeightPx
-
-			-- Min/max pixel dimensions
-			local minWidthPx = MinimumSize.X.Scale * parentAbsSizeForMinMax.X + MinimumSize.X.Offset
-			local minHeightPx = MinimumSize.Y.Scale * parentAbsSizeForMinMax.Y + MinimumSize.Y.Offset
-			local maxWidthPx = MaximumSize and (MaximumSize.X.Scale * parentAbsSizeForMinMax.X + MaximumSize.X.Offset)
-				or math.huge
-			local maxHeightPx = MaximumSize and (MaximumSize.Y.Scale * parentAbsSizeForMinMax.Y + MaximumSize.Y.Offset)
-				or math.huge
-
-			-- Original edge calculation logic (assuming MainFrame.Position is center if AnchorPoint is 0.5,0.5 for these calcs)
-			local initialAbsCenterX = currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
-				+ initialFramePosition.X.Offset
-			local initialAbsSizeX_forEdgeCalc = initialFrameSize.X.Offset -- Original code used offset for this part of edge calculation
-			local initialRightEdgeX = initialAbsCenterX + initialAbsSizeX_forEdgeCalc / 2
-			local initialLeftEdgeX = initialAbsCenterX - initialAbsSizeX_forEdgeCalc / 2
-
-			local initialAbsCenterY = currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
-				+ initialFramePosition.Y.Offset
-			local initialAbsSizeY_forEdgeCalc = initialFrameSize.Y.Offset -- Original code used offset for this part of edge calculation
-			local initialBottomEdgeY = initialAbsCenterY + initialAbsSizeY_forEdgeCalc / 2
-			local initialTopEdgeY = initialAbsCenterY - initialAbsSizeY_forEdgeCalc / 2
-
-			if resizeTypeX then
-				if resizeTypeX == "Left" then
-					local newLeftEdge = initialLeftEdgeX + mouseDelta.X
-					newAbsWidthPx = math.clamp(initialRightEdgeX - newLeftEdge, minWidthPx, maxWidthPx)
-					if newAbsWidthPx ~= (initialRightEdgeX - newLeftEdge) then -- Readjust edge if clamped
-						newLeftEdge = initialRightEdgeX - newAbsWidthPx
-					end
-					if not LockedPosition then
-						local newAbsCenterX = newLeftEdge + newAbsWidthPx / 2 -- Assuming center is halfway for position update
-						finalPosOffsetX = newAbsCenterX - currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
-					end
-				elseif resizeTypeX == "Right" then
-					local newRightEdge = initialRightEdgeX + mouseDelta.X
-					newAbsWidthPx = math.clamp(newRightEdge - initialLeftEdgeX, minWidthPx, maxWidthPx)
-					if not LockedPosition then
-						local newAbsCenterX = initialLeftEdgeX + newAbsWidthPx / 2 -- Assuming center is halfway
-						finalPosOffsetX = newAbsCenterX - currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
-					end
-				end
-			end
-
-			if resizeTypeY then
-				if resizeTypeY == "Top" then
-					local newTopEdge = initialTopEdgeY + mouseDelta.Y
-					newAbsHeightPx = math.clamp(initialBottomEdgeY - newTopEdge, minHeightPx, maxHeightPx)
-					if newAbsHeightPx ~= (initialBottomEdgeY - newTopEdge) then -- Readjust edge if clamped
-						newTopEdge = initialBottomEdgeY - newAbsHeightPx
-					end
-					if not LockedPosition then
-						local newAbsCenterY = newTopEdge + newAbsHeightPx / 2 -- Assuming center is halfway
-						finalPosOffsetY = newAbsCenterY - currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
-					end
-				elseif resizeTypeY == "Bottom" then
-					local newBottomEdge = initialBottomEdgeY + mouseDelta.Y
-					newAbsHeightPx = math.clamp(newBottomEdge - initialTopEdgeY, minHeightPx, maxHeightPx)
-					if not LockedPosition then
-						local newAbsCenterY = initialTopEdgeY + newAbsHeightPx / 2 -- Assuming center is halfway
-						finalPosOffsetY = newAbsCenterY - currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
-					end
-				end
-			end
-
-			-- Convert final absolute pixel dimensions back to UDim offsets for size
-			local finalSizeOffsetX = newAbsWidthPx - (initialFrameSize.X.Scale * self.Parent.AbsoluteSize.X)
-			local finalSizeOffsetY = newAbsHeightPx - (initialFrameSize.Y.Scale * self.Parent.AbsoluteSize.Y)
-
-			local finalNewSize =
-				UDim2.new(initialFrameSize.X.Scale, finalSizeOffsetX, initialFrameSize.Y.Scale, finalSizeOffsetY)
-			local finalNewPosition = initialFramePosition -- Default if LockedPosition is true
-			if typeof(LockedPosition) == "UDim2" then
-				finalNewPosition = LockedPosition
-			elseif not LockedPosition then -- Only update if not locked (boolean false)
-				finalNewPosition = UDim2.new(
-					initialFramePosition.X.Scale,
-					finalPosOffsetX,
-					initialFramePosition.Y.Scale,
-					finalPosOffsetY
-				)
-			end
-			return finalNewSize, finalNewPosition
-		end
-	end
-
-	local function createDragHandler(resizeTypeX, resizeTypeY)
-		return function(Info, Input: InputObject)
-			local mouseDelta = Input.Position - Info.StartPosition
-			if wax.shared.GetDPIScale then
-				mouseDelta = mouseDelta / wax.shared.GetDPIScale()
-			end
-			
-			local newSize, newPosition =
-				CalculateResizeProperties(Info.FramePosition, Info.FrameSize, mouseDelta, resizeTypeX, resizeTypeY)
-
-			MainFrame.Size = newSize
-			MainFrame.Position = newPosition
-		end
-	end
-
-	local LeftSide = Interface.New("Frame", {
-		Size = UDim2.new(0, HandleSize, 1, -CornerHandleSize * 2),
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.fromScale(0, 0.5),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6,
-	})
-	Drag.Setup(MainFrame, LeftSide, createDragHandler("Left", nil))
-
-	local RightSide = Interface.New("Frame", {
-		Size = UDim2.new(0, HandleSize, 1, -CornerHandleSize * 2),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.fromScale(1, 0.5),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6,
-	})
-	Drag.Setup(MainFrame, RightSide, createDragHandler("Right", nil))
-
-	local TopSide = Interface.New("Frame", {
-		Size = UDim2.new(1, -CornerHandleSize * 2, 0, HandleSize),
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.fromScale(0.5, 0),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6,
-	})
-	Drag.Setup(MainFrame, TopSide, createDragHandler(nil, "Top"))
-
-	local BottomSide = Interface.New("Frame", {
-		Size = UDim2.new(1, -CornerHandleSize * 2, 0, HandleSize),
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.fromScale(0.5, 1),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6,
-	})
-	Drag.Setup(MainFrame, BottomSide, createDragHandler(nil, "Bottom"))
-
-	local TopLeftCorner = Interface.New("Frame", {
-		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
-		AnchorPoint = Vector2.new(0, 0),
-		Position = UDim2.fromScale(0, 0),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6 + 1,
-	})
-	Drag.Setup(MainFrame, TopLeftCorner, createDragHandler("Left", "Top"))
-
-	local TopRightCorner = Interface.New("Frame", {
-		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6 + 1,
-	})
-	Drag.Setup(MainFrame, TopRightCorner, createDragHandler("Right", "Top"))
-
-	local BottomLeftCorner = Interface.New("Frame", {
-		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.fromScale(0, 1),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6 + 1,
-	})
-	Drag.Setup(MainFrame, BottomLeftCorner, createDragHandler("Left", "Bottom"))
-
-	local BottomRightCorner = Interface.New("Frame", {
-		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Parent = MainFrame,
-		ZIndex = 9e6 + 1,
-	})
-	Drag.Setup(MainFrame, BottomRightCorner, createDragHandler("Right", "Bottom"))
-
-	return self
-end
-
-return Resize
-
-end)() end,
-    [38] = function()local wax,script,require=ImportGlobals(38)local ImportGlobals return (function(...)local ImageFetcher = {
-	FallbackMapping = {
-		Logo = "rbxassetid://91685317120520",
-	},
-}
-
-if not isfolder("Cobalt/Assets") then
-	makefolder("Cobalt/Assets")
-end
-
-function SafeFetchCustomContentID(Path: string)
-	local Success, Result = pcall(function()
-		return getcustomasset(Path)
-	end)
-
-	return Success and Result or nil
-end
-
-function SafeFetchCustomImgData(url)
-	local Success, Response = pcall(request, {
-		Url = url,
-		Method = "GET",
-	})
-
-	if Success and Response.Success or Response.StatusCode >= 200 and Response.StatusCode < 300 then
-		return Response.Body
-	end
-
-	return nil
-end
-
-function ImageFetcher.GetRemoteImages(Images: { [string]: string })
-	if not getcustomasset then
-		return Images
-	end
-
-	local NewImages = {}
-	for ClassName, Image in Images do
-		if isfile(`Cobalt/Assets/{ClassName}.png`) then
-			NewImages[ClassName] = SafeFetchCustomContentID(`Cobalt/Assets/{ClassName}.png`) or Image
-			continue
-		end
-
-		local IconRawData = SafeFetchCustomImgData(`https://robloxapi.github.io/ref/icons/dark/{ClassName}.png`)
-		if not IconRawData then
-			NewImages[ClassName] = Image
-			continue
-		end
-
-		writefile(
-			`Cobalt/Assets/{ClassName}.png`,
-			IconRawData
-		)
-
-		NewImages[ClassName] = SafeFetchCustomContentID(`Cobalt/Assets/{ClassName}.png`) or Image
-	end
-
-	return NewImages
-end
-
-function ImageFetcher.GetImage(Image: string)
-	if not getcustomasset then
-		return ImageFetcher.FallbackMapping[Image] or Image
-	end
-
-	if isfile(`Cobalt/Assets/{Image}.png`) then
-		return SafeFetchCustomContentID(`Cobalt/Assets/{Image}.png`) or ImageFetcher.FallbackMapping[Image] or Image
-	end
-
-	local IconRawData = SafeFetchCustomImgData(`https://raw.githubusercontent.com/notpoiu/cobalt/refs/heads/main/Assets/{Image}.png`)
-
-	if not IconRawData then
-		return ImageFetcher.FallbackMapping[Image] or Image
-	end
-
-	writefile(`Cobalt/Assets/{Image}.png`, IconRawData)
-	return SafeFetchCustomContentID(`Cobalt/Assets/{Image}.png`) or ImageFetcher.FallbackMapping[Image] or Image
-end
-
-return ImageFetcher
-
-end)() end,
-    [39] = function()local wax,script,require=ImportGlobals(39)local ImportGlobals return (function(...)local Interface = {}
-local Icons = require(script.Parent.Icons)
-
-local DefaultFont = Font.fromId(12187365364)
-local _DefaultFontBold = Font.fromId(12187365364, Enum.FontWeight.Bold)
-
-local DefaultProperties = {
-	["Frame"] = {
-		BorderSizePixel = 0,
-	},
-	["ScrollingFrame"] = {
-		BorderSizePixel = 0,
-	},
-	["ImageLabel"] = {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	},
-	["ImageButton"] = {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	},
-
-	["TextLabel"] = {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		FontFace = DefaultFont,
-		RichText = true,
-		TextColor3 = Color3.new(1, 1, 1),
-	},
-	["TextButton"] = {
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		FontFace = DefaultFont,
-		RichText = true,
-		TextColor3 = Color3.new(1, 1, 1),
-	},
-	["TextBox"] = {
-		BorderSizePixel = 0,
-		FontFace = DefaultFont,
-		ClipsDescendants = true,
-		RichText = false,
-		TextColor3 = Color3.new(1, 1, 1),
-	},
-
-	["UIListLayout"] = {
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	},
-}
-
-function Interface.New(ClassName: string, Properties: { [string | number]: any })
-	local Object = Instance.new(ClassName)
-
-	for Key, Value in pairs(DefaultProperties[ClassName] or {}) do
-		if Properties and Properties[Key] ~= nil then
-			continue
-		end
-
-		Object[Key] = Value
-	end
-
-	for Key, Value in pairs(Properties or {}) do
-		if typeof(Value) == "table" then
-			local SubObject = Interface.New(Key, Value)
-			SubObject.Parent = Object
-
-			continue
-		elseif typeof(Key) ~= "string" and typeof(Value) == "Instance" then
-			local SubObject = Value:Clone()
-			SubObject.Parent = Object
-
-			continue
-		end
-
-		Object[Key] = Value
-	end
-
-	return Object
-end
-
-function Interface.NewIcon(IconName: string, Properties: { [string]: any })
-	local Image: ImageLabel = Interface.New("ImageLabel", Properties)
-	Icons.SetIcon(Image, IconName)
-
-	return Image
-end
-
-function Interface.HideCorner(Frame: GuiObject, Size: UDim2, Offset: Vector2): Frame
-	local Hider = Interface.New("Frame", {
-		AnchorPoint = Offset or Vector2.zero,
-		BackgroundColor3 = Frame.BackgroundColor3,
-		Position = UDim2.fromScale(Offset.X or 0, Offset.Y or 0),
-		Size = Size,
-		ZIndex = Frame.ZIndex,
-
-		Parent = Frame,
-	})
-
-	return Hider
-end
-
-function Interface.GetScreenParent(): Instance
-	if wax.shared.ExecutorName == "VOLT" then
-		return wax.shared.CoreGui
-	end
-	
-	local ScreenGui = Interface.New("ScreenGui", {})
-	local HiddenUI = wax.shared.gethui()
-
-	if pcall(function()
-		ScreenGui.Parent = HiddenUI
-		ScreenGui:Destroy()
-	end) then
-		return HiddenUI
-	end
-
-	return wax.shared.LocalPlayer:WaitForChild("PlayerGui")
-end
-
-return Interface
-
-end)() end,
-    [36] = function()local wax,script,require=ImportGlobals(36)local ImportGlobals return (function(...)--[[
-
-Luau syntax highlighter with studio colors
-Based on: https://devforum.roblox.com/t/realtime-richtext-lua-syntax-highlighting/2500399
-
-]]
-
-local Highlighter = {
-	Colors = {
-		Keyword = "#f86d7c",
-		String = "#adf195",
-		Number = "#ffc600",
-		Nil = "#ffc600",
-		Boolean = "#ffc600",
-		Function = "#f86d7c",
-		Self = "#f86d7c",
-		Local = "#f86d7c",
-		Text = "#ffffff",
-		LocalMethod = "#fdfbac",
-		LocalProperty = "#61a1f1",
-		BuiltIn = "#84d6f7",
-		Comment = "#666666",
-	},
-
-	Keywords = {
-		Lua = {
-			"and",
-			"break",
-			"or",
-			"else",
-			"elseif",
-			"if",
-			"then",
-			"until",
-			"repeat",
-			"while",
-			"do",
-			"for",
-			"in",
-			"end",
-			"local",
-			"return",
-			"function",
-			"export",
-		},
-		Roblox = {
-			"game",
-			"workspace",
-			"script",
-			"math",
-			"string",
-			"table",
-			"task",
-			"wait",
-			"select",
-			"next",
-			"Enum",
-			"error",
-			"warn",
-			"tick",
-			"assert",
-			"shared",
-			"loadstring",
-			"tonumber",
-			"tostring",
-			"type",
-			"typeof",
-			"unpack",
-			"print",
-			"Instance",
-			"CFrame",
-			"Vector3",
-			"Vector2",
-			"Color3",
-			"UDim",
-			"UDim2",
-			"Ray",
-			"BrickColor",
-			"OverlapParams",
-			"RaycastParams",
-			"Axes",
-			"Random",
-			"Region3",
-			"Rect",
-			"TweenInfo",
-			"collectgarbage",
-			"not",
-			"utf8",
-			"pcall",
-			"xpcall",
-			"_G",
-			"setmetatable",
-			"getmetatable",
-			"os",
-			"pairs",
-			"ipairs",
-		},
-	},
-}
-
-local function CreateKeywordSet(keywords)
-	local keywordSet = {}
-	for _, keyword in ipairs(keywords) do
-		keywordSet[keyword] = true
-	end
-	return keywordSet
-end
-
-local LuaSet = CreateKeywordSet(Highlighter.Keywords.Lua)
-local RobloxSet = CreateKeywordSet(Highlighter.Keywords.Roblox)
-
-local function GetHighlightColor(tokens, index)
-	local token = tokens[index]
-
-	if tonumber(token) then
-		return Highlighter.Colors.Number
-	elseif token == "nil" then
-		return Highlighter.Colors.Nil
-	elseif token:sub(1, 2) == "--" then
-		return Highlighter.Colors.Comment
-	elseif LuaSet[token] then
-		return Highlighter.Colors.Keyword
-	elseif RobloxSet[token] or getgenv()[token] ~= nil then
-		return Highlighter.Colors.BuiltIn
-	elseif token:sub(1, 1) == '"' or token:sub(1, 1) == "'" then
-		return Highlighter.Colors.String
-	elseif token == "true" or token == "false" then
-		return Highlighter.Colors.Boolean
-	end
-
-	if tokens[index + 1] == "(" then
-		if tokens[index - 1] == ":" then
-			return Highlighter.Colors.LocalMethod
-		end
-		return Highlighter.Colors.LocalMethod
-	end
-
-	if tokens[index - 1] == "." then
-		if tokens[index - 2] == "Enum" then
-			return Highlighter.Colors.BuiltIn
-		end
-		return Highlighter.Colors.LocalProperty
-	end
-
-	return nil
-end
-
-local ArgumentColors = {
-	["boolean"] = Highlighter.Colors.Boolean,
-	["number"] = Highlighter.Colors.Number,
-	["Vector2"] = Highlighter.Colors.Number,
-	["Vector3"] = Highlighter.Colors.Number,
-	["CFrame"] = Highlighter.Colors.Number,
-	["string"] = Highlighter.Colors.String,
-	["EnumItem"] = Highlighter.Colors.BuiltIn,
-	["nil"] = Highlighter.Colors.Nil,
-}
-function Highlighter.GetArgumentColor(Argument)
-	return ArgumentColors[typeof(Argument)] or Highlighter.Colors.Text
-end
-
-function Highlighter.Run(source)
-	local tokens = {}
-	local currentToken = ""
-
-	local inString = false
-	local inComment = false
-	local commentPersist = false
-
-	for i = 1, #source do
-		local character = source:sub(i, i)
-
-		if inComment then
-			if character == "\n" and not commentPersist then
-				table.insert(tokens, currentToken)
-				table.insert(tokens, character)
-				currentToken = ""
-
-				inComment = false
-			elseif source:sub(i - 1, i) == "]]" and commentPersist then
-				currentToken = currentToken .. "]"
-
-				table.insert(tokens, currentToken)
-				currentToken = ""
-
-				inComment = false
-				commentPersist = false
-			else
-				currentToken = currentToken .. character
-			end
-		elseif inString then
-			if character == inString and source:sub(i - 1, i - 1) ~= "\\" or character == "\n" then
-				currentToken = currentToken .. character
-				table.insert(tokens, currentToken)
-				currentToken = ""
-				inString = false
-			else
-				currentToken = currentToken .. character
-			end
-		else
-			if source:sub(i, i + 1) == "--" then
-				table.insert(tokens, currentToken)
-				currentToken = "--"
-				inComment = true
-				commentPersist = source:sub(i + 2, i + 3) == "[["
-				i = i + 1
-			elseif character == '"' or character == "'" then
-				table.insert(tokens, currentToken)
-				currentToken = character
-				inString = character
-			elseif character:match("[%p]") and character ~= "_" then
-				table.insert(tokens, currentToken)
-				table.insert(tokens, character)
-				currentToken = ""
-			elseif character:match("[%w_]") then
-				currentToken = currentToken .. character
-			else
-				table.insert(tokens, currentToken)
-				table.insert(tokens, character)
-				currentToken = ""
-			end
-		end
-	end
-
-	if currentToken ~= "" then
-		table.insert(tokens, currentToken)
-	end
-
-	for i = #tokens, 1, -1 do
-		if tokens[i] == "" then
-			table.remove(tokens, i)
-		end
-	end
-
-	local highlighted = {}
-
-	for i, token in ipairs(tokens) do
-		local highlightColor = GetHighlightColor(tokens, i)
-
-		if highlightColor then
-			local syntax =
-				string.format('<font color="%s">%s</font>', highlightColor, token:gsub("<", "&lt;"):gsub(">", "&gt;"))
-
-			table.insert(highlighted, syntax)
-		else
-			table.insert(highlighted, token)
-		end
-	end
-
-	return table.concat(highlighted)
-end
-
-return Highlighter
-
-end)() end,
-    [28] = function()local wax,script,require=ImportGlobals(28)local ImportGlobals return (function(...)--[[
-
-Pagination Module
-made by deivid and turned into module by upio
-
-]]
-
-local Pagination = {}
-Pagination.__index = Pagination
-
-function Pagination.new(Options: {
-	TotalItems: number,
-	ItemsPerPage: number,
-	CurrentPage: number?,
-	SiblingCount: number?,
-})
-	return setmetatable({
-		TotalItems = Options.TotalItems,
-		ItemsPerPage = Options.ItemsPerPage,
-		CurrentPage = Options.CurrentPage or 1,
-		SiblingCount = Options.SiblingCount or 2,
-	}, Pagination)
-end
-
-function Pagination:GetInfo()
-	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
-
-	return {
-		TotalItems = self.TotalItems,
-		ItemsPerPage = self.ItemsPerPage,
-		CurrentPage = self.CurrentPage,
-		TotalPages = TotalPages,
-	}
-end
-
-function Pagination:SetItemsPerPage(max: number)
-	self.ItemsPerPage = max
-end
-
-function Pagination:GetIndexRanges(Page: number?)
-	Page = Page or self.CurrentPage
-
-	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
-	if TotalPages == 0 then
-		return 1, 0
-	end
-	assert(
-		Page <= TotalPages,
-		"Attempted to get invalid page out of range, got " .. Page .. " but max is " .. TotalPages
-	)
-
-	local Start = (((Page or self.CurrentPage) - 1) * self.ItemsPerPage) + 1
-	local End = Start + (self.ItemsPerPage - 1)
-
-	return Start, End
-end
-
-function Pagination:SetPage(Page: number)
-	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
-	if TotalPages == 0 then
-		self.CurrentPage = 1
-		return
-	end
-	assert(Page <= TotalPages, "Attempted to set page out of range, got " .. Page .. " but max is " .. TotalPages)
-
-	self.CurrentPage = Page
-end
-
-function Pagination:Update(TotalItems: number?, ItemsPerPage: number?)
-	self.TotalItems = TotalItems or self.TotalItems
-	self.ItemsPerPage = ItemsPerPage or self.ItemsPerPage
-end
-
-function Pagination:GetVisualInfo(Page: number?)
-	Page = Page or self.CurrentPage
-
-	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
-	if TotalPages == 0 then
-		return {}
-	end
-
-	assert(
-		Page <= TotalPages,
-		"Attempted to get invalid page out of range, got " .. Page .. " but max is " .. TotalPages
-	)
-
-	local MaxButtons = 5 + self.SiblingCount * 2
-	local Result = table.create(MaxButtons, "none")
-	if TotalPages <= MaxButtons then
-		for i = 1, TotalPages do
-			Result[i] = i
-		end
-		return Result
-	end
-
-	local LeftSibling = math.max(Page - self.SiblingCount, 1)
-	local RightSibling = math.min(Page + self.SiblingCount, TotalPages)
-
-	local FakeLeft = LeftSibling > 2
-	local FakeRight = RightSibling < TotalPages - 1
-
-	local TotalPageNumbers = math.min(2 * self.SiblingCount + 5, TotalPages)
-	local ItemCount = TotalPageNumbers - 2
-
-	if not FakeLeft and FakeRight then
-		for i = 1, ItemCount do
-			Result[i] = i
-		end
-		Result[ItemCount + 1] = "ellipsis"
-		Result[ItemCount + 2] = TotalPages
-		--return MergeTables(LeftRange, "ellipsis", TotalPages)
-		return Result
-	elseif FakeLeft and not FakeRight then
-		--local RightRange = CreateArray(TotalPages - ItemCount + 1, TotalPages)
-		Result[1] = 1
-		Result[2] = "ellipsis"
-
-		local Index = 3
-		for i = TotalPages - ItemCount + 1, TotalPages do
-			Result[Index] = i
-			Index += 1
-		end
-
-		return Result
-	elseif FakeLeft and FakeRight then
-		--local MiddleRange = CreateArray(LeftSibling, RightSibling)
-		Result[1] = 1
-		Result[2] = "ellipsis"
-		local Index = 3
-
-		for i = LeftSibling, RightSibling do
-			Result[Index] = i
-			Index += 1
-		end
-
-		Result[Index] = "ellipsis"
-		Result[Index + 1] = TotalPages
-
-		return Result
-		--return MergeTables(1, "ellipsis", MiddleRange, "ellipsis", TotalPages)
-	end
-
-	--return CreateArray(1, TotalPages)
-	for i = 1, TotalPages do
-		Result[i] = i
-	end
-	return Result
-end
-
-return Pagination
-
-end)() end,
-    [35] = function()local wax,script,require=ImportGlobals(35)local ImportGlobals return (function(...)local UIHelper = {}
-
-local CodeGen = require(script.Parent.Parent.CodeGen.Generator)
-
-function UIHelper.IsMouseOverFrame(Frame: GuiObject, Position: Vector3): boolean
-	local AbsPos, AbsSize = Frame.AbsolutePosition, Frame.AbsoluteSize
-	return Position.X >= AbsPos.X
-		and Position.X <= AbsPos.X + AbsSize.X
-		and Position.Y >= AbsPos.Y
-		and Position.Y <= AbsPos.Y + AbsSize.Y
-end
-
-function UIHelper.IsClickInput(Input: InputObject): boolean
-	return Input.UserInputState == Enum.UserInputState.Begin
-		and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
-end
-
-function UIHelper.IsMoveInput(Input: InputObject): boolean
-	return Input.UserInputState == Enum.UserInputState.Change
-		and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)
-end
-
-function UIHelper.QuickSerializeNumber(Number: number)
-	if Number % 1 ~= 0 then
-		return string.format("%.3f", Number)
-	elseif Number == 1 / 0 then
-		return "math.huge"
-	elseif Number == -1 / 0 then
-		return "-math.huge"
-	end
-
-	return Number
-end
-
-function UIHelper.QuickSerializeArgument(Argument)
-	if typeof(Argument) == "string" then
-		return string.format('"%s"', Argument)
-	elseif typeof(Argument) == "number" then
-		return UIHelper.QuickSerializeNumber(Argument)
-	elseif typeof(Argument) == "Vector2" then
-		return string.format(
-			"%s, %s",
-			UIHelper.QuickSerializeNumber(Argument.X),
-			UIHelper.QuickSerializeNumber(Argument.Y)
-		)
-	elseif typeof(Argument) == "Vector3" then
-		return string.format(
-			"%s, %s, %s",
-			UIHelper.QuickSerializeNumber(Argument.X),
-			UIHelper.QuickSerializeNumber(Argument.Y),
-			UIHelper.QuickSerializeNumber(Argument.Z)
-		)
-	elseif typeof(Argument) == "CFrame" then
-		local Components = { Argument:GetComponents() }
-		for Index, Value in pairs(Components) do
-			Components[Index] = UIHelper.QuickSerializeNumber(Value)
-		end
-		return table.concat(Components, ", ")
-	elseif typeof(Argument) == "table" then
-		return "{...}"
-	elseif typeof(Argument) == "Instance" then
-		return CodeGen.GetFullPath(Argument, { DisableNilParentHandler = true })
-	elseif typeof(Argument) == "userdata" then
-		return "newproxy(" .. getmetatable(Argument) and "true" or "false" .. ")"
-	end
-
-	return tostring(Argument)
-end
-
-return UIHelper
-
-end)() end,
-    [33] = function()local wax,script,require=ImportGlobals(33)local ImportGlobals return (function(...)local Animations = {
-	TweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Exponential),
-	Exclusions = {},
-	Expectations = { In = {}, Out = {} },
-}
-
-local function GetTransparencyProperty(object)
-	if table.find(Animations.Exclusions, object) then
-		return nil
-	end
-
-	if object:IsA("TextButton") or object:IsA("TextLabel") or object:IsA("TextBox") then
-		return { "TextTransparency" }
-	elseif object:IsA("CanvasGroup") then
-		return { "GroupTransparency" }
-	elseif object:IsA("Frame") then
-		return { "BackgroundTransparency" }
-	elseif object:IsA("ScrollingFrame") then
-		return { "ScrollBarImageTransparency" }
-	elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
-		return { "ImageTransparency", "BackgroundTransparency" }
-	elseif object:IsA("UIStroke") then
-		return { "Transparency" }
-	end
-
-	return nil
-end
-
-local function BuildPropertyTable(properties, type, object)
-	if Animations.Expectations[type][object] then
-		return Animations.Expectations[type][object]
-	end
-
-	local propTable = {}
-	for _, prop in properties do
-		propTable[prop] = type == "In" and 0 or 1
-	end
-	return propTable
-end
-
-function Animations.FadeOut(object, time)
-	local tweenInfo = time and TweenInfo.new(time, Enum.EasingStyle.Exponential) or Animations.TweenInfo
-	local properties = GetTransparencyProperty(object)
-
-	if not properties then
-		return
-	end
-
-	wax.shared.TweenService:Create(object, tweenInfo, BuildPropertyTable(properties, "Out", object)):Play()
-
-	if object:IsA("CanvasGroup") then
-		return
-	end
-
-	for _, child in object:GetDescendants() do
-		local prop = GetTransparencyProperty(child)
-		if not prop then
-			continue
-		end
-
-		wax.shared.TweenService:Create(child, tweenInfo, BuildPropertyTable(prop, "Out", child)):Play()
-	end
-end
-
-function Animations.FadeIn(object, time)
-	local tweenInfo = time and TweenInfo.new(time, Enum.EasingStyle.Exponential) or Animations.TweenInfo
-	local property = GetTransparencyProperty(object)
-
-	if property then
-		wax.shared.TweenService:Create(object, tweenInfo, BuildPropertyTable(property, "In", object)):Play()
-	end
-
-	if object:IsA("CanvasGroup") then
-		return
-	end
-
-	for _, child in object:GetDescendants() do
-		local prop = GetTransparencyProperty(child)
-		if not prop then
-			continue
-		end
-
-		wax.shared.TweenService:Create(child, tweenInfo, BuildPropertyTable(prop, "In", child)):Play()
-	end
-end
-
-function Animations.AddFadeExclusion(object)
-	local prop = GetTransparencyProperty(object)
-	if not prop then
-		return
-	end
-
-	table.insert(Animations.Exclusions, object)
-end
-
-function Animations.AddFadeExclusions(objects)
-	for _, object in objects do
-		local prop = GetTransparencyProperty(object)
-		if not prop then
-			continue
-		end
-
-		table.insert(Animations.Exclusions, object)
-	end
-end
-
-function Animations.SetFadeExpectation(type: "In" | "Out", object: GuiBase2d, properties: { [string]: any })
-	if not Animations.Expectations[type] then
-		return
-	end
-
-	Animations.Expectations[type][object] = properties
-end
-
-return Animations
-
-end)() end,
-    [41] = function()local wax,script,require=ImportGlobals(41)local ImportGlobals return (function(...)--[[[
-
-Sonner Luau Port by upio
-Original Sonner by Emil Kowalski (https://sonner.emilkowal.ski/)
-
-TODO (which will almost probably never be done):
- - Add a way to view the previous notifications (hovering over the notifs but im lazy)
- - Handle too many notifications breaking the UI
- - Fix inconsistant notification positioning
-]]
-
-local Sonner = {
-	Queue = {},
-	TweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
-	Wrapper = nil,
-	PendingQueue = {},
-	Processing = false,
-}
-
-local Icons = require(script.Parent.Icons)
-local Interface = require(script.Parent.Interface)
-local Animations = require(script.Parent.Animations)
-
-local function InternalCreateNotificationObject(zindex, image, text)
-	local NotificationTemplate = Interface.New("CanvasGroup", {
-		BorderSizePixel = 0,
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		AnchorPoint = Vector2.new(0.5, 1),
-		Size = UDim2.new(0, 250, 0, 50),
-		Position = UDim2.new(0.5, 0, 1, 50),
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		ZIndex = zindex,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(39, 42, 42),
-		},
-
-		["UIScale"] = {},
-	})
-
-	local ImageLabel = Interface.New("ImageLabel", {
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		ScaleType = Enum.ScaleType.Fit,
-		Size = UDim2.new(0, 20, 0, 20),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0, 20, 0.5, 0),
-		BorderSizePixel = 0,
-		BackgroundTransparency = 1,
-		ZIndex = zindex + 1,
-		Parent = NotificationTemplate,
-	})
-
-	Animations.SetFadeExpectation("In", ImageLabel, {
-		BackgroundTransparency = 1,
-		ImageTransparency = 0,
-	})
-
-	if image then
-		if image:find("rbxasset") then
-			ImageLabel.Image = image
-		else
-			Icons.SetIcon(ImageLabel, image)
-		end
-	else
-		ImageLabel.Visible = false
-	end
-
-	local Frame = Interface.New("Frame", {
-		BorderSizePixel = 0,
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-		Size = UDim2.new(1, -50, 1, 0),
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 0),
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		ZIndex = zindex + 1,
-		Parent = NotificationTemplate,
-	})
-
-	Interface.New("TextLabel", {
-		BorderSizePixel = 0,
-		TextSize = 14,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-		FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.Regular, Enum.FontStyle.Normal),
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 200, 0, 50),
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		Text = text,
-		ZIndex = zindex + 1,
-		Parent = Frame,
-		TextWrapped = true,
-	})
-
-	return NotificationTemplate
-end
-
-local function InternalToast(image, text, internalTime, removeCallback)
-	assert(Sonner.Wrapper, "Sonner has not been initialized")
-	assert(typeof(image) == "string" or image == nil, "Image must be a string or nil")
-	assert(typeof(text) == "string", "Text is required!")
-	assert(typeof(internalTime) == "number" or internalTime == nil, "Time must be a number or nil")
-
-	local time = internalTime or 4.5
-
-	local Notif = InternalCreateNotificationObject(500, image, text)
-
-	Notif.Position = UDim2.new(0.5, 0, 1, 30)
-	Notif.Parent = Sonner.Wrapper
-
-	table.insert(Sonner.Queue, Notif)
-
-	local ScaleMultiplier = 0.9
-	local RemovalQueue = {}
-
-	for index, object in Sonner.Queue do
-		if object == Notif then
-			continue
-		end
-
-		object.ZIndex = 500 - (#Sonner.Queue - index)
-
-		-- shift them down
-		wax.shared.TweenService
-			:Create(object.UIScale, Sonner.TweenInfo, {
-				Scale = object.UIScale.Scale * ScaleMultiplier,
-			})
-			:Play()
-
-		wax.shared.TweenService
-			:Create(object, Sonner.TweenInfo, {
-				Position = object.Position - UDim2.fromOffset(0, object.AbsoluteSize.Y * 0.35),
-			})
-			:Play()
-
-		if ((#Sonner.Queue - index) + 1) >= 4 then
-			Animations.FadeOut(object)
-			task.delay(0.5, function()
-				object:Destroy()
-			end)
-			table.insert(RemovalQueue, object)
-		end
-	end
-
-	for _, obj in RemovalQueue do
-		table.remove(Sonner.Queue, table.find(Sonner.Queue, obj))
-	end
-
-	wax.shared.TweenService
-		:Create(Notif, Sonner.TweenInfo, {
-			Position = UDim2.new(0.5, 0, 1, -20),
-		})
-		:Play()
-	Animations.FadeIn(Notif)
-
-	if removeCallback then
-		task.spawn(removeCallback, Notif, time)
-	else
-		task.delay(time, function()
-			if not table.find(Sonner.Queue, Notif) then
-				return
-			end
-			table.remove(Sonner.Queue, table.find(Sonner.Queue, Notif))
-
-			Animations.FadeOut(Notif, 0.35)
-			wax.shared.TweenService
-				:Create(Notif, Sonner.TweenInfo, {
-					Position = UDim2.new(0.5, 0, 1, 50),
-				})
-				:Play()
-			task.wait(0.5)
-			Notif:Destroy()
-		end)
-	end
-end
-
-local function ProcessQueue()
-	if Sonner.Processing then
-		return
-	end
-	Sonner.Processing = true
-
-	while #Sonner.PendingQueue > 0 do
-		local Request = table.remove(Sonner.PendingQueue, 1)
-		InternalToast(Request.image, Request.text, Request.internalTime, Request.removeCallback)
-		task.wait(0.5)
-	end
-
-	Sonner.Processing = false
-end
-
-local function toast(image, text, internalTime, removeCallback)
-	table.insert(Sonner.PendingQueue, {
-		image = image,
-		text = text,
-		internalTime = internalTime,
-		removeCallback = removeCallback,
-	})
-
-	task.spawn(ProcessQueue)
-end
-
-function Sonner.info(text, internalTime)
-	toast("info", text, internalTime)
-end
-
-function Sonner.success(text, internalTime)
-	toast("circle-check", text, internalTime)
-end
-
-function Sonner.warning(text, internalTime)
-	toast("triangle-alert", text, internalTime)
-end
-
-function Sonner.error(text, internalTime)
-	toast("circle-alert", text, internalTime)
-end
-
-function Sonner.toast(text, internalTime)
-	toast(nil, text, internalTime)
-end
-
-function Sonner.promise(func, options)
-	local loadingText = options.loadingText or "Loading..."
-	local successText = options.successText or "Success!"
-	local errorText = options.errorText or "Error!"
-	local internalTime = options.time or 4.5
-
-	toast("loader-circle", loadingText, internalTime, function(notif, time)
-		local success, resultOrError = nil, nil
-
-		local spinnerThread = task.spawn(function()
-			repeat
-				wax.shared.RunService.RenderStepped:Wait()
-
-				local icon = notif:FindFirstChild("ImageLabel")
-				if not icon then
-					continue
-				end
-				icon.Rotation = (icon.Rotation + 1) % 360
-			until success == false or resultOrError ~= nil
-		end)
-
-		success, resultOrError = pcall(func, function(text)
-			notif.Frame.TextLabel.Text = text
-		end)
-
-		task.spawn(function()
-			setthreadidentity(8)
-
-			-- The thread identity is 8 when setting it on the parent thread (Sonner.promise), but it still lacks capabilities when running another child thread
-			-- Capabilities here should pass from a thread to another... Could be an upstream (executor) issue ?
-
-			Animations.FadeOut(notif.ImageLabel, 0.15)
-			wax.shared.TweenService
-				:Create(notif.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
-					Size = UDim2.new(0, 0, 0, 0),
-				})
-				:Play()
-			task.wait(0.15)
-
-			if coroutine.status(spinnerThread) ~= "dead" then
-				coroutine.close(spinnerThread)
-			end
-			notif.ImageLabel.Rotation = 0
-
-			if success then
-				Icons.SetIcon(notif.ImageLabel, "check")
-				local message = (
-					typeof(successText) == "string" and successText
-					or typeof(successText) == "function" and successText(resultOrError)
-					or "Success!"
-				)
-
-				if message:match("%s") then
-					notif.Frame.TextLabel.Text = string.format(message, tostring(resultOrError))
-				else
-					notif.Frame.TextLabel.Text = message
-				end
-			else
-				Icons.SetIcon(notif.ImageLabel, "circle-alert")
-				notif.Frame.TextLabel.Text = (
-					typeof(errorText) == "string" and errorText
-					or typeof(errorText) == "function" and errorText(resultOrError)
-					or "Error!"
-				)
-			end
-
-			Animations.FadeIn(notif.ImageLabel)
-			wax.shared.TweenService
-				:Create(notif.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
-					Size = UDim2.new(0, 20, 0, 20),
-				})
-				:Play()
-
-			task.delay(time, function()
-				if not table.find(Sonner.Queue, notif) then
-					return
-				end
-				table.remove(Sonner.Queue, table.find(Sonner.Queue, notif))
-
-				Animations.FadeOut(notif, 0.35)
-				wax.shared.TweenService
-					:Create(notif, Sonner.TweenInfo, {
-						Position = UDim2.new(0.5, 0, 1, 50),
-					})
-					:Play()
-
-				task.wait(0.5)
-				notif:Destroy()
-			end)
-		end)
-	end)
-end
-
-function Sonner.rawtoast(options)
-	local image = options.image
-	local text = options.text or "No Text Provided"
-	local internalTime = options.time or 4.5
-
-	toast(image, text, internalTime)
-end
-
-function Sonner.init(wrapper)
-	Sonner.Wrapper = wrapper
-end
-
-return Sonner
-
-end)() end,
     [12] = function()local wax,script,require=ImportGlobals(12)local ImportGlobals return (function(...)local ClassesToHook = {
 	RemoteEvent = "OnClientEvent",
 	RemoteFunction = "OnClientInvoke",
@@ -2388,7 +900,7 @@ end
 ]]
 local function CreateConnectionFunction(Instance: InstancesToHook, Method: MethodsToHook)
 	local ConnectionFunction = function(...)
-		for _, Connection in pairs(getconnections((Instance :: any)[Method])) do
+		for _, Connection in getconnections((Instance :: any)[Method]) do
 			if Connection.ForeignState then
 				continue
 			end
@@ -2560,7 +1072,6 @@ local ConnectionKeys = CreateLookupTable({
 	"ConnectParallel",
 	"connect",
 	"connectParallel",
-	"once",
 	"Once",
 })
 
@@ -2568,7 +1079,7 @@ local SignalMetatable = wax.shared.getrawmetatable(Instance.new("Part").Touched)
 wax.shared.Hooks[SignalMetatable.__index] = wax.shared.Hooking.HookFunction(SignalMetatable.__index, function(...)
 	local self, key = ...
 
-	if ConnectionKeys[key] then
+	if not wax.shared.Unloaded and ConnectionKeys[key] then
 		local Instance = SignalMapping[self]
 		local Connect = wax.shared.Hooks[SignalMetatable.__index](...)
 
@@ -2577,14 +1088,14 @@ wax.shared.Hooks[SignalMetatable.__index] = wax.shared.Hooking.HookFunction(Sign
 		end
 
 		local Method = ClassesToHook[Instance.ClassName]
-		wax.shared.Hooks[Connect] = wax.shared.Hooking.HookFunction(Connect, function(...)
+		return wax.shared.newcclosure(function(...)
 			local _self, callback = ...
 
-			local Result = table.pack(wax.shared.Hooks[Connect](...))
+			local Result = table.pack(Connect(...))
 			local Log = wax.shared.Logs.Incoming[Instance]
 
 			if Log and Log.Blocked then
-				for _, Connection in pairs(getconnections(Instance[Method])) do
+				for _, Connection in getconnections(Instance[Method]) do
 					if not Connection.ForeignState and Connection.Function ~= callback then
 						continue
 					end
@@ -2594,5237 +1105,11 @@ wax.shared.Hooks[SignalMetatable.__index] = wax.shared.Hooking.HookFunction(Sign
 			end
 
 			return table.unpack(Result, 1, Result.n)
-		end)
-
-		return Connect
+		end, debug.info(Connect, "n"))
 	end
 
 	return wax.shared.Hooks[SignalMetatable.__index](...)
 end)
-
-end)() end,
-    [29] = function()local wax,script,require=ImportGlobals(29)local ImportGlobals return (function(...)if not isfolder("Cobalt") then
-	makefolder("Cobalt")
-end
-
-if not isfile("Cobalt/Settings.json") then
-	writefile("Cobalt/Settings.json", "{}")
-end
-
-local SaveManager = {
-	State = {},
-}
-
-local Success, Error = pcall(function()
-	SaveManager.State = wax.shared.HttpService:JSONDecode(readfile("Cobalt/Settings.json"))
-end)
-
-if not Success then
-	warn("Failed to load settings: " .. Error)
-end
-
-function SaveManager:SetState(Idx, Value)
-	SaveManager.State[Idx] = Value
-	pcall(writefile, "Cobalt/Settings.json", wax.shared.HttpService:JSONEncode(SaveManager.State))
-end
-
-function SaveManager:GetState(Idx, Default)
-	if SaveManager.State[Idx] ~= nil then
-		return SaveManager.State[Idx]
-	end
-
-	return Default
-end
-
-return SaveManager
-
-end)() end,
-    [24] = function()local wax,script,require=ImportGlobals(24)local ImportGlobals return (function(...)wax.shared.Connections = {}
-
-wax.shared.Connect = function(Connection)
-	table.insert(wax.shared.Connections, Connection)
-	return Connection
-end
-
-wax.shared.Disconnect = function(Connection)
-	Connection:Disconnect()
-
-	local Index = table.find(wax.shared.Connections, Connection)
-	if Index then
-		table.remove(wax.shared.Connections, Index)
-	end
-
-	return true
-end
-
-return {}
-end)() end,
-    [21] = function()local wax,script,require=ImportGlobals(21)local ImportGlobals return (function(...)local CodeGen = {
-	CleanTable = { ['"'] = '\\"', ["\\"] = "\\\\" },
-	IndentTemplate = string.rep(" ", 4),
-}
-
-export type SupportedRemoteTypes = RemoteEvent | RemoteFunction | BindableEvent | BindableFunction | UnreliableRemoteEvent
-export type CallInfo = {
-	Arguments: { [number]: any, n: number },
-	CreationTime: number,
-	Origin: BaseScript?,
-	Function: (
-		...any
-	) -> any | {
-		Address: string,
-		Name: string,
-		Source: string?,
-		IsC: boolean,
-		Constants: { any }?,
-		Upvalues: { any }?,
-		Protos: { any }?,
-	},
-	Line: number?,
-	Source: string?,
-	Instance: SupportedRemoteTypes,
-	Order: number,
-	Type: "Incoming" | "Outgoing",
-	OriginalInvokeArgs: { [number]: any, n: number }?,
-	IsActor: boolean?,
-}
-
-wax.shared.FunctionForClasses = {
-	Incoming = {
-		RemoteEvent = "OnClientEvent",
-		RemoteFunction = "OnClientInvoke",
-		UnreliableRemoteEvent = "OnClientEvent",
-		BindableEvent = "Event",
-		BindableFunction = "OnInvoke",
-	},
-
-	Outgoing = {
-		RemoteEvent = "FireServer",
-		RemoteFunction = "InvokeServer",
-		UnreliableRemoteEvent = "FireServer",
-		BindableEvent = "Fire",
-		BindableFunction = "Invoke",
-	},
-}
-
-local GetNilCode = [[local function GetNil(Name, DebugId)
-	for _, Object in getnilinstances() do
-		if Object.Name == Name and Object:GetDebugId() == DebugId then
-			return Object
-		end
-	end
-end]]
-
---// Pasted from Dex (maximum detection)
-for i = 0, 31 do
-	CodeGen.CleanTable[string.char(i)] = "\\" .. string.format("%03d", i)
-end
-for i = 127, 255 do
-	CodeGen.CleanTable[string.char(i)] = "\\" .. string.format("%03d", i)
-end
-
-function CodeGen.FormatLuaString(str)
-	return string.gsub(str, '["\\\0-\31\127-\255]', CodeGen.CleanTable)
-end
-
-local function IsEqualToInstance(Object, ToCompareTo)
-	if rawequal(Object, ToCompareTo) then
-		return true
-	end
-
-	if wax.shared.ExecutorSupport["compareinstances"].IsWorking then
-		return compareinstances(Object, ToCompareTo)
-	end
-
-	return false
-end
-
-function CodeGen.GetFullPath(Object, options: {
-	DisableNilParentHandler: boolean?,
-	VariableName: string?,
-	OmitNilFunctionGetterCodeGeneration: boolean?
-}?)
-	local DisableNilParentHandler = options and options.DisableNilParentHandler
-	local OmitNilFunctionGetterCodeGeneration = options and options.OmitNilFunctionGetterCodeGeneration
-	local VariableName = options and options.VariableName
-	do
-		if DisableNilParentHandler == nil then
-			DisableNilParentHandler = true
-		end
-
-		if OmitNilFunctionGetterCodeGeneration == nil then
-			OmitNilFunctionGetterCodeGeneration = false
-		end
-	end
-
-	local ChildLookupMode = wax.shared.SaveManager:GetState("InstancePathLookupChain", "Index")
-
-	local function BuildDynamicAccessor(Expression: string): string
-		if ChildLookupMode == "WaitForChild" then
-			return ":WaitForChild(" .. Expression .. ")"
-		elseif ChildLookupMode == "FindFirstChild" then
-			return ":FindFirstChild(" .. Expression .. ")"
-		end
-
-		return "[" .. Expression .. "]"
-	end
-
-	local function BuildStaticAccessor(Name: string): string
-		local SanitizedName = CodeGen.FormatLuaString(Name)
-
-		if ChildLookupMode == "WaitForChild" then
-			return ':WaitForChild("' .. SanitizedName .. '")'
-		elseif ChildLookupMode == "FindFirstChild" then
-			return ':FindFirstChild("' .. SanitizedName .. '")'
-		elseif string.match(Name, "^[%a_][%w_]*$") then
-			return "." .. Name
-		end
-
-		return '["' .. SanitizedName .. '"]'
-	end
-
-	local CurrentObject = Object
-	local DidInsertNilFunction = false
-	local IsNil = false
-	local Path = ""
-
-	repeat
-		if typeof(CurrentObject) ~= "Instance" then
-			break
-		end
-
-		if IsEqualToInstance(CurrentObject, game) then
-			Path = "game" .. Path
-			break
-		end
-
-		local IndexName = ""
-
-		if IsEqualToInstance(CurrentObject, wax.shared.LocalPlayer) then
-			IndexName = ".LocalPlayer"
-		elseif
-			wax.shared.LocalPlayer.Character and IsEqualToInstance(CurrentObject, wax.shared.LocalPlayer.Character)
-		then
-			Path = 'game:GetService("Players").LocalPlayer.Character' .. Path
-			break
-		elseif CurrentObject.Name and CurrentObject.Name == wax.shared.LocalPlayer.Name then
-			IndexName = BuildDynamicAccessor('game:GetService("Players").LocalPlayer.Name')
-		elseif CurrentObject.Name and CurrentObject.Name == tostring(wax.shared.LocalPlayer.UserId) then
-			IndexName = BuildDynamicAccessor('game:GetService("Players").LocalPlayer.UserId')
-		elseif IsEqualToInstance(CurrentObject, workspace) then
-			Path = "workspace" .. Path
-			break
-		elseif CurrentObject.ClassName and CurrentObject.Name then
-			IndexName = BuildStaticAccessor(CurrentObject.Name)
-
-			local Parent = CurrentObject.Parent
-			if Parent then
-				local DirectChildPtr = Parent:FindFirstChild(CurrentObject.Name)
-
-				if
-					IsEqualToInstance(Parent, game)
-					and IsEqualToInstance(game:FindService(CurrentObject.ClassName), CurrentObject)
-				then
-					IndexName = ':GetService("' .. CurrentObject.ClassName .. '")'
-				elseif DirectChildPtr then
-					local Children = Parent:GetChildren()
-					local FoundIndex = nil
-
-					if
-						wax.shared.ExecutorSupport["compareinstances"].IsWorking
-						and not compareinstances(DirectChildPtr, CurrentObject)
-					then
-						for Index, Child in Children do
-							if not compareinstances(Child, CurrentObject) then
-								continue
-							end
-
-							FoundIndex = Index
-							break
-						end
-					elseif DirectChildPtr ~= CurrentObject then
-						FoundIndex = table.find(Children, CurrentObject)
-					end
-
-					if FoundIndex then
-						IndexName = ":GetChildren()[" .. tostring(FoundIndex) .. "]"
-					end
-				end
-			elseif Parent == nil then
-				IsNil = true
-
-				if DisableNilParentHandler then
-					Path = Path .. " --[[Nil Parent]]"
-				else
-					local Base = `GetNil("{CodeGen.FormatLuaString(CurrentObject.Name)}", "{CodeGen.FormatLuaString(
-						CurrentObject:GetDebugId()
-					)}")`
-					DidInsertNilFunction = true
-					
-					if OmitNilFunctionGetterCodeGeneration then
-						Path = Base
-						break
-					end
-
-					Path = GetNilCode .. `\n\n{VariableName and `local {VariableName} = ` or ""}` .. Base
-					break
-				end
-			end
-		end
-
-		Path = IndexName .. Path
-
-		CurrentObject = CurrentObject.Parent
-	until CurrentObject == nil
-
-	if IsNil then
-		return Path, DidInsertNilFunction
-	end
-
-	return `{VariableName and `local {VariableName} = ` or ""}{Path}`, DidInsertNilFunction
-end
-
-local function DoesUseCallbackValue(Instance: Instance)
-	return Instance.ClassName == "RemoteFunction" or Instance.ClassName == "BindableFunction"
-end
-
-local CodeGenHeaderTemplate = [[-- This code was generated by Cobalt
--- https://github.com/notpoiu/cobalt
-
-]]
-
-function CodeGen:IndentCode(Code: string, IndentLevel: number)
-	local Indent = CodeGen.IndentTemplate:rep(IndentLevel)
-	local IndentedCode = Code:gsub("\n", "\n" .. Indent)
-	return Indent .. IndentedCode
-end
-
-local WrapperActorCode = table.concat({
-	"-- Event originated from an Actor Environment",
-	"for _, actor in getactors() do",
-	"	run_on_actor(actor, [[\n%s\n]])",
-	"end",
-}, "\n")
-
-local function WrapCodeInActor(Code: string, ShouldWrap: boolean)
-	if not ShouldWrap then
-		return Code
-	end
-
-	return string.format(WrapperActorCode, CodeGen:IndentCode(Code, 2))
-end
-
-function CodeGen:BuildHookCode(CallInfo: CallInfo)
-	local Type = CallInfo.Type
-	local Path = self.GetFullPath(CallInfo.Instance, {
-		VariableName = "Event",
-		DisableNilParentHandler = false,
-	})
-	local IsFromActor = CallInfo.IsActor or false
-	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
-
-	local CodeGenHeader = CodeGenHeaderTemplate
-	if not wax.shared.SaveManager:GetState("ShowWatermark", true) then
-		CodeGenHeader = ""
-	end
-
-	if Type == "Incoming" then
-		if DoesUseCallbackValue(CallInfo.Instance) then
-			-- :InvokeServer -> Returned value
-			if CallInfo.OriginalInvokeArgs then
-				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
-
-				return CodeGenHeader
-					.. WrapCodeInActor(
-						string.format(
-							[[%s
-local mtHook; mtHook = hookmetamethod(game, "__namecall", function(...)
-	local self = ...
-
-	if rawequal(self, Event) and getnamecallmethod() == "%s" then
-		local Args = table.pack(...)
-
-		local Result = table.pack(
-			mtHook(table.unpack(Args, 1, Args.n))
-		)
-
-		return table.unpack(Result, 1, Result.n)
-	end
-
-	return mtHook(self, ...)
-end)
-
-local Old%s; Old%s = hookfunction(Event.%s, function(...)
-	local self = ...
-
-	if rawequal(self, Event) then
-		local Args = table.pack(...)
-
-		local Result = table.pack(
-			Old%s(table.unpack(Args, 1, Args.n))
-		)
-
-		return table.unpack(Result, 1, Result.n)
-	end
-
-	return Old%s(self, ...)
-end)]],
-							Path,
-							Method,
-							Method,
-							Method,
-							Method,
-							Method,
-							Method
-						),
-						IsFromActor
-					)
-			end
-
-			-- Callback value
-			return CodeGenHeader
-				.. WrapCodeInActor(
-					string.format(
-						[[%s
-local Callback = getcallbackvalue(Event, "%s")
-Event.%s = function(...)
-	print(`Intercepted (Callback) {Event.Name}.%s`, ...)
-	return Callback(...)
-end
-
-local mtHook; mtHook = hookmetamethod(game, "__newindex", function(...)
-	local self, key, value = ...
-	
-	if (
-		rawequal(self, Event) and
-		rawequal(key, "%s") and
-		typeof(value) == "function" and
-		not checkcaller()
-	) then
-		Callback = value
-	end
-
-	return mtHook(...)
-end)]],
-						Path,
-						Method,
-						Method,
-						Method,
-						Method
-					),
-					IsFromActor
-				)
-		end
-
-		return CodeGenHeader
-			.. WrapCodeInActor(
-				string.format(
-					[[%s
-for _, Connection in getconnections(Event.%s) do
-	local old; old = hookfunction(Connection.Function, function(...)
-		print(`Intercepted (Connection) {Event.Name}.%s`, ...)
-		return old(...)
-	end)
-end]],
-					Path,
-					Method,
-					Method
-				),
-				IsFromActor
-			)
-	end
-
-	return CodeGenHeader
-		.. WrapCodeInActor(
-			string.format(
-				[[%s
-local mtHook; mtHook = hookmetamethod(game, "__namecall", function(...)
-	local self = ...
-
-	if rawequal(self, Event) and getnamecallmethod() == "%s" then
-		local Args = table.pack(...)
-		
-		local Result = table.pack(
-			mtHook(self, table.unpack(Args, 1, Args.n))
-		)
-
-		print(`Intercepted (__namecall) {Event.Name}:%s()`, ...)
-
-		return table.unpack(Result, 1, Result.n)
-	end
-
-	return mtHook(...)
-end)
-
-local Old%s; Old%s = hookfunction(Event.%s, function(...)
-	local self = ...
-
-	if rawequal(self, Event) then
-		local Args = table.pack(...)
-
-		local Result = table.pack(
-			Old%s(table.unpack(Args, 1, Args.n))
-		)
-
-		print(`Intercepted (__index) {Event.Name}:%s()`, self, table.unpack(Result, 1, Result.n))
-
-		return table.unpack(Result, 1, Result.n)
-	end
-
-	return Old%s(self, ...)
-end)]],
-				Path,
-				Method,
-				Method,
-				Method,
-				Method,
-				Method,
-				Method,
-				Method,
-				Method
-			),
-			IsFromActor
-		)
-end
-
-function CreateArgsString(SerializedArgs: string, Args: { [number]: any, n: number }, Prefix: string?)
-	if Args.n == 0 then
-		return ""
-	end
-
-	--// Cyclic Table Handler \\--
-	if string.sub(SerializedArgs, 1, 9) == "(function" then
-		return `{Prefix == nil and "" or Prefix}table.unpack({SerializedArgs}, 1, {Args.n})`
-	end
-
-	--// Normal Table Handler \\--
-	return `{Prefix == nil and "" or Prefix}{string.sub(SerializedArgs, 2, #SerializedArgs - 1)}`
-end
-
-function CodeGen:BuildCallCode(CallInfo: CallInfo)
-	local Type = CallInfo.Type
-
-	local Path = self.GetFullPath(CallInfo.Instance, {
-		VariableName = "Event",
-		DisableNilParentHandler = false,
-	})
-	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
-	local SerializedArgs, DidInsertNilFunction = wax.shared.LuaEncode(
-		CallInfo.Arguments,
-		{ Prettify = true, InsertCycles = true, IsArray = true }
-	)
-
-	local CodeGenHeader = CodeGenHeaderTemplate
-	if not wax.shared.SaveManager:GetState("ShowWatermark", true) then
-		CodeGenHeader = ""
-	end
-
-	if Type == "Incoming" then
-		if DoesUseCallbackValue(CallInfo.Instance) then
-			local PrettifiedExpectedResult, DidInsertNilFunctionInExpectation = wax.shared.LuaEncode(
-				CallInfo.Arguments,
-				{ Prettify = true, InsertCycles = true, IsArray = true }
-			)
-
-			if CallInfo.OriginalInvokeArgs then
-				local PrettifiedOutput, InsertedNilFunction = wax.shared.LuaEncode(
-					CallInfo.OriginalInvokeArgs,
-					{ Prettify = true, InsertCycles = true, IsArray = true }
-				)
-
-				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
-
-				return CodeGenHeader
-					.. string.format(
-						[[%s%s
-local Result = Event:%s(%s)
-
-local ExpectedResult = table.unpack(%s)
-
-]],
-						(
-							(InsertedNilFunction or DidInsertNilFunction or DidInsertNilFunctionInExpectation)
-								and GetNilCode .. "\n\n"
-							or ""
-						),
-						Path,
-						Method,
-						CreateArgsString(PrettifiedOutput, CallInfo.OriginalInvokeArgs),
-						PrettifiedExpectedResult
-					)
-			end
-
-			return CodeGenHeader
-				.. string.format(
-					[[%s%s
-local Callback = getcallbackvalue(Event, "%s")
-Callback(%s)
-
-local ExpectedResult = table.unpack(%s)
-
-]],
-					(DidInsertNilFunction or DidInsertNilFunctionInExpectation and GetNilCode .. "\n\n" or ""),
-					Path,
-					Method,
-					CreateArgsString(SerializedArgs, CallInfo.Arguments),
-
-					PrettifiedExpectedResult
-				)
-		end
-
-		return CodeGenHeader
-			.. string.format(
-				[[%s%s
-firesignal(Event.%s%s)]],
-				(DidInsertNilFunction and GetNilCode .. "\n\n" or ""),
-				Path,
-				Method,
-				CreateArgsString(SerializedArgs, CallInfo.Arguments, ", ")
-			)
-	end
-
-	return CodeGenHeader
-		.. string.format(
-			[[%s%s
-Event:%s(%s)]],
-			(DidInsertNilFunction and GetNilCode .. "\n\n" or ""),
-			Path,
-			Method,
-			CreateArgsString(SerializedArgs, CallInfo.Arguments)
-		)
-end
-
-function CodeGen:BuildFunctionInfo(CallInfo: CallInfo)
-	if CallInfo.IsActor and typeof(CallInfo.Function) == "table" then
-		return string.format(
-			[[<b>Function Address:</b> %s
-<b>Name:</b> %s
-<b>Script Path:</b> %s
-<b>Source:</b> %s
-<b>Calling Line:</b> %s
-<b>From Actor:</b> true
-%s]],
-			CallInfo.Function.Address:match("0x%x+") or tostring(CallInfo.Function),
-			CallInfo.Function.Name ~= "" and CallInfo.Function.Name or "Anonymous",
-			CallInfo.Origin and self.GetFullPath(CallInfo.Origin, { DisableNilParentHandler = true }) or wax.shared.ExecutorName,
-			CallInfo.Function.Source or "N/A",
-			tostring(CallInfo.Line),
-
-			CallInfo.Function.IsC and "<b>Closure Type</b>: C closure"
-				or string.format(
-					"<b>Closure Type</b>: Luau closure\n<b>Constants:</b> %s\n<b>Upvalues:</b> %s\n<b>Protos:</b> %s",
-					debug.getconstants and tostring(#CallInfo.Function.Constants) or "N/A",
-					debug.getupvalues and tostring(#CallInfo.Function.Upvalues) or "N/A",
-					debug.getprotos and tostring(#CallInfo.Function.Protos) or "N/A"
-				)
-		)
-	end
-
-	local FunctionName = debug.info(CallInfo.Function, "n")
-
-	return string.format(
-		[[<b>Function Address:</b> %s
-<b>Name:</b> %s
-<b>Script Path:</b> %s
-<b>Source:</b> %s
-<b>Calling Line:</b> %s
-%s]],
-		tostring(CallInfo.Function):match("0x%x+") or tostring(CallInfo.Function),
-		FunctionName ~= "" and FunctionName or "Anonymous",
-		CallInfo.Origin and self.GetFullPath(CallInfo.Origin, { DisableNilParentHandler = true }) or wax.shared.ExecutorName,
-		CallInfo.Source or debug.info(CallInfo.Function, "s"),
-		tostring(CallInfo.Line),
-
-		iscclosure(CallInfo.Function) and "<b>Closure Type</b>: C closure"
-			or string.format(
-				"<b>Closure Type</b>: Luau closure\n<b>Constants:</b> %s\n<b>Upvalues:</b> %s\n<b>Protos:</b> %s",
-				debug.getconstants and tostring(#debug.getconstants(CallInfo.Function)) or "N/A",
-				debug.getupvalues and tostring(#debug.getupvalues(CallInfo.Function)) or "N/A",
-				debug.getprotos and tostring(#debug.getprotos(CallInfo.Function)) or "N/A"
-			)
-	)
-end
-
-wax.shared.ReplayCallInfo = function(CallInfo: CallInfo)
-	local Type = CallInfo.Type
-	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
-
-	if Type == "Incoming" then
-		if DoesUseCallbackValue(CallInfo.Instance) then
-			if CallInfo.OriginalInvokeArgs then
-				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
-
-				CallInfo.Instance[Method](
-					CallInfo.Instance,
-					table.unpack(CallInfo.OriginalInvokeArgs, 1, CallInfo.OriginalInvokeArgs.n)
-				)
-				return
-			end
-
-			local Callback = getcallbackvalue(CallInfo.Instance, Method)
-
-			if not Callback then
-				return
-			end
-
-			Callback(table.unpack(CallInfo.Arguments))
-			return
-		end
-
-		assert(firesignal or getconnections, "No firesignal or getconnections found")
-
-		if firesignal then
-			firesignal(CallInfo.Instance[Method], table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
-		elseif getconnections then
-			for _, conn in getconnections(CallInfo.Instance[Method]) do
-				conn:Fire(table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
-			end
-		end
-
-		return
-	end
-
-	CallInfo.Instance[Method](CallInfo.Instance, table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
-end
-
-return CodeGen
-
-end)() end,
-    [14] = function()local wax,script,require=ImportGlobals(14)local ImportGlobals return (function(...)local LuaEncode = require(script.Parent.Parent.Utils.Serializer.LuaEncode)
-local CodeGen = require(script.Parent.Parent.Utils.CodeGen.Generator)
-
-local Hooks = script.Parent.Hooks
-
--- Main Thread Hooks
-for _, Hook in Hooks.Default:GetChildren() do
-	task.spawn(require, Hook)
-end
-
-getgenv().CobaltInitialized = true
-
--- Actors use a different lua vm
--- This means that our main thread metatable hooks dont apply in the actor's vm
--- So we need to set up the hooks again in the actor lua vm in order to log everything
-local ActorsUtils = script.Parent.Actors
-
-wax.shared.ActorsEnabled = (
-	wax.shared.ExecutorSupport["run_on_actor"].IsWorking
-	and wax.shared.ExecutorSupport["getactors"].IsWorking
-	and wax.shared.ExecutorSupport["create_comm_channel"].IsWorking
-)
-
-if wax.shared.ActorsEnabled then
-	local ActorEnvironmentCode = ActorsUtils.Environment.Value
-
-	local CommunicationChannelID, Channel = create_comm_channel()
-	wax.shared.ActorCommunicator = Channel
-
-	local AlternativeEnabled = wax.shared.SaveManager:GetState("UseAlternativeHooks", false)
-
-	local IgnorePlayerModule = wax.shared.SaveManager:GetState("IgnorePlayerModule", true)
-	local IngoredRemotesDropdown = wax.shared.SaveManager:GetState("IgnoredRemotesDropdown", {
-		["BindableEvent"] = true,
-		["BindableFunction"] = true,
-	})
-
-	local ActorData = LuaEncode({
-		Token = wax.shared.CobaltVerificationToken,
-
-		IgnorePlayerModule = IgnorePlayerModule,
-		IgnoredRemotesDropdown = IngoredRemotesDropdown,
-		UseAlternativeHooks = AlternativeEnabled,
-
-		ExecutorSupport = wax.shared.ExecutorSupport,
-	})
-
-	ActorEnvironmentCode = ActorEnvironmentCode:gsub("COBALT_ACTOR_DATA", ActorData)
-
-	-- Actor Logs Sync Layer
-	local function ReconstructTable(Info, CyclicRefs)
-		local Reconstructed = {}
-
-		for Key, Value in Info do
-			if type(Value) == "table" then
-				if Value["__Function"] and Value["Validation"] == wax.shared.CobaltVerificationToken then
-					local FunctionData = table.clone(Value)
-					FunctionData["__Function"] = nil
-					FunctionData["Validation"] = nil
-
-					Reconstructed[Key] = FunctionData
-					continue
-				end
-
-				-- Check for Cobalt Created Object
-				if not Value["__CyclicRef"] then
-					Reconstructed[Key] = ReconstructTable(Value, CyclicRefs)
-					continue
-				end
-
-				local CyclicId = Value["__Id"]
-
-				if not CyclicRefs[CyclicId] then
-					warn("CyclicRef not found: " .. CyclicId)
-					continue
-				end
-
-				Reconstructed[Key] = CyclicRefs[CyclicId]
-				continue
-			end
-
-			Reconstructed[Key] = Value
-		end
-
-		return Reconstructed
-	end
-
-	wax.shared.Connect(Channel.Event:Connect(function(EventType, ...)
-		local ShouldLogActors = wax.shared.SaveManager:GetState("LogActors", true)
-
-		if not ShouldLogActors then
-			return
-		end
-
-		if EventType ~= "ActorCall" then
-			return
-		end
-
-		local Instance, Type, RawInfo, CyclicRefs = ...
-		if Instance == Channel or Instance == wax.shared.Communicator then
-			return
-		end
-
-		local Method = wax.shared.FunctionForClasses[Type][Instance.ClassName]
-		local Log = wax.shared.Logs[Type][Instance]
-
-		if not Log then
-			Log = wax.shared.NewLog(Instance, Type, Method, RawInfo.Origin)
-		end
-
-		if Log.Blocked then
-			return
-		elseif not Log.Ignored then
-			local ReconstructedInfo = ReconstructTable(RawInfo, CyclicRefs)
-			ReconstructedInfo.IsActor = true
-
-			--// Reconstruct Packed Arguments (BindableEvents omit ["n"] for unknown reason) \\--
-			local Packed = ReconstructedInfo.Arguments
-			local PackedN, PackedData = Packed.n, Packed.Data
-			ReconstructedInfo.Arguments = PackedData
-			ReconstructedInfo.Arguments.n = PackedN
-
-			Log:Call(ReconstructedInfo)
-			wax.shared.Communicator:Fire(Log.Instance, Type, #Log.Calls)
-		end
-	end))
-
-	-- Actor Hooking Code Generation
-	local CodeToRun = ActorEnvironmentCode
-
-	for _, ActorHook in Hooks.Actors:GetChildren() :: { StringValue } do
-		CodeToRun ..= table.concat({
-			"task.spawn(function()",
-			CodeGen:IndentCode(ActorHook.Value, 1),
-			"end)",
-		}, "\n") .. "\n\n"
-	end
-
-	CodeToRun ..= table.concat({
-		"task.spawn(function()",
-		CodeGen:IndentCode(ActorsUtils.Unload.Value, 1),
-		"end)",
-	}, "\n")
-
-	-- Actual Hooking Logic
-	-- The hooking code wont run again if cobalt is already initialized in that Actor (to address deleted actors aka LuaStateProxy stuff)
-	
-	-- `HookActor` is to address Volcano returning non initialized actors inside their `getactors` function.
-	-- God this code is so ass 🥹
-	local function HookActor(TargetActor: Actor)
-		local Hooked = false
-		repeat
-			Hooked, _ = pcall(run_on_actor, TargetActor, CodeToRun, CommunicationChannelID)
-			task.wait(0.25)
-		until Hooked
-	end
-
-	for _, TargetActor in getactors() do
-		task.spawn(HookActor, TargetActor)
-	end
-
-	wax.shared.Connect(game.DescendantAdded:Connect(function(actor)
-		if not actor:IsA("Actor") then
-			return
-		end
-
-		HookActor(actor)
-	end))
-end
-
-return {}
-
-end)() end,
-    [37] = function()local wax,script,require=ImportGlobals(37)local ImportGlobals return (function(...)local Icons = {}
-
-type Icon = {
-	Url: string,
-	Id: number,
-	IconName: string,
-	ImageRectOffset: Vector2,
-	ImageRectSize: Vector2,
-}
-
-local Success, IconsModule = pcall(function()
-	local IconFetchSuccess, IconModuleSource = pcall(request, {
-		Url = "https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua",
-		Method = "GET",
-	})
-
-	assert(
-		IconFetchSuccess and IconModuleSource.Success or IconModuleSource.StatusCode >= 200 and IconModuleSource.StatusCode < 300,
-		"Failed to fetch lucide icons direct module source"
-	)
-	return (loadstring(IconModuleSource.Body) :: () -> { Icons: { string }, GetAsset: (Name: string) -> Icon? })()
-end)
-
-function Icons.GetIcon(iconName: string): Icon?
-	if not Success then
-		return
-	end
-
-	local Success, Icon = pcall(IconsModule.GetAsset, iconName)
-	if not Success then
-		return
-	end
-
-	return Icon
-end
-
-function Icons.SetIcon(imageInstance: ImageLabel, iconName: string)
-	local Icon: Icon? = Icons.GetIcon(iconName)
-	if not Icon then
-		return
-	end
-
-	imageInstance.Image = Icon.Url
-	imageInstance.ImageRectOffset = Icon.ImageRectOffset
-	imageInstance.ImageRectSize = Icon.ImageRectSize
-end
-
-return Icons
-
-end)() end,
-    [19] = function()local wax,script,require=ImportGlobals(19)local ImportGlobals return (function(...)local Adonis = {
-	Name = "Adonis",
-	Game = "*",
-}
-
-local AdonisAnticheatThreads = {}
-function Adonis.Detect()
-	if not getreg or not getgc or not isfunctionhooked then
-		return false
-	end
-
-	local AdonisDetected = false
-
-	for _, thread in getreg() do
-		if typeof(thread) ~= "thread" then
-			continue
-		end
-
-		local Source = debug.info(thread, 1, "s")
-		if Source and (Source:match(".Core.Anti") or Source:match(".Plugins.Anti_Cheat")) then
-			AdonisDetected = true
-			table.insert(AdonisAnticheatThreads, thread)
-		end
-	end
-
-	return AdonisDetected
-end
-
-function Adonis.Bypass()
-	for _, thread in AdonisAnticheatThreads do
-		pcall(coroutine.close, thread)
-	end
-
-	local AdonisTables = {}
-	if filtergc then
-		local ContendorAdonisTables = filtergc("table", {
-			Keys = { "Detected", "RLocked" }
-		}, false)
-
-		for _, AdonisTable in ContendorAdonisTables do
-			if typeof(rawget(AdonisTable, "Detected")) ~= "function" then continue end
-			table.insert(AdonisTables, AdonisTable)
-		end
-	else
-		for _, Table in getgc(true) do
-			if typeof(Table) ~= "table" then
-				continue
-			end
-	
-			local IsAdonisOrigin = typeof(rawget(Table, "Detected")) == "function" and rawget(Table, "RLocked")
-			if not IsAdonisOrigin then continue end
-
-			table.insert(AdonisTables, Table)
-		end
-	end
-
-	for _, Adonis in AdonisTables do
-		for _, DetectionFunc in Adonis do
-			-- Just in case they already loaded a custom anticheat bypass for adonis
-			if typeof(DetectionFunc) ~= "function" or isfunctionhooked(DetectionFunc) then
-				continue
-			end
-
-			wax.shared.Hooks[DetectionFunc] = wax.shared.Hooking.HookFunction(
-				DetectionFunc,
-				function(action, info, nocrash)
-					coroutine.yield(coroutine.running())
-					return task.wait(9e9)
-				end
-			)
-		end
-	end
-
-	return true
-end
-
-return Adonis
-
-end)() end,
-    [34] = function()local wax,script,require=ImportGlobals(34)local ImportGlobals return (function(...)local Drag = {
-	Dragging = false,
-	Frame = nil,
-	FramePosition = nil,
-	FrameSize = nil, -- Added to store initial frame size
-	StartPosition = nil,
-	ChangedConnection = nil,
-	Callback = nil,
-}
-
-local Helper = require(script.Parent.Helper)
-
-local function DefaultCallback(_, Input: InputObject)
-	local Delta = Input.Position - Drag.StartPosition
-	local FramePosition: UDim2 = Drag.FramePosition
-
-	if wax.shared.GetDPIScale then
-		Delta = Delta / wax.shared.GetDPIScale()
-	end
-
-	Drag.Frame.Position = UDim2.new(
-		FramePosition.X.Scale,
-		FramePosition.X.Offset + Delta.X,
-		FramePosition.Y.Scale,
-		FramePosition.Y.Offset + Delta.Y
-	)
-end
-
-function Drag.Setup(Frame: GuiObject, DragFrame: GuiObject, Callback: (Info: {}, Input: InputObject) -> () | nil)
-	Callback = Callback or DefaultCallback
-
-	DragFrame.InputBegan:Connect(function(Input: InputObject)
-		if not Helper.IsClickInput(Input) then
-			return
-		end
-
-		Drag.Dragging = true
-		Drag.Frame = Frame
-		Drag.FramePosition = Frame.Position
-		Drag.StartPosition = Input.Position
-		Drag.FrameSize = Frame.Size
-		Drag.Callback = Callback
-
-		Drag.ChangedConnection = Input.Changed:Connect(function()
-			if Input.UserInputState ~= Enum.UserInputState.End then
-				return
-			end
-
-			Drag.Dragging = false
-			Drag.Frame = nil
-			Drag.Callback = nil
-
-			if Drag.ChangedConnection and Drag.ChangedConnection.Connected then
-				Drag.ChangedConnection:Disconnect()
-				Drag.ChangedConnection = nil
-			end
-		end)
-	end)
-end
-
-wax.shared.Connect(wax.shared.UserInputService.InputChanged:Connect(function(Input: InputObject)
-	if Drag.Dragging and Drag.Callback and Helper.IsMoveInput(Input) then
-		Drag.Callback(Drag, Input)
-	end
-end))
-
-return Drag
-
-end)() end,
-    [42] = function()local wax,script,require=ImportGlobals(42)local ImportGlobals return (function(...)--[[
-	Main Window Logic for cobalt, all UI elements are created and managed here.
-]]
-
-local AnticheatData = require(script.Parent.Utils.Anticheats.Main)
-local LuaEncode = require(script.Parent.Utils.Serializer.LuaEncode)
-
-local Utils = script.Parent.Utils
-
-local Pagination = require(Utils.Pagination)
-local CodeGen = require(Utils.CodeGen.Generator)
-local SessionExporter = require(Utils.CodeGen.SessionExporter)
-
-local UIUtils = script.Parent.Utils.UI
-
-local SyntaxHighlighter = require(UIUtils.Highlighter)
-
-local ImageFetcher = require(UIUtils.ImageFetch)
-local Icons = require(UIUtils.Icons)
-
-local Interface = require(UIUtils.Interface)
-local Helper = require(UIUtils.Helper)
-
-local Resize = require(UIUtils.Resize)
-local Drag = require(UIUtils.Drag)
-
-local PaginationHelper = Pagination.new({
-	ItemsPerPage = wax.shared.SaveManager:GetState("MaxItemPerPages", 20),
-	TotalItems = 0,
-})
-
-local Tabs = {}
-local CurrentPage = {}
-local CurrentInfo, CurrentTab, CurrentLog
-
-local LogsList
-local ShowPagination, ShowCalls, CreateCallFrame, ShowLog, CreateLogButton, CleanLogsList, UpdateSearch, SelectResult, EnterResult, OpenSearch
-
-local DefaultTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Exponential)
-
-type SupportedRemoteTypes = RemoteEvent | RemoteFunction | BindableEvent | BindableFunction | UnreliableRemoteEvent
-local ClassOrder = {
-	"RemoteEvent",
-	"UnreliableRemoteEvent",
-	"RemoteFunction",
-	"BindableEvent",
-	"BindableFunction",
-}
-
-local Images = {
-	RemoteEvent = "rbxassetid://110803789420086",
-	UnreliableRemoteEvent = "rbxassetid://126244162339059",
-	RemoteFunction = "rbxassetid://108537517159060",
-	BindableEvent = "rbxassetid://116839398727495",
-	BindableFunction = "rbxassetid://112264959079193",
-}
-
--- Functions
-local function UpdateLogNameSize(Log)
-	local TextSizeX, _TextSizeY =
-		wax.shared.GetTextBounds("x" .. #Log.Calls, Log.Button.Calls.FontFace, Log.Button.Calls.TextSize)
-	Log.Button.Name.Size = UDim2.new(1, -(TextSizeX + 24), 1, 0)
-end
-
-local function GetDPIScale()
-	local Scale = wax.shared.SaveManager:GetState("WindowDPIScale", "100%")
-	return (tonumber(Scale:sub(1, #Scale - 1)) or 100) / 100
-end
-wax.shared.GetDPIScale = GetDPIScale
-
--- ContentProvider PreloadAsync bypass
-Images = ImageFetcher.GetRemoteImages(Images)
-
-local CobaltLogo = ImageFetcher.GetImage("Logo")
-
-local ScreenGui = Interface.New("ScreenGui", {
-	Name = "Cobalt",
-	ResetOnSpawn = false,
-	Parent = Interface.GetScreenParent(),
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-})
-wax.shared.ScreenGui = ScreenGui
-
-local ScreenDPIScale = Interface.New("UIScale", {
-	Parent = ScreenGui,
-	Scale = GetDPIScale(),
-})
-
-local MainUICorner = Interface.New("UICorner", {
-	CornerRadius = UDim.new(0, 6),
-})
-
-local MainFrame = Interface.New("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(640, 420),
-	ZIndex = 0,
-
-	MainUICorner,
-	Parent = ScreenGui,
-})
-
-local ShowButton = Interface.New("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0),
-	BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-	Position = UDim2.new(0.5, 0, 0, 36),
-	Size = UDim2.fromOffset(36, 36),
-	Text = "",
-	Visible = false,
-
-	["ImageLabel"] = {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
-		Image = CobaltLogo,
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.new(1, -10, 1, -10),
-	},
-
-	["UIStroke"] = {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.new(1, 1, 1),
-	},
-
-	MainUICorner,
-	Parent = ScreenGui,
-})
-do
-	ShowButton.MouseButton1Click:Connect(function()
-		ShowButton.Visible = false
-		MainFrame.Visible = true
-	end)
-end
-
--- Resizing
-Resize.new({
-	MainFrame = MainFrame,
-
-	MinimumSize = Vector2.new(585, 220),
-
-	CornerHandleSize = 20,
-	HandleSize = 6,
-})
-
--- Context Menus
-local CurrentContext
-local ContextMenu = Interface.New("Frame", {
-	AutomaticSize = Enum.AutomaticSize.XY,
-	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
-	Size = UDim2.fromScale(0, 0),
-	ZIndex = 10000,
-	Visible = false,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 6),
-	},
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 0),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 4),
-		PaddingTop = UDim.new(0, 4),
-		PaddingBottom = UDim.new(0, 4),
-	},
-
-	["UIStroke"] = {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.fromRGB(25, 25, 25),
-		Thickness = 1,
-	},
-
-	Parent = ScreenGui,
-})
-
-local function CreateContextMenu(Parent: GuiObject, Options: {}, MouseOnCursorPosition: boolean?)
-	local ContextData = {
-		Parent = Parent,
-		Options = {},
-	}
-
-	local function BuildContextMenu(Options: {})
-		for Order, Data in pairs(Options) do
-			local TextButton = Interface.New("TextButton", {
-				BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-				BackgroundTransparency = 1,
-				LayoutOrder = Order,
-				Size = UDim2.new(1, 0, 0, 30),
-				Text = "",
-
-				["UICorner"] = {
-					CornerRadius = UDim.new(0, 6),
-				},
-
-				["UIPadding"] = {
-					PaddingBottom = UDim.new(0, 6),
-					PaddingLeft = UDim.new(0, 6),
-					PaddingRight = UDim.new(0, 6),
-					PaddingTop = UDim.new(0, 6),
-				},
-			})
-
-			local IconToSet = Data.Icon
-			if typeof(IconToSet) == "function" then
-				IconToSet = IconToSet()
-			end
-
-			local ItemIcon
-			if tostring(IconToSet):match("rbxasset") then
-				ItemIcon = Interface.New("ImageLabel", {
-					Image = IconToSet,
-					Size = UDim2.fromScale(1, 1),
-					SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-					Parent = TextButton,
-				})
-			else
-				ItemIcon = Interface.NewIcon(IconToSet, {
-					Size = UDim2.fromScale(1, 1),
-					SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-					Parent = TextButton,
-				})
-			end
-
-			local TextToSet = Data.Text
-			if typeof(TextToSet) == "function" then
-				TextToSet = TextToSet()
-			end
-
-			local ItemText = Interface.New("TextLabel", {
-				AutomaticSize = Enum.AutomaticSize.X,
-				Position = UDim2.fromOffset(Data.Icon == nil and 0 or 26, 0),
-				Size = UDim2.fromScale(0, 1),
-				Text = TextToSet,
-				TextSize = 16,
-				TextXAlignment = Enum.TextXAlignment.Left,
-
-				Parent = TextButton,
-			})
-
-			if Data.TextProperties then
-				local Properties = typeof(Data.TextProperties) == "function" and Data.TextProperties()
-					or Data.TextProperties
-				for Property, Value in pairs(Properties) do
-					ItemText[Property] = Value
-				end
-			end
-
-			TextButton.MouseEnter:Connect(function()
-				wax.shared.TweenService
-					:Create(TextButton, DefaultTweenInfo, {
-						BackgroundTransparency = 0,
-					})
-					:Play()
-			end)
-			TextButton.MouseLeave:Connect(function()
-				wax.shared.TweenService
-					:Create(TextButton, DefaultTweenInfo, {
-						BackgroundTransparency = 1,
-					})
-					:Play()
-			end)
-			TextButton.MouseButton1Click:Connect(function()
-				TextButton.BackgroundTransparency = 1
-
-				if Data.Callback then
-					Data.Callback()
-				end
-
-				if Data.CloseOnClick ~= false then
-					ContextData:Close()
-				else
-					for _, Option in pairs(ContextData.Options) do
-						Option:Display()
-					end
-				end
-			end)
-
-			function Data:Display()
-				if typeof(Data.Text) == "function" then
-					ItemText.Text = Data.Text()
-				end
-
-				if typeof(Data.Icon) == "function" then
-					IconToSet = Data.Icon()
-
-					if tostring(IconToSet):match("rbxasset") then
-						ItemIcon.ImageRectOffset = Vector2.new(0, 0)
-						ItemIcon.ImageRectSize = Vector2.new(0, 0)
-						ItemIcon.Image = IconToSet
-					else
-						Icons.SetIcon(ItemIcon, IconToSet)
-					end
-				end
-
-				if Data.TextProperties then
-					local Properties = typeof(Data.TextProperties) == "function" and Data.TextProperties()
-						or Data.TextProperties
-					for Property, Value in pairs(Properties) do
-						ItemText[Property] = Value
-					end
-				end
-			end
-
-			ContextData.Options[TextButton] = Data
-		end
-	end
-
-	function ContextData:Open()
-		if CurrentContext == ContextData then
-			return
-		end
-
-		if CurrentContext then
-			CurrentContext:Close()
-		end
-
-		CurrentContext = ContextData
-		for Object, Data in pairs(ContextData.Options) do
-			if Data.Condition and not Data.Condition() then
-				continue
-			end
-			Object.Parent = ContextMenu
-			Data:Display()
-		end
-
-		if MouseOnCursorPosition then
-			ContextMenu.Position = UDim2.fromOffset(
-				wax.shared.UserInputService:GetMouseLocation().X,
-				wax.shared.UserInputService:GetMouseLocation().Y - (45 / GetDPIScale())
-			)
-		else
-			ContextMenu.Position =
-				UDim2.fromOffset(
-					Parent.AbsolutePosition.X / GetDPIScale(),
-					(Parent.AbsolutePosition.Y + Parent.AbsoluteSize.Y) / GetDPIScale()
-				)
-		end
-		ContextMenu.Visible = true
-	end
-
-	function ContextData:Toggle()
-		if CurrentContext == ContextData then
-			ContextData:Close()
-			return
-		end
-
-		ContextData:Open()
-	end
-
-	function ContextData:Close()
-		if CurrentContext ~= ContextData then
-			return
-		end
-
-		ContextMenu.Visible = false
-		for Object, _ in pairs(ContextData.Options) do
-			Object.Parent = nil
-		end
-		CurrentContext = nil
-	end
-
-	function ContextData:SetContextMenu(Options: { any })
-		for Object, Data in pairs(ContextData.Options) do
-			Object:Destroy()
-		end
-		ContextData.Options = {}
-		BuildContextMenu(Options)
-	end
-
-	BuildContextMenu(Options)
-	return ContextData
-end
-
--- Sonner toast
-local SonnerUI = Interface.New("ScrollingFrame", {
-	Name = "Sonner",
-	BackgroundTransparency = 1,
-	Size = UDim2.fromOffset(285, 115),
-	Position = UDim2.fromScale(1, 1),
-	AnchorPoint = Vector2.new(1, 1),
-	ZIndex = 5000,
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	ScrollingEnabled = false,
-	ClipsDescendants = true,
-	Parent = MainFrame,
-})
-
-wax.shared.Sonner.init(SonnerUI)
-
--- Modal
-local OpenedModal
-local ModalBackground = Interface.New("TextButton", {
-	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-	BackgroundTransparency = 0.5,
-	Size = UDim2.fromScale(1, 1),
-	Text = "",
-	Visible = false,
-	ZIndex = 2,
-
-	MainUICorner,
-	Parent = MainFrame,
-})
-
-local function OpenModal(Parent)
-	OpenedModal = Parent
-
-	OpenedModal.Visible = true
-	ModalBackground.Visible = true
-end
-
-local function CloseModal()
-	if OpenedModal then
-		OpenedModal.Visible = false
-		OpenedModal = nil
-	end
-
-	ModalBackground.Visible = false
-end
-
-ModalBackground.MouseButton1Click:Connect(CloseModal)
-
-local function ConnectCloseButton(Button, Image, Parent)
-	Button.MouseEnter:Connect(function()
-		wax.shared.TweenService
-			:Create(Image, DefaultTweenInfo, {
-				ImageTransparency = 0.25,
-			})
-			:Play()
-	end)
-	Button.MouseLeave:Connect(function()
-		wax.shared.TweenService
-			:Create(Image, DefaultTweenInfo, {
-				ImageTransparency = 0.5,
-			})
-			:Play()
-	end)
-	Button.MouseButton1Click:Connect(CloseModal)
-end
-
-local function CreateModalTop(Title: string, Icon: string, Parent: GuiObject)
-	local ModalTop = Interface.New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 36),
-		Parent = Parent,
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-	})
-
-	local ModalTitle = Interface.New("TextLabel", {
-		Text = Title,
-		TextSize = 17,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Size = UDim2.new(1, -60, 1, 0),
-		Position = UDim2.fromScale(0.5, 0.5),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Parent = ModalTop,
-	})
-
-	local ModalIcon
-
-	if Icon:match("rbxasset") then
-		ModalIcon = Interface.New("ImageLabel", {
-			Image = Icon,
-			Size = UDim2.fromScale(1, 1),
-			Position = UDim2.fromOffset(4, 0),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-			Parent = ModalTop,
-		})
-	else
-		ModalIcon = Interface.NewIcon(Icon, {
-			ImageTransparency = 0.5,
-			Size = UDim2.fromScale(1, 1),
-			Position = UDim2.fromOffset(4, 0),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-			Parent = ModalTop,
-		})
-	end
-
-	local CloseButton = Interface.New("ImageButton", {
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		Parent = ModalTop,
-	})
-	local CloseImage = Interface.NewIcon("x", {
-		ImageTransparency = 0.5,
-		Size = UDim2.fromOffset(22, 22),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-		Parent = CloseButton,
-	})
-
-	ConnectCloseButton(CloseButton, CloseImage, Parent)
-
-	Interface.New("Frame", {
-		Parent = Parent,
-		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-		Size = UDim2.new(1, 0, 0, 1),
-		Position = UDim2.fromOffset(0, 36),
-	})
-
-	return ModalTitle, ModalIcon
-end
-
--- Settings
-local SettingsFrame = Interface.New("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(0.65, 0, 0, 285),
-	Text = "",
-	Visible = false,
-	Parent = ModalBackground,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 8),
-	},
-
-	["UIStroke"] = {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.fromRGB(25, 25, 25),
-		Thickness = 1,
-	},
-})
-
-Resize.new({
-	MainFrame = SettingsFrame,
-
-	MaximumSize = UDim2.new(1, -2, 1, -2),
-	MinimumSize = UDim2.fromScale(0.65, 0.712),
-	Mirrored = true,
-	LockedPosition = true,
-
-	CornerHandleSize = 20,
-	HandleSize = 6,
-})
-
-CreateModalTop("Settings", "settings", SettingsFrame)
-
-local SettingsScrollingFrame = Interface.New("ScrollingFrame", {
-	AnchorPoint = Vector2.new(0, 1),
-	BackgroundTransparency = 1,
-	Position = UDim2.fromScale(0, 1),
-	Size = UDim2.new(1, 0, 1, -37),
-	ClipsDescendants = true,
-	ScrollBarThickness = 2,
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	CanvasSize = UDim2.fromScale(0, 0),
-	Parent = SettingsFrame,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 15),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 8),
-		PaddingRight = UDim.new(0, 8),
-		PaddingTop = UDim.new(0, 8),
-		PaddingBottom = UDim.new(0, 8),
-	},
-})
-
-local function CreateSettingsSection(SectionName: string)
-	local Section = Interface.New("Frame", {
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 0),
-		Parent = SettingsScrollingFrame,
-
-		["UIListLayout"] = {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			Padding = UDim.new(0, 6),
-		},
-
-		["TextLabel"] = {
-			Text = SectionName,
-			FontFace = Font.fromId(12187365364, Enum.FontWeight.Bold),
-			TextSize = 18,
-			Size = UDim2.new(1, 0, 0, 18),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = -1,
-		},
-	})
-
-	return Section
-end
-
-local function CreateSettingsButton(Text: string, Callback: () -> (), Section: Frame, TextSize: number?)
-	local Button = Interface.New("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-		Size = UDim2.new(1, 0, 0, 24),
-		TextSize = 15,
-		Text = "",
-		Parent = Section,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		},
-
-		["TextLabel"] = {
-			Text = Text,
-			TextSize = TextSize or 16,
-			TextTransparency = 0.5,
-			Size = UDim2.fromScale(1, 1),
-			Position = UDim2.fromOffset(0, -1),
-		},
-	})
-
-	Button.MouseButton1Click:Connect(function()
-		if Callback then
-			Callback()
-		end
-	end)
-
-	return Button
-end
-
-local function CreateSettingsCheckbox(
-	Idx: string,
-	Options: {
-		Text: string,
-		Callback: (boolean) -> () | nil,
-		Default: boolean?,
-		Section: Frame,
-	}
-)
-	local Checkbox = {
-		Default = Options.Default or false,
-		Value = wax.shared.SaveManager:GetState(Idx, Options.Default),
-	}
-
-	local CheckboxUI = Interface.New("TextButton", {
-		Text = Options.Text,
-		TextSize = 16,
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 20),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = Options.Section,
-	})
-
-	local ToggleOnColor = Color3.fromRGB(52, 199, 89)
-	local ToggleOffColor = Color3.fromRGB(50, 50, 50)
-
-	local ToggleKnobOffSize = UDim2.fromOffset(16, 16)
-	local ToggleKnobOnSize = UDim2.fromOffset(18, 18)
-	local ToggleKnobInset = 10
-
-	local ToggleTrack = Interface.New("Frame", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(36, 20),
-		BackgroundColor3 = ToggleOffColor,
-		Parent = CheckboxUI,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(1, 0),
-		},
-	})
-
-	local ToggleKnob = Interface.New("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Size = ToggleKnobOffSize,
-		Parent = ToggleTrack,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(1, 0),
-		},
-	})
-
-	local function UpdateToggleVisual(instant: boolean?)
-		local TargetTrackColor = if Checkbox.Value then ToggleOnColor else ToggleOffColor
-		local TargetKnobPosition = if Checkbox.Value
-			then UDim2.new(1, -ToggleKnobInset, 0.5, 0)
-			else UDim2.new(0, ToggleKnobInset, 0.5, 0)
-		local TargetKnobSize = if Checkbox.Value then ToggleKnobOnSize else ToggleKnobOffSize
-
-		if instant then
-			ToggleTrack.BackgroundColor3 = TargetTrackColor
-			ToggleKnob.Position = TargetKnobPosition
-			ToggleKnob.Size = TargetKnobSize
-		else
-			wax.shared.TweenService
-				:Create(ToggleTrack, DefaultTweenInfo, {
-					BackgroundColor3 = TargetTrackColor,
-				})
-				:Play()
-
-			wax.shared.TweenService
-				:Create(ToggleKnob, DefaultTweenInfo, {
-					Position = TargetKnobPosition,
-					Size = TargetKnobSize,
-				})
-				:Play()
-		end
-	end
-
-	UpdateToggleVisual(true)
-
-	local function Toggle()
-		Checkbox:SetValue(not Checkbox.Value)
-	end
-
-	CheckboxUI.MouseButton1Click:Connect(Toggle)
-
-	function Checkbox:Reset()
-		Checkbox:SetValue(Checkbox.Default)
-	end
-
-	function Checkbox:SetValue(NewValue)
-		if wax.shared.ActorCommunicator then
-			pcall(function()
-				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, NewValue)
-			end)
-		end
-
-		wax.shared.SaveManager:SetState(Idx, NewValue)
-
-		Checkbox.Value = NewValue
-		UpdateToggleVisual()
-
-		if Options.Callback then
-			Options.Callback(Checkbox.Value)
-		end
-	end
-
-	if wax.shared.ActorCommunicator then
-		pcall(function()
-			wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Checkbox.Value)
-		end)
-	end
-	wax.shared.Settings[Idx] = Checkbox
-	return Checkbox
-end
-
-local function CreateSettingsTextBox(
-	Idx: string,
-	Options: {
-		Text: string,
-		Section: Frame,
-		Callback: (string) -> () | nil,
-		Default: string?,
-		Placeholder: string?,
-		ClearTextOnFocus: boolean?,
-		Width: number?,
-		NumericOnly: boolean?,
-	}
-)
-	local NumericOnly = Options.NumericOnly == true
-	local TextBoxWidth = Options.Width or 160
-
-	local function NormalizeValue(NewValue: any): string
-		local Value = tostring(NewValue or "")
-
-		if not NumericOnly then
-			return Value
-		end
-
-		if Value == "" then
-			return ""
-		end
-
-		local Characters = table.create(#Value)
-		local HasDigits = false
-		local HasDecimal = false
-		local SignApplied = false
-
-		for Index = 1, #Value do
-			local Char = string.sub(Value, Index, Index)
-			local Byte = string.byte(Char)
-
-			if Char == "-" and not SignApplied and not HasDigits and not HasDecimal then
-				table.insert(Characters, Char)
-				SignApplied = true
-			elseif Char == "." and not HasDecimal then
-				table.insert(Characters, Char)
-				HasDecimal = true
-				SignApplied = true
-			elseif Byte and Byte >= 48 and Byte <= 57 then
-				table.insert(Characters, Char)
-				HasDigits = true
-				SignApplied = true
-			end
-		end
-
-		local Sanitized = table.concat(Characters)
-
-		if Sanitized == "-" or Sanitized == "." or Sanitized == "-." then
-			return ""
-		end
-
-		return Sanitized
-	end
-
-	local DefaultValue = NormalizeValue(Options.Default)
-	local SavedValue = wax.shared.SaveManager:GetState(Idx)
-	local InitialValue = NormalizeValue(if SavedValue ~= nil then SavedValue else DefaultValue)
-
-	local TextSetting = {
-		Default = DefaultValue,
-		Value = InitialValue,
-	}
-
-	local Container = Interface.New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 26),
-		Parent = Options.Section,
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 2),
-			PaddingRight = UDim.new(0, 2),
-		},
-	})
-
-	Interface.New("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, -TextBoxWidth - 6, 1, 0),
-		Text = Options.Text,
-		TextSize = 16,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextWrapped = true,
-		Parent = Container,
-	})
-
-	local Input = Interface.New("TextBox", {
-		AnchorPoint = Vector2.new(1, 0),
-		BackgroundColor3 = Color3.fromRGB(5, 5, 5),
-		ClearTextOnFocus = Options.ClearTextOnFocus or false,
-		PlaceholderColor3 = Color3.fromRGB(128, 128, 128),
-		PlaceholderText = Options.Placeholder or "",
-		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.new(0, TextBoxWidth, 1, -2),
-		Text = InitialValue,
-		TextSize = 16,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = Container,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-		},
-	})
-
-	local function SyncValue(NewValue: string, FireCallback: boolean?)
-		TextSetting.Value = NewValue
-		Input.Text = NewValue
-
-		if FireCallback ~= false and Options.Callback then
-			local ArgumentToPass = NewValue
-			if NumericOnly then
-				ArgumentToPass = tonumber(ArgumentToPass)
-			end
-
-			Options.Callback(ArgumentToPass)
-		end
-	end
-
-	function TextSetting:Reset()
-		TextSetting:SetValue(TextSetting.Default)
-	end
-
-	function TextSetting:SetValue(NewValue)
-		local PreparedValue = NormalizeValue(NewValue)
-
-		if PreparedValue == TextSetting.Value then
-			SyncValue(PreparedValue, false)
-			return
-		end
-
-		if wax.shared.ActorCommunicator then
-			pcall(function()
-				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, PreparedValue)
-			end)
-		end
-
-		wax.shared.SaveManager:SetState(Idx, PreparedValue)
-		SyncValue(PreparedValue)
-	end
-
-	Input.FocusLost:Connect(function()
-		TextSetting:SetValue(Input.Text)
-	end)
-
-	if wax.shared.ActorCommunicator then
-		pcall(function()
-			wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, TextSetting.Value)
-		end)
-	end
-
-	SyncValue(TextSetting.Value, false)
-
-	wax.shared.Settings[Idx] = TextSetting
-	return TextSetting
-end
-
-local function CreateSettingsDropdown(
-	Idx: string,
-	Options: {
-		Multi: boolean?,
-		AllowNull: boolean?,
-		Values: { any },
-		Default: any | { any },
-		Callback: (any) -> () | nil,
-		Text: string,
-		Section: Frame,
-	}
-)
-	local AllowNull = Options.AllowNull or false
-	assert(AllowNull or Options.Default ~= nil, "Default value must be provided when AllowNull is false")
-
-	local function CreateLookupTable(Values: { any } | any)
-		if typeof(Values) ~= "table" then
-			return Values
-		end
-
-		local LookupTable = {}
-		for _, Value in Values do
-			LookupTable[Value] = true
-		end
-		return LookupTable
-	end
-
-	local Dropdown = {
-		Values = Options.Values or {},
-		Default = Options.Default and CreateLookupTable(Options.Default)
-			or Options.AllowNull and (Options.Multi and {} or Options.Values[1])
-			or {},
-		Value = wax.shared.SaveManager:GetState(
-			Idx,
-			Options.Default and CreateLookupTable(Options.Default)
-				or Options.AllowNull and (Options.Multi and {} or Options.Values[1])
-				or {}
-		),
-		Multi = Options.Multi or false,
-		Callback = Options.Callback,
-	}
-
-	local DropdownUI = Interface.New("TextButton", {
-		Text = Options.Text,
-		TextSize = 16,
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 24),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		Parent = Options.Section,
-	})
-
-	DropdownUI.AutoButtonColor = false
-
-	local DropdownDisplay = Interface.New("Frame", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(180, 24),
-		Parent = DropdownUI,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIStroke"] = {
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-		},
-	})
-
-	local ValueLabel = Interface.New("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -16, 1, 0),
-		Text = "Select...",
-		TextSize = 16,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		TextTransparency = 0.45,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		Parent = DropdownDisplay,
-	})
-
-	local DropdownIcon = Interface.NewIcon("chevron-down", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		ImageTransparency = 0.2,
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(12, 12),
-		Parent = DropdownDisplay,
-	})
-
-	local DisplayDefaultColor = DropdownDisplay.BackgroundColor3
-	local DisplayHoverColor = Color3.fromRGB(12, 12, 12)
-
-	local function TweenDisplayColor(TargetColor, TargetTransparency)
-		wax.shared.TweenService
-			:Create(DropdownDisplay, DefaultTweenInfo, {
-				BackgroundColor3 = TargetColor,
-			})
-			:Play()
-
-		if TargetTransparency then
-			wax.shared.TweenService
-				:Create(DropdownIcon, DefaultTweenInfo, {
-					ImageTransparency = TargetTransparency,
-				})
-				:Play()
-		end
-	end
-
-	DropdownUI.MouseEnter:Connect(function()
-		TweenDisplayColor(DisplayHoverColor, 0.05)
-	end)
-
-	DropdownUI.MouseLeave:Connect(function()
-		TweenDisplayColor(DisplayDefaultColor, 0.2)
-	end)
-
-	local function IterateValues(Callback: (any, string) -> ())
-		for Index, Object in Dropdown.Values do
-			local ActualValue = typeof(Index) == "number" and Object or Index
-			local DisplayText = typeof(Index) == "number" and tostring(Object) or tostring(Index)
-			Callback(ActualValue, DisplayText)
-		end
-	end
-
-	local function ResolveValueText(Value)
-		local Resolved
-		IterateValues(function(ActualValue, DisplayText)
-			if ActualValue == Value then
-				Resolved = DisplayText
-			end
-		end)
-		return Resolved or (Value ~= nil and tostring(Value) or "")
-	end
-
-	local function UpdateValueLabel()
-		local DisplayText = "Select..."
-		local Transparency = 0.45
-
-		if Dropdown.Multi then
-			local SelectedTexts = {}
-			IterateValues(function(Value, Text)
-				if Dropdown.Value[Value] then
-					table.insert(SelectedTexts, Text)
-				end
-			end)
-
-			if #SelectedTexts == 0 then
-				DisplayText = "None"
-				Transparency = 0.45
-			else
-				table.sort(SelectedTexts)
-				if #SelectedTexts <= 2 then
-					DisplayText = table.concat(SelectedTexts, ", ")
-				else
-					DisplayText = string.format("%s, +%d", SelectedTexts[1], #SelectedTexts - 1)
-				end
-				Transparency = 0
-			end
-		else
-			local CurrentValue = Dropdown.Value
-			if CurrentValue == nil or CurrentValue == "" then
-				DisplayText = "None"
-				Transparency = 0.45
-			else
-				local Resolved = ResolveValueText(CurrentValue)
-				if Resolved == "" then
-					DisplayText = tostring(CurrentValue)
-				else
-					DisplayText = Resolved
-				end
-				Transparency = 0
-			end
-		end
-
-		ValueLabel.Text = DisplayText
-		ValueLabel.TextTransparency = Transparency
-	end
-
-	local function BuildDropdownContext()
-		local Options = {}
-		for Index, Object in Dropdown.Values do
-			local IsArray = typeof(Index) == "number"
-
-			local ContextOption = {
-				Text = tostring(Object),
-				CloseOnClick = not Dropdown.Multi,
-				Callback = function()
-					local Value = IsArray and Object or Index
-
-					if Dropdown.Multi then
-						Dropdown.Value[Value] = not (Dropdown.Value[Value] or false)
-					else
-						Dropdown.Value = Value
-					end
-
-					if wax.shared.ActorCommunicator then
-						pcall(function()
-							wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Dropdown.Value)
-						end)
-					end
-
-					wax.shared.SaveManager:SetState(Idx, Dropdown.Value)
-
-					UpdateValueLabel()
-
-					if Dropdown.Callback then
-						Dropdown.Callback(Dropdown.Value)
-					end
-				end,
-				TextProperties = function()
-					local Value = IsArray and Object or Index
-
-					if Dropdown.Multi and Dropdown.Value[Value] then
-						return {
-							TextTransparency = 0,
-						}
-					elseif not Dropdown.Multi and Dropdown.Value == Value then
-						return {
-							TextTransparency = 0,
-						}
-					end
-
-					return {
-						TextTransparency = 0.5,
-					}
-				end,
-			}
-
-			if not IsArray then
-				ContextOption.Text = Index
-				ContextOption.Icon = Object
-			end
-
-			table.insert(Options, ContextOption)
-		end
-		return Options
-	end
-
-	local ContextMenu = CreateContextMenu(DropdownDisplay, BuildDropdownContext())
-
-	DropdownUI.MouseButton1Click:Connect(ContextMenu.Toggle)
-	function Dropdown:Reset()
-		if Dropdown.Multi then
-			local Cloned = {}
-			for Key, Value in pairs(Dropdown.Default) do
-				Cloned[Key] = Value
-			end
-			Dropdown:SetValue(Cloned)
-		else
-			Dropdown:SetValue(Dropdown.Default)
-		end
-
-		UpdateValueLabel()
-	end
-
-	function Dropdown:SetValue(NewValue)
-		if wax.shared.ActorCommunicator then
-			pcall(function()
-				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, NewValue)
-			end)
-		end
-
-		wax.shared.SaveManager:SetState(Idx, NewValue)
-
-		ContextMenu:Close()
-
-		for Image, Object in pairs(Dropdown.Values) do
-			local IsArray = typeof(Image) == "number"
-			local Value = IsArray and Object or Image
-
-			if Dropdown.Multi then
-				Dropdown.Value[Value] = NewValue[Value]
-			else
-				Dropdown.Value = NewValue
-			end
-		end
-
-		UpdateValueLabel()
-	end
-
-	if wax.shared.ActorCommunicator then
-		pcall(function()
-			wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Dropdown.Default)
-		end)
-	end
-
-	UpdateValueLabel()
-
-	wax.shared.Settings[Idx] = Dropdown
-	return Dropdown
-end
-
-local function CreateSettingsRemoteList(
-	Idx: string,
-	Options: {
-		Text: string,
-		Callback: (any) -> () | nil,
-		Section: Frame,
-		NullMessage: string,
-	}
-)
-	local RemoteList = {
-		Value = {},
-		InfoMapping = {},
-	}
-
-	local RemoveIgnored
-
-	local RemoteListContainer = Interface.New("Frame", {
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 0),
-		Parent = Options.Section,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 8),
-		},
-
-		["UIListLayout"] = {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			Padding = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 5),
-			PaddingRight = UDim.new(0, 5),
-			PaddingTop = UDim.new(0, 5),
-			PaddingBottom = UDim.new(0, 5),
-		},
-
-		["UIStroke"] = {
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-		},
-	})
-
-	local NoRemotesText = Interface.New("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 100),
-		TextTransparency = 0.5,
-		Text = Options.NullMessage,
-		TextSize = 14,
-		Visible = true,
-		Parent = RemoteListContainer,
-	})
-
-	function RemoteList:Display()
-		for _, Object in pairs(RemoteListContainer:GetChildren()) do
-			if not Object:IsA("Frame") then
-				continue
-			end
-			Object:Destroy()
-		end
-
-		NoRemotesText.Visible = (#self.Value == 0)
-		RemoveIgnored.Visible = (#self.Value > 0)
-
-		for _, remoteData in self.Value do
-			local remote = remoteData.Instance
-			if not remote then
-				continue
-			end
-
-			local ListElement = Interface.New("Frame", {
-				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-				Size = UDim2.new(1, 0, 0, 32),
-				Parent = RemoteListContainer,
-
-				["UICorner"] = {
-					CornerRadius = UDim.new(0, 4),
-				},
-
-				["UIStroke"] = {
-					Color = Color3.fromRGB(25, 25, 25),
-					Thickness = 1,
-					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-				},
-
-				["Frame"] = {
-					Size = UDim2.fromScale(1, 1),
-					BackgroundTransparency = 1,
-
-					["UIListLayout"] = {
-						FillDirection = Enum.FillDirection.Horizontal,
-						HorizontalAlignment = Enum.HorizontalAlignment.Left,
-						VerticalAlignment = Enum.VerticalAlignment.Center,
-						Padding = UDim.new(0, 4),
-					},
-
-					["UIPadding"] = {
-						PaddingLeft = UDim.new(0, 5),
-					},
-
-					["ImageLabel"] = {
-						Size = UDim2.new(1, -8, 1, -8),
-						SizeConstraint = Enum.SizeConstraint.RelativeYY,
-						Image = Images[remote.ClassName],
-						AnchorPoint = Vector2.new(0, 0.5),
-						BackgroundTransparency = 1,
-						LayoutOrder = 1,
-					},
-
-					["TextLabel"] = {
-						Text = `{remote.Name} ({remoteData.Type})`,
-						Size = UDim2.fromScale(1, 1),
-						AutomaticSize = Enum.AutomaticSize.X,
-						TextSize = 16,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						BackgroundTransparency = 1,
-						LayoutOrder = 2,
-					},
-				},
-			})
-
-			local RemoveButton = Interface.New("ImageButton", {
-				BackgroundTransparency = 1,
-				AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, -8, 0.5, 0),
-				Size = UDim2.new(1, -12, 1, -12),
-				SizeConstraint = Enum.SizeConstraint.RelativeYY,
-				ImageTransparency = 0.5,
-				Parent = ListElement,
-			})
-
-			Icons.SetIcon(RemoveButton, "trash")
-
-			RemoveButton.MouseEnter:Connect(function()
-				wax.shared.TweenService
-					:Create(RemoveButton, DefaultTweenInfo, {
-						ImageTransparency = 0,
-					})
-					:Play()
-			end)
-
-			RemoveButton.MouseLeave:Connect(function()
-				wax.shared.TweenService
-					:Create(RemoveButton, DefaultTweenInfo, {
-						ImageTransparency = 0.5,
-					})
-					:Play()
-			end)
-
-			RemoveButton.MouseButton1Click:Connect(function()
-				self:RemoveFromList(remoteData)
-				if Options.Callback then
-					Options.Callback(remoteData)
-				end
-			end)
-		end
-	end
-
-	function RemoteList:AddToList(remote)
-		table.insert(self.Value, remote)
-
-		self:Display()
-	end
-
-	function RemoteList:RemoveFromList(remote)
-		local index = table.find(self.Value, remote)
-		if not index then
-			return
-		end
-
-		table.remove(self.Value, index)
-
-		self:Display()
-	end
-
-	function RemoteList:SetList(remotes: { SupportedRemoteTypes })
-		self.Value = remotes
-
-		self:Display()
-	end
-
-	RemoveIgnored = CreateSettingsButton("Remove All", function()
-		if not Options.Callback then
-			return
-		end
-
-		local ToRemove = {}
-		for _, remote in RemoteList.Value do
-			Options.Callback(remote)
-			table.insert(ToRemove, remote)
-		end
-
-		for _, remote in ToRemove do
-			RemoteList:RemoveFromList(remote)
-		end
-		wax.shared.Sonner.success("Removed all remotes")
-	end, Options.Section)
-	RemoveIgnored.Visible = false
-
-	RemoteList:Display()
-
-	wax.shared.Settings[Idx] = RemoteList
-	return RemoteList
-end
-
--- God this warning box code is so ass 🥀
-if #wax.shared.ExecutorSupport.FailedChecks.NonEssential > 0 then
-	local WarningDisplay = Interface.New("Frame", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundColor3 = Color3.fromRGB(245, 60, 54),
-		BackgroundTransparency = 0.75,
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		Parent = SettingsScrollingFrame,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIStroke"] = {
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Color = Color3.fromRGB(245, 60, 54),
-			Thickness = 1,
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 8),
-			PaddingBottom = UDim.new(0, 8),
-		},
-
-		["UIListLayout"] = {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-		},
-	})
-
-	local function CreatePaddingText(size: number)
-		return `<font size="{size}"> \n</font>`
-	end
-
-	local NoticeTitleInfoSeperator = CreatePaddingText(4)
-
-	Interface.New("TextLabel", {
-		Text = `<font size="16"><b>DETECTION NOTICE ⚠️</b></font>\n{NoticeTitleInfoSeperator}Cobalt can get detected because your executor does not support the following functions/libraries:`,
-		TextSize = 15,
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		BackgroundTransparency = 1,
-		Parent = WarningDisplay,
-		TextWrapped = true,
-	})
-
-	local NonEssentialFailures = wax.shared.ExecutorSupport.FailedChecks.NonEssential
-	local DetectionDetails = CreatePaddingText(6)
-	local DetectionSuffix = `\n{CreatePaddingText(7)}`
-	for _, Name in NonEssentialFailures do
-		DetectionDetails ..= `⚠️ <b><font color="#ff9900">{Name}</font></b>\n<i><font size="14" transparency="0.5">{wax.shared.ExecutorSupport[Name].Details}</font></i>{DetectionSuffix}`
-	end
-
-	DetectionDetails = DetectionDetails:sub(1, (#DetectionSuffix * -1) - 1)
-
-	Interface.New("TextLabel", {
-		Text = DetectionDetails,
-		TextSize = 15,
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1,
-		Parent = WarningDisplay,
-		TextWrapped = true,
-	})
-end
-
-local ExecSupportSection = CreateSettingsSection("Support Info")
-do
-	Interface.New("TextLabel", {
-		Text = table.concat({
-			`Executor: <b>{wax.shared.ExecutorName}</b>`,
-			`Support: {#wax.shared.ExecutorSupport.FailedChecks.Essential == 0 and "<b>Full</b>" or "<b>Partial</b> (" .. #wax.shared.ExecutorSupport.FailedChecks.Essential .. " check(s) failed)"}`,
-		}, "\n"),
-		TextSize = 16,
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1,
-		Parent = ExecSupportSection,
-		TextWrapped = true,
-
-		["UIPadding"] = {
-			PaddingBottom = UDim.new(0, 2),
-		},
-	})
-
-	local PartialSupportText = ""
-	local SupportSuffix = "\n\n"
-	for _, Name in wax.shared.ExecutorSupport.FailedChecks.Essential do
-		PartialSupportText ..= `❌ <b><font color="#ff0000">{Name}</font></b>\n<i><font size="14" transparency="0.5">{wax.shared.ExecutorSupport[Name].Details}</font></i>{SupportSuffix}`
-	end
-
-	PartialSupportText = PartialSupportText:sub(1, (#SupportSuffix * -1) - 1)
-
-	if #wax.shared.ExecutorSupport.FailedChecks.Essential > 0 then
-		Interface.New("TextLabel", {
-			Text = PartialSupportText,
-			TextSize = 16,
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			BackgroundTransparency = 1,
-			Parent = ExecSupportSection,
-			TextWrapped = true,
-		})
-	end
-end
-
-local CodeGenSection = CreateSettingsSection("Code Generation")
-
-CreateSettingsDropdown("InstancePathLookupChain", {
-	Text = "Instance Path Lookup Chain",
-	Values = {
-		["Index"] = "file",
-		["WaitForChild"] = "file-clock",
-		["FindFirstChild"] = "file-search",
-	},
-	Default = "Index",
-	Section = CodeGenSection,
-})
-
-CreateSettingsCheckbox("PreferBufferFromString", {
-	Text = "Prefer buffer.fromstring",
-	Default = false,
-	Section = CodeGenSection,
-})
-
-CreateSettingsCheckbox("ShowWatermark", {
-	Text = "Show Cobalt Watermark",
-	Default = true,
-	Section = CodeGenSection,
-})
-
-local MainSection = CreateSettingsSection("Main")
-
-CreateSettingsDropdown("WindowDPIScale", {
-	Text = "DPI Scale",
-	Values = {
-		"50%",
-		"75%",
-		"100%",
-		"125%",
-		"150%"
-	},
-	Default = "100%",
-	Section = MainSection,
-
-	Callback = function(value)
-		ScreenDPIScale.Scale = GetDPIScale()
-	end
-})
-
-CreateSettingsTextBox("MaxItemPerPages", {
-	Text = "Logs Per Page",
-	Section = MainSection,
-	Default = 20,
-	NumericOnly = true,
-
-	Callback = function(max)
-		PaginationHelper:SetItemsPerPage(max)
-
-		if not CurrentLog then
-			return
-		end
-
-		PaginationHelper:Update(#CurrentLog.Calls)
-		PaginationHelper:SetPage(1)
-		CurrentPage[CurrentLog] = 1
-
-		ShowLog(CurrentLog)
-	end,
-})
-
-CreateSettingsCheckbox("ExecuteOnTeleport", {
-	Text = "Execute On Teleport",
-	Default = false,
-	Section = MainSection,
-})
-
-CreateSettingsCheckbox("UseAlternativeHooks", {
-	Text = "Use alternative metamethod hook",
-	Default = false,
-	Section = MainSection,
-})
-
-CreateSettingsCheckbox("AnticheatBypass", {
-	Text = "Built-in Anticheat Bypass",
-	Default = true,
-	Section = MainSection,
-})
-
-if AnticheatData.Disabled then
-	Interface.New("TextLabel", {
-		Text = `Anticheat Detected: <b>{AnticheatData.Name}</b>`,
-		TextSize = 16,
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1,
-		Parent = MainSection,
-		TextWrapped = true,
-	})
-end
-
-wax.shared.ClearLogs = function()
-	for _, LogCategory in pairs(wax.shared.Logs) do
-		for Index, Log in pairs(LogCategory) do
-			if Log.Button then
-				Log.Button.Instance:Destroy()
-				Log.Button = nil
-			end
-
-			CurrentPage[Log] = nil
-
-			table.clear(Log.Calls)
-			table.clear(Log.GameCalls)
-			Log.Index = 0
-		end
-	end
-
-	CleanLogsList()
-	CurrentLog = nil
-
-	wax.shared.Sonner.success("Successfully Cleared All Logs")
-end
-
-CreateSettingsButton("Clear All Logs", wax.shared.ClearLogs, MainSection)
-
-local FilterSection = CreateSettingsSection("Filter")
-
-CreateSettingsDropdown("IgnoredRemotesDropdown", {
-	Text = "Ignore Remotes",
-	Values = Images,
-	Default = { "BindableEvent", "BindableFunction" },
-	AllowNull = true,
-	Multi = true,
-	Section = FilterSection,
-})
-
-CreateSettingsCheckbox("AutoIgnoreSpammyEvents", {
-	Text = "Auto Ignore Spammy Events",
-	Default = false,
-	Section = FilterSection,
-})
-
-CreateSettingsCheckbox("LogActors", {
-	Text = "Log Events from Actors",
-	Default = true,
-	Section = FilterSection,
-})
-
-CreateSettingsCheckbox("IgnorePlayerModule", {
-	Text = "Ignore Player Module Remotes",
-	Default = true,
-	Section = FilterSection,
-})
-CreateSettingsCheckbox("ShowExecutorLogs", {
-	Text = `Show {wax.shared.ExecutorName} Remote Logs`,
-	Default = true,
-	Section = FilterSection,
-	Callback = function()
-		if not CurrentLog then
-			return
-		end
-
-		PaginationHelper:Update(#CurrentLog.Calls)
-		PaginationHelper:SetPage(1)
-		CurrentPage[CurrentLog] = 1
-
-		ShowLog(CurrentLog)
-	end,
-})
-CreateSettingsButton("Reset Filtering to Default", function()
-	wax.shared.Settings.IgnoredRemotesDropdown:Reset()
-	wax.shared.Settings.IgnoreSpammyRemotes:Reset()
-	wax.shared.Settings.IgnorePlayerModule:Reset()
-	wax.shared.Settings.ShowExecutorLogs:Reset()
-
-	wax.shared.Sonner.success("Successfully reset remote filtering to default")
-end, FilterSection)
-
-local IgnoredSection = CreateSettingsSection("Ignored")
-
-CreateSettingsRemoteList("IgnoredRemotes", {
-	Text = "Ignored Remotes",
-	NullMessage = "No remotes have been ignored yet.",
-	Section = IgnoredSection,
-	Callback = function(Remote)
-		Remote.Ignored = false
-	end,
-})
-
-local BlockedSection = CreateSettingsSection("Blocked")
-
-CreateSettingsRemoteList("BlockedRemotes", {
-	Text = "Blocked Remotes",
-	NullMessage = "No remotes have been blocked yet.",
-	Section = BlockedSection,
-	Callback = function(Remote)
-		Remote.Blocked = false
-	end,
-})
-
-local LoggingSection = CreateSettingsSection("Logging")
-local SessionLog
-
-CreateSettingsCheckbox("EnableLogging", {
-	Text = `Enable File Logs`,
-	Default = false,
-	Section = LoggingSection,
-	Callback = function(value)
-		if not value then
-			wax.shared.LogConnection:Disconnect()
-			wax.shared.LogConnection = nil
-			wax.shared.LogFileName = nil
-			SessionLog.Text = `Current Session Log: <b>Not Logging</b>`
-			wax.shared.Sonner.success("Successfully disabled file logging")
-			return
-		end
-
-		local LogConnection = wax.shared.SetupLoggingConnection()
-		SessionLog.Text = `Current Session Log: <b>{wax.shared.LogFileName:gsub("Cobalt/Logs/", "")}</b>`
-		wax.shared.LogConnection = wax.shared.Connect(wax.shared.Communicator.Event:Connect(LogConnection))
-
-		wax.shared.Sonner.success("Successfully enabled file logging")
-	end,
-})
-
-SessionLog = Interface.New("TextLabel", {
-	Text = `Current Session Log: <b>{wax.shared.Settings.EnableLogging.Value and wax.shared.LogFileName:gsub(
-		"Cobalt/Logs/",
-		""
-	) or "Not Logging"}</b>`,
-	TextSize = 16,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	BackgroundTransparency = 1,
-	Parent = LoggingSection,
-	TextWrapped = true,
-})
-
-Interface.New("TextLabel", {
-	Text = `Logs Path: <b>Cobalt/Logs</b>`,
-	TextSize = 16,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	BackgroundTransparency = 1,
-	Parent = LoggingSection,
-	TextWrapped = true,
-})
-
-local SessionButtonsContainer = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	Parent = LoggingSection,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		Padding = UDim.new(0, 8),
-	},
-
-	["UIPadding"] = {
-		PaddingTop = UDim.new(0, 4),
-		PaddingBottom = UDim.new(0, 8),
-	},
-})
-
-local SessionButtons = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	Parent = SessionButtonsContainer,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 8),
-	},
-})
-local CopySessionName = CreateSettingsButton("Copy Session Name", function()
-	if not wax.shared.Settings.EnableLogging.Value then
-		wax.shared.Sonner.error("File logging is not enabled")
-		return
-	end
-
-	local ActualLogFileName = wax.shared.LogFileName:gsub("Cobalt/Logs/", "")
-	local Success, Error = pcall(setclipboard, ActualLogFileName)
-
-	if not Success then
-		warn(Error)
-		wax.shared.Sonner.error("Failed to copy session name")
-		return
-	end
-
-	wax.shared.Sonner.success("Successfully copied session name to clipboard")
-end, SessionButtons, 14)
-CopySessionName.Size = UDim2.new(0.5, -4, 0, 24)
-
-local CopyFullSessionPath = CreateSettingsButton("Copy Full Path", function()
-	if not wax.shared.Settings.EnableLogging.Value then
-		wax.shared.Sonner.error("File logging is not enabled")
-		return
-	end
-
-	local Success, Error = pcall(setclipboard, wax.shared.LogFileName)
-
-	if not Success then
-		warn(Error)
-		wax.shared.Sonner.error("Failed to copy log path")
-		return
-	end
-
-	wax.shared.Sonner.success("Successfully copied log path to clipboard")
-end, SessionButtons, 14)
-CopyFullSessionPath.Size = UDim2.new(0.5, -4, 0, 24)
-
-local ExportLogsButton = CreateSettingsButton("Export Logs to HTML", function()
-	wax.shared.Sonner.promise(function(UpdateProgress)
-		assert(typeof(writefile) == "function", "Exploit does not support writefile")
-		
-		--// Collect all logs \\--
-		local AllCalls = SessionExporter:FetchAllLogs()
-		local SessionData = SessionExporter:GetSessionData(AllCalls)
-
-		--// Data Processing \\--
-		UpdateProgress("Sorting calls...")
-		SessionExporter:SortCalls(AllCalls)
-		local Events, StringMap = SessionExporter:ProcessCalls(
-			AllCalls,
-			SessionData,
-			UpdateProgress
-		)
-
-		--// Export \\--
-		local FileName = `Cobalt_Session_{os.time()}.html`
-		writefile(
-			FileName,
-			SessionExporter:ExportSessionToHTML(Events, StringMap, SessionData)
-		)
-		return FileName
-	end, {
-		loadingText = "Starting Export...",
-		successText = function(fileName) return `Successfully exported trace to {fileName}` end,
-		errorText = function(err) return `Export Failed: {err}` end,
-	})
-end, SessionButtonsContainer, 14)
-
-ExportLogsButton.Size = UDim2.new(1, 0, 0, 24)
-
-local CreditsSection = CreateSettingsSection("Credits")
-
-local Credits = {
-	{
-		Credit = "upio",
-		Description = "Cobalt Developer",
-	},
-	{
-		Credit = "deivid",
-		Description = "Cobalt Developer",
-	},
-	{
-		Credit = "shadcn",
-		Description = 'UI Design Insipration (<font color="#3798ff">https://ui.shadcn.com/</font>)',
-	},
-	{
-		Credit = "lucide",
-		Description = 'Consistent and clean icons (<font color="#3798ff">https://lucide.dev/</font>)',
-	},
-	{
-		Credit = "Emil Kowalski",
-		Description = 'Creator of Sonner component (<font color="#3798ff">https://sonner.emilkowal.ski/</font>)',
-	},
-}
-
-local CreditsWrapper = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	Parent = CreditsSection,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 10),
-	},
-})
-
-for Order, Data in pairs(Credits) do
-	Interface.New("TextLabel", {
-		Text = `<b>{Data.Credit}</b>\n{Data.Description}`,
-		Size = UDim2.fromScale(1, 0),
-		TextSize = 14,
-		AutomaticSize = Enum.AutomaticSize.Y,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		LayoutOrder = Order,
-		Parent = CreditsWrapper,
-	})
-end
-
--- Info
-local InfoFrame = Interface.New("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromScale(0.65, 0.712),
-	Text = "",
-	Visible = false,
-	Parent = ModalBackground,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 8),
-	},
-
-	["UIStroke"] = {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.fromRGB(25, 25, 25),
-		Thickness = 1,
-	},
-})
-
-Resize.new({
-	MainFrame = InfoFrame,
-
-	MaximumSize = UDim2.new(1, -2, 1, -2),
-	MinimumSize = UDim2.fromScale(0.65, 0.712),
-	Mirrored = true,
-	LockedPosition = true,
-
-	CornerHandleSize = 20,
-	HandleSize = 6,
-})
-
-local InfoTitle, InfoIcon = CreateModalTop("...", Images["RemoteEvent"], InfoFrame)
-local InfoModalTab = {}
-
-local InfoTabs = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 6, 0, 44),
-	Size = UDim2.new(1, -12, 0, 36),
-	Parent = InfoFrame,
-
-	["UIListLayout"] = {
-		Padding = UDim.new(0, 6),
-		FillDirection = Enum.FillDirection.Horizontal,
-		VerticalAlignment = Enum.VerticalAlignment.Top,
-	},
-})
-
-local CurrentInfoTab = nil
-local function CreateInfoTab(Icon: string, Title: string, TabContents: Frame?)
-	if not CurrentInfoTab then
-		CurrentInfoTab = Title
-	end
-
-	local IsTabSelected = CurrentInfoTab == Title
-
-	if TabContents then
-		TabContents.Parent = InfoFrame
-		TabContents.Visible = IsTabSelected
-	end
-
-	local ButtonColor = IsTabSelected and Color3.fromRGB(25, 25, 25) or Color3.fromRGB(0, 0, 0)
-	local TabButton = Interface.New("TextButton", {
-		BackgroundColor3 = ButtonColor,
-		Size = UDim2.fromScale(0, 1),
-		AutomaticSize = Enum.AutomaticSize.X,
-		Text = "",
-		Parent = InfoTabs,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 8),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		},
-
-		["Frame"] = {
-			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.fromScale(0, 1),
-			Size = UDim2.fromScale(1, 0.5),
-			BackgroundColor3 = ButtonColor,
-		},
-	})
-
-	InfoModalTab[Title] = {
-		TabButton = TabButton,
-		TabContents = TabContents,
-	}
-
-	local TextWrapper = Interface.New("Frame", {
-		BackgroundTransparency = 1,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 24),
-		Parent = TabButton,
-
-		["UIListLayout"] = {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 5),
-		},
-
-		["UIPadding"] = {
-			PaddingRight = UDim.new(0, 8),
-			PaddingLeft = UDim.new(0, 8),
-		},
-
-		["TextLabel"] = {
-			Text = Title,
-			TextSize = 15,
-			Size = UDim2.fromScale(0, 1),
-			AutomaticSize = Enum.AutomaticSize.X,
-			LayoutOrder = 2,
-			ZIndex = 2,
-		},
-	})
-
-	Interface.NewIcon(Icon, {
-		Position = UDim2.fromOffset(8, 5),
-		Size = UDim2.fromOffset(16, 16),
-		LayoutOrder = 1,
-		ZIndex = 2,
-
-		Parent = TextWrapper,
-	})
-
-	wax.shared.Connect(TabButton.MouseButton1Click:Connect(function()
-		local OldTab = InfoModalTab[CurrentInfoTab]
-		local OldTabButton = OldTab.TabButton
-		local OldTabContents = OldTab.TabContents
-
-		OldTabButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		OldTabButton.Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		OldTabContents.Visible = false
-
-		CurrentInfoTab = Title
-
-		TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-		TabButton.Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-
-		if TabContents then
-			TabContents.Visible = true
-		end
-	end))
-end
-
-local function CreateTabContent()
-	local Container = Interface.New("Frame", {
-		Position = UDim2.fromOffset(6, 71),
-		Size = UDim2.new(1, -12, 1, -118),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 8),
-			PaddingBottom = UDim.new(0, 8),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		},
-	})
-
-	return Container,
-		Interface.New("ScrollingFrame", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			AutomaticCanvasSize = Enum.AutomaticSize.XY,
-			CanvasSize = UDim2.fromScale(0, 0),
-			ScrollBarThickness = 0,
-			HorizontalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
-			ScrollingDirection = Enum.ScrollingDirection.XY,
-			Parent = Container,
-		})
-end
-
-local ArgumentInfoUI, ArgumentScrollingFrame = CreateTabContent()
-CreateInfoTab("ellipsis", "Arguments", ArgumentInfoUI)
-ArgumentScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-
-local ArgumentsInfoFrame = Interface.New("Frame", {
-	AutomaticSize = Enum.AutomaticSize.Y,
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 0),
-
-	["UIListLayout"] = {
-		Padding = UDim.new(0, 6),
-	},
-
-	MainUICorner,
-
-	Parent = ArgumentScrollingFrame,
-})
-
-local CodeInfoUI, CodeScrollingFrame = CreateTabContent()
-CreateInfoTab("code", "Code", CodeInfoUI)
-CodeScrollingFrame.ScrollBarThickness = 3
-CodeScrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.None
-
-local CodeTextLabels = {}
-for i = 1, 5 do
-	CodeTextLabels[i] = Interface.New("TextLabel", {
-		AutomaticSize = Enum.AutomaticSize.XY,
-		TextSize = 16,
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-		FontFace = Font.fromId(16658246179),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundTransparency = 1,
-		Text = "",
-		Parent = CodeScrollingFrame,
-	})
-end
-
-function SetCodeText(Code: string)
-	for _, Label in CodeTextLabels do
-		Label.Text = ""
-	end
-
-	local HighlightedCode = SyntaxHighlighter.Run(Code)
-	local Lines = HighlightedCode:split("\n")
-	local CurrentCharacterCount = 0
-	local TextContents = {}
-	local CurrentLabel = 1
-
-	for _, Line in Lines do
-		if CurrentCharacterCount + #Line > 200000 then
-			CurrentLabel += 1
-			CurrentCharacterCount = 0
-			continue
-		end
-
-		CurrentCharacterCount += #Line
-		if not TextContents[CurrentLabel] then
-			TextContents[CurrentLabel] = {}
-		end
-
-		table.insert(TextContents[CurrentLabel], Line)
-	end
-
-	for Idx, Content in TextContents do
-		if not CodeTextLabels[Idx] then
-			CodeTextLabels[Idx] = Interface.New("TextLabel", {
-				AutomaticSize = Enum.AutomaticSize.XY,
-				TextSize = 16,
-				TextColor3 = Color3.fromRGB(255, 255, 255),
-				FontFace = Font.fromId(16658246179),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				BackgroundTransparency = 1,
-				Text = SyntaxHighlighter.Run("-- Loading..."),
-				Parent = CodeScrollingFrame,
-			})
-		end
-
-		CodeTextLabels[Idx].Text = table.concat(Content, "\n")
-	end
-end
-
-local FunctionInfoUI, FunctionScrollingFrame = CreateTabContent()
-CreateInfoTab("parentheses", "Function Info", FunctionInfoUI)
-
-local FunctionInfoText = Interface.New("TextLabel", {
-	AutomaticSize = Enum.AutomaticSize.XY,
-	TextSize = 16,
-	TextColor3 = Color3.fromRGB(255, 255, 255),
-	FontFace = Font.fromId(16658246179),
-	TextXAlignment = Enum.TextXAlignment.Left,
-	BackgroundTransparency = 1,
-	Text = "",
-	Parent = FunctionScrollingFrame,
-})
-
-local InfoButtons = Interface.New("Frame", {
-	AnchorPoint = Vector2.new(0, 1),
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 6, 1, -7),
-	Size = UDim2.new(1, -12, 0, 32),
-	Parent = InfoFrame,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		Padding = UDim.new(0, 6),
-	},
-})
-
-local function CreateInfoDropdownButton(Icon: string, Title: string, Options: {})
-	local Button = Interface.New("TextButton", {
-		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(0, 1),
-		Text = "",
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-
-		["UIStroke"] = {
-			Color = Color3.fromRGB(25, 25, 25),
-			Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		},
-
-		["TextLabel"] = {
-			Text = Title,
-			TextSize = 15,
-			Size = UDim2.fromScale(0, 1),
-			Position = UDim2.fromOffset(28, 0),
-			AutomaticSize = Enum.AutomaticSize.X,
-		},
-
-		Parent = InfoButtons,
-	})
-
-	Interface.NewIcon(Icon, {
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-		Parent = Button,
-	})
-
-	local Menu = CreateContextMenu(Button, Options)
-
-	Button.MouseEnter:Connect(function()
-		wax.shared.TweenService
-			:Create(Button, DefaultTweenInfo, {
-				BackgroundTransparency = 0,
-			})
-			:Play()
-	end)
-	Button.MouseLeave:Connect(function()
-		wax.shared.TweenService
-			:Create(Button, DefaultTweenInfo, {
-				BackgroundTransparency = 1,
-			})
-			:Play()
-	end)
-	Button.MouseButton1Click:Connect(Menu.Toggle)
-	return Menu
-end
-
-CreateInfoDropdownButton("code", "Code", {
-	{
-		Text = "Calling Code",
-		Icon = "forward",
-		Callback = function()
-			if not CurrentInfo then
-				return
-			end
-
-			local Code = CodeGen:BuildCallCode(CurrentInfo)
-			local Success, Error = pcall(setclipboard, Code)
-
-			if Success then
-				wax.shared.Sonner.success("Copied code to clipboard")
-			else
-				wax.shared.Sonner.error("Failed to copy code to clipboard")
-				warn("Failed to copy code to clipboard", Error)
-			end
-		end,
-	},
-	{
-		Text = "Intercept Code",
-		Icon = "shield-alert",
-		Callback = function()
-			if not CurrentInfo then
-				return
-			end
-
-			local Code = CodeGen:BuildHookCode(CurrentInfo)
-			local Success, Error = pcall(setclipboard, Code)
-
-			if Success then
-				wax.shared.Sonner.success("Copied code to clipboard")
-			else
-				wax.shared.Sonner.error("Failed to copy code to clipboard")
-				warn("Failed to copy code to clipboard", Error)
-			end
-		end,
-	},
-	{
-		Text = "Function Info",
-		Icon = "parentheses",
-		Callback = function()
-			if not CurrentInfo then
-				return
-			end
-
-			local Info = {
-				Function = typeof(CurrentInfo.Function) == "function" and {
-					Name = CurrentInfo.Function and debug.info(CurrentInfo.Function, "n") or "Unknown",
-					Source = CurrentInfo.Source
-						or (CurrentInfo.Function and debug.info(CurrentInfo.Function, "s"))
-						or "Unknown",
-					Type = CurrentInfo.Function
-							and (iscclosure(CurrentInfo.Function) and "C Closure" or "Luau function")
-						or "N/A",
-					Address = tostring(CurrentInfo.Function),
-					Arguments = table.unpack(
-						CurrentInfo.Arguments,
-						1,
-						wax.shared.GetTableLength(CurrentInfo.Arguments)
-					),
-				} or CurrentInfo.Function,
-				Script = CurrentInfo.Origin,
-				Line = CurrentInfo.Line,
-			}
-
-			if typeof(CurrentInfo.Function) == "function" and islclosure(CurrentInfo.Function) then
-				local FunctionInfo = {
-					Constants = debug.getconstants,
-					Upvalues = debug.getupvalues,
-					Protos = debug.getprotos,
-				}
-
-				for Type, Func in pairs(FunctionInfo) do
-					if not Func then
-						continue
-					end
-
-					Info.Function[Type] = Func(CurrentInfo.Function)
-				end
-			end
-
-			local Success, Error = pcall(setclipboard, `local Info = {LuaEncode(Info, { Prettify = true, DisableNilParentHandler = true })}`)
-			if Success then
-				wax.shared.Sonner.success("Copied function info to clipboard")
-			else
-				wax.shared.Sonner.error("Failed to copy function info to clipboard")
-				warn("Failed to copy function info to clipboard", Error)
-			end
-		end,
-	},
-})
-
-CreateInfoDropdownButton("scroll-text", "Origin", {
-	{
-		Text = "Remote Path",
-		Icon = "package-search",
-		Callback = function()
-			if not CurrentInfo then
-				return
-			end
-
-			local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CurrentInfo.Instance, {
-				VariableName = "Event",
-				DisableNilParentHandler = false
-			}))
-			if Success then
-				wax.shared.Sonner.success("Copied remote path to clipboard")
-			else
-				wax.shared.Sonner.error("Failed to copy remote path to clipboard")
-				warn("Failed to copy remote path to clipboard", Error)
-			end
-		end,
-	},
-	{
-		Text = "Script Path",
-		Icon = "file-search",
-		Condition = function()
-			return CurrentInfo and typeof(CurrentInfo.Origin) == "Instance"
-		end,
-		Callback = function()
-			if not (CurrentInfo and typeof(CurrentInfo.Origin) == "Instance") then
-				return
-			end
-
-			local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CurrentInfo.Origin))
-			if Success then
-				wax.shared.Sonner.success("Copied script path to clipboard")
-			else
-				wax.shared.Sonner.error("Failed to copy script path to clipboard")
-				warn("Failed to copy script path to clipboard", Error)
-			end
-		end,
-	},
-	{
-		Text = "Decompiled Script",
-		Icon = "file-text",
-		Condition = function()
-			return CurrentInfo and typeof(CurrentInfo.Origin) == "Instance" and typeof(decompile) == "function"
-		end,
-		Callback = function()
-			if not (CurrentInfo and typeof(CurrentInfo.Origin) == "Instance" and typeof(decompile) == "function") then
-				return
-			end
-
-			local Decompiled, Result = pcall(decompile, CurrentInfo.Origin)
-			if Decompiled then
-				local Success, Error = pcall(setclipboard, Result)
-				if Success then
-					wax.shared.Sonner.success("Copied decompiled script to clipboard")
-				else
-					wax.shared.Sonner.error("Failed to copy decompiled script to clipboard")
-					warn("Failed to copy decompield script to clipboard", Error)
-				end
-			else
-				wax.shared.Sonner.error("Failed to decompile script")
-				warn("Failed to decompile script", Result)
-			end
-		end,
-	},
-})
-
-CreateInfoDropdownButton("network", "Event", {
-	{
-		Text = "Replay",
-		Icon = "play",
-		Callback = function()
-			if not CurrentInfo then
-				return
-			end
-
-			wax.shared.Sonner.promise(function()
-				wax.shared.ReplayCallInfo(CurrentInfo, CurrentTab.Name)
-			end, {
-				loadingText = "Replaying event...",
-				successText = "Replayed event successfully!",
-				errorText = "Failed to replay event",
-				time = 4.5,
-			})
-		end,
-	},
-	{
-		Text = function()
-			if not CurrentLog then
-				return "Ignore"
-			end
-
-			return CurrentLog.Ignored and "Unignore" or "Ignore"
-		end,
-		Icon = function()
-			if not CurrentLog then
-				return "eye"
-			end
-
-			return CurrentLog.Ignored and "eye" or "eye-off"
-		end,
-		Callback = function()
-			if not CurrentLog then
-				return
-			end
-
-			CurrentLog:Ignore()
-			wax.shared.Sonner.success(`{CurrentLog.Ignored and "Started" or "Stopped"} ignoring event`)
-		end,
-	},
-	{
-		Text = function()
-			if not CurrentLog then
-				return "Block"
-			end
-
-			return CurrentLog.Blocked and "Unblock" or "Block"
-		end,
-		Icon = function()
-			if not CurrentLog then
-				return "lock"
-			end
-
-			return CurrentLog.Blocked and "lock" or "lock-open"
-		end,
-		Callback = function()
-			if not CurrentLog then
-				return
-			end
-
-			CurrentLog:Block()
-
-			local BlockedRemoteList = wax.shared.Settings["BlockedRemotes"]
-			if BlockedRemoteList then
-				if CurrentLog.Blocked then
-					BlockedRemoteList:AddToList(CurrentLog)
-				else
-					BlockedRemoteList:RemoveFromList(CurrentLog)
-				end
-			end
-
-			wax.shared.Sonner.success(`{CurrentLog.Blocked and "Started" or "Stopped"} blocking event`)
-		end,
-	},
-	{
-		Text = "Clear Logs",
-		Icon = "trash",
-		Callback = function()
-			if not CurrentLog then
-				return
-			end
-
-			CurrentLog.Calls = {}
-			PaginationHelper:Update(#CurrentLog.Calls)
-			PaginationHelper:SetPage(1)
-			CurrentPage[CurrentLog] = 1
-
-			CleanLogsList()
-
-			CurrentLog.Button.Calls.Text = "x" .. #CurrentLog.Calls
-			UpdateLogNameSize(CurrentLog)
-
-			ShowPagination(CurrentLog)
-			ShowCalls(CurrentLog, 1)
-
-			CloseModal()
-
-			wax.shared.Sonner.success("Cleared logs for event successfully!")
-
-			if #CurrentLog.Calls == 0 then
-				CurrentLog.Button.Instance.Parent = nil
-			end
-		end,
-	},
-})
-
--- Search
-local ResultInfo = {}
-local CurrentResults = {}
-local SelectedResult = -1
-
-local SearchFrame = Interface.New("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(0.5, 0, 0.8, 0),
-	Text = "",
-	Visible = false,
-	Parent = ModalBackground,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 6),
-	},
-
-	["UIStroke"] = {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.fromRGB(25, 25, 25),
-		Thickness = 1,
-	},
-})
-
-local SearchTop = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.new(1, 0, 0, 36),
-	Parent = SearchFrame,
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 12),
-		PaddingRight = UDim.new(0, 6),
-		PaddingTop = UDim.new(0, 6),
-		PaddingBottom = UDim.new(0, 6),
-	},
-})
-
-local SearchBox = Interface.New("TextBox", {
-	BackgroundTransparency = 1,
-	Size = UDim2.new(1, -30, 1, 0),
-	PlaceholderText = "Search for logs...",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	PlaceholderColor3 = Color3.fromRGB(127, 127, 127),
-	Text = "",
-	TextSize = 17,
-	Parent = SearchTop,
-})
-
-local SearchCloseButton = Interface.New("ImageButton", {
-	Size = UDim2.fromScale(1, 1),
-	Position = UDim2.fromScale(1, 0),
-	AnchorPoint = Vector2.new(1, 0),
-	SizeConstraint = Enum.SizeConstraint.RelativeYY,
-	Parent = SearchTop,
-})
-local SearchCloseImage = Interface.NewIcon("x", {
-	ImageTransparency = 0.5,
-	Size = UDim2.fromOffset(22, 22),
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-	Parent = SearchCloseButton,
-})
-
-ConnectCloseButton(SearchCloseButton, SearchCloseImage, SearchFrame)
-
-Interface.New("Frame", {
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Size = UDim2.new(1, 0, 0, 1),
-	Position = UDim2.fromOffset(0, 36),
-	Parent = SearchFrame,
-})
-
-local SearchFilterList = Interface.New("ScrollingFrame", {
-	AutomaticCanvasSize = Enum.AutomaticSize.X,
-	CanvasSize = UDim2.fromOffset(0, 0),
-	ScrollBarThickness = 2,
-	Position = UDim2.fromOffset(0, 37),
-	Size = UDim2.new(1, 0, 0, 36),
-	BackgroundTransparency = 1,
-	Parent = SearchFrame,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 6),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 6),
-		PaddingRight = UDim.new(0, 6),
-		PaddingTop = UDim.new(0, 6),
-		PaddingBottom = UDim.new(0, 6),
-	},
-})
-
--- Search Filter
-local ExcludeSearchClass = {}
-local SearchFilterButtons = {}
-
-local FilterAllButton = Interface.New("TextButton", {
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Size = UDim2.fromScale(0, 1),
-	AutomaticSize = Enum.AutomaticSize.X,
-	TextSize = 15,
-	Text = "All",
-	Parent = SearchFilterList,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 4),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 10),
-		PaddingRight = UDim.new(0, 10),
-		PaddingTop = UDim.new(0, 0),
-		PaddingBottom = UDim.new(0, 0),
-	},
-})
-
-FilterAllButton.MouseButton1Click:Connect(function()
-	ExcludeSearchClass = {}
-	FilterAllButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	for _, Button in pairs(SearchFilterButtons) do
-		Button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	end
-	UpdateSearch()
-end)
-
-for Order, ClassName in pairs(ClassOrder) do
-	local ClassNameFilterButton = Interface.New("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-		Size = UDim2.fromScale(0, 1),
-		AutomaticSize = Enum.AutomaticSize.X,
-		TextSize = 15,
-		Text = "",
-		LayoutOrder = Order,
-		Parent = SearchFilterList,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 10),
-			PaddingRight = UDim.new(0, 10),
-			PaddingTop = UDim.new(0, 0),
-			PaddingBottom = UDim.new(0, 0),
-		},
-
-		["UIListLayout"] = {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 6),
-		},
-
-		["TextLabel"] = {
-			LayoutOrder = 1,
-			Text = ClassName,
-			TextSize = 15,
-			Size = UDim2.fromScale(0, 1),
-			AutomaticSize = Enum.AutomaticSize.X,
-		},
-	})
-
-	local ImageLabel = Interface.New("ImageLabel", {
-		Image = Images[ClassName],
-		Size = UDim2.new(1, -8, 1, -8),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.fromOffset(0.5, 0),
-		Parent = ClassNameFilterButton,
-	})
-
-	ClassNameFilterButton.MouseButton1Click:Connect(function()
-		local FoundIndex = table.find(ExcludeSearchClass, ClassName)
-		if FoundIndex then
-			table.remove(ExcludeSearchClass, FoundIndex)
-			ClassNameFilterButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-
-			if #ExcludeSearchClass == 0 then
-				FilterAllButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-			end
-
-			UpdateSearch()
-			return
-		end
-
-		table.insert(ExcludeSearchClass, ClassName)
-		ClassNameFilterButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-		FilterAllButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-		UpdateSearch()
-	end)
-
-	table.insert(SearchFilterButtons, ClassNameFilterButton)
-end
-
-Interface.New("Frame", {
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Size = UDim2.new(1, 0, 0, 1),
-	Position = UDim2.fromOffset(0, 72),
-	Parent = SearchFrame,
-})
-
-local SearchResults = Interface.New("ScrollingFrame", {
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	BackgroundTransparency = 1,
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	Position = UDim2.fromOffset(0, 73),
-	ScrollBarThickness = 3,
-	Size = UDim2.new(1, 0, 1, -73),
-
-	Parent = SearchFrame,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 6),
-		SortOrder = Enum.SortOrder.Name,
-	},
-
-	["UIPadding"] = {
-		PaddingBottom = UDim.new(0, 6),
-		PaddingLeft = UDim.new(0, 6),
-		PaddingRight = UDim.new(0, 6),
-		PaddingTop = UDim.new(0, 6),
-	},
-})
-
-local function CreateSearchResult(Instance: Instance, Type: string)
-	local SearchResult = Interface.New("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-		BackgroundTransparency = 1,
-		Name = Instance.Name,
-		Size = UDim2.new(1, 0, 0, 36),
-		Text = "",
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingBottom = UDim.new(0, 6),
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-		},
-
-		["TextLabel"] = {
-			Position = UDim2.fromOffset(30, 0),
-			Size = UDim2.new(1, -30, 1, 0),
-			Text = Instance.Name,
-			TextSize = 17,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		},
-	})
-	do
-		SearchResult.MouseEnter:Connect(function()
-			local Index = table.find(CurrentResults, SearchResult)
-			if Index then
-				SelectResult(Index)
-			end
-		end)
-		SearchResult.MouseButton1Click:Connect(function()
-			local Index = table.find(CurrentResults, SearchResult)
-			if Index then
-				EnterResult(Index)
-			end
-		end)
-	end
-
-	local Image = Interface.New("ImageLabel", {
-		BackgroundTransparency = 1,
-		Image = Images[Instance.ClassName],
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		Parent = SearchResult,
-	})
-
-	local TypeLabel = Interface.New("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		Text = Type,
-		TextSize = 15,
-		TextTransparency = 0.5,
-		TextXAlignment = Enum.TextXAlignment.Right,
-
-		Parent = SearchResult,
-	})
-
-	return SearchResult
-end
-
--- Topbar
-local TopBar = Interface.New("Frame", {
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Size = UDim2.new(1, 0, 0, 36),
-	ZIndex = 0,
-	MainUICorner,
-	Parent = MainFrame,
-
-	["TextLabel"] = {
-		Text = "Cobalt",
-		TextSize = 18,
-		Position = UDim2.fromOffset(0, 1),
-		Size = UDim2.new(1, 0, 1, -1),
-	},
-
-	["ImageLabel"] = {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 6, 0.5, 0),
-		Size = UDim2.new(1, -12, 1, -12),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		Image = CobaltLogo,
-	},
-})
-Interface.HideCorner(TopBar, UDim2.fromScale(1, 0.5), Vector2.yAxis)
-
--- Topbar Buttons
-local TopButtons = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 1),
-	ZIndex = 2,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Right,
-	},
-	["UIPadding"] = {
-		PaddingBottom = UDim.new(0, 4),
-		PaddingLeft = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 4),
-		PaddingTop = UDim.new(0, 4),
-	},
-
-	Parent = TopBar,
-})
-
-local function CreateTopButton(IconName, Order: number, Callback: () -> ()?)
-	local Button = Interface.New("ImageButton", {
-		LayoutOrder = Order,
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-		["UIPadding"] = {
-			PaddingBottom = UDim.new(0, 3),
-			PaddingLeft = UDim.new(0, 3),
-			PaddingRight = UDim.new(0, 3),
-			PaddingTop = UDim.new(0, 3),
-		},
-
-		Parent = TopButtons,
-	})
-
-	local Image = Interface.NewIcon(IconName, {
-		ImageTransparency = 0.5,
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-
-		Parent = Button,
-	})
-
-	Button.MouseEnter:Connect(function()
-		wax.shared.TweenService
-			:Create(Image, DefaultTweenInfo, {
-				ImageTransparency = 0.25,
-			})
-			:Play()
-	end)
-	Button.MouseLeave:Connect(function()
-		wax.shared.TweenService
-			:Create(Image, DefaultTweenInfo, {
-				ImageTransparency = 0.5,
-			})
-			:Play()
-	end)
-	if Callback then
-		Button.MouseButton1Click:Connect(Callback)
-	end
-
-	return Button, Image
-end
-
-local function CreateTopSeperator(Order: number)
-	Interface.New("ImageLabel", {
-		LayoutOrder = Order,
-		Size = UDim2.fromScale(1, 1),
-		SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		BackgroundTransparency = 1,
-		Parent = TopButtons,
-
-		["Frame"] = {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-			Size = UDim2.fromOffset(4, 4),
-			Position = UDim2.fromScale(0.5, 0.5),
-
-			["UICorner"] = {
-				CornerRadius = UDim.new(1, 0),
-			},
-		},
-	})
-end
-
-CreateTopButton("x", 4, wax.shared.Unload)
-CreateTopButton("minus", 3, function()
-	MainFrame.Visible = false
-	ShowButton.Visible = true
-end)
-CreateTopSeperator(2)
-CreateTopButton("settings", 1, function()
-	OpenModal(SettingsFrame)
-end)
-CreateTopButton("search", 0, function()
-	OpenSearch()
-end)
-
-Drag.Setup(MainFrame, TopBar)
-Drag.Setup(ShowButton, ShowButton)
-
--- Remote List
-local LeftList = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.yAxis,
-	Size = UDim2.new(0, 240, 1, -36),
-	Position = UDim2.fromScale(0, 1),
-	Parent = MainFrame,
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 6),
-		PaddingRight = UDim.new(0, 6),
-		PaddingTop = UDim.new(0, 6),
-		PaddingBottom = UDim.new(0, 6),
-	},
-})
-
--- Tabs
-local RemoteTabContainer = Interface.New("Frame", {
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Size = UDim2.new(1, 0, 0, 30),
-	Parent = LeftList,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 4),
-	},
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		HorizontalFlex = Enum.UIFlexAlignment.Fill,
-	},
-})
-
--- Remote List
-local RemoteListWrapper = Interface.New("Frame", {
-	AnchorPoint = Vector2.yAxis,
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Position = UDim2.fromScale(0, 1),
-	Size = UDim2.new(1, 0, 1, -36),
-	Parent = LeftList,
-
-	["UICorner"] = {
-		CornerRadius = UDim.new(0, 4),
-	},
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalFlex = Enum.UIFlexAlignment.Fill,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-	},
-})
-
-local RemoteList = Interface.New("ScrollingFrame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 1),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	ScrollBarThickness = 2,
-	Parent = RemoteListWrapper,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 6),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 6),
-		PaddingRight = UDim.new(0, 6),
-		PaddingTop = UDim.new(0, 6),
-		PaddingBottom = UDim.new(0, 6),
-	},
-})
-
-local RemoteListLine = Interface.New("Frame", {
-	AnchorPoint = Vector2.yAxis,
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	Position = UDim2.new(0, 240, 1, 0),
-	Size = UDim2.new(0, 2, 1, -36),
-	Parent = MainFrame,
-})
-
-local RemoteListResize = Interface.New("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0),
-	BackgroundTransparency = 1,
-	Position = UDim2.fromScale(0.5, 0),
-	Size = UDim2.new(1, 4, 1, 0),
-	Text = "",
-
-	Parent = RemoteListLine,
-})
-do
-	RemoteListResize.MouseEnter:Connect(function()
-		wax.shared.TweenService
-			:Create(RemoteListLine, DefaultTweenInfo, {
-				BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-			})
-			:Play()
-	end)
-	RemoteListResize.MouseLeave:Connect(function()
-		wax.shared.TweenService
-			:Create(RemoteListLine, DefaultTweenInfo, {
-				BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-			})
-			:Play()
-	end)
-end
-
--- Main Remote thing
-local LogsWrapper = Interface.New("Frame", {
-	AnchorPoint = Vector2.one,
-	BackgroundTransparency = 1,
-	Position = UDim2.fromScale(1, 1),
-	Size = UDim2.new(1, -242, 1, -36),
-	Parent = MainFrame,
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 4),
-		PaddingRight = UDim.new(0, 4),
-		PaddingTop = UDim.new(0, 4),
-		PaddingBottom = UDim.new(0, 6),
-	},
-})
-
-LogsList = Interface.New("ScrollingFrame", {
-	BackgroundTransparency = 1,
-	Size = UDim2.new(1, 0, 1, -38),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	CanvasSize = UDim2.new(0, 0, 0, 0),
-	ScrollBarThickness = 2,
-	Parent = LogsWrapper,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 6),
-	},
-
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 2),
-		PaddingRight = UDim.new(0, 2),
-		PaddingTop = UDim.new(0, 2),
-		PaddingBottom = UDim.new(0, 2),
-	},
-})
-
-local LogsPagination = Interface.New("Frame", {
-	AnchorPoint = Vector2.yAxis,
-	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-	BackgroundTransparency = 1,
-	Position = UDim2.fromScale(0, 1),
-	Size = UDim2.new(1, 0, 0, 32),
-	Parent = LogsWrapper,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		Padding = UDim.new(0, 6),
-	},
-})
-
--- Functions
-
-function ShowTab(Tab)
-	for _, Object in pairs(RemoteList:GetChildren()) do
-		if Object.ClassName == "TextButton" then
-			Object.Parent = nil
-		end
-	end
-
-	if CurrentTab then
-		wax.shared.TweenService
-			:Create(CurrentTab.Instance, DefaultTweenInfo, {
-				BackgroundTransparency = 1,
-			})
-			:Play()
-	end
-
-	CurrentTab = Tab
-	wax.shared.TweenService
-		:Create(CurrentTab.Instance, DefaultTweenInfo, {
-			BackgroundTransparency = 0,
-		})
-		:Play()
-
-	for _, Log in pairs(Tab.Logs) do
-		if #Log.Calls == 0 then
-			continue
-		end
-
-		if not Log.Button then
-			local Button, Name, Calls = CreateLogButton(Log)
-			Log:SetButton(Button, Name, Calls)
-		end
-
-		Log.Button.Name.Text = Log.Instance.Name
-		Log.Button.Calls.Text = "x" .. #Log.Calls
-		UpdateLogNameSize(Log)
-		Log.Button.Instance.Parent = RemoteList
-	end
-end
-
-function CleanLogsList()
-	for _, Object in pairs(LogsList:GetChildren()) do
-		if Object.ClassName == "TextButton" then
-			Object:Destroy()
-		end
-	end
-end
-
-function ShowLog(Log)
-	CleanLogsList()
-	if not Log then
-		return
-	end
-
-	if CurrentLog ~= Log then
-		if CurrentLog then
-			wax.shared.TweenService
-				:Create(CurrentLog.Button.Instance, DefaultTweenInfo, {
-					BackgroundTransparency = 1,
-				})
-				:Play()
-		end
-
-		CurrentLog = Log
-		wax.shared.TweenService
-			:Create(CurrentLog.Button.Instance, DefaultTweenInfo, {
-				BackgroundTransparency = 0,
-			})
-			:Play()
-	end
-
-	local Page = CurrentPage[Log]
-	if not Page then
-		CurrentPage[Log] = 1
-		Page = 1
-	end
-
-	PaginationHelper:Update(#Log.Calls)
-	PaginationHelper:SetPage(Page)
-
-	LogsList.CanvasPosition = Vector2.zero
-	ShowPagination(Log)
-	ShowCalls(Log, Page)
-end
-
-ShowCalls = function(Log, Page)
-	local Start, End = PaginationHelper:GetIndexRanges(Page)
-
-	for Index = Start, End do
-		local Call
-		if wax.shared.Settings.ShowExecutorLogs.Value then
-			Call = Log.Calls[Index]
-		else
-			Call = Log.Calls[Log.GameCalls[Index]]
-		end
-
-		if not Call then
-			break
-		end
-
-		local Data = setmetatable({
-			Instance = Log.Instance,
-			Type = Log.Type,
-			Order = Index,
-		}, {
-			__index = Call,
-		})
-
-		CreateCallFrame(Data)
-	end
-end
-
-function CreatePaginationEllipsis(Order: number, Visible: boolean)
-	local Ellipsis = {
-		Ellipsis = Interface.New("TextBox", {
-			BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-			Size = UDim2.fromScale(1, 1),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-			LayoutOrder = Order,
-			PlaceholderText = "-",
-			Text = "",
-			TextSize = 15,
-			RichText = false,
-			Parent = Visible and LogsPagination or nil,
-
-			["UICorner"] = {
-				CornerRadius = UDim.new(0, 4),
-			},
-		}),
-	}
-
-	function Ellipsis:SetVisible(Visible: boolean)
-		if not Visible then
-			self.Ellipsis.Text = ""
-		end
-		self.Ellipsis.Parent = Visible and LogsPagination or nil
-	end
-
-	Ellipsis.Ellipsis.FocusLost:Connect(function(EnterPressed)
-		if not EnterPressed then
-			return
-		end
-
-		local Page = tonumber(Ellipsis.Ellipsis.Text)
-		if not Page then
-			wax.shared.Sonner.error("Invalid page number provided!")
-			Ellipsis.Text = ""
-			return
-		end
-
-		if math.floor(Page) ~= Page then
-			wax.shared.Sonner.error("Invalid page number provided!")
-			Ellipsis.Ellipsis.Text = ""
-			return
-		end
-
-		if math.abs(Page) ~= Page or Page == 0 then
-			wax.shared.Sonner.error("Invalid page number provided!")
-			Ellipsis.Ellipsis.Text = ""
-			return
-		end
-
-		local Success = pcall(function()
-			PaginationHelper:SetPage(Page)
-			CurrentPage[CurrentLog] = Page
-			ShowLog(CurrentLog)
-		end)
-
-		if not Success then
-			wax.shared.Sonner.error("Invalid page number provided!")
-		end
-
-		Ellipsis.Ellipsis.Text = ""
-	end)
-
-	return Ellipsis
-end
-
-function CreatePaginationButton(Order: number, Active: boolean, Visible: boolean)
-	local ButtonData = {
-		Button = Interface.New("TextButton", {
-			BackgroundColor3 = Active and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(25, 25, 25),
-			Size = UDim2.fromScale(1, 1),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-			Text = tostring(1),
-			LayoutOrder = Order,
-			TextSize = 15,
-			Parent = Visible and LogsPagination or nil,
-
-			["UICorner"] = {
-				CornerRadius = UDim.new(0, 4),
-			},
-		}),
-	}
-
-	function ButtonData:SetActive(Active: boolean)
-		self.Button.BackgroundColor3 = Active and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(25, 25, 25)
-	end
-
-	function ButtonData:SetText(Text: string)
-		self.Button.Text = Text
-	end
-
-	function ButtonData:SetVisible(Visible: boolean)
-		self.Button.Parent = Visible and LogsPagination or nil
-	end
-
-	ButtonData.Button.MouseButton1Click:Connect(function()
-		local Page = tonumber(ButtonData.Button.Text)
-
-		PaginationHelper:SetPage(Page)
-		CurrentPage[CurrentLog] = Page
-		ShowLog(CurrentLog)
-	end)
-
-	return ButtonData
-end
-
-local MaxButtons = (5 + PaginationHelper.SiblingCount * 2)
-local PaginationElements = {
-	Buttons = {},
-	Ellipsis = {
-		[2] = CreatePaginationEllipsis(1, false),
-		[MaxButtons - 1] = CreatePaginationEllipsis(MaxButtons - 1, false),
-	},
-}
-
-for i = 1, MaxButtons do
-	table.insert(PaginationElements.Buttons, CreatePaginationButton(i, false, false))
-end
-
-ShowPagination = function(Log)
-	local Pages = PaginationHelper:GetVisualInfo(nil, LogsList.AbsoluteSize.X)
-	for Order, Info in pairs(Pages) do
-		if Info == "none" then
-			local Ellipsis = PaginationElements.Ellipsis[Order]
-			if Ellipsis then
-				Ellipsis:SetVisible(false)
-			end
-
-			local Button = PaginationElements.Buttons[Order]
-			if Button then
-				Button:SetVisible(false)
-			end
-
-			continue
-		elseif Info == "ellipsis" then
-			local Ellipsis = PaginationElements.Ellipsis[Order]
-			if Ellipsis and Ellipsis.Parent == nil then
-				Ellipsis:SetVisible(true)
-			end
-
-			local Button = PaginationElements.Buttons[Order]
-			if Button then
-				Button:SetVisible(false)
-			end
-
-			continue
-		end
-
-		local Ellipsis = PaginationElements.Ellipsis[Order]
-		if Ellipsis then
-			Ellipsis:SetVisible(false)
-		end
-
-		local Button = PaginationElements.Buttons[Order]
-		if Button then
-			Button:SetVisible(true)
-			Button:SetText(tostring(Info))
-			Button:SetActive(CurrentPage[Log] == Info)
-		end
-	end
-end
-
-function CreateRemoteTab(TabName: string, Active: boolean, Logs)
-	local Button = Interface.New("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-		BackgroundTransparency = Active and 0 or 1,
-		Size = UDim2.fromScale(0, 1),
-		TextSize = 15,
-		Text = TabName,
-		Parent = RemoteTabContainer,
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-	})
-
-	local Tab = {
-		Name = TabName,
-		Logs = Logs,
-		Instance = Button,
-	}
-	Tabs[TabName] = Tab
-
-	if Active then
-		CurrentTab = Tab
-	end
-
-	Button.MouseButton1Click:Connect(function()
-		if CurrentTab == Tab then
-			return
-		end
-
-		ShowTab(Tab)
-	end)
-
-	return Button
-end
-
-function CreateLogButton(Log): (TextButton, TextLabel, TextLabel)
-	local Button = Interface.New("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-		BackgroundTransparency = 1,
-		LayoutOrder = Log.Index or 1,
-		Size = UDim2.new(1, 0, 0, 30),
-		Text = "",
-
-		["ImageLabel"] = {
-			Image = Images[Log.Instance.ClassName],
-			Size = UDim2.fromScale(1, 1),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		},
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-	})
-
-	local Text = Interface.New("TextLabel", {
-		Position = UDim2.fromOffset(24, 0),
-		Size = UDim2.new(1, -24, 1, 0),
-		Text = "",
-		TextSize = 15,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-
-		Parent = Button,
-	})
-
-	local Amount = Interface.New("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		TextSize = 15,
-		TextXAlignment = Enum.TextXAlignment.Right,
-
-		Parent = Button,
-	})
-
-	Button.MouseButton1Click:Connect(function()
-		if CurrentLog == Log then
-			return
-		end
-
-		ShowLog(Log)
-	end)
-
-	local LogContextMenu = CreateContextMenu(Button, {
-		{
-			Text = function()
-				if not Log then
-					return "Ignore"
-				end
-
-				return Log.Ignored and "Unignore" or "Ignore"
-			end,
-			Icon = function()
-				if not Log then
-					return "eye"
-				end
-
-				return Log.Ignored and "eye" or "eye-off"
-			end,
-			Callback = function()
-				Log:Ignore()
-
-				wax.shared.Sonner.success(`{Log.Ignored and "Started" or "Stopped"} ignoring event`)
-			end,
-		},
-		{
-			Text = function()
-				if not Log then
-					return "Block"
-				end
-
-				return Log.Blocked and "Unblock" or "Block"
-			end,
-			Icon = function()
-				if not Log then
-					return "lock"
-				end
-
-				return Log.Blocked and "lock" or "lock-open"
-			end,
-			Callback = function()
-				Log:Block()
-
-				local BlockedRemoteList = wax.shared.Settings["BlockedRemotes"]
-				if BlockedRemoteList then
-					if Log.Blocked then
-						BlockedRemoteList:AddToList(Log)
-					else
-						BlockedRemoteList:RemoveFromList(Log)
-					end
-				end
-
-				wax.shared.Sonner.success(`{Log.Blocked and "Started" or "Stopped"} blocking event`)
-			end,
-		},
-		{
-			Text = "Clear Logs",
-			Icon = "trash",
-			Callback = function()
-				if not Log then
-					return
-				end
-
-				Log.Calls = {}
-				CurrentPage[Log] = 1
-				Log.Button.Calls.Text = "x" .. #Log.Calls
-				UpdateLogNameSize(Log)
-
-				if CurrentLog == Log then
-					PaginationHelper:Update(#Log.Calls)
-					PaginationHelper:SetPage(1)
-
-					CleanLogsList()
-
-					ShowPagination(Log)
-					ShowCalls(Log, 1)
-				end
-
-				wax.shared.Sonner.success("Cleared logs for event successfully!")
-
-				if #Log.Calls == 0 then
-					Log.Button.Instance.Parent = nil
-				end
-			end,
-		},
-	}, true)
-
-	Button.MouseButton2Click:Connect(LogContextMenu.Toggle)
-
-	return Button, Text, Amount
-end
-
-function CreateArgHolder(Index: number, Value: any, Parent: GuiObject)
-	local Holder = Interface.New("Frame", {
-		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-		LayoutOrder = Index,
-		Size = UDim2.new(1, 0, 0, 27),
-
-		["UICorner"] = {
-			CornerRadius = UDim.new(0, 4),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-
-		Parent = Parent,
-	})
-
-	Interface.New("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		Text = Index,
-		TextSize = 15,
-		TextTransparency = 0.5,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-
-		Parent = Holder,
-	})
-
-	local TypeLabel = Interface.New("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		Text = typeof(Value),
-		TextSize = 15,
-		TextTransparency = 0.5,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		TextYAlignment = Enum.TextYAlignment.Top,
-
-		Parent = Holder,
-	})
-	local TypeX = wax.shared.GetTextBounds(TypeLabel.Text, TypeLabel.FontFace, TypeLabel.TextSize)
-
-	local TextLabel = Interface.New("TextLabel", {
-		Position = UDim2.fromOffset(18, 0),
-		Size = UDim2.new(1, -(TypeX + 22), 1, 0),
-		TextColor3 = Color3.fromHex(SyntaxHighlighter.GetArgumentColor(Value)),
-		Text = tostring(Helper.QuickSerializeArgument(Value)):gsub("<", "&lt;"):gsub(">", "&gt;"),
-		RichText = true,
-		TextSize = 15,
-		TextWrapped = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-
-		Parent = Holder,
-	})
-	local _, TextY =
-		wax.shared.GetTextBounds(TextLabel.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
-	Holder.Size = UDim2.new(1, 0, 0, TextY + 12)
-
-	return Holder
-end
-
-function CreateCallFrame(CallInfo)
-	if not wax.shared.Settings.ShowExecutorLogs.Value and not CallInfo.Origin then
-		return
-	end
-
-	local CallFrame = Interface.New("TextButton", {
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-		LayoutOrder = CallInfo.Order,
-		Size = UDim2.fromScale(1, 0),
-		Text = "",
-
-		["UIListLayout"] = {
-			Padding = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-
-		MainUICorner,
-
-		Parent = LogsList,
-	})
-
-	local HighlightStroke = Interface.New("UIStroke", {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = Color3.fromRGB(75, 75, 75),
-		Thickness = 2,
-		Transparency = 1,
-
-		Parent = CallFrame,
-	})
-	do
-		local CallFrameContextMenu = CreateContextMenu(CallFrame, {
-			{
-				Text = "Copy Calling Code",
-				Icon = "forward",
-				Callback = function()
-					local Code = CodeGen:BuildCallCode(CallInfo)
-					local Success, Error = pcall(setclipboard, Code)
-
-					if Success then
-						wax.shared.Sonner.success("Copied code to clipboard")
-					else
-						wax.shared.Sonner.error("Failed to copy code to clipboard")
-						warn("Failed to copy code to clipboard", Error)
-					end
-				end,
-			},
-			{
-				Text = "Copy Intercept Code",
-				Icon = "shield-alert",
-				Callback = function()
-					local Code = CodeGen:BuildHookCode(CallInfo, CurrentTab.Name)
-					local Success, Error = pcall(setclipboard, Code)
-
-					if Success then
-						wax.shared.Sonner.success("Copied code to clipboard")
-					else
-						wax.shared.Sonner.error("Failed to copy code to clipboard")
-						warn("Failed to copy code to clipboard", Error)
-					end
-				end,
-			},
-			{
-				Text = "Copy Remote Path",
-				Icon = "package-search",
-				Callback = function()
-					if not CallInfo then
-						return
-					end
-
-					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CallInfo.Instance, {
-						VariableName = "Event",
-						DisableNilParentHandler = false,
-					}))
-
-					if Success then
-						wax.shared.Sonner.success("Copied remote path to clipboard")
-					else
-						wax.shared.Sonner.error("Failed to copy remote path to clipboard")
-						warn("Failed to copy remote path to clipboard", Error)
-					end
-				end,
-			},
-			{
-				Text = "Copy Script Path",
-				Icon = "file-search",
-				Condition = function()
-					return CallInfo and typeof(CallInfo.Origin) == "Instance"
-				end,
-				Callback = function()
-					if not CallInfo then
-						return
-					end
-
-					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CallInfo.Origin))
-					if Success then
-						wax.shared.Sonner.success("Copied script path to clipboard")
-					else
-						wax.shared.Sonner.error("Failed to copy script path to clipboard")
-						warn("Failed to copy script path to clipboard", Error)
-					end
-				end,
-			},
-			{
-				Text = "Replay",
-				Icon = "play",
-				Callback = function()
-					if not CallInfo then
-						return
-					end
-
-					wax.shared.Sonner.promise(function()
-						wax.shared.ReplayCallInfo(CallInfo, CurrentTab.Name)
-					end, {
-						loadingText = "Replaying event...",
-						successText = "Replayed event successfully!",
-						errorText = "Failed to replay event",
-						time = 4.5,
-					})
-				end,
-			},
-		}, true)
-
-		CallFrame.MouseEnter:Connect(function()
-			wax.shared.TweenService
-				:Create(HighlightStroke, DefaultTweenInfo, {
-					Transparency = 0,
-				})
-				:Play()
-		end)
-		CallFrame.MouseLeave:Connect(function()
-			wax.shared.TweenService
-				:Create(HighlightStroke, DefaultTweenInfo, {
-					Transparency = 1,
-				})
-				:Play()
-		end)
-		CallFrame.MouseButton1Click:Connect(function()
-			OpenInfo(CallInfo)
-		end)
-		CallFrame.MouseButton2Click:Connect(CallFrameContextMenu.Open)
-	end
-
-	local ArgumentsFrame = Interface.New("Frame", {
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-		Size = UDim2.fromScale(1, 0),
-		Visible = wax.shared.GetTableLength(CallInfo.Arguments) > 0,
-
-		["UIListLayout"] = {
-			Padding = UDim.new(0, 6),
-		},
-
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 6),
-			PaddingBottom = UDim.new(0, 6),
-		},
-
-		MainUICorner,
-
-		Parent = CallFrame,
-	})
-	do
-		for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
-			if Index % 15 == 0 then
-				task.wait()
-			end
-
-			local Value = CallInfo.Arguments[Index]
-			CreateArgHolder(Index, Value, ArgumentsFrame)
-		end
-	end
-
-	Interface.New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 22),
-
-		Interface.NewIcon(CallInfo.IsExecutor and "terminal" or "gamepad-2", {
-			AnchorPoint = Vector2.yAxis,
-			ImageTransparency = 0.5,
-			Position = UDim2.new(0, 2, 1, 0),
-			Size = UDim2.fromOffset(22, 22),
-			SizeConstraint = Enum.SizeConstraint.RelativeYY,
-		}),
-
-		Interface.New("TextLabel", {
-			AnchorPoint = Vector2.yAxis,
-			Position = UDim2.new(0, 30, 1, 0),
-			Size = UDim2.new(0.5, -24, 0, 22),
-			BackgroundTransparency = 1,
-			Text = CallInfo.IsExecutor and wax.shared.ExecutorName
-				or CallInfo.Origin and CallInfo.Origin.Name
-				or "Unknown",
-			TextSize = 16,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTransparency = 0.5,
-		}),
-
-		Interface.New("TextLabel", {
-			AnchorPoint = Vector2.one,
-			Position = UDim2.new(1, -2, 1, 0),
-			Size = UDim2.new(0.5, -2, 0, 22),
-			BackgroundTransparency = 1,
-			Text = "Time: " .. os.date("%X", CallInfo.CreationTime),
-			TextSize = 16,
-			TextTransparency = 0.5,
-			TextXAlignment = Enum.TextXAlignment.Right,
-		}),
-
-		Parent = CallFrame,
-	})
-
-	return CallFrame
-end
-
--- UI Handling
-CreateRemoteTab("Outgoing", true, wax.shared.Logs.Outgoing)
-CreateRemoteTab("Incoming", false, wax.shared.Logs.Incoming)
-
--- Search Functions
-function OpenSearch()
-	OpenModal(SearchFrame)
-	UpdateSearch()
-	SearchBox:CaptureFocus()
-end
-function HandleSearch(Text, Type)
-	for Instance, Log in pairs(wax.shared.Logs[Type]) do
-		if not Log.SearchResult then
-			local SearchResult = CreateSearchResult(Instance, Type)
-			Log.SearchResult = SearchResult
-			ResultInfo[SearchResult] = {
-				Type = Type,
-				Callback = function()
-					ShowLog(Log)
-				end,
-			}
-		end
-
-		local LoweredName = string.lower(Instance.Name)
-		if not LoweredName:match(Text) or table.find(ExcludeSearchClass, Instance.ClassName) then
-			Log.SearchResult.Parent = nil
-			continue
-		end
-
-		Log.SearchResult.BackgroundTransparency = 1
-		Log.SearchResult.Parent = SearchResults
-		table.insert(CurrentResults, Log.SearchResult)
-	end
-end
-
-function SelectResult(NewResult, UpdateCanvasPosition)
-	if SelectedResult > 0 and CurrentResults[SelectedResult] then
-		CurrentResults[SelectedResult].BackgroundTransparency = 1
-	end
-	if NewResult == -1 or #CurrentResults == 0 then
-		SelectedResult = -1
-		return
-	end
-
-	SelectedResult = math.clamp(NewResult, 1, #CurrentResults)
-	CurrentResults[SelectedResult].BackgroundTransparency = 0
-
-	if UpdateCanvasPosition then
-		local ScrollSize = SearchResults.AbsoluteSize.Y
-
-		local SelectedMin = CurrentResults[SelectedResult].AbsolutePosition.Y - SearchResults.AbsolutePosition.Y
-		local SelectedMax = SelectedMin + CurrentResults[SelectedResult].AbsoluteSize.Y
-
-		if SelectedMin < 0 then
-			SearchResults.CanvasPosition += Vector2.new(0, SelectedMin - 6)
-		elseif SelectedMax > ScrollSize then
-			SearchResults.CanvasPosition += Vector2.new(0, SelectedMax - ScrollSize + 6)
-		end
-	end
-end
-function EnterResult(ResultIndex)
-	local Info = ResultInfo[CurrentResults[SelectedResult]]
-	if not Info then
-		CloseModal()
-		return
-	end
-
-	pcall(ShowTab, Tabs[Info.Type])
-	pcall(Info.Callback)
-
-	CloseModal()
-end
-function HandleResults()
-	if #CurrentResults == 0 then
-		return
-	end
-
-	table.sort(CurrentResults, function(a, b)
-		return a.AbsolutePosition.Y < b.AbsolutePosition.Y
-	end)
-
-	SelectResult(1, true)
-end
-function UpdateSearch()
-	table.clear(CurrentResults)
-	SelectResult(-1)
-
-	local Text = string.lower(SearchBox.Text)
-	HandleSearch(Text, "Outgoing")
-	HandleSearch(Text, "Incoming")
-
-	HandleResults()
-end
-
-SearchBox:GetPropertyChangedSignal("Text"):Connect(UpdateSearch)
-
--- Call Functions
-function OpenInfo(CallInfo)
-	InfoTitle.Text = CallInfo.Instance.Name
-	InfoIcon.Image = Images[CallInfo.Instance.ClassName]
-
-	CurrentInfo = CallInfo
-
-	SetCodeText(CodeGen:BuildCallCode(CallInfo))
-
-	xpcall(function()
-		FunctionInfoText.Text = CodeGen:BuildFunctionInfo(CallInfo)
-	end, function(Error)
-		FunctionInfoText.Text =
-			`Error while fetching function data.\nCalling Function: {CallInfo.Function} (type: {typeof(
-				CallInfo.Function
-			)})\n\nError: {Error}`
-	end)
-	do
-		for _, Object in pairs(ArgumentsInfoFrame:GetChildren()) do
-			if Object.ClassName ~= "Frame" then
-				continue
-			end
-			Object:Destroy()
-		end
-
-		for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
-			if Index % 25 == 0 then
-				task.wait()
-			end
-
-			local Value = CallInfo.Arguments[Index]
-			CreateArgHolder(Index, Value, ArgumentsInfoFrame)
-		end
-	end
-
-	for _, tab in pairs({ "Function Info", "Code" }) do
-		local OldTab = InfoModalTab[tab]
-		if not OldTab then
-			continue
-		end
-
-		local OldTabButton = OldTab.TabButton
-		local OldTabContent = OldTab.TabContents
-
-		OldTabButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		OldTabButton.Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-
-		OldTabContent.Visible = false
-	end
-
-	CurrentInfoTab = "Arguments"
-	if InfoModalTab["Arguments"] then
-		local TabButton = InfoModalTab["Arguments"].TabButton
-		local TabContent = InfoModalTab["Arguments"].TabContents
-
-		TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-		TabButton.Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-		TabContent.Visible = true
-	end
-
-	if CurrentContext then
-		CurrentContext:Close()
-	end
-
-	OpenModal(InfoFrame)
-end
-
-Drag.Setup(RemoteListLine, RemoteListResize, function(Info, Input: InputObject)
-	local Delta = (Input.Position - Info.StartPosition) / GetDPIScale() 
-	local FramePosition: UDim2 = Info.FramePosition
-	local Offset = math.clamp(FramePosition.X.Offset + Delta.X, 120, (MainFrame.AbsoluteSize.X - 2) / 2)
-
-	Info.Frame.Position = UDim2.new(FramePosition.X.Scale, Offset, FramePosition.Y.Scale, FramePosition.Y.Offset)
-
-	LeftList.Size = UDim2.new(0, Offset, 1, -36)
-	LogsWrapper.Size = UDim2.new(1, -(Offset + 2), 1, -36)
-end)
-
-wax.shared.Connect(wax.shared.Communicator.Event:Connect(function(Instance, Type, CallIndex)
-	if not (CurrentTab and CurrentTab.Name == Type) then
-		return
-	end
-
-	local Log = wax.shared.Logs[Type][Instance]
-	if not Log then
-		return
-	end
-
-	if #Log.Calls == 0 then
-		return
-	end
-
-	local CallInfo = Log.Calls[CallIndex]
-
-	local Page = CurrentPage[Log]
-	if not Page then
-		Page = 1
-		CurrentPage[Log] = Page
-	end
-
-	if not Log.Button then
-		local Button, Name, Calls = CreateLogButton(Log)
-		Log:SetButton(Button, Name, Calls)
-	end
-
-	Log.Button.Name.Text = Log.Instance.Name
-	UpdateLogNameSize(Log)
-	Log.Button.Calls.Text = "x" .. #Log.Calls
-	Log.Button.Instance.Parent = RemoteList
-
-	if CurrentLog == Log then
-		PaginationHelper:Update(#Log.Calls)
-
-		local Start, End = PaginationHelper:GetIndexRanges(Page)
-		if not wax.shared.Settings.ShowExecutorLogs.Value then
-			CallIndex = Log.GameCalls[CallIndex]
-			if not CallIndex then
-				return
-			end
-		end
-
-		if CallIndex < Start or CallIndex > End then
-			ShowPagination(Log)
-			return
-		end
-
-		local Data = setmetatable({
-			Instance = Instance,
-			Type = Type,
-			Order = CallIndex,
-		}, {
-			__index = CallInfo,
-		})
-
-		CreateCallFrame(Data)
-	end
-end))
-
-wax.shared.Connect(wax.shared.UserInputService.InputBegan:Connect(function(Input: InputObject)
-	if Helper.IsClickInput(Input) then
-		if
-			CurrentContext
-			and not (
-				Helper.IsMouseOverFrame(ContextMenu, Input.Position)
-				or Helper.IsMouseOverFrame(CurrentContext.Parent, Input.Position)
-			)
-		then
-			CurrentContext:Close()
-		end
-	elseif Input.KeyCode == Enum.KeyCode.K and wax.shared.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-		OpenSearch()
-	elseif OpenedModal == SearchFrame then
-		if Input.KeyCode == Enum.KeyCode.Escape then
-			CloseModal()
-		elseif Input.KeyCode == Enum.KeyCode.Return then
-			EnterResult(SelectedResult)
-		elseif Input.KeyCode == Enum.KeyCode.Up then
-			SelectResult(SelectedResult - 1, true)
-		elseif Input.KeyCode == Enum.KeyCode.Down then
-			SelectResult(SelectedResult + 1, true)
-		end
-	end
-end))
-
-return {}
 
 end)() end,
     [13] = function()local wax,script,require=ImportGlobals(13)local ImportGlobals return (function(...)local function CreateLookupTable(table)
@@ -8073,240 +1358,1002 @@ for _, Function in next, FunctionsToHook do
 end
 
 end)() end,
-    [25] = function()local wax,script,require=ImportGlobals(25)local ImportGlobals return (function(...)-- Logger
--- ActualMasterOogway
--- December 8, 2024
+    [14] = function()local wax,script,require=ImportGlobals(14)local ImportGlobals return (function(...)local LuaEncode = require(script.Parent.Parent.Utils.Serializer.LuaEncode)
+local CodeGen = require(script.Parent.Parent.Utils.CodeGen.Generator)
 
---[=[
-    A simple logging utility that writes messages to a file. Supports different log levels
-    and can be configured to overwrite or append to the log file.
+local Hooks = script.Parent.Hooks
 
-    Log Format:  2024-12-04T15:28:31.131Z,0.131060,MyThread,Warning [FLog::RobloxStarter] Roblox stage ReadyForFlagFetch completed
-                 <timestamp>,<elapsed_time>,<thread_id>,<level> <message>
-]=]
+-- Main Thread Hooks
+for _, Hook in Hooks.Default:GetChildren() do
+	task.spawn(require, Hook)
+end
 
-local Logger = {}
-Logger.__index = Logger
+getgenv().CobaltInitialized = true
 
-Logger.LOG_LEVELS = {
-	ERROR = 1,
-	WARNING = 2,
-	INFO = 3,
-	DEBUG = 4,
-}
+-- Actors use a different lua vm
+-- This means that our main thread metatable hooks dont apply in the actor's vm
+-- So we need to set up the hooks again in the actor lua vm in order to log everything
+local ActorsUtils = script.Parent.Actors
 
-local LOG_LEVEL_STRINGS = {
-	[Logger.LOG_LEVELS.ERROR] = "ERROR",
-	[Logger.LOG_LEVELS.WARNING] = "WARNING",
-	[Logger.LOG_LEVELS.INFO] = "INFO",
-	[Logger.LOG_LEVELS.DEBUG] = "DEBUG",
-}
+wax.shared.ActorsEnabled = (
+	wax.shared.ExecutorSupport["run_on_actor"].IsWorking
+	and wax.shared.ExecutorSupport["getactors"].IsWorking
+	and wax.shared.ExecutorSupport["create_comm_channel"].IsWorking
+)
 
-local startTime = tick()
+if wax.shared.ActorsEnabled then
+	local ActorEnvironmentCode = ActorsUtils.Environment.Value
 
-local function createDirectoryRecursive(path)
-	local currentPath = ""
-	for part in path:gmatch("[^\\/]+") do
-		currentPath = currentPath .. part
-		if not isfolder(currentPath) then
-			makefolder(currentPath)
+	local CommunicationChannelID, Channel = create_comm_channel()
+	wax.shared.ActorCommunicator = Channel
+
+	local AlternativeEnabled = wax.shared.SaveManager:GetState("UseAlternativeHooks", false)
+
+	local IgnorePlayerModule = wax.shared.SaveManager:GetState("IgnorePlayerModule", true)
+	local IngoredRemotesDropdown = wax.shared.SaveManager:GetState("IgnoredRemotesDropdown", {
+		["BindableEvent"] = true,
+		["BindableFunction"] = true,
+	})
+
+	local ActorData = LuaEncode({
+		Token = wax.shared.CobaltVerificationToken,
+
+		IgnorePlayerModule = IgnorePlayerModule,
+		IgnoredRemotesDropdown = IngoredRemotesDropdown,
+		UseAlternativeHooks = AlternativeEnabled,
+
+		ExecutorSupport = wax.shared.ExecutorSupport,
+	})
+
+	ActorEnvironmentCode = ActorEnvironmentCode:gsub("COBALT_ACTOR_DATA", ActorData)
+
+	-- Actor Logs Sync Layer
+	local function ReconstructTable(Info, CyclicRefs)
+		local Reconstructed = {}
+
+		for Key, Value in Info do
+			if type(Value) == "table" then
+				if Value["__Function"] and Value["Validation"] == wax.shared.CobaltVerificationToken then
+					local FunctionData = table.clone(Value)
+					FunctionData["__Function"] = nil
+					FunctionData["Validation"] = nil
+
+					Reconstructed[Key] = FunctionData
+					continue
+				end
+
+				-- Check for Cobalt Created Object
+				if not Value["__CyclicRef"] then
+					Reconstructed[Key] = ReconstructTable(Value, CyclicRefs)
+					continue
+				end
+
+				local CyclicId = Value["__Id"]
+
+				if not CyclicRefs[CyclicId] then
+					warn("CyclicRef not found: " .. CyclicId)
+					continue
+				end
+
+				Reconstructed[Key] = CyclicRefs[CyclicId]
+				continue
+			end
+
+			Reconstructed[Key] = Value
 		end
-		currentPath = currentPath .. "/"
-	end
-end
 
---[=[
-    Generates a unique file name for the log file. The file name is based on the current
-    job ID, ensuring it is unique per server instance but consistent across multiple
-    executions within the same server.
-
-    @return string A unique file name for the log file.
-]=]
-function Logger:GenerateFileName()
-	local JobIdNumber = game.JobId:gsub("%D", "")
-	local timestamp = os.date("!%Y%m%d%H%M%S")
-
-	return `{self.logFileDirectory}/{JobIdNumber * 1.7 // 1.8}_{timestamp}.log`
-end
-
---[=[
-    Creates a new Logger instance.
-
-    @param logFilePath string The path to the log file.
-    @param logLevel number The minimum log level to write to the file. Defaults to INFO.
-    @param overwrite boolean Whether to overwrite the log file or append to it. Defaults to false (append).
-    @return Logger A new Logger instance.
-]=]
-function Logger.new(logFilePath: string, logLevel: number?, overwrite: boolean?)
-	local self = setmetatable({}, Logger)
-	self.logFilePath = logFilePath
-	self.logFileDirectory = logFilePath:match("(.+)/")
-	self.logLevel = logLevel or Logger.LOG_LEVELS.INFO
-	self.overwrite = overwrite or false
-
-	local folderPath, fileName = logFilePath:match("(.*[\\/])(.*)")
-
-	if folderPath and not isfolder(folderPath) then
-		createDirectoryRecursive(folderPath)
+		return Reconstructed
 	end
 
-	if self.overwrite then
-		local success, err = pcall(writefile, self.logFilePath, "")
-		if not success then
-			warn(debug.traceback(`Failed to clear log file: {self.logFilePath} - {err}`, 2))
+	wax.shared.Connect(Channel.Event:Connect(function(EventType, ...)
+		local ShouldLogActors = wax.shared.SaveManager:GetState("LogActors", true)
+
+		if not ShouldLogActors then
+			return
 		end
-	end
 
-	self:Info("Logger", "Logger initialized")
-
-	return self
-end
-
---[=[
-    Logs a message to the file.
-
-    @param level number The log level of the message.
-    @param threadId string The ID of the thread or source of the log message.
-    @param message string The message to log.
-]=]
-function Logger:Log(level: number, threadId: string, message: string)
-	if level <= self.logLevel then
-		local levelStr = LOG_LEVEL_STRINGS[level]
-
-		local timestamp = `{os.date("!%Y-%m-%dT%H:%M:%S")}{("%.3f"):format(tick() % 1)}Z`
-		local elapsedTime = ("%.6f"):format(tick() - startTime)
-
-		local logMessage = `{timestamp},{elapsedTime},{threadId},{levelStr} {message}\n`
-
-		local success, err = pcall(appendfile, self.logFilePath, logMessage)
-		if not success then
-			warn(debug.traceback(`Failed to write to log file: {self.logFilePath} - {err}`, 2))
+		if EventType ~= "ActorCall" then
+			return
 		end
+
+		local Instance, Type, RawInfo, CyclicRefs = ...
+		if Instance == Channel or Instance == wax.shared.Communicator then
+			return
+		end
+
+		local Method = wax.shared.FunctionForClasses[Type][Instance.ClassName]
+		local Log = wax.shared.Logs[Type][Instance]
+
+		if not Log then
+			Log = wax.shared.NewLog(Instance, Type, Method, RawInfo.Origin)
+		end
+
+		if Log.Blocked then
+			return
+		elseif not Log.Ignored then
+			local ReconstructedInfo = ReconstructTable(RawInfo, CyclicRefs)
+			ReconstructedInfo.IsActor = true
+
+			--// Reconstruct Packed Arguments (BindableEvents omit ["n"] for unknown reason) \\--
+			local Packed = ReconstructedInfo.Arguments
+			local PackedN, PackedData = Packed.n, Packed.Data
+			ReconstructedInfo.Arguments = PackedData
+			ReconstructedInfo.Arguments.n = PackedN
+
+			Log:Call(ReconstructedInfo)
+			wax.shared.Communicator:Fire(Log.Instance, Type, #Log.Calls)
+		end
+	end))
+
+	-- Actor Hooking Code Generation
+	local CodeToRun = ActorEnvironmentCode
+
+	for _, ActorHook in Hooks.Actors:GetChildren() :: { StringValue } do
+		CodeToRun ..= table.concat({
+			"task.spawn(function()",
+			CodeGen:IndentCode(ActorHook.Value, 1),
+			"end)",
+		}, "\n") .. "\n\n"
 	end
+
+	CodeToRun ..= table.concat({
+		"task.spawn(function()",
+		CodeGen:IndentCode(ActorsUtils.Unload.Value, 1),
+		"end)",
+	}, "\n")
+
+	-- Actual Hooking Logic
+	-- The hooking code wont run again if cobalt is already initialized in that Actor (to address deleted actors aka LuaStateProxy stuff)
+	
+	-- `HookActor` is to address Volcano returning non initialized actors inside their `getactors` function.
+	-- God this code is so ass 🥹
+	local function HookActor(TargetActor: Actor)
+		local Hooked = false
+		repeat
+			Hooked, _ = pcall(run_on_actor, TargetActor, CodeToRun, CommunicationChannelID)
+			task.wait(0.25)
+		until Hooked
+	end
+
+	for _, TargetActor in getactors() do
+		task.spawn(HookActor, TargetActor)
+	end
+
+	wax.shared.Connect(game.DescendantAdded:Connect(function(actor)
+		if not actor:IsA("Actor") then
+			return
+		end
+
+		HookActor(actor)
+	end))
 end
 
---[=[
-    Logs a debug message.
+return {}
 
-    @param threadId string The ID of the thread or source of the log message.
-    @param message string The message to log.
-]=]
-function Logger:Debug(threadId: string, message: string)
-	self:Log(Logger.LOG_LEVELS.DEBUG, threadId, message)
-end
-
---[=[
-    Logs an info message.
-
-    @param threadId string The ID of the thread or source of the log message.
-    @param message string The message to log.
-]=]
-function Logger:Info(threadId: string, message: string)
-	self:Log(Logger.LOG_LEVELS.INFO, threadId, message)
-end
-
---[=[
-    Logs a warning message.
-
-    @param threadId string The ID of the thread or source of the log message.
-    @param message string The message to log.
-]=]
-function Logger:Warning(threadId: string, message: string)
-	self:Log(Logger.LOG_LEVELS.WARNING, threadId, message)
-end
-
---[=[
-    Logs an error message.
-
-    @param threadId string The ID of the thread or source of the log message.
-    @param message string The message to log.
-]=]
-function Logger:Error(threadId: string, message: string)
-	self:Log(Logger.LOG_LEVELS.ERROR, threadId, message)
-end
-
-return Logger
 end)() end,
-    [26] = function()local wax,script,require=ImportGlobals(26)local ImportGlobals return (function(...)local Hooking = {}
+    [17] = function()local wax,script,require=ImportGlobals(17)local ImportGlobals return (function(...)--[[
+    Bypasses for popular roblox anticheats
+]]
 
-local AlternativeEnabled = wax.shared.SaveManager:GetState("UseAlternativeHooks", false)
-wax.shared.AlternativeEnabled = AlternativeEnabled
+local AnticheatData = {
+	Disabled = false,
+	Name = "N/A",
+}
 
-Hooking.HookFunction = function(Original, Replacement)
-	if wax.shared.ExecutorSupport["oth"].IsWorking and iscclosure(Original) and islclosure(Replacement) then
-		return oth.hook(Original, Replacement)
-	end
-
-	if islclosure(Replacement) then
-		Replacement = wax.shared.newcclosure(Replacement)
-	end
-
-	if not wax.shared.ExecutorSupport["hookfunction"].IsWorking then
-		return Original
-	end
-
-	return hookfunction(Original, Replacement)
+local BypassEnabled = wax.shared.SaveManager:GetState("AnticheatBypass", true)
+if not BypassEnabled then
+	return AnticheatData
 end
-Hooking.HookMetaMethod = function(object, method, hook)
-	local Metatable = wax.shared.getrawmetatable(object)
-	local originalMethod = rawget(Metatable, method)
 
-	if wax.shared.ExecutorSupport["oth"].IsWorking then
-		return oth.hook(originalMethod, hook)
+type Bypass = {
+	Name: string,
+	Game: string | number | { number } | { string },
+	Detect: () -> boolean,
+	Bypass: () -> boolean,
+}
+
+local GeneralPurposeBypasses: { Bypass } = {}
+local DedicatedPlaceACBypass: Bypass = nil
+
+local AnticheatBypasses = script.Parent.impl
+for _, Anticheat in AnticheatBypasses:GetChildren() do
+	local Data = require(Anticheat) :: Bypass
+
+	local IsDedicatedACBypass = (
+		if typeof(Data.Game) == "table"
+			then (table.find(Data.Game, game.PlaceId) or table.find(Data.Game, tostring(game.PlaceId)))
+			else (tostring(Data.Game) == tostring(game.PlaceId))
+	)
+
+	if IsDedicatedACBypass then
+		DedicatedPlaceACBypass = Data
+		break
 	end
 
-	if islclosure(hook) then
-		hook = wax.shared.newcclosure(hook)
+	if Data.Game ~= "*" then
+		continue
 	end
 
-	if
-		AlternativeEnabled
-		or (
-			not wax.shared.ExecutorSupport["hookmetamethod"].IsWorking
-			and wax.shared.ExecutorSupport["getrawmetatable"].IsWorking
-		)
-	then
-		setreadonly(Metatable, false)
-		rawset(Metatable, method, hook)
-		setreadonly(Metatable, true)
+	table.insert(GeneralPurposeBypasses, Data)
+end
 
-		return originalMethod
+if DedicatedPlaceACBypass and DedicatedPlaceACBypass.Detect() then
+	DedicatedPlaceACBypass.Bypass()
+
+	AnticheatData.Name = DedicatedPlaceACBypass.Name
+	AnticheatData.Disabled = true
+	return AnticheatData
+end
+
+for _, Data in GeneralPurposeBypasses do
+	if not Data.Detect() then
+		continue
 	end
 
-	if not wax.shared.ExecutorSupport["hookmetamethod"].IsWorking then
-		if method == "__index" then
-			local _, Metamethod = xpcall(function()
-				return object[tostring(math.random())]
-			end, function(err)
-				return debug.info(2, "f")
-			end)
+	if Data.Bypass() then
+		AnticheatData.Name = Data.Name
+		AnticheatData.Disabled = true
+		break
+	end
+end
 
-			return Metamethod
-		elseif method == "__newindex" then
-			local _, Metamethod = xpcall(function()
-				object[tostring(math.random())] = true
-			end, function(err)
-				return debug.info(2, "f")
-			end)
+return AnticheatData
 
-			return Metamethod
-		elseif method == "__namecall" then
-			local _, Metamethod = xpcall(function()
-				object:Mustard()
-			end, function(err)
-				return debug.info(2, "f")
-			end)
+end)() end,
+    [19] = function()local wax,script,require=ImportGlobals(19)local ImportGlobals return (function(...)local Adonis = {
+	Name = "Adonis",
+	Game = "*",
+}
 
-			return Metamethod
+local AdonisAnticheatThreads = {}
+function Adonis.Detect()
+	if not getreg or not getgc or not isfunctionhooked then
+		return false
+	end
+
+	local AdonisDetected = false
+
+	for _, thread in getreg() do
+		if typeof(thread) ~= "thread" then
+			continue
 		end
 
-		return nil
+		local Source = debug.info(thread, 1, "s")
+		if Source and (Source:match(".Core.Anti") or Source:match(".Plugins.Anti_Cheat")) then
+			AdonisDetected = true
+			table.insert(AdonisAnticheatThreads, thread)
+		end
 	end
 
-	return hookmetamethod(object, method, hook)
+	return AdonisDetected
 end
 
-return Hooking
+function Adonis.Bypass()
+	for _, thread in AdonisAnticheatThreads do
+		pcall(coroutine.close, thread)
+	end
+
+	local AdonisTables = {}
+	if filtergc then
+		local ContendorAdonisTables = filtergc("table", {
+			Keys = { "Detected", "RLocked" }
+		}, false)
+
+		for _, AdonisTable in ContendorAdonisTables do
+			if typeof(rawget(AdonisTable, "Detected")) ~= "function" then continue end
+			table.insert(AdonisTables, AdonisTable)
+		end
+	else
+		for _, Table in getgc(true) do
+			if typeof(Table) ~= "table" then
+				continue
+			end
+	
+			local IsAdonisOrigin = typeof(rawget(Table, "Detected")) == "function" and rawget(Table, "RLocked")
+			if not IsAdonisOrigin then continue end
+
+			table.insert(AdonisTables, Table)
+		end
+	end
+
+	for _, Adonis in AdonisTables do
+		for _, DetectionFunc in Adonis do
+			-- Just in case they already loaded a custom anticheat bypass for adonis
+			if typeof(DetectionFunc) ~= "function" or isfunctionhooked(DetectionFunc) then
+				continue
+			end
+
+			wax.shared.Hooks[DetectionFunc] = wax.shared.Hooking.HookFunction(
+				DetectionFunc,
+				function(action, info, nocrash)
+					coroutine.yield()
+					return task.wait(9e9)
+				end
+			)
+		end
+	end
+
+	return true
+end
+
+return Adonis
+
+end)() end,
+    [21] = function()local wax,script,require=ImportGlobals(21)local ImportGlobals return (function(...)local CodeGen = {
+	CleanTable = { ['"'] = '\\"', ["\\"] = "\\\\" },
+	IndentTemplate = string.rep(" ", 4),
+}
+
+export type SupportedRemoteTypes = RemoteEvent | RemoteFunction | BindableEvent | BindableFunction | UnreliableRemoteEvent
+export type CallInfo = {
+	Arguments: { [number]: any, n: number },
+	CreationTime: number,
+	Origin: BaseScript?,
+	Function: (
+		...any
+	) -> any | {
+		Address: string,
+		Name: string,
+		Source: string?,
+		IsC: boolean,
+		Constants: { any }?,
+		Upvalues: { any }?,
+		Protos: { any }?,
+	},
+	Line: number?,
+	Source: string?,
+	Instance: SupportedRemoteTypes,
+	Order: number,
+	Type: "Incoming" | "Outgoing",
+	OriginalInvokeArgs: { [number]: any, n: number }?,
+	IsActor: boolean?,
+}
+
+wax.shared.FunctionForClasses = {
+	Incoming = {
+		RemoteEvent = "OnClientEvent",
+		RemoteFunction = "OnClientInvoke",
+		UnreliableRemoteEvent = "OnClientEvent",
+		BindableEvent = "Event",
+		BindableFunction = "OnInvoke",
+	},
+
+	Outgoing = {
+		RemoteEvent = "FireServer",
+		RemoteFunction = "InvokeServer",
+		UnreliableRemoteEvent = "FireServer",
+		BindableEvent = "Fire",
+		BindableFunction = "Invoke",
+	},
+}
+
+local GetNilCode = [[local function GetNil(Name, DebugId)
+	for _, Object in getnilinstances() do
+		if Object.Name == Name and Object:GetDebugId() == DebugId then
+			return Object
+		end
+	end
+end]]
+
+--// Pasted from Dex (maximum detection)
+for i = 0, 31 do
+	CodeGen.CleanTable[string.char(i)] = "\\" .. string.format("%03d", i)
+end
+for i = 127, 255 do
+	CodeGen.CleanTable[string.char(i)] = "\\" .. string.format("%03d", i)
+end
+
+function CodeGen.FormatLuaString(str)
+	return string.gsub(str, '["\\\0-\31\127-\255]', CodeGen.CleanTable)
+end
+
+local function IsEqualToInstance(Object, ToCompareTo)
+	if rawequal(Object, ToCompareTo) then
+		return true
+	end
+
+	if wax.shared.ExecutorSupport["compareinstances"].IsWorking then
+		return compareinstances(Object, ToCompareTo)
+	end
+
+	return false
+end
+
+function CodeGen.GetFullPath(Object, options: {
+	DisableNilParentHandler: boolean?,
+	VariableName: string?,
+	OmitNilFunctionGetterCodeGeneration: boolean?,
+	IgnorePlugins: boolean?
+}?)
+	local DisableNilParentHandler = options and options.DisableNilParentHandler
+	local OmitNilFunctionGetterCodeGeneration = options and options.OmitNilFunctionGetterCodeGeneration
+	local VariableName = options and options.VariableName
+	local IgnorePlugins = options and options.IgnorePlugins
+	do
+		if DisableNilParentHandler == nil then
+			DisableNilParentHandler = true
+		end
+
+		if OmitNilFunctionGetterCodeGeneration == nil then
+			OmitNilFunctionGetterCodeGeneration = false
+		end
+	end
+
+	if not IgnorePlugins then
+		local PluginManager = wax.shared.CobaltPluginManager
+		if PluginManager and PluginManager.HasCodeGenInterceptors then
+			local Interceptors = PluginManager.Registry.UIHooks.CodeGen.InstancePath
+			for _, Interceptor in Interceptors or {} do
+				local Success, InterceptedCode = pcall(Interceptor, Object, options)
+				if Success and type(InterceptedCode) == "string" then
+					return InterceptedCode, false
+				elseif not Success then
+					warn("Error in CodeGen Interceptor (InstancePath):", InterceptedCode)
+				end
+			end
+		end
+	end
+
+	local ChildLookupMode = wax.shared.SaveManager:GetState("InstancePathLookupChain", "Index")
+
+	local function BuildDynamicAccessor(Expression: string): string
+		if ChildLookupMode == "WaitForChild" then
+			return ":WaitForChild(" .. Expression .. ")"
+		elseif ChildLookupMode == "FindFirstChild" then
+			return ":FindFirstChild(" .. Expression .. ")"
+		end
+
+		return "[" .. Expression .. "]"
+	end
+
+	local function BuildStaticAccessor(Name: string): string
+		local SanitizedName = CodeGen.FormatLuaString(Name)
+
+		if ChildLookupMode == "WaitForChild" then
+			return ':WaitForChild("' .. SanitizedName .. '")'
+		elseif ChildLookupMode == "FindFirstChild" then
+			return ':FindFirstChild("' .. SanitizedName .. '")'
+		elseif string.match(Name, "^[%a_][%w_]*$") then
+			return "." .. Name
+		end
+
+		return '["' .. SanitizedName .. '"]'
+	end
+
+	local CurrentObject = Object
+	local DidInsertNilFunction = false
+	local IsNil = false
+	local Path = ""
+
+	repeat
+		if typeof(CurrentObject) ~= "Instance" then
+			break
+		end
+
+		if IsEqualToInstance(CurrentObject, game) then
+			Path = "game" .. Path
+			break
+		end
+
+		local IndexName = ""
+
+		if IsEqualToInstance(CurrentObject, wax.shared.LocalPlayer) then
+			IndexName = ".LocalPlayer"
+		elseif
+			wax.shared.LocalPlayer.Character and IsEqualToInstance(CurrentObject, wax.shared.LocalPlayer.Character)
+		then
+			Path = 'game:GetService("Players").LocalPlayer.Character' .. Path
+			break
+		elseif CurrentObject.Name and CurrentObject.Name == wax.shared.LocalPlayer.Name then
+			IndexName = BuildDynamicAccessor('game:GetService("Players").LocalPlayer.Name')
+		elseif CurrentObject.Name and CurrentObject.Name == tostring(wax.shared.LocalPlayer.UserId) then
+			IndexName = BuildDynamicAccessor('game:GetService("Players").LocalPlayer.UserId')
+		elseif IsEqualToInstance(CurrentObject, workspace) then
+			Path = "workspace" .. Path
+			break
+		elseif CurrentObject.ClassName and CurrentObject.Name then
+			IndexName = BuildStaticAccessor(CurrentObject.Name)
+
+			local Parent = CurrentObject.Parent
+			if Parent then
+				local DirectChildPtr = Parent:FindFirstChild(CurrentObject.Name)
+
+				if
+					IsEqualToInstance(Parent, game)
+					and IsEqualToInstance(game:FindService(CurrentObject.ClassName), CurrentObject)
+				then
+					IndexName = ':GetService("' .. CurrentObject.ClassName .. '")'
+				elseif DirectChildPtr then
+					local Children = Parent:GetChildren()
+					local FoundIndex = nil
+
+					if
+						wax.shared.ExecutorSupport["compareinstances"].IsWorking
+						and not compareinstances(DirectChildPtr, CurrentObject)
+					then
+						for Index, Child in Children do
+							if not compareinstances(Child, CurrentObject) then
+								continue
+							end
+
+							FoundIndex = Index
+							break
+						end
+					elseif DirectChildPtr ~= CurrentObject then
+						FoundIndex = table.find(Children, CurrentObject)
+					end
+
+					if FoundIndex then
+						IndexName = ":GetChildren()[" .. tostring(FoundIndex) .. "]"
+					end
+				end
+			elseif Parent == nil then
+				IsNil = true
+
+				if DisableNilParentHandler then
+					Path = Path .. " --[[Nil Parent]]"
+				else
+					local Base = `GetNil("{CodeGen.FormatLuaString(CurrentObject.Name)}", "{CodeGen.FormatLuaString(
+						CurrentObject:GetDebugId()
+					)}")`
+					DidInsertNilFunction = true
+					
+					if OmitNilFunctionGetterCodeGeneration then
+						Path = Base
+						break
+					end
+
+					Path = GetNilCode .. `\n\n{VariableName and `local {VariableName} = ` or ""}` .. Base
+					break
+				end
+			end
+		end
+
+		Path = IndexName .. Path
+
+		CurrentObject = CurrentObject.Parent
+	until CurrentObject == nil
+
+	if IsNil then
+		return Path, DidInsertNilFunction
+	end
+
+	return `{VariableName and `local {VariableName} = ` or ""}{Path}`, DidInsertNilFunction
+end
+
+local function DoesUseCallbackValue(Instance: Instance)
+	return Instance.ClassName == "RemoteFunction" or Instance.ClassName == "BindableFunction"
+end
+
+local CodeGenHeaderTemplate = [[-- This code was generated by Cobalt
+-- https://github.com/notpoiu/cobalt
+
+]]
+
+function CodeGen:IndentCode(Code: string, IndentLevel: number)
+	local Indent = CodeGen.IndentTemplate:rep(IndentLevel)
+	local IndentedCode = Code:gsub("\n", "\n" .. Indent)
+	return Indent .. IndentedCode
+end
+
+local WrapperActorCode = table.concat({
+	"-- Event originated from an Actor Environment",
+	"for _, actor in getactors() do",
+	"	run_on_actor(actor, [[\n%s\n]])",
+	"end",
+}, "\n")
+
+local function WrapCodeInActor(Code: string, ShouldWrap: boolean)
+	if not ShouldWrap then
+		return Code
+	end
+
+	return string.format(WrapperActorCode, CodeGen:IndentCode(Code, 2))
+end
+
+function CodeGen:BuildHookCode(CallInfo: CallInfo)
+	local PluginManager = wax.shared.CobaltPluginManager
+	if PluginManager and PluginManager.HasCodeGenInterceptors then
+		local Interceptors = PluginManager.Registry.UIHooks.CodeGen.Hook
+		
+		for _, Interceptor in Interceptors or {} do
+			local Success, InterceptedCode = pcall(Interceptor, CallInfo)
+			if Success and type(InterceptedCode) == "string" then
+				return InterceptedCode
+			elseif not Success then
+				warn("Error in Cobalt Plugin (CodeGen Interceptor (Hook)):", InterceptedCode)
+			end
+		end
+	end
+
+	local Type = CallInfo.Type
+	local Path = self.GetFullPath(CallInfo.Instance, {
+		VariableName = "Event",
+		DisableNilParentHandler = false,
+	})
+	local IsFromActor = CallInfo.IsActor or false
+	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
+
+	local CodeGenHeader = CodeGenHeaderTemplate
+	if not wax.shared.SaveManager:GetState("ShowWatermark", true) then
+		CodeGenHeader = ""
+	end
+
+	if Type == "Incoming" then
+		if DoesUseCallbackValue(CallInfo.Instance) then
+			-- :InvokeServer -> Returned value
+			if CallInfo.OriginalInvokeArgs then
+				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
+
+				return CodeGenHeader
+					.. WrapCodeInActor(
+						string.format(
+							[[%s
+local mtHook; mtHook = hookmetamethod(game, "__namecall", function(...)
+	local self = ...
+
+	if rawequal(self, Event) and getnamecallmethod() == "%s" then
+		local Args = table.pack(...)
+
+		local Result = table.pack(
+			mtHook(table.unpack(Args, 1, Args.n))
+		)
+
+		return table.unpack(Result, 1, Result.n)
+	end
+
+	return mtHook(self, ...)
+end)
+
+local Old%s; Old%s = hookfunction(Event.%s, function(...)
+	local self = ...
+
+	if rawequal(self, Event) then
+		local Args = table.pack(...)
+
+		local Result = table.pack(
+			Old%s(table.unpack(Args, 1, Args.n))
+		)
+
+		return table.unpack(Result, 1, Result.n)
+	end
+
+	return Old%s(self, ...)
+end)]],
+							Path,
+							Method,
+							Method,
+							Method,
+							Method,
+							Method,
+							Method
+						),
+						IsFromActor
+					)
+			end
+
+			-- Callback value
+			return CodeGenHeader
+				.. WrapCodeInActor(
+					string.format(
+						[[%s
+local Callback = getcallbackvalue(Event, "%s")
+Event.%s = function(...)
+	print(`Intercepted (Callback) {Event.Name}.%s`, ...)
+	return Callback(...)
+end
+
+local mtHook; mtHook = hookmetamethod(game, "__newindex", function(...)
+	local self, key, value = ...
+	
+	if (
+		rawequal(self, Event) and
+		rawequal(key, "%s") and
+		typeof(value) == "function" and
+		not checkcaller()
+	) then
+		Callback = value
+	end
+
+	return mtHook(...)
+end)]],
+						Path,
+						Method,
+						Method,
+						Method,
+						Method
+					),
+					IsFromActor
+				)
+		end
+
+		return CodeGenHeader
+			.. WrapCodeInActor(
+				string.format(
+					[[%s
+for _, Connection in getconnections(Event.%s) do
+	local old; old = hookfunction(Connection.Function, function(...)
+		print(`Intercepted (Connection) {Event.Name}.%s`, ...)
+		return old(...)
+	end)
+end]],
+					Path,
+					Method,
+					Method
+				),
+				IsFromActor
+			)
+	end
+
+	return CodeGenHeader
+		.. WrapCodeInActor(
+			string.format(
+				[[%s
+local mtHook; mtHook = hookmetamethod(game, "__namecall", function(...)
+	local self = ...
+
+	if rawequal(self, Event) and getnamecallmethod() == "%s" then
+		local Args = table.pack(...)
+		
+		local Result = table.pack(
+			mtHook(self, table.unpack(Args, 1, Args.n))
+		)
+
+		print(`Intercepted (__namecall) {Event.Name}:%s()`, ...)
+
+		return table.unpack(Result, 1, Result.n)
+	end
+
+	return mtHook(...)
+end)
+
+local Old%s; Old%s = hookfunction(Event.%s, function(...)
+	local self = ...
+
+	if rawequal(self, Event) then
+		local Args = table.pack(...)
+
+		local Result = table.pack(
+			Old%s(table.unpack(Args, 1, Args.n))
+		)
+
+		print(`Intercepted (__index) {Event.Name}:%s()`, self, table.unpack(Result, 1, Result.n))
+
+		return table.unpack(Result, 1, Result.n)
+	end
+
+	return Old%s(self, ...)
+end)]],
+				Path,
+				Method,
+				Method,
+				Method,
+				Method,
+				Method,
+				Method,
+				Method,
+				Method
+			),
+			IsFromActor
+		)
+end
+
+function CreateArgsString(SerializedArgs: string, Args: { [number]: any, n: number }, Prefix: string?)
+	if Args.n == 0 then
+		return ""
+	end
+
+	--// Cyclic Table Handler \\--
+	if string.sub(SerializedArgs, 1, 9) == "(function" then
+		return `{Prefix == nil and "" or Prefix}table.unpack({SerializedArgs}, 1, {Args.n})`
+	end
+
+	--// Normal Table Handler \\--
+	return `{Prefix == nil and "" or Prefix}{string.sub(SerializedArgs, 2, #SerializedArgs - 1)}`
+end
+
+function CodeGen:BuildCallCode(CallInfo: CallInfo)
+	local PluginManager = wax.shared.CobaltPluginManager
+	if PluginManager and PluginManager.HasCodeGenInterceptors then
+		local Interceptors = PluginManager.Registry.UIHooks.CodeGen.Call
+		if Interceptors then
+			for _, Interceptor in Interceptors do
+				local Success, InterceptedCode = pcall(Interceptor, CallInfo)
+				if Success and type(InterceptedCode) == "string" then
+					return InterceptedCode
+				elseif not Success then
+					warn("Error in CodeGen Interceptor (Call):", InterceptedCode)
+				end
+			end
+		end
+	end
+
+	local Type = CallInfo.Type
+
+	local Path = self.GetFullPath(CallInfo.Instance, {
+		VariableName = "Event",
+		DisableNilParentHandler = false,
+	})
+	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
+	local SerializedArgs, DidInsertNilFunction = wax.shared.LuaEncode(
+		CallInfo.Arguments,
+		{ Prettify = true, InsertCycles = true, IsArray = true }
+	)
+
+	local CodeGenHeader = CodeGenHeaderTemplate
+	if not wax.shared.SaveManager:GetState("ShowWatermark", true) then
+		CodeGenHeader = ""
+	end
+
+	if Type == "Incoming" then
+		if DoesUseCallbackValue(CallInfo.Instance) then
+			local PrettifiedExpectedResult, DidInsertNilFunctionInExpectation = wax.shared.LuaEncode(
+				CallInfo.Arguments,
+				{ Prettify = true, InsertCycles = true, IsArray = true }
+			)
+
+			if CallInfo.OriginalInvokeArgs then
+				local PrettifiedOutput, InsertedNilFunction = wax.shared.LuaEncode(
+					CallInfo.OriginalInvokeArgs,
+					{ Prettify = true, InsertCycles = true, IsArray = true }
+				)
+
+				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
+
+				return CodeGenHeader
+					.. string.format(
+						[[%s%s
+local Result = Event:%s(%s)
+
+local ExpectedResult = table.unpack(%s)
+
+]],
+						(
+							(InsertedNilFunction or DidInsertNilFunction or DidInsertNilFunctionInExpectation)
+								and GetNilCode .. "\n\n"
+							or ""
+						),
+						Path,
+						Method,
+						CreateArgsString(PrettifiedOutput, CallInfo.OriginalInvokeArgs),
+						PrettifiedExpectedResult
+					)
+			end
+
+			return CodeGenHeader
+				.. string.format(
+					[[%s%s
+local Callback = getcallbackvalue(Event, "%s")
+Callback(%s)
+
+local ExpectedResult = table.unpack(%s)
+
+]],
+					(DidInsertNilFunction or DidInsertNilFunctionInExpectation and GetNilCode .. "\n\n" or ""),
+					Path,
+					Method,
+					CreateArgsString(SerializedArgs, CallInfo.Arguments),
+
+					PrettifiedExpectedResult
+				)
+		end
+
+		return CodeGenHeader
+			.. string.format(
+				[[%s%s
+firesignal(Event.%s%s)]],
+				(DidInsertNilFunction and GetNilCode .. "\n\n" or ""),
+				Path,
+				Method,
+				CreateArgsString(SerializedArgs, CallInfo.Arguments, ", ")
+			)
+	end
+
+	return CodeGenHeader
+		.. string.format(
+			[[%s%s
+Event:%s(%s)]],
+			(DidInsertNilFunction and GetNilCode .. "\n\n" or ""),
+			Path,
+			Method,
+			CreateArgsString(SerializedArgs, CallInfo.Arguments)
+		)
+end
+
+function CodeGen:BuildFunctionInfo(CallInfo: CallInfo)
+	if CallInfo.IsActor and typeof(CallInfo.Function) == "table" then
+		return string.format(
+			[[<b>Function Address:</b> %s
+<b>Name:</b> %s
+<b>Script Path:</b> %s
+<b>Source:</b> %s
+<b>Calling Line:</b> %s
+<b>From Actor:</b> true
+%s]],
+			CallInfo.Function.Address:match("0x%x+") or tostring(CallInfo.Function),
+			CallInfo.Function.Name ~= "" and CallInfo.Function.Name or "Anonymous",
+			CallInfo.Origin and self.GetFullPath(CallInfo.Origin, { DisableNilParentHandler = true }) or wax.shared.ExecutorName,
+			CallInfo.Function.Source or "N/A",
+			tostring(CallInfo.Line),
+
+			CallInfo.Function.IsC and "<b>Closure Type</b>: C closure"
+				or string.format(
+					"<b>Closure Type</b>: Luau closure\n<b>Constants:</b> %s\n<b>Upvalues:</b> %s\n<b>Protos:</b> %s",
+					debug.getconstants and tostring(#CallInfo.Function.Constants) or "N/A",
+					debug.getupvalues and tostring(#CallInfo.Function.Upvalues) or "N/A",
+					debug.getprotos and tostring(#CallInfo.Function.Protos) or "N/A"
+				)
+		)
+	end
+
+	local FunctionName = debug.info(CallInfo.Function, "n")
+
+	return string.format(
+		[[<b>Function Address:</b> %s
+<b>Name:</b> %s
+<b>Script Path:</b> %s
+<b>Source:</b> %s
+<b>Calling Line:</b> %s
+%s]],
+		tostring(CallInfo.Function):match("0x%x+") or tostring(CallInfo.Function),
+		FunctionName ~= "" and FunctionName or "Anonymous",
+		CallInfo.Origin and self.GetFullPath(CallInfo.Origin, { DisableNilParentHandler = true }) or wax.shared.ExecutorName,
+		CallInfo.Source or debug.info(CallInfo.Function, "s"),
+		tostring(CallInfo.Line),
+
+		iscclosure(CallInfo.Function) and "<b>Closure Type</b>: C closure"
+			or string.format(
+				"<b>Closure Type</b>: Luau closure\n<b>Constants:</b> %s\n<b>Upvalues:</b> %s\n<b>Protos:</b> %s",
+				debug.getconstants and tostring(#debug.getconstants(CallInfo.Function)) or "N/A",
+				debug.getupvalues and tostring(#debug.getupvalues(CallInfo.Function)) or "N/A",
+				debug.getprotos and tostring(#debug.getprotos(CallInfo.Function)) or "N/A"
+			)
+	)
+end
+
+wax.shared.ReplayCallInfo = function(CallInfo: CallInfo)
+	local Type = CallInfo.Type
+	local Method = wax.shared.FunctionForClasses[Type][CallInfo.Instance.ClassName]
+
+	if Type == "Incoming" then
+		if DoesUseCallbackValue(CallInfo.Instance) then
+			if CallInfo.OriginalInvokeArgs then
+				Method = wax.shared.FunctionForClasses.Outgoing[CallInfo.Instance.ClassName]
+
+				CallInfo.Instance[Method](
+					CallInfo.Instance,
+					table.unpack(CallInfo.OriginalInvokeArgs, 1, CallInfo.OriginalInvokeArgs.n)
+				)
+				return
+			end
+
+			local Callback = getcallbackvalue(CallInfo.Instance, Method)
+
+			if not Callback then
+				return
+			end
+
+			Callback(table.unpack(CallInfo.Arguments))
+			return
+		end
+
+		assert(firesignal or getconnections, "No firesignal or getconnections found")
+
+		if firesignal then
+			firesignal(CallInfo.Instance[Method], table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
+		elseif getconnections then
+			for _, conn in getconnections(CallInfo.Instance[Method]) do
+				conn:Fire(table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
+			end
+		end
+
+		return
+	end
+
+	CallInfo.Instance[Method](CallInfo.Instance, table.unpack(CallInfo.Arguments, 1, CallInfo.Arguments.n))
+end
+
+return CodeGen
 
 end)() end,
     [22] = function()local wax,script,require=ImportGlobals(22)local ImportGlobals return (function(...)local Utils = script.Parent.Parent
@@ -8516,7 +2563,1673 @@ end
 
 return SessionExporter
 end)() end,
-    [31] = function()local wax,script,require=ImportGlobals(31)local ImportGlobals return (function(...)-- LuaEncode - Fast table serialization library for pure Luau/Lua 5.1+
+    [24] = function()local wax,script,require=ImportGlobals(24)local ImportGlobals return (function(...)wax.shared.Connections = {}
+
+wax.shared.Connect = function(Connection)
+	table.insert(wax.shared.Connections, Connection)
+	return Connection
+end
+
+wax.shared.Disconnect = function(Connection)
+	Connection:Disconnect()
+
+	local Index = table.find(wax.shared.Connections, Connection)
+	if Index then
+		table.remove(wax.shared.Connections, Index)
+	end
+
+	return true
+end
+
+return {}
+end)() end,
+    [25] = function()local wax,script,require=ImportGlobals(25)local ImportGlobals return (function(...)local FileHelper = {}
+FileHelper.__index = FileHelper
+
+function FileHelper.new(basePath: string)
+    local self = setmetatable({
+        BasePath = FileHelper.NormalizePath(basePath),
+    }, FileHelper)
+
+    self:EnsureDirectory()
+    return self
+end
+
+function FileHelper:EnsureDirectory()
+    local paths = {}
+    local parts = self.BasePath:split("/")
+
+    for idx = 1, #parts do
+        paths[#paths + 1] = table.concat(parts, "/", 1, idx)
+    end
+
+    for i = 1, #paths do
+        local str = paths[i]
+        if isfolder(str) then continue end
+        makefolder(str)
+    end
+end
+
+function FileHelper:GetPath(relativePath: string)
+    local normalizedPath = self.NormalizePath(relativePath or "")
+    
+    if self.BasePath:sub(-1) == "/" then
+        return self.BasePath .. normalizedPath
+    end
+    
+    if normalizedPath == "" then
+        return self.BasePath
+    end
+    
+    return self.BasePath .. "/" .. normalizedPath
+end
+
+function FileHelper.NormalizePath(path: string)
+    if type(path) ~= "string" then return "" end
+    return path:gsub("\\", "/")
+end
+
+function FileHelper:GetRelativePath(path: string)
+    path = self.NormalizePath(path)
+    local basePath = self.NormalizePath(self.BasePath)
+    if basePath:sub(-1) ~= "/" then
+        basePath = basePath .. "/"
+    end
+    
+    local Start, End = string.find(path, basePath, 1, true)
+    if Start then
+        return string.sub(path, End + 1)
+    end
+    
+    return path
+end
+
+function FileHelper:EnsureFile(relativePath: string, default: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    if not isfile(self:GetPath(relativePath)) then
+        writefile(self:GetPath(relativePath), default)
+    end
+end
+
+function FileHelper:ReadFile(relativePath: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    return readfile(self:GetPath(relativePath))
+end
+
+function FileHelper:ReadRawFile(path: string)
+    return readfile(path)
+end
+
+function FileHelper:WriteFile(relativePath: string, data: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    writefile(self:GetPath(relativePath), data)
+end
+
+function FileHelper:DeleteFile(relativePath: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    if isfile(self:GetPath(relativePath)) then
+        delfile(self:GetPath(relativePath))
+    end
+end
+
+function FileHelper:DeleteDirectory(relativePath: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    if isfolder(self:GetPath(relativePath)) then
+        delfolder(self:GetPath(relativePath))
+    end
+end
+
+function FileHelper:ListFiles(relativePath: string?)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    local files = {}
+    for _, file in listfiles(self:GetPath(relativePath)) do
+        table.insert(files, self:GetRelativePath(file))
+    end
+
+    return files
+end
+
+function FileHelper:GetFileName(relativePath: string)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    return relativePath:match("[^/]+$")
+end
+
+function FileHelper:ListFileNames(relativePath: string?)
+    relativePath = self.NormalizePath(relativePath or "")
+    
+    local names = {}
+    for _, file in self:ListFiles(relativePath) do
+        table.insert(names, self:GetFileName(file))
+    end
+
+    return names
+end
+
+return FileHelper
+end)() end,
+    [26] = function()local wax,script,require=ImportGlobals(26)local ImportGlobals return (function(...)-- Logger
+-- ActualMasterOogway
+-- December 8, 2024
+
+--[=[
+    A simple logging utility that writes messages to a file. Supports different log levels
+    and can be configured to overwrite or append to the log file.
+
+    Log Format:  2024-12-04T15:28:31.131Z,0.131060,MyThread,Warning [FLog::RobloxStarter] Roblox stage ReadyForFlagFetch completed
+                 <timestamp>,<elapsed_time>,<thread_id>,<level> <message>
+]=]
+
+local Logger = {}
+Logger.__index = Logger
+
+Logger.LOG_LEVELS = {
+	ERROR = 1,
+	WARNING = 2,
+	INFO = 3,
+	DEBUG = 4,
+}
+
+local LOG_LEVEL_STRINGS = {
+	[Logger.LOG_LEVELS.ERROR] = "ERROR",
+	[Logger.LOG_LEVELS.WARNING] = "WARNING",
+	[Logger.LOG_LEVELS.INFO] = "INFO",
+	[Logger.LOG_LEVELS.DEBUG] = "DEBUG",
+}
+
+local startTime = tick()
+
+local function createDirectoryRecursive(path)
+	local currentPath = ""
+	for part in path:gmatch("[^\\/]+") do
+		currentPath = currentPath .. part
+		if not isfolder(currentPath) then
+			makefolder(currentPath)
+		end
+		currentPath = currentPath .. "/"
+	end
+end
+
+--[=[
+    Generates a unique file name for the log file. The file name is based on the current
+    job ID, ensuring it is unique per server instance but consistent across multiple
+    executions within the same server.
+
+    @return string A unique file name for the log file.
+]=]
+function Logger:GenerateFileName()
+	local JobIdNumber = game.JobId:gsub("%D", "")
+	local timestamp = os.date("!%Y%m%d%H%M%S")
+
+	return `{self.logFileDirectory}/{JobIdNumber * 1.7 // 1.8}_{timestamp}.log`
+end
+
+--[=[
+    Creates a new Logger instance.
+
+    @param logFilePath string The path to the log file.
+    @param logLevel number The minimum log level to write to the file. Defaults to INFO.
+    @param overwrite boolean Whether to overwrite the log file or append to it. Defaults to false (append).
+    @return Logger A new Logger instance.
+]=]
+function Logger.new(logFilePath: string, logLevel: number?, overwrite: boolean?)
+	local self = setmetatable({}, Logger)
+	self.logFilePath = logFilePath
+	self.logFileDirectory = logFilePath:match("(.+)/")
+	self.logLevel = logLevel or Logger.LOG_LEVELS.INFO
+	self.overwrite = overwrite or false
+
+	local folderPath, fileName = logFilePath:match("(.*[\\/])(.*)")
+
+	if folderPath and not isfolder(folderPath) then
+		createDirectoryRecursive(folderPath)
+	end
+
+	if self.overwrite then
+		local success, err = pcall(writefile, self.logFilePath, "")
+		if not success then
+			warn(debug.traceback(`Failed to clear log file: {self.logFilePath} - {err}`, 2))
+		end
+	end
+
+	self:Info("Logger", "Logger initialized")
+
+	return self
+end
+
+--[=[
+    Logs a message to the file.
+
+    @param level number The log level of the message.
+    @param threadId string The ID of the thread or source of the log message.
+    @param message string The message to log.
+]=]
+function Logger:Log(level: number, threadId: string, message: string)
+	if level <= self.logLevel then
+		local levelStr = LOG_LEVEL_STRINGS[level]
+
+		local timestamp = `{os.date("!%Y-%m-%dT%H:%M:%S")}{("%.3f"):format(tick() % 1)}Z`
+		local elapsedTime = ("%.6f"):format(tick() - startTime)
+
+		local logMessage = `{timestamp},{elapsedTime},{threadId},{levelStr} {message}\n`
+
+		local success, err = pcall(appendfile, self.logFilePath, logMessage)
+		if not success then
+			warn(debug.traceback(`Failed to write to log file: {self.logFilePath} - {err}`, 2))
+		end
+	end
+end
+
+--[=[
+    Logs a debug message.
+
+    @param threadId string The ID of the thread or source of the log message.
+    @param message string The message to log.
+]=]
+function Logger:Debug(threadId: string, message: string)
+	self:Log(Logger.LOG_LEVELS.DEBUG, threadId, message)
+end
+
+--[=[
+    Logs an info message.
+
+    @param threadId string The ID of the thread or source of the log message.
+    @param message string The message to log.
+]=]
+function Logger:Info(threadId: string, message: string)
+	self:Log(Logger.LOG_LEVELS.INFO, threadId, message)
+end
+
+--[=[
+    Logs a warning message.
+
+    @param threadId string The ID of the thread or source of the log message.
+    @param message string The message to log.
+]=]
+function Logger:Warning(threadId: string, message: string)
+	self:Log(Logger.LOG_LEVELS.WARNING, threadId, message)
+end
+
+--[=[
+    Logs an error message.
+
+    @param threadId string The ID of the thread or source of the log message.
+    @param message string The message to log.
+]=]
+function Logger:Error(threadId: string, message: string)
+	self:Log(Logger.LOG_LEVELS.ERROR, threadId, message)
+end
+
+return Logger
+end)() end,
+    [27] = function()local wax,script,require=ImportGlobals(27)local ImportGlobals return (function(...)local Hooking = {}
+
+local AlternativeEnabled = wax.shared.SaveManager:GetState("UseAlternativeHooks", false)
+wax.shared.AlternativeEnabled = AlternativeEnabled
+
+Hooking.HookFunction = function(Original, Replacement)
+	if wax.shared.ExecutorSupport["oth"].IsWorking and iscclosure(Original) and islclosure(Replacement) then
+		return oth.hook(Original, Replacement)
+	end
+
+	if islclosure(Replacement) then
+		Replacement = wax.shared.newcclosure(Replacement)
+	end
+
+	if not wax.shared.ExecutorSupport["hookfunction"].IsWorking then
+		return Original
+	end
+
+	return hookfunction(Original, Replacement)
+end
+Hooking.HookMetaMethod = function(object, method, hook)
+	local Metatable = wax.shared.getrawmetatable(object)
+	local originalMethod = rawget(Metatable, method)
+
+	assert(typeof(originalMethod) == "function", `{method} is not a function in the metatable of {object}`)
+
+	if wax.shared.ExecutorSupport["oth"].IsWorking then
+		return oth.hook(originalMethod, hook)
+	end
+
+	if islclosure(hook) then
+		hook = wax.shared.newcclosure(hook)
+	end
+
+	if
+		AlternativeEnabled
+		or (
+			not wax.shared.ExecutorSupport["hookmetamethod"].IsWorking
+			and wax.shared.ExecutorSupport["getrawmetatable"].IsWorking
+		)
+	then
+		setreadonly(Metatable, false)
+		rawset(Metatable, method, hook)
+		setreadonly(Metatable, true)
+
+		return originalMethod
+	end
+
+	if not wax.shared.ExecutorSupport["hookmetamethod"].IsWorking then
+		if method == "__index" then
+			local _, Metamethod = xpcall(function()
+				return object[tostring(math.random())]
+			end, function(err)
+				return debug.info(2, "f")
+			end)
+
+			return Metamethod
+		elseif method == "__newindex" then
+			local _, Metamethod = xpcall(function()
+				object[tostring(math.random())] = true
+			end, function(err)
+				return debug.info(2, "f")
+			end)
+
+			return Metamethod
+		elseif method == "__namecall" then
+			local _, Metamethod = xpcall(function()
+				object:Mustard()
+			end, function(err)
+				return debug.info(2, "f")
+			end)
+
+			return Metamethod
+		end
+
+		return nil
+	end
+
+	return hookmetamethod(object, method, hook)
+end
+
+return Hooking
+
+end)() end,
+    [28] = function()local wax,script,require=ImportGlobals(28)local ImportGlobals return (function(...)local Log = {}
+Log.__index = Log
+
+--// Auto Ignore Constants \\--
+local SpamCallCountThreshold = 15
+local SpamTimeWindowSeconds = 1
+
+function Log.new(Instance, Type, Method, Index, CallingScript)
+	local NewLog = setmetatable({
+		Instance = Instance,
+		Type = Type,
+		Method = Method,
+		Index = Index,
+		Calls = {},
+		GameCalls = {},
+		SpamHistory = {},
+		Ignored = false,
+		Blocked = false,
+		Button = nil,
+	}, Log)
+
+	return NewLog
+end
+
+function DeepClone(orig, copies)
+	copies = copies or {}
+
+	if typeof(orig) == "Instance" then
+		return cloneref(orig)
+	elseif typeof(orig) == "userdata" then
+		if getmetatable(orig) then
+			return newproxy(true)
+		else
+			return newproxy()
+		end
+	elseif typeof(orig) == "function" then
+		if clonefunction then
+			return clonefunction(orig)
+		end
+
+		return orig
+	elseif type(orig) ~= "table" then
+		return orig
+	elseif copies[orig] then
+		return copies[orig]
+	end
+
+	local copy = {}
+	copies[orig] = copy
+	for k, v in next, orig do
+		copy[DeepClone(k, copies)] = DeepClone(v, copies)
+	end
+	return copy
+end
+
+function Log:IsOverSpamThreshold()
+	if not wax.shared.SaveManager:GetState("AutoIgnoreSpammyEvents", false) then
+		return false
+	end
+
+	local Now = tick()
+	table.insert(self.SpamHistory, Now)
+
+	for i = #self.SpamHistory, 1, -1 do
+		if Now - self.SpamHistory[i] > SpamTimeWindowSeconds then
+			table.remove(self.SpamHistory, i)
+		end
+	end
+
+	if #self.SpamHistory > SpamCallCountThreshold then
+		if not self.Ignored then
+			self:Ignore()
+			wax.shared.Sonner.info(`Ignored {self.Instance.Name} ({self.Type}) due to event spam.`)
+		end
+		
+		return true
+	end
+
+	return false
+end
+
+local function RunInterceptors(Interceptors: { (...any) -> (...any) }, Info: any, Log): boolean
+	for _, Callback in Interceptors do
+		local Ok, Result = pcall(Callback, Info, Log.Instance, Log.Type)
+		if not Ok then
+			warn(`[Cobalt Plugin Interceptor] Error: {Result}`)
+		elseif Result == false then
+			return true
+		end
+	end
+	return false
+end
+
+function Log:Call(RawInfo)
+	local Success, Data = pcall(function()
+		return self:IsOverSpamThreshold()
+	end)
+
+	if Success and Data then
+		return
+	end
+
+	local Info = DeepClone(RawInfo)
+	Info.CreationTime = tick()
+
+	local PluginManager = wax.shared.CobaltPluginManager
+	if PluginManager and PluginManager.HasInterceptors then
+		-- Run Instance-specific interceptors (both exact type and "All")
+		local InstanceIntercept = PluginManager.Registry.Interceptors.Instance[self.Instance]
+		if InstanceIntercept then
+			if InstanceIntercept[self.Type] and RunInterceptors(InstanceIntercept[self.Type], Info, self) then return end
+			if InstanceIntercept["All"] and RunInterceptors(InstanceIntercept["All"], Info, self) then return end
+		end
+
+		-- Run Global interceptors (both exact type and "All")
+		local GlobalByType = PluginManager.Registry.Interceptors.Global[self.Type]
+		if GlobalByType and RunInterceptors(GlobalByType, Info, self) then return end
+
+		local GlobalAll = PluginManager.Registry.Interceptors.Global["All"]
+		if GlobalAll and RunInterceptors(GlobalAll, Info, self) then return end
+	end
+
+	local Index = #self.Calls + 1
+	self.Calls[Index] = Info
+	if not Info.IsExecutor then
+		table.insert(self.GameCalls, Index)
+	end
+
+	if wax.shared.Communicator then
+		wax.shared.Communicator.Fire(wax.shared.Communicator, self.Instance, self.Type, #self.Calls)
+	end
+end
+
+function Log:Ignore()
+	if wax.shared.ActorCommunicator then
+		pcall(function()
+			wax.shared.ActorCommunicator:Fire("MainIgnore", self.Instance, self.Type)
+		end)
+	end
+
+	self.Ignored = not self.Ignored
+
+	local IgnoredRemoteList = wax.shared.Settings["IgnoredRemotes"]
+	if IgnoredRemoteList then
+		if self.Ignored then
+			IgnoredRemoteList:AddToList(self)
+		else
+			IgnoredRemoteList:RemoveFromList(self)
+		end
+	end
+end
+
+local ClassesConnectionsToggle = {
+	RemoteEvent = "OnClientEvent",
+	UnreliableRemoteEvent = "OnClientEvent",
+	BindableEvent = "Event",
+}
+
+function Log:SetConnectionsEnabled(enabled: boolean)
+	if not self.Instance or not ClassesConnectionsToggle[self.Instance.ClassName] then
+		return
+	end
+
+	local ConnectionName = ClassesConnectionsToggle[self.Instance.ClassName]
+	if self.Type ~= "Incoming" or not ConnectionName then
+		return
+	end
+
+	for _, Connection in pairs(getconnections(self.Instance[ConnectionName])) do
+		if enabled then
+			Connection:Enable()
+		else
+			Connection:Disable()
+		end
+	end
+end
+
+function Log:Block()
+	if wax.shared.ActorCommunicator then
+		pcall(function()
+			wax.shared.ActorCommunicator:Fire("MainBlock", self.Instance, self.Type)
+		end)
+	end
+
+	self.Blocked = not self.Blocked
+	self:SetConnectionsEnabled(not self.Blocked)
+end
+
+function Log:SetButton(Instance, Name, Calls)
+	self.Button = {
+		Instance = Instance,
+		Name = Name,
+		Calls = Calls,
+	}
+end
+
+return Log
+
+end)() end,
+    [29] = function()local wax,script,require=ImportGlobals(29)local ImportGlobals return (function(...)--[[
+
+Pagination Module
+made by deivid and turned into module by upio
+
+]]
+
+local Pagination = {}
+Pagination.__index = Pagination
+
+function Pagination.new(Options: {
+	TotalItems: number,
+	ItemsPerPage: number,
+	CurrentPage: number?,
+	SiblingCount: number?,
+})
+	return setmetatable({
+		TotalItems = Options.TotalItems,
+		ItemsPerPage = Options.ItemsPerPage,
+		CurrentPage = Options.CurrentPage or 1,
+		SiblingCount = Options.SiblingCount or 2,
+	}, Pagination)
+end
+
+function Pagination:GetInfo()
+	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
+
+	return {
+		TotalItems = self.TotalItems,
+		ItemsPerPage = self.ItemsPerPage,
+		CurrentPage = self.CurrentPage,
+		TotalPages = TotalPages,
+	}
+end
+
+function Pagination:SetItemsPerPage(max: number)
+	self.ItemsPerPage = max
+end
+
+function Pagination:GetIndexRanges(Page: number?)
+	Page = Page or self.CurrentPage
+
+	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
+	if TotalPages == 0 then
+		return 1, 0
+	end
+	assert(
+		Page <= TotalPages,
+		"Attempted to get invalid page out of range, got " .. Page .. " but max is " .. TotalPages
+	)
+
+	local Start = (((Page or self.CurrentPage) - 1) * self.ItemsPerPage) + 1
+	local End = Start + (self.ItemsPerPage - 1)
+
+	return Start, End
+end
+
+function Pagination:SetPage(Page: number)
+	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
+	if TotalPages == 0 then
+		self.CurrentPage = 1
+		return
+	end
+	assert(Page <= TotalPages, "Attempted to set page out of range, got " .. Page .. " but max is " .. TotalPages)
+
+	self.CurrentPage = Page
+end
+
+function Pagination:Update(TotalItems: number?, ItemsPerPage: number?)
+	self.TotalItems = TotalItems or self.TotalItems
+	self.ItemsPerPage = ItemsPerPage or self.ItemsPerPage
+end
+
+function Pagination:GetVisualInfo(Page: number?)
+	Page = Page or self.CurrentPage
+
+	local TotalPages = math.ceil(self.TotalItems / self.ItemsPerPage)
+	if TotalPages == 0 then
+		return {}
+	end
+
+	assert(
+		Page <= TotalPages,
+		"Attempted to get invalid page out of range, got " .. Page .. " but max is " .. TotalPages
+	)
+
+	local MaxButtons = 5 + self.SiblingCount * 2
+	local Result = table.create(MaxButtons, "none")
+	if TotalPages <= MaxButtons then
+		for i = 1, TotalPages do
+			Result[i] = i
+		end
+		return Result
+	end
+
+	local LeftSibling = math.max(Page - self.SiblingCount, 1)
+	local RightSibling = math.min(Page + self.SiblingCount, TotalPages)
+
+	local FakeLeft = LeftSibling > 2
+	local FakeRight = RightSibling < TotalPages - 1
+
+	local TotalPageNumbers = math.min(2 * self.SiblingCount + 5, TotalPages)
+	local ItemCount = TotalPageNumbers - 2
+
+	if not FakeLeft and FakeRight then
+		for i = 1, ItemCount do
+			Result[i] = i
+		end
+		Result[ItemCount + 1] = "ellipsis"
+		Result[ItemCount + 2] = TotalPages
+		--return MergeTables(LeftRange, "ellipsis", TotalPages)
+		return Result
+	elseif FakeLeft and not FakeRight then
+		--local RightRange = CreateArray(TotalPages - ItemCount + 1, TotalPages)
+		Result[1] = 1
+		Result[2] = "ellipsis"
+
+		local Index = 3
+		for i = TotalPages - ItemCount + 1, TotalPages do
+			Result[Index] = i
+			Index += 1
+		end
+
+		return Result
+	elseif FakeLeft and FakeRight then
+		--local MiddleRange = CreateArray(LeftSibling, RightSibling)
+		Result[1] = 1
+		Result[2] = "ellipsis"
+		local Index = 3
+
+		for i = LeftSibling, RightSibling do
+			Result[Index] = i
+			Index += 1
+		end
+
+		Result[Index] = "ellipsis"
+		Result[Index + 1] = TotalPages
+
+		return Result
+		--return MergeTables(1, "ellipsis", MiddleRange, "ellipsis", TotalPages)
+	end
+
+	--return CreateArray(1, TotalPages)
+	for i = 1, TotalPages do
+		Result[i] = i
+	end
+	return Result
+end
+
+return Pagination
+
+end)() end,
+    [31] = function()local wax,script,require=ImportGlobals(31)local ImportGlobals return (function(...)local Manager = {
+    Registry = {
+        Plugins = {},
+        Errored = {},
+        Interceptors = {
+            Global = {},
+            Instance = {}
+        },
+        UIHooks = {
+            RemoteInfo = {
+                Tabs = {},
+                Open = {},
+                Intercept = {}
+            },
+            ContextMenus = {
+                RemoteList = {},
+                CallList = {}
+            },
+            Spy = {
+                RemoteList = {},
+                CallList = {},
+            },
+            CodeGen = { Call = {}, Hook = {}, InstancePath = {} },
+        },
+    },
+    HasInterceptors = false,
+    HasCodeGenInterceptors = false,
+    Initialized = false,
+}
+
+local UIUtils = script.Parent.Parent.UI
+local Highlighter = require(UIUtils.Highlighter)
+local Interface = require(UIUtils.Interface)
+local Resize = require(UIUtils.Resize)
+local UIHelper = require(UIUtils.Helper)
+
+local Signals = require(script.Parent.Parent.Signal)
+local CodeGen = require(script.Parent.Parent.CodeGen.Generator)
+
+-- File Helper
+local FileHelperUtil = require(script.Parent.Parent.FileHelper)
+
+local PluginFiles = FileHelperUtil.new("Cobalt/Plugins")
+
+-- Templates
+local TemplatePluginData = {
+    Name = "Untitled Plugin",
+    Description = "No description provided.",
+    Author = "N/A",
+    Version = "0.0.0",
+    Game = "*",
+}
+
+--[[
+    Validates plugin data against a template.
+
+    @param Data: The plugin data to validate.
+    @param Template: The template to validate against.
+    @return: The validated plugin data.
+]]
+local function Validate(Data, Template)
+    local NewData = {}
+    for Key, Value in Template do
+        if Data[Key] == nil or typeof(Data[Key]) ~= typeof(Value) then
+            NewData[Key] = Value
+        else
+            NewData[Key] = Data[Key]
+        end
+    end
+    return NewData
+end
+
+-- Helpers
+--[[
+    Handles a plugin error.
+
+    @param FilePath: The path to the plugin file.
+    @param Error: The error message.
+]]
+local function PluginErrored(FilePath, Error)
+    if #Manager.Registry.Errored == 0 then
+        wax.shared.Sonner.error(`Failed to load plugin: {FilePath}.`)
+    end
+
+    local PluginIndex
+    do
+        for Idx, Plugin in Manager.Registry.Plugins do
+            if Plugin.FilePath ~= FilePath then
+                continue
+            end
+
+            PluginIndex = Idx
+            break
+        end
+    end
+
+    if PluginIndex then
+        local PluginData = table.remove(Manager.Registry.Plugins, PluginIndex)
+        for _, Callback in PluginData.UnloadCallbacks or {} do
+            task.spawn(pcall, Callback)
+        end
+
+        table.insert(Manager.Registry.Errored, {
+            FilePath = PluginData.FilePath,
+            Name = PluginData.Name,
+            Author = PluginData.Author,
+            Version = PluginData.Version,
+            Error = Error,
+        })
+    else
+        table.insert(Manager.Registry.Errored, {
+            FilePath = FilePath,
+            Error = Error,
+        })
+    end
+end
+
+--[[
+    Creates a plugin environment for a plugin.
+
+    @param FilePath: The path to the plugin file.
+    @param PluginCallback: The plugin callback function.
+    @param PluginThread: The plugin thread.
+    @return: The plugin environment.
+]]
+local function CreatePluginEnvironement(FilePath: string, PluginCallback: (...any) -> (...any), PluginThread: thread)
+    -- Setup global Cobalt table
+    local Cobalt = {
+        Sonner = wax.shared.Sonner,
+        UI = { RemoteInfo = {}, ContextMenu = {} },
+        Spy = {},
+        CodeGen = {},
+        ExecutorSupport = wax.shared.ExecutorSupport
+    }
+    
+    -- Settings Proxy
+    Cobalt.Settings = setmetatable({}, {
+        __index = function(_, key)
+            return wax.shared.SaveManager:GetState(key, false)
+        end,
+        __newindex = function(_, key, value)
+            wax.shared.SaveManager:SetState(key, value)
+        end
+    })
+
+    local CurrentPluginData = nil
+    local CurrentPluginSettings = nil
+    --[[
+        Binds a callback to fire when this plugin is unloaded.
+
+        @param Callback: The function to call on unload.
+    ]]
+    function Cobalt:BindToUnload(Callback: () -> ())
+        for _, Plugin in Manager.Registry.Plugins do
+            if Plugin.PluginData == CurrentPluginData then
+                table.insert(Plugin.UnloadCallbacks, Callback)
+                return
+            end
+        end
+    end
+
+    -- UI Functions
+    --[[
+        Gets the currently selected remote instance in the UI.
+
+        @return: The selected remote instance and its type.
+    ]]
+    function Cobalt.UI:GetSelectedRemote()
+        local Log = wax.shared.GetCurrentLog()
+        return Log and Log.Instance or nil, Log and Log.Type or nil
+    end
+
+    --[[
+        Creates a custom blank modal.
+
+        @param Title: The title of the modal.
+        @param Icon: The icon of the modal (Lucide icon).
+        @return: The modal interface with Open(), Close(), OnClose() and the Content Frame.
+    ]]
+    function Cobalt.UI:CreateModal(Title: string, Icon: string)
+        local ModalFrame = Interface.New("TextButton", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.new(0.65, 0, 0, 285),
+            Text = "",
+            Visible = false,
+            Parent = wax.shared.ModalBackground,
+
+            ["UICorner"] = {
+                CornerRadius = UDim.new(0, 8),
+            },
+
+            ["UIStroke"] = {
+                ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                Color = Color3.fromRGB(25, 25, 25),
+                Thickness = 1,
+            },
+        })
+
+        Resize.new({
+            MainFrame = ModalFrame,
+
+            MaximumSize = UDim2.new(1, -2, 1, -2),
+            MinimumSize = UDim2.fromScale(0.65, 0.712),
+            Mirrored = true,
+            LockedPosition = true,
+
+            CornerHandleSize = 20,
+            HandleSize = 6,
+        })
+
+        wax.shared.CreateModalTop(Title, Icon, ModalFrame)
+
+        local ContentFrame = Interface.New("ScrollingFrame", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0, 1),
+            Size = UDim2.new(1, 0, 1, -37),
+            AutomaticCanvasSize = Enum.AutomaticSize.XY,
+            CanvasSize = UDim2.fromScale(0, 0),
+            ScrollBarThickness = 0,
+            HorizontalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            Parent = ModalFrame,
+        })
+
+        local OnCloseEvent = Signals:New()
+        local ClosedByInternal = false
+
+        ModalFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+            if not ModalFrame.Visible and not ClosedByInternal then
+                OnCloseEvent:Fire()
+            end
+            ClosedByInternal = false
+        end)
+
+        local TabsState = {
+            Container = nil,
+            Scroller = nil,
+            FooterContainer = nil,
+            CurrentTab = nil,
+            Buttons = {},
+            Contents = {}
+        }
+
+        local ModalInterface = {
+            Container = ContentFrame,
+            Open = function()
+                wax.shared.OpenModal(ModalFrame)
+            end,
+            Close = function()
+                ClosedByInternal = true
+                wax.shared.CloseModal()
+                OnCloseEvent:Fire()
+            end,
+            OnClose = OnCloseEvent
+        }
+
+        function ModalInterface:SelectTab(TabName: string)
+            if not TabsState.Buttons[TabName] then return end
+            
+            for _, Button in pairs(TabsState.Buttons) do
+                Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                Button.Mask.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            end
+            for _, Content in pairs(TabsState.Contents) do
+                Content.Visible = false
+            end
+            
+            TabsState.Buttons[TabName].BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+            TabsState.Buttons[TabName].Mask.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+            TabsState.Contents[TabName].Visible = true
+            TabsState.CurrentTab = TabName
+        end
+
+        function ModalInterface:AddTab(TabName: string, Icon: string)
+            if not TabsState.Container then
+                ContentFrame.Visible = false
+                
+                TabsState.Scroller = Interface.New("ScrollingFrame", {
+                    BackgroundTransparency = 1,
+                    Position = UDim2.new(0, 4, 0, 44),
+                    Size = UDim2.new(1, -10, 0, 36),
+                    CanvasSize = UDim2.fromScale(0, 0),
+                    AutomaticCanvasSize = Enum.AutomaticSize.X,
+                    ScrollBarThickness = 0,
+                    ScrollingDirection = Enum.ScrollingDirection.X,
+                    ClipsDescendants = false,
+                    Parent = ModalFrame,
+                })
+                
+                TabsState.Container = Interface.New("Frame", {
+                    BackgroundTransparency = 1,
+                    AutomaticSize = Enum.AutomaticSize.X,
+                    Size = UDim2.fromScale(0, 1),
+                    Parent = TabsState.Scroller,
+        
+                    ["UIListLayout"] = {
+                        Padding = UDim.new(0, 6),
+                        FillDirection = Enum.FillDirection.Horizontal,
+                        VerticalAlignment = Enum.VerticalAlignment.Top,
+                    },
+        
+                    ["UIPadding"] = {
+                        PaddingRight = UDim.new(0, 20),
+                        PaddingTop = UDim.new(0, 2),
+                        PaddingLeft = UDim.new(0, 2),
+                    },
+                })
+            end
+            
+            local TabUI, TabContent = wax.shared.CreateTabContent()
+            
+            if TabsState.FooterContainer then
+                TabUI.Size = UDim2.new(1, -12, 1, -118)
+            else
+                TabUI.Size = UDim2.new(1, -12, 1, -79)
+            end
+            
+            TabUI.Parent = ModalFrame
+            TabUI.Visible = false
+            
+            local TextWrapper = Interface.New("Frame", {
+                BackgroundTransparency = 1,
+                AutomaticSize = Enum.AutomaticSize.X,
+                Size = UDim2.fromOffset(0, 24),
+                ZIndex = 2,
+    
+                ["UIListLayout"] = {
+                    FillDirection = Enum.FillDirection.Horizontal,
+                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                    VerticalAlignment = Enum.VerticalAlignment.Center,
+                    Padding = UDim.new(0, 5),
+                },
+    
+                ["UIPadding"] = {
+                    PaddingRight = UDim.new(0, 8),
+                    PaddingLeft = UDim.new(0, 8),
+                },
+    
+                ["TextLabel"] = {
+                    Text = TabName,
+                    TextSize = 15,
+                    Size = UDim2.fromScale(0, 1),
+                    AutomaticSize = Enum.AutomaticSize.X,
+                    LayoutOrder = 2,
+                    ZIndex = 2,
+                },
+            })
+    
+            Interface.NewIcon(Icon, {
+                Position = UDim2.fromOffset(8, 5),
+                Size = UDim2.fromOffset(16, 16),
+                LayoutOrder = 1,
+                ZIndex = 2,
+                Parent = TextWrapper,
+            })
+            
+            local ButtonColor = TabsState.CurrentTab == TabName and Color3.fromRGB(25, 25, 25) or Color3.fromRGB(0, 0, 0)
+            local TabButton = Interface.New("TextButton", {
+                BackgroundColor3 = ButtonColor,
+                Size = UDim2.fromScale(0, 1),
+                AutomaticSize = Enum.AutomaticSize.X,
+                Text = "",
+                Parent = TabsState.Container,
+    
+                ["UICorner"] = {
+                    CornerRadius = UDim.new(0, 8),
+                },
+    
+                ["UIStroke"] = {
+                    Color = Color3.fromRGB(25, 25, 25),
+                    Thickness = 1,
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                },
+    
+                ["Frame"] = {
+                    AnchorPoint = Vector2.new(0, 1),
+                    Position = UDim2.fromScale(0, 1),
+                    Size = UDim2.fromScale(1, 0.6),
+                    BackgroundColor3 = ButtonColor,
+                    BorderSizePixel = 0,
+                },
+                
+                TextWrapper
+            })
+            
+            TabsState.Buttons[TabName] = TabButton
+            TabsState.Contents[TabName] = TabUI
+            
+            TabButton.MouseButton1Click:Connect(function()
+                ModalInterface:SelectTab(TabName)
+            end)
+            
+            if not TabsState.CurrentTab then
+                ModalInterface:SelectTab(TabName)
+            end
+            
+            return TabContent
+        end
+
+        function ModalInterface:AddFooterButton(Icon: string, Title: string, Options: {})
+            if not TabsState.FooterContainer then
+                TabsState.FooterContainer = Interface.New("Frame", {
+                    AnchorPoint = Vector2.new(0, 1),
+                    BackgroundTransparency = 1,
+                    Position = UDim2.new(0, 6, 1, -7),
+                    Size = UDim2.new(1, -12, 0, 32),
+                    Parent = ModalFrame,
+                
+                    ["UIListLayout"] = {
+                        FillDirection = Enum.FillDirection.Horizontal,
+                        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+                        Padding = UDim.new(0, 6),
+                    },
+                })
+                
+                ContentFrame.Size = UDim2.new(1, 0, 1, -69) 
+                for _, Content in pairs(TabsState.Contents) do
+                    Content.Size = UDim2.new(1, -12, 1, -118)
+                end
+            end
+
+            local Button = wax.shared.CreateInfoDropdownButton(Icon, Title, Options)
+            Button.Parent = TabsState.FooterContainer
+            
+            return Button
+        end
+
+        return ModalInterface
+    end
+
+    --[[
+        Creates a plugin settings tab, (visible after clicking a plugin in the plugins list)
+
+        @return: The plugin settings tab.
+    ]]
+    function Cobalt.UI:CreatePluginSettings()
+        if not CurrentPluginSettings then
+            CurrentPluginSettings = wax.shared.PluginSettings:CreateSection(CurrentPluginData.Name, `PluginSettings-{CurrentPluginData.Name}-`)
+        end
+
+        return CurrentPluginSettings
+    end
+    
+    --[[
+        Creates a remote info tab, (visible after clicking a remote)
+
+        @param TabName: The name of the tab.
+        @param Icon: The icon of the tab.
+        @return: The tab content and tab UI.
+    ]]
+    function Cobalt.UI.RemoteInfo:CreateTab(TabName: string, Icon: string)
+        local TabUI, TabContent = wax.shared.CreateTabContent()
+        wax.shared.CreateRemoteInfoTab(Icon, TabName, TabUI)
+        
+        return TabContent, TabUI
+    end
+
+    --[[
+        Disables the default footer buttons for a specific Remote Info tab.
+
+        @param TabName: The name of the tab to disable default buttons for.
+    ]]
+    function Cobalt.UI.RemoteInfo:DisableDefaultButtons(TabName: string)
+        local TabRegistry = Manager.Registry.UIHooks.RemoteInfo.Tabs[TabName]
+        		if not TabRegistry then
+			Manager.Registry.UIHooks.RemoteInfo.Tabs[TabName] = { DisableDefaults = true, Buttons = {} }
+		else
+			TabRegistry.DisableDefaults = true
+		end
+		
+		if Cobalt.UI.RemoteInfo.UpdateFooterButtons then
+			Cobalt.UI.RemoteInfo.UpdateFooterButtons()
+		end
+	end
+
+    --[[
+		Empty function that gets hooked by Window.luau.
+		When called, it forces the RemoteInfo footer buttons to update.
+	]]
+	function Cobalt.UI.RemoteInfo.UpdateFooterButtons()
+		-- Hooked by Window.luau
+	end
+
+	--[[
+		Adds a custom footer button to a specific Remote Info tab.
+
+		@param TabName: The name of the tab to add the button to.
+		@param Icon: The icon of the button (Lucide icon name).
+		@param Title: The title text of the button.
+		@param Options: The dropdown menu options for the button.
+		@return: A function to remove the button.
+	]]
+	function Cobalt.UI.RemoteInfo:AddFooterButton(TabName: string, Icon: string, Title: string, Options: {})
+		local TabRegistry = Manager.Registry.UIHooks.RemoteInfo.Tabs[TabName]
+		if not TabRegistry then
+			TabRegistry = { DisableDefaults = false, Buttons = {} }
+			Manager.Registry.UIHooks.RemoteInfo.Tabs[TabName] = TabRegistry
+		end
+
+		local ButtonDefinition: { [any]: any } = {
+			Icon = Icon,
+			Title = Title,
+			Options = Options
+		}
+
+		table.insert(TabRegistry.Buttons, ButtonDefinition)
+		
+		if Cobalt.UI.RemoteInfo.UpdateFooterButtons then
+			Cobalt.UI.RemoteInfo.UpdateFooterButtons()
+		end
+
+		return function()
+			local Index = table.find(TabRegistry.Buttons, ButtonDefinition)
+			if Index then
+				table.remove(TabRegistry.Buttons, Index)
+				
+				if ButtonDefinition.Instance then
+					ButtonDefinition.Instance.Parent = nil
+				end
+				
+				if Cobalt.UI.RemoteInfo.UpdateFooterButtons then
+					Cobalt.UI.RemoteInfo.UpdateFooterButtons()
+				end
+			end
+		end
+	end
+    
+    --[[
+        Binds a function to be called when a remote is opened in the remote info tab.
+
+        @param Callback: The function to be called.
+        @return: A function to remove the binded callback.
+    ]]
+    function Cobalt.UI.RemoteInfo:BindToModalOpen(Callback: (CallInfo: CodeGen.CallInfo) -> (...any))
+        table.insert(Manager.Registry.UIHooks.RemoteInfo.Open, Callback)
+
+        return function()
+            local Index = table.find(Manager.Registry.UIHooks.RemoteInfo.Open, Callback)
+            if Index then
+                table.remove(Manager.Registry.UIHooks.RemoteInfo.Open, Index)
+            end
+        end
+    end
+
+    --[[
+        Adds an interceptor to conditionally prevent a remote info modal from opening.
+        The callback should return `false` to block the modal from opening, or `true`/`nil` to allow it.
+
+        @param Callback: The function to be called before opening the modal.
+        @return: A function to remove the added interceptor.
+    ]]
+    function Cobalt.UI.RemoteInfo:InterceptModalOpen(Callback: (CallInfo: CodeGen.CallInfo) -> (boolean?))
+        table.insert(Manager.Registry.UIHooks.RemoteInfo.Intercept, Callback)
+
+        return function()
+            local Index = table.find(Manager.Registry.UIHooks.RemoteInfo.Intercept, Callback)
+            if Index then
+                table.remove(Manager.Registry.UIHooks.RemoteInfo.Intercept, Index)
+            end
+        end
+    end
+
+    --[[
+        Adds a custom context menu option to specific elements of the UI.
+        
+        @param MenuType: "RemoteList" | "CallList"
+        @param Icon: The Lucide icon string
+        @param Title: The string title
+        @param Callback: The function to run when clicked. Passes either Log or CallInfo depending on MenuType.
+        @return: A function that removes the registered option when called.
+    ]]
+    function Cobalt.UI.ContextMenu:AddOption(MenuType: "RemoteList" | "CallList", Icon: string, Title: string, Callback: (InteractionData: any) -> ())
+        if not Manager.Registry.UIHooks.ContextMenus[MenuType] then
+            warn(`[Cobalt] Invalid MenuType provided to ContextMenu:AddOption. Expected RemoteList | CallList, got {tostring(MenuType)}`)
+            return function() end
+        end
+
+        local OptionDefinition = {
+            Icon = Icon,
+            Text = Title,
+            Callback = Callback
+        }
+
+        table.insert(Manager.Registry.UIHooks.ContextMenus[MenuType], OptionDefinition)
+
+        return function()
+            local Index = table.find(Manager.Registry.UIHooks.ContextMenus[MenuType], OptionDefinition)
+            if Index then
+                table.remove(Manager.Registry.UIHooks.ContextMenus[MenuType], Index)
+            end
+        end
+    end
+
+    --[[
+        Uses cobalt's built-in syntax highlighter to colorize Luau code in RichText.
+
+        @param code: The Luau code to colorize.
+        @return: The colorized Luau code.
+    ]]
+    function Cobalt.UI.ColorizeLuauCode(code: string)
+        return Highlighter.Run(code)
+    end
+
+    -- Merge Interface functions
+    for Idx, Value in Interface do
+        Cobalt.UI[Idx] = Value
+    end
+
+    -- Spy Functions
+    type InterceptorFunction = (Info: CodeGen.CallInfo, Instance: Instance, Type: "Incoming" | "Outgoing") -> (...any)
+    --[[
+        Intercepts executed calls.
+
+        @param Type: The type of calls to intercept.
+        @param Data: The data to intercept.
+        @return: A function to remove the interceptor.
+    ]]
+    function Cobalt.Spy:InterceptExecutedCalls(Type: "Incoming" | "Outgoing" | "All", Data: {
+        Callback: InterceptorFunction,
+        Instance: Instance | nil,
+    } | InterceptorFunction)
+        Manager.HasInterceptors = true
+
+        local Options = typeof(Data) == "table" and setmetatable(Data, { __mode = "v" }) or setmetatable({
+            Callback = Data,
+            Instance = nil,
+        }, { __mode = "v" })
+
+        local IsInstanceSpecific = Options.Instance ~= nil
+        
+        if IsInstanceSpecific then
+            -- Ensure Instance specific
+            local InstanceInterceptors = Manager.Registry.Interceptors.Instance[Options.Instance]
+            if not InstanceInterceptors then
+                Manager.Registry.Interceptors.Instance[Options.Instance] = {}
+                InstanceInterceptors = Manager.Registry.Interceptors.Instance[Options.Instance]
+            end
+
+            -- Ensure Direction specific (Incoming, Outgoing, All)
+            if not InstanceInterceptors[Type] then
+                InstanceInterceptors[Type] = {}
+            end
+
+            table.insert(InstanceInterceptors[Type], Options.Callback)
+        else
+            -- Ensure Global Direction specific (Incoming, Outgoing, All)
+            local GlobalInterceptors = Manager.Registry.Interceptors.Global[Type]
+            if not GlobalInterceptors then
+                Manager.Registry.Interceptors.Global[Type] = {}
+                GlobalInterceptors = Manager.Registry.Interceptors.Global[Type]
+            end
+
+            table.insert(GlobalInterceptors, Options.Callback)
+        end
+
+        -- Cleanup function
+        return function()
+            if IsInstanceSpecific then
+                if not Options.Instance then
+                    return
+                end
+
+                local InstanceInterceptors = Manager.Registry.Interceptors.Instance[Options.Instance]
+                if not InstanceInterceptors then
+                    return
+                end
+
+                local Interceptors = InstanceInterceptors[Type]
+                if not Interceptors then
+                    return
+                end
+
+                local Index = table.find(Interceptors, Options.Callback)
+                if Index then
+                    table.remove(Interceptors, Index)
+                end
+            else
+                local GlobalInterceptors = Manager.Registry.Interceptors.Global[Type]
+                if not GlobalInterceptors then
+                    return
+                end
+
+                local Index = table.find(GlobalInterceptors, Options.Callback)
+                if Index then
+                    table.remove(GlobalInterceptors, Index)
+                end
+            end
+        end
+    end
+
+    --[[
+        Clears the tracked logs, optionally filtering by instance or type.
+
+        @param Instance: The optional instance to clear logs for.
+        @param Type: The optional type to clear logs for (Incoming, Outgoing, All).
+    ]]
+    function Cobalt.Spy:ClearLogs(Instance: Instance?, Type: string?)
+        wax.shared.ClearLogs(Instance, if Type == "All" then nil else Type)
+    end
+
+    --[[
+        Appends mock execution data or external logs into the tracking system.
+
+        @param Instance: The remote instance to append the log to.
+        @param Type: The type of log (Incoming, Outgoing).
+        @param Data: The execution data table payload.
+    ]]
+    function Cobalt.Spy:AppendLog(Instance: Instance, Type: "Incoming" | "Outgoing", Data: {})
+        local Method = wax.shared.FunctionForClasses[Type][Instance.ClassName]
+        local Log = wax.shared.Logs[Type][Instance] or wax.shared.NewLog(Instance, Type, Method, nil)
+
+        if Log.Blocked or Log.Ignored then
+            return
+        end
+
+        Log:Call(Data)
+        wax.shared.Communicator:Fire(Instance, Type, #Log.Calls)
+    end
+
+    --[[
+        Gets the log for a specific instance and type.
+
+        @param instance: The instance to get the log for.
+        @param type: The type of log to get.
+        @return: The log for the specific instance and type.
+    ]]
+    function Cobalt:GetLog(instance: Instance, type: "Incoming" | "Outgoing")
+        return wax.shared.Logs[type][instance]
+    end
+
+    --[[
+        Intercepts code generation.
+
+        @param Type: The type of code generation to intercept.
+        @param Callback: The callback to execute when code generation is intercepted. If callback returns a string, it will be used as the generated code instead of the default generated code. If callback returns nil, the default generated code will be used.
+        @return: A function to remove the interceptor.
+    ]]
+    function Cobalt.CodeGen:InterceptGeneration(Type: "Call" | "Hook" | "InstancePath", Callback: (Info: any, ...any) -> (...any))
+        Manager.HasCodeGenInterceptors = true
+        
+        local Interceptors = Manager.Registry.UIHooks.CodeGen[Type]
+        assert(Interceptors, "Invalid Code Generation Type")
+
+        table.insert(Interceptors, Callback)
+
+        return function()
+            local Index = table.find(Interceptors, Callback)
+            if Index then
+                table.remove(Interceptors, Index)
+            end
+        end
+    end
+
+    --[[
+        Serializes data to a string.
+
+        @param data: The data to serialize.
+        @param options: The options to use for serialization.
+        @return: The serialized data.
+    ]]
+    function Cobalt.CodeGen.Serialize(data, options)
+        if typeof(data) == "table" then
+            return wax.shared.LuaEncode(data, options)
+        elseif typeof(data) == "Instance" then
+            return CodeGen.GetFullPath(data, options)
+        end
+
+        return UIHelper.QuickSerializeArgument(data)      
+    end
+
+    --[[
+        Indents code.
+
+        @param str: The code to indent.
+        @param indent: The amount of indentation to add.
+        @return: The indented code.
+    ]]
+    function Cobalt.CodeGen.Indent(str: string, indent: number)
+        return CodeGen:IndentCode(str, indent)
+    end
+
+    -- Handle Cobalt.PluginData assignment
+    setmetatable(Cobalt, {
+        __newindex = function(_, Key, Value)
+            --[[
+            Example:
+
+            ```lua
+            Cobalt.PluginData = {
+		        Name = "ByteNet",
+		        Description = "Adds ByteNet support to Cobalt.",
+                Author = "upio",
+                Version = "1.0.0",
+		        Game = "*" -- Can be place id string or table of place ids
+	        }
+            ```
+
+            Case insensitive to allow camelCase and PascalCase
+            ]]
+            if Key:lower() == "plugindata" then
+                local PluginData = Validate(Value, TemplatePluginData)
+                local IsSupported = true
+                
+                -- Check if plugin is supported in this game
+                if type(PluginData.Game) == "string" then
+                    if PluginData.Game ~= "*" and tostring(game.PlaceId) ~= PluginData.Game and tostring(game.GameId) ~= PluginData.Game then
+                        IsSupported = false
+                    end
+                elseif type(PluginData.Game) == "number" then
+                    if game.PlaceId ~= PluginData.Game and game.GameId ~= PluginData.Game then
+                        IsSupported = false
+                    end
+                elseif type(PluginData.Game) == "table" then
+                    local Match = false
+                    for _, id in pairs(PluginData.Game) do
+                        if tostring(game.PlaceId) == tostring(id) or tostring(game.GameId) == tostring(id) then
+                            Match = true
+                            break
+                        end
+                    end
+                    if not Match then IsSupported = false end
+                end
+
+                if not IsSupported then
+                    PluginErrored(FilePath, "Plugin is not supported in this game.")
+                    
+                    -- Cancel Plugin Thread
+                    if coroutine.status(PluginThread) ~= "dead" then
+                        pcall(task.cancel, PluginThread)
+                    end
+                    return
+                end
+
+                -- Register Plugin
+                table.insert(Manager.Registry.Plugins, {
+                    FilePath = FilePath,
+                    PluginData = PluginData,
+                    PluginThread = PluginThread,
+                    UnloadCallbacks = {},
+                })
+
+                CurrentPluginData = PluginData
+                return
+            end
+
+            return rawset(Cobalt, Key, Value)
+        end,
+    })
+    
+    return setmetatable({ Cobalt = Cobalt }, {
+        __index = getfenv(PluginCallback)
+    })
+end
+
+--[[
+    Sets up all plugins.
+]]
+function Manager.SetupPlugins()
+	for _, FilePath in PluginFiles:ListFiles() do
+        -- Load Plugin
+		local Plugin, CompileError = loadstring(
+            PluginFiles:ReadFile(FilePath),
+            `CobaltPlugin-{PluginFiles:GetFileName(FilePath)}`
+        )
+		if CompileError then
+            PluginErrored(FilePath, CompileError)
+			continue
+		end
+
+        -- Register Plugin
+        local PluginThread = task.spawn(function()
+            coroutine.yield()
+
+            local Success, Error = pcall(Plugin)
+            if not Success then
+                PluginErrored(FilePath, Error)
+            end
+        end)
+
+        -- Set Plugin Environement
+        setfenv(Plugin, CreatePluginEnvironement(FilePath, Plugin, PluginThread))
+
+        -- Start Plugin
+        coroutine.resume(PluginThread)
+	end
+
+    Manager.Initialized = true
+end
+
+return Manager
+end)() end,
+    [32] = function()local wax,script,require=ImportGlobals(32)local ImportGlobals return (function(...)local FileHelperUtil = require(script.Parent.FileHelper)
+
+local SaveManager = {
+	State = {},
+}
+
+local FileHelper = FileHelperUtil.new("Cobalt")
+FileHelper:EnsureFile("Settings.json", "{}")
+
+local Success, Error = pcall(function()
+	SaveManager.State = wax.shared.HttpService:JSONDecode(FileHelper:ReadFile("Settings.json"))
+end)
+
+if not Success then
+	warn("Failed to load settings: " .. Error)
+end
+
+function SaveManager:SetState(Idx, Value)
+	SaveManager.State[Idx] = Value
+	pcall(FileHelper.WriteFile, FileHelper, "Settings.json", wax.shared.HttpService:JSONEncode(SaveManager.State))
+end
+
+function SaveManager:GetState(Idx, Default)
+	if SaveManager.State[Idx] ~= nil then
+		return SaveManager.State[Idx]
+	end
+
+	return Default
+end
+
+return SaveManager
+
+end)() end,
+    [34] = function()local wax,script,require=ImportGlobals(34)local ImportGlobals return (function(...)-- LuaEncode - Fast table serialization library for pure Luau/Lua 5.1+
 -- MIT License | Copyright (c) 2022-2025 Chad Hyatt <chad@hyatt.page>
 -- https://github.com/chadhyatt/LuaEncode
 
@@ -9423,174 +5136,6132 @@ end
 
 return LuaEncode
 end)() end,
-    [27] = function()local wax,script,require=ImportGlobals(27)local ImportGlobals return (function(...)local Log = {}
-Log.__index = Log
-
---// Auto Ignore Constants \\--
-local SpamCallCountThreshold = 15
-local SpamTimeWindowSeconds = 1
-
-function Log.new(Instance, Type, Method, Index, CallingScript)
-	local NewLog = setmetatable({
-		Instance = Instance,
-		Type = Type,
-		Method = Method,
-		Index = Index,
-		Calls = {},
-		GameCalls = {},
-		SpamHistory = {},
-		Ignored = false,
-		Blocked = false,
-		Button = nil,
-	}, Log)
-
-	return NewLog
-end
-
-function DeepClone(orig, copies)
-	copies = copies or {}
-
-	if typeof(orig) == "Instance" then
-		return cloneref(orig)
-	elseif typeof(orig) == "userdata" then
-		if getmetatable(orig) then
-			return newproxy(true)
-		else
-			return newproxy()
-		end
-	elseif typeof(orig) == "function" then
-		if clonefunction then
-			return clonefunction(orig)
-		end
-
-		return orig
-	elseif type(orig) ~= "table" then
-		return orig
-	elseif copies[orig] then
-		return copies[orig]
-	end
-
-	local copy = {}
-	copies[orig] = copy
-	for k, v in next, orig do
-		copy[DeepClone(k, copies)] = DeepClone(v, copies)
-	end
-	return copy
-end
-
-function Log:IsOverSpamThreshold()
-	if not wax.shared.SaveManager:GetState("AutoIgnoreSpammyEvents", false) then
-		return false
-	end
-
-	local Now = tick()
-	table.insert(self.SpamHistory, Now)
-
-	for i = #self.SpamHistory, 1, -1 do
-		if Now - self.SpamHistory[i] > SpamTimeWindowSeconds then
-			table.remove(self.SpamHistory, i)
-		end
-	end
-
-	if #self.SpamHistory > SpamCallCountThreshold then
-		if not self.Ignored then
-			self:Ignore()
-			wax.shared.Sonner.info(`Ignored {self.Instance.Name} ({self.Type}) due to event spam.`)
-		end
-		
-		return true
-	end
-
-	return false
-end
-
-function Log:Call(RawInfo)
-	local Success, Data = pcall(function()
-		return self:IsOverSpamThreshold()
-	end)
-
-	if Success and Data then
-		return
-	end
-
-	local Info = DeepClone(RawInfo)
-	Info.CreationTime = tick()
-
-	local Index = #self.Calls + 1
-	self.Calls[Index] = Info
-	if not Info.IsExecutor then
-		table.insert(self.GameCalls, Index)
-	end
-
-	if wax.shared.Communicator then
-		wax.shared.Communicator.Fire(wax.shared.Communicator, self.Instance, self.Type, #self.Calls)
-	end
-end
-
-function Log:Ignore()
-	if wax.shared.ActorCommunicator then
-		pcall(function()
-			wax.shared.ActorCommunicator:Fire("MainIgnore", self.Instance, self.Type)
-		end)
-	end
-
-	self.Ignored = not self.Ignored
-
-	local IgnoredRemoteList = wax.shared.Settings["IgnoredRemotes"]
-	if IgnoredRemoteList then
-		if self.Ignored then
-			IgnoredRemoteList:AddToList(self)
-		else
-			IgnoredRemoteList:RemoveFromList(self)
-		end
-	end
-end
-
-local ClassesConnectionsToggle = {
-	RemoteEvent = "OnClientEvent",
-	UnreliableRemoteEvent = "OnClientEvent",
-	BindableEvent = "Event",
+    [38] = function()local wax,script,require=ImportGlobals(38)local ImportGlobals return (function(...)local AssetManager = {
+	FallbackMapping = {
+		Logo = "rbxassetid://91685317120520",
+	},
+	SessionLoadedFonts = {},
 }
 
-function Log:SetConnectionsEnabled(enabled: boolean)
-	if not self.Instance or not ClassesConnectionsToggle[self.Instance.ClassName] then
+if not isfolder("Cobalt/Assets") then
+	makefolder("Cobalt/Assets")
+end
+
+function SafeFetchCustomContentID(Path: string)
+	local Success, Result = pcall(function()
+		return getcustomasset(Path)
+	end)
+
+	return Success and Result or nil
+end
+
+function SafeFetchCustomImgData(url)
+	local Success, Response = pcall(request, {
+		Url = url,
+		Method = "GET",
+	})
+
+	if Success and Response.Success or Response.StatusCode >= 200 and Response.StatusCode < 300 then
+		return Response.Body
+	end
+
+	return nil
+end
+
+function AssetManager.GetRemoteImages(Images: { [string]: string })
+	if not getcustomasset then
+		return Images
+	end
+
+	local NewImages = {}
+	for ClassName, Image in Images do
+		if isfile(`Cobalt/Assets/{ClassName}.png`) then
+			NewImages[ClassName] = SafeFetchCustomContentID(`Cobalt/Assets/{ClassName}.png`) or Image
+			continue
+		end
+
+		local IconRawData = SafeFetchCustomImgData(`https://robloxapi.github.io/ref/icons/dark/{ClassName}.png`)
+		if not IconRawData then
+			NewImages[ClassName] = Image
+			continue
+		end
+
+		writefile(
+			`Cobalt/Assets/{ClassName}.png`,
+			IconRawData
+		)
+
+		NewImages[ClassName] = SafeFetchCustomContentID(`Cobalt/Assets/{ClassName}.png`) or Image
+	end
+
+	return NewImages
+end
+
+function AssetManager.GetImage(Image: string)
+	if not getcustomasset then
+		return AssetManager.FallbackMapping[Image] or Image
+	end
+
+	if isfile(`Cobalt/Assets/{Image}.png`) then
+		return SafeFetchCustomContentID(`Cobalt/Assets/{Image}.png`) or AssetManager.FallbackMapping[Image] or Image
+	end
+
+	local IconRawData = SafeFetchCustomImgData(`https://raw.githubusercontent.com/notpoiu/cobalt/refs/heads/main/Assets/{Image}.png`)
+
+	if not IconRawData then
+		return AssetManager.FallbackMapping[Image] or Image
+	end
+
+	writefile(`Cobalt/Assets/{Image}.png`, IconRawData)
+	return SafeFetchCustomContentID(`Cobalt/Assets/{Image}.png`) or AssetManager.FallbackMapping[Image] or Image
+end
+
+function AssetManager.GetCustomFont(FontData: {
+	Name: string,
+	Url: string,
+
+	FallbackId: number,
+})
+	if not getcustomasset then
+		return FontData.FallbackId
+	end
+
+	local TTFPath = `Cobalt/Assets/{FontData.Name}.ttf`
+	if not isfile(TTFPath) then
+		local FontRawData = SafeFetchCustomImgData(FontData.Url)
+		if not FontRawData then return Font.fromId(FontData.FallbackId) end
+
+		writefile(TTFPath, FontRawData)
+	end
+
+	if not AssetManager.SessionLoadedFonts[FontData.Name] then
+		writefile(`Cobalt/Assets/{FontData.Name}.font`, wax.shared.HttpService:JSONEncode({
+			name = FontData.Name,
+			faces = {
+				{
+					name = "Regular",
+					weight = 400,
+					style = "normal",
+					assetId = SafeFetchCustomContentID(TTFPath) or FontData.FallbackId
+				}
+			}
+		}))
+
+		AssetManager.SessionLoadedFonts[FontData.Name] = true
+	end
+
+	local CustomFontId = SafeFetchCustomContentID(`Cobalt/Assets/{FontData.Name}.font`)
+	if CustomFontId then
+		return Font.new(CustomFontId)
+	end
+
+	return Font.fromId(FontData.FallbackId)
+end
+
+return AssetManager
+
+end)() end,
+    [39] = function()local wax,script,require=ImportGlobals(39)local ImportGlobals return (function(...)local Drag = {
+	Dragging = false,
+	Frame = nil,
+	FramePosition = nil,
+	FrameSize = nil, -- Added to store initial frame size
+	StartPosition = nil,
+	ChangedConnection = nil,
+	Callback = nil,
+}
+
+local Helper = require(script.Parent.Helper)
+
+local function DefaultCallback(_, Input: InputObject)
+	local Delta = Input.Position - Drag.StartPosition
+	local FramePosition: UDim2 = Drag.FramePosition
+
+	if wax.shared.GetDPIScale then
+		Delta = Delta / wax.shared.GetDPIScale()
+	end
+
+	Drag.Frame.Position = UDim2.new(
+		FramePosition.X.Scale,
+		FramePosition.X.Offset + Delta.X,
+		FramePosition.Y.Scale,
+		FramePosition.Y.Offset + Delta.Y
+	)
+end
+
+function Drag.Setup(Frame: GuiObject, DragFrame: GuiObject, Callback: (Info: {}, Input: InputObject) -> () | nil)
+	Callback = Callback or DefaultCallback
+
+	DragFrame.InputBegan:Connect(function(Input: InputObject)
+		if not Helper.IsClickInput(Input) then
+			return
+		end
+
+		Drag.Dragging = true
+		Drag.Frame = Frame
+		Drag.FramePosition = Frame.Position
+		Drag.StartPosition = Input.Position
+		Drag.FrameSize = Frame.Size
+		Drag.Callback = Callback
+
+		Drag.ChangedConnection = Input.Changed:Connect(function()
+			if Input.UserInputState ~= Enum.UserInputState.End then
+				return
+			end
+
+			Drag.Dragging = false
+			Drag.Frame = nil
+			Drag.Callback = nil
+
+			if Drag.ChangedConnection and Drag.ChangedConnection.Connected then
+				Drag.ChangedConnection:Disconnect()
+				Drag.ChangedConnection = nil
+			end
+		end)
+	end)
+end
+
+wax.shared.Connect(wax.shared.UserInputService.InputChanged:Connect(function(Input: InputObject)
+	if Drag.Dragging and Drag.Callback and Helper.IsMoveInput(Input) then
+		Drag.Callback(Drag, Input)
+	end
+end))
+
+return Drag
+
+end)() end,
+    [37] = function()local wax,script,require=ImportGlobals(37)local ImportGlobals return (function(...)local Animations = {
+	TweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Exponential),
+	Exclusions = {},
+	Expectations = { In = {}, Out = {} },
+}
+
+local function GetTransparencyProperty(object)
+	if table.find(Animations.Exclusions, object) then
+		return nil
+	end
+
+	if object:IsA("TextButton") or object:IsA("TextLabel") or object:IsA("TextBox") then
+		return { "TextTransparency" }
+	elseif object:IsA("CanvasGroup") then
+		return { "GroupTransparency" }
+	elseif object:IsA("Frame") then
+		return { "BackgroundTransparency" }
+	elseif object:IsA("ScrollingFrame") then
+		return { "ScrollBarImageTransparency" }
+	elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
+		return { "ImageTransparency", "BackgroundTransparency" }
+	elseif object:IsA("UIStroke") then
+		return { "Transparency" }
+	end
+
+	return nil
+end
+
+local function BuildPropertyTable(properties, type, object)
+	if Animations.Expectations[type][object] then
+		return Animations.Expectations[type][object]
+	end
+
+	local propTable = {}
+	for _, prop in properties do
+		propTable[prop] = type == "In" and 0 or 1
+	end
+	return propTable
+end
+
+function Animations.FadeOut(object, time)
+	local tweenInfo = time and TweenInfo.new(time, Enum.EasingStyle.Exponential) or Animations.TweenInfo
+	local properties = GetTransparencyProperty(object)
+
+	if not properties then
 		return
 	end
 
-	local ConnectionName = ClassesConnectionsToggle[self.Instance.ClassName]
-	if self.Type ~= "Incoming" or not ConnectionName then
+	wax.shared.TweenService:Create(object, tweenInfo, BuildPropertyTable(properties, "Out", object)):Play()
+
+	if object:IsA("CanvasGroup") then
 		return
 	end
 
-	for _, Connection in pairs(getconnections(self.Instance[ConnectionName])) do
-		if enabled then
-			Connection:Enable()
+	for _, child in object:GetDescendants() do
+		local prop = GetTransparencyProperty(child)
+		if not prop then
+			continue
+		end
+
+		wax.shared.TweenService:Create(child, tweenInfo, BuildPropertyTable(prop, "Out", child)):Play()
+	end
+end
+
+function Animations.FadeIn(object, time)
+	local tweenInfo = time and TweenInfo.new(time, Enum.EasingStyle.Exponential) or Animations.TweenInfo
+	local property = GetTransparencyProperty(object)
+
+	if property then
+		wax.shared.TweenService:Create(object, tweenInfo, BuildPropertyTable(property, "In", object)):Play()
+	end
+
+	if object:IsA("CanvasGroup") then
+		return
+	end
+
+	for _, child in object:GetDescendants() do
+		local prop = GetTransparencyProperty(child)
+		if not prop then
+			continue
+		end
+
+		wax.shared.TweenService:Create(child, tweenInfo, BuildPropertyTable(prop, "In", child)):Play()
+	end
+end
+
+function Animations.AddFadeExclusion(object)
+	local prop = GetTransparencyProperty(object)
+	if not prop then
+		return
+	end
+
+	table.insert(Animations.Exclusions, object)
+end
+
+function Animations.AddFadeExclusions(objects)
+	for _, object in objects do
+		local prop = GetTransparencyProperty(object)
+		if not prop then
+			continue
+		end
+
+		table.insert(Animations.Exclusions, object)
+	end
+end
+
+function Animations.SetFadeExpectation(type: "In" | "Out", object: GuiBase2d, properties: { [string]: any })
+	if not Animations.Expectations[type] then
+		return
+	end
+
+	Animations.Expectations[type][object] = properties
+end
+
+return Animations
+
+end)() end,
+    [45] = function()local wax,script,require=ImportGlobals(45)local ImportGlobals return (function(...)--[[[
+
+Sonner Luau Port by upio
+Original Sonner by Emil Kowalski (https://sonner.emilkowal.ski/)
+
+TODO (which will almost probably never be done):
+ - Add a way to view the previous notifications (hovering over the notifs but im lazy)
+ - Handle too many notifications breaking the UI
+ - Fix inconsistant notification positioning
+]]
+
+local Sonner = {
+	Queue = {},
+	TweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
+	Wrapper = nil,
+	PendingQueue = {},
+	Processing = false,
+}
+
+local Icons = require(script.Parent.Icons)
+local Interface = require(script.Parent.Interface)
+local Animations = require(script.Parent.Animations)
+
+local function InternalCreateNotificationObject(zindex, image, text)
+	local NotificationTemplate = Interface.New("CanvasGroup", {
+		BorderSizePixel = 0,
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Size = UDim2.new(0, 250, 0, 50),
+		Position = UDim2.new(0.5, 0, 1, 50),
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		ZIndex = zindex,
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+
+		["UIStroke"] = {
+			Color = Color3.fromRGB(39, 42, 42),
+		},
+
+		["UIScale"] = {},
+	})
+
+	local ImageLabel = Interface.New("ImageLabel", {
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		ScaleType = Enum.ScaleType.Fit,
+		Size = UDim2.new(0, 20, 0, 20),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0, 20, 0.5, 0),
+		BorderSizePixel = 0,
+		BackgroundTransparency = 1,
+		ZIndex = zindex + 1,
+		Parent = NotificationTemplate,
+	})
+
+	Animations.SetFadeExpectation("In", ImageLabel, {
+		BackgroundTransparency = 1,
+		ImageTransparency = 0,
+	})
+
+	if image then
+		if image:find("rbxasset") then
+			ImageLabel.Image = image
 		else
+			Icons.SetIcon(ImageLabel, image)
+		end
+	else
+		ImageLabel.Visible = false
+	end
+
+	local Frame = Interface.New("Frame", {
+		BorderSizePixel = 0,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		Size = UDim2.new(1, -50, 1, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 0),
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = zindex + 1,
+		Parent = NotificationTemplate,
+	})
+
+	Interface.New("TextLabel", {
+		BorderSizePixel = 0,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.Regular, Enum.FontStyle.Normal),
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 200, 0, 50),
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		Text = text,
+		ZIndex = zindex + 1,
+		Parent = Frame,
+		TextWrapped = true,
+	})
+
+	return NotificationTemplate
+end
+
+local function InternalToast(image, text, internalTime, removeCallback)
+	assert(Sonner.Wrapper, "Sonner has not been initialized")
+	assert(typeof(image) == "string" or image == nil, "Image must be a string or nil")
+	assert(typeof(text) == "string", "Text is required!")
+	assert(typeof(internalTime) == "number" or internalTime == nil, "Time must be a number or nil")
+
+	local time = internalTime or 4.5
+
+	local Notif = InternalCreateNotificationObject(500, image, text)
+
+	Notif.Position = UDim2.new(0.5, 0, 1, 30)
+	Notif.Parent = Sonner.Wrapper
+
+	table.insert(Sonner.Queue, Notif)
+
+	local ScaleMultiplier = 0.9
+	local RemovalQueue = {}
+
+	for index, object in Sonner.Queue do
+		if object == Notif then
+			continue
+		end
+
+		object.ZIndex = 500 - (#Sonner.Queue - index)
+
+		-- shift them down
+		wax.shared.TweenService
+			:Create(object.UIScale, Sonner.TweenInfo, {
+				Scale = object.UIScale.Scale * ScaleMultiplier,
+			})
+			:Play()
+
+		wax.shared.TweenService
+			:Create(object, Sonner.TweenInfo, {
+				Position = object.Position - UDim2.fromOffset(0, object.AbsoluteSize.Y * 0.35),
+			})
+			:Play()
+
+		if ((#Sonner.Queue - index) + 1) >= 4 then
+			Animations.FadeOut(object)
+			task.delay(0.5, function()
+				object:Destroy()
+			end)
+			table.insert(RemovalQueue, object)
+		end
+	end
+
+	for _, obj in RemovalQueue do
+		table.remove(Sonner.Queue, table.find(Sonner.Queue, obj))
+	end
+
+	wax.shared.TweenService
+		:Create(Notif, Sonner.TweenInfo, {
+			Position = UDim2.new(0.5, 0, 1, -20),
+		})
+		:Play()
+	Animations.FadeIn(Notif)
+
+	if removeCallback then
+		task.spawn(removeCallback, Notif, time)
+	else
+		task.delay(time, function()
+			if not table.find(Sonner.Queue, Notif) then
+				return
+			end
+			table.remove(Sonner.Queue, table.find(Sonner.Queue, Notif))
+
+			Animations.FadeOut(Notif, 0.35)
+			wax.shared.TweenService
+				:Create(Notif, Sonner.TweenInfo, {
+					Position = UDim2.new(0.5, 0, 1, 50),
+				})
+				:Play()
+			task.wait(0.5)
+			Notif:Destroy()
+		end)
+	end
+end
+
+local function ProcessQueue()
+	if Sonner.Processing then
+		return
+	end
+	Sonner.Processing = true
+
+	while #Sonner.PendingQueue > 0 do
+		local Request = table.remove(Sonner.PendingQueue, 1)
+		InternalToast(Request.image, Request.text, Request.internalTime, Request.removeCallback)
+		task.wait(0.5)
+	end
+
+	Sonner.Processing = false
+end
+
+local function toast(image, text, internalTime, removeCallback)
+	table.insert(Sonner.PendingQueue, {
+		image = image,
+		text = text,
+		internalTime = internalTime,
+		removeCallback = removeCallback,
+	})
+
+	task.spawn(ProcessQueue)
+end
+
+function Sonner.info(text, internalTime)
+	toast("info", text, internalTime)
+end
+
+function Sonner.success(text, internalTime)
+	toast("circle-check", text, internalTime)
+end
+
+function Sonner.warning(text, internalTime)
+	toast("triangle-alert", text, internalTime)
+end
+
+function Sonner.error(text, internalTime)
+	toast("circle-alert", text, internalTime)
+end
+
+function Sonner.toast(text, internalTime)
+	toast(nil, text, internalTime)
+end
+
+function Sonner.promise(func, options)
+	local loadingText = options.loadingText or "Loading..."
+	local successText = options.successText or "Success!"
+	local errorText = options.errorText or "Error!"
+	local internalTime = options.time or 4.5
+
+	toast("loader-circle", loadingText, internalTime, function(notif, time)
+		local success, resultOrError = nil, nil
+
+		local spinnerThread = task.spawn(function()
+			repeat
+				wax.shared.RunService.RenderStepped:Wait()
+
+				local icon = notif:FindFirstChild("ImageLabel")
+				if not icon then
+					continue
+				end
+				icon.Rotation = (icon.Rotation + 1) % 360
+			until success == false or resultOrError ~= nil
+		end)
+
+		success, resultOrError = pcall(func, function(text)
+			notif.Frame.TextLabel.Text = text
+		end)
+
+		task.spawn(function()
+			setthreadidentity(8)
+
+			-- The thread identity is 8 when setting it on the parent thread (Sonner.promise), but it still lacks capabilities when running another child thread
+			-- Capabilities here should pass from a thread to another... Could be an upstream (executor) issue ?
+
+			Animations.FadeOut(notif.ImageLabel, 0.15)
+			wax.shared.TweenService
+				:Create(notif.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
+					Size = UDim2.new(0, 0, 0, 0),
+				})
+				:Play()
+			task.wait(0.15)
+
+			if coroutine.status(spinnerThread) ~= "dead" then
+				coroutine.close(spinnerThread)
+			end
+			notif.ImageLabel.Rotation = 0
+
+			if success then
+				Icons.SetIcon(notif.ImageLabel, "check")
+				local message = (
+					typeof(successText) == "string" and successText
+					or typeof(successText) == "function" and successText(resultOrError)
+					or "Success!"
+				)
+
+				if message:match("%s") then
+					notif.Frame.TextLabel.Text = string.format(message, tostring(resultOrError))
+				else
+					notif.Frame.TextLabel.Text = message
+				end
+			else
+				Icons.SetIcon(notif.ImageLabel, "circle-alert")
+				notif.Frame.TextLabel.Text = (
+					typeof(errorText) == "string" and errorText
+					or typeof(errorText) == "function" and errorText(resultOrError)
+					or "Error!"
+				)
+			end
+
+			Animations.FadeIn(notif.ImageLabel)
+			wax.shared.TweenService
+				:Create(notif.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
+					Size = UDim2.new(0, 20, 0, 20),
+				})
+				:Play()
+
+			task.delay(time, function()
+				if not table.find(Sonner.Queue, notif) then
+					return
+				end
+				table.remove(Sonner.Queue, table.find(Sonner.Queue, notif))
+
+				Animations.FadeOut(notif, 0.35)
+				wax.shared.TweenService
+					:Create(notif, Sonner.TweenInfo, {
+						Position = UDim2.new(0.5, 0, 1, 50),
+					})
+					:Play()
+
+				task.wait(0.5)
+				notif:Destroy()
+			end)
+		end)
+	end)
+end
+
+function Sonner.rawtoast(options)
+	local image = options.image
+	local text = options.text or "No Text Provided"
+	local internalTime = options.time or 4.5
+
+	toast(image, text, internalTime)
+end
+
+function Sonner.init(wrapper)
+	Sonner.Wrapper = wrapper
+end
+
+return Sonner
+
+end)() end,
+    [42] = function()local wax,script,require=ImportGlobals(42)local ImportGlobals return (function(...)local Icons = {}
+
+type Icon = {
+	Url: string,
+	Id: number,
+	IconName: string,
+	ImageRectOffset: Vector2,
+	ImageRectSize: Vector2,
+}
+
+local Success, IconsModule = pcall(function()
+	local IconFetchSuccess, IconModuleSource = pcall(request, {
+		Url = "https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua",
+		Method = "GET",
+	})
+
+	assert(
+		IconFetchSuccess and IconModuleSource.Success or IconModuleSource.StatusCode >= 200 and IconModuleSource.StatusCode < 300,
+		"Failed to fetch lucide icons direct module source"
+	)
+	return (loadstring(IconModuleSource.Body) :: () -> { Icons: { string }, GetAsset: (Name: string) -> Icon? })()
+end)
+
+function Icons.GetIcon(iconName: string): Icon?
+	if not Success then
+		return
+	end
+
+	local Success, Icon = pcall(IconsModule.GetAsset, iconName)
+	if not Success then
+		return
+	end
+
+	return Icon
+end
+
+function Icons.SetIcon(imageInstance: ImageLabel, iconName: string)
+	local Icon: Icon? = Icons.GetIcon(iconName)
+	if not Icon then
+		return
+	end
+
+	imageInstance.Image = Icon.Url
+	imageInstance.ImageRectOffset = Icon.ImageRectOffset
+	imageInstance.ImageRectSize = Icon.ImageRectSize
+end
+
+return Icons
+
+end)() end,
+    [40] = function()local wax,script,require=ImportGlobals(40)local ImportGlobals return (function(...)local UIHelper = {}
+
+local CodeGen = require(script.Parent.Parent.CodeGen.Generator)
+
+function UIHelper.IsMouseOverFrame(Frame: GuiObject, Position: Vector3): boolean
+	local AbsPos, AbsSize = Frame.AbsolutePosition, Frame.AbsoluteSize
+	return Position.X >= AbsPos.X
+		and Position.X <= AbsPos.X + AbsSize.X
+		and Position.Y >= AbsPos.Y
+		and Position.Y <= AbsPos.Y + AbsSize.Y
+end
+
+function UIHelper.IsClickInput(Input: InputObject): boolean
+	return Input.UserInputState == Enum.UserInputState.Begin
+		and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
+end
+
+function UIHelper.IsMoveInput(Input: InputObject): boolean
+	return Input.UserInputState == Enum.UserInputState.Change
+		and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)
+end
+
+function UIHelper.QuickSerializeNumber(Number: number)
+	if Number % 1 ~= 0 then
+		return string.format("%.3f", Number)
+	elseif Number == 1 / 0 then
+		return "math.huge"
+	elseif Number == -1 / 0 then
+		return "-math.huge"
+	end
+
+	return Number
+end
+
+function UIHelper.QuickSerializeArgument(Argument)
+	if typeof(Argument) == "string" then
+		return string.format('"%s"', Argument)
+	elseif typeof(Argument) == "number" then
+		return UIHelper.QuickSerializeNumber(Argument)
+	elseif typeof(Argument) == "Vector2" then
+		return string.format(
+			"%s, %s",
+			UIHelper.QuickSerializeNumber(Argument.X),
+			UIHelper.QuickSerializeNumber(Argument.Y)
+		)
+	elseif typeof(Argument) == "Vector3" then
+		return string.format(
+			"%s, %s, %s",
+			UIHelper.QuickSerializeNumber(Argument.X),
+			UIHelper.QuickSerializeNumber(Argument.Y),
+			UIHelper.QuickSerializeNumber(Argument.Z)
+		)
+	elseif typeof(Argument) == "CFrame" then
+		local Components = { Argument:GetComponents() }
+		for Index, Value in pairs(Components) do
+			Components[Index] = UIHelper.QuickSerializeNumber(Value)
+		end
+		return table.concat(Components, ", ")
+	elseif typeof(Argument) == "table" then
+		return "{...}"
+	elseif typeof(Argument) == "Instance" then
+		return CodeGen.GetFullPath(Argument, { DisableNilParentHandler = true })
+	elseif typeof(Argument) == "userdata" then
+		return "newproxy(" .. getmetatable(Argument) and "true" or "false" .. ")"
+	end
+
+	return tostring(Argument)
+end
+
+return UIHelper
+
+end)() end,
+    [35] = function()local wax,script,require=ImportGlobals(35)local ImportGlobals return (function(...)local SignalHandler = {
+	Signals = {},
+}
+
+function SignalHandler.New(self)
+	local Signal = {
+		Connections = {},
+		Disconnect = nil,
+	}
+
+	function Signal:Connect(callback)
+		local connection = {
+			Connected = true,
+			Enabled = true,
+			Callback = callback,
+		}
+
+		function connection:Disconnect()
+			connection.Connected = false
+		end
+
+		function connection:Reconnect()
+			if not connection.Enabled then
+				return
+			end
+
+			connection.Connected = true
+		end
+
+		function connection:Enable()
+			connection.Enabled = true
+		end
+
+		function connection:Disable()
+			connection.Enabled = false
+		end
+
+		table.insert(Signal.Connections, connection)
+
+		return connection
+	end
+
+	function Signal:Once(callback)
+		local connection
+		connection = Signal:Connect(function(...)
+			connection:Disconnect()
+			callback(...)
+		end)
+
+		return connection
+	end
+
+	function Signal:Fire(...)
+		for _, connection in Signal.Connections do
+			if connection.Connected and connection.Enabled then
+				task.spawn(connection.Callback, ...)
+			end
+		end
+	end
+
+	function Signal:Wait(...)
+		local return_data = {}
+		local finishedWaiting = false
+
+		Signal:Once(function(...)
+			return_data = { ... }
+			finishedWaiting = true
+		end)
+
+		repeat
+			task.wait()
+		until finishedWaiting
+		return table.unpack(return_data)
+	end
+
+	table.insert(SignalHandler.Signals, Signal)
+	return Signal
+end
+
+function SignalHandler.StopAll(self: any)
+	for Index, Signal in SignalHandler.Signals do
+		for _, Connection in Signal.Connections do
 			Connection:Disable()
+			Connection:Disconnect()
 		end
 	end
 end
 
-function Log:Block()
-	if wax.shared.ActorCommunicator then
-		pcall(function()
-			wax.shared.ActorCommunicator:Fire("MainBlock", self.Instance, self.Type)
+return SignalHandler
+
+end)() end,
+    [43] = function()local wax,script,require=ImportGlobals(43)local ImportGlobals return (function(...)local Interface = {}
+local Icons = require(script.Parent.Icons)
+local AssetManager = require(script.Parent.AssetManager)
+
+local DefaultFont = AssetManager.GetCustomFont({
+	Name = "Inter",
+	Url = "https://raw.githubusercontent.com/notpoiu/cobalt/refs/heads/main/Assets/Inter.ttf",
+
+	FallbackId = 12187365364
+})
+
+local DefaultProperties = {
+	["Frame"] = {
+		BorderSizePixel = 0,
+	},
+	["ScrollingFrame"] = {
+		BorderSizePixel = 0,
+	},
+	["ImageLabel"] = {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	},
+	["ImageButton"] = {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	},
+
+	["TextLabel"] = {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		FontFace = DefaultFont,
+		RichText = true,
+		TextColor3 = Color3.new(1, 1, 1),
+	},
+	["TextButton"] = {
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		FontFace = DefaultFont,
+		RichText = true,
+		TextColor3 = Color3.new(1, 1, 1),
+	},
+	["TextBox"] = {
+		BorderSizePixel = 0,
+		FontFace = DefaultFont,
+		ClipsDescendants = true,
+		RichText = false,
+		TextColor3 = Color3.new(1, 1, 1),
+	},
+
+	["UIListLayout"] = {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	},
+}
+
+function Interface.New(ClassName: string, Properties: { [string | number]: any })
+	local Object = Instance.new(ClassName)
+
+	for Key, Value in pairs(DefaultProperties[ClassName] or {}) do
+		if Properties and Properties[Key] ~= nil then
+			continue
+		end
+
+		Object[Key] = Value
+	end
+
+	for Key, Value in pairs(Properties or {}) do
+		if typeof(Value) == "table" then
+			local SubObject = Interface.New(Key, Value)
+			SubObject.Parent = Object
+
+			continue
+		elseif typeof(Key) ~= "string" and typeof(Value) == "Instance" then
+			local SubObject = Value:Clone()
+			SubObject.Parent = Object
+
+			continue
+		end
+
+		Object[Key] = Value
+	end
+
+	return Object
+end
+
+function Interface.NewIcon(IconName: string, Properties: { [string]: any })
+	local Image: ImageLabel = Interface.New("ImageLabel", Properties)
+	Icons.SetIcon(Image, IconName)
+
+	return Image
+end
+
+function Interface.HideCorner(Frame: GuiObject, Size: UDim2, Offset: Vector2): Frame
+	local Hider = Interface.New("Frame", {
+		AnchorPoint = Offset or Vector2.zero,
+		BackgroundColor3 = Frame.BackgroundColor3,
+		Position = UDim2.fromScale(Offset.X or 0, Offset.Y or 0),
+		Size = Size,
+		ZIndex = Frame.ZIndex,
+
+		Parent = Frame,
+	})
+
+	return Hider
+end
+
+function Interface.GetScreenParent(): Instance
+	local ScreenGui = Interface.New("ScreenGui", {})
+	local HiddenUI = wax.shared.gethui()
+
+	for _, Container in { HiddenUI, wax.shared.CoreGui } do
+		if pcall(function()
+			ScreenGui.Parent = Container
+		end) then
+			ScreenGui:Destroy()
+			return Container
+		end
+	end
+
+	return wax.shared.LocalPlayer:WaitForChild("PlayerGui")
+end
+
+return Interface
+
+end)() end,
+    [46] = function()local wax,script,require=ImportGlobals(46)local ImportGlobals return (function(...)--[[
+	Main Window Logic for cobalt, all UI elements are created and managed here.
+]]
+
+local AnticheatData = require(script.Parent.Utils.Anticheats.Main)
+local LuaEncode = require(script.Parent.Utils.Serializer.LuaEncode)
+
+local Utils = script.Parent.Utils
+
+local Pagination = require(Utils.Pagination)
+local CodeGen = require(Utils.CodeGen.Generator)
+local SessionExporter = require(Utils.CodeGen.SessionExporter)
+
+local UIUtils = script.Parent.Utils.UI
+
+local SyntaxHighlighter = require(UIUtils.Highlighter)
+
+local AssetManager = require(UIUtils.AssetManager)
+local Icons = require(UIUtils.Icons)
+
+local Interface = require(UIUtils.Interface)
+local Helper = require(UIUtils.Helper)
+
+local Resize = require(UIUtils.Resize)
+local Drag = require(UIUtils.Drag)
+
+local PaginationHelper = Pagination.new({
+	ItemsPerPage = wax.shared.SaveManager:GetState("MaxItemPerPages", 20),
+	TotalItems = 0,
+})
+
+local Tabs = {}
+local CurrentPage = {}
+local CurrentInfo, CurrentTab, CurrentLog, InfoButtons
+
+local LogsList
+local ShowPagination, ShowCalls, CreateCallFrame, ShowLog, CreateLogButton, CleanLogsList, UpdateSearch, SelectResult, EnterResult, OpenSearch
+
+local DefaultTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Exponential)
+
+type SupportedRemoteTypes = RemoteEvent | RemoteFunction | BindableEvent | BindableFunction | UnreliableRemoteEvent
+local ClassOrder = {
+	"RemoteEvent",
+	"UnreliableRemoteEvent",
+	"RemoteFunction",
+	"BindableEvent",
+	"BindableFunction",
+}
+
+local Images = {
+	RemoteEvent = "rbxassetid://110803789420086",
+	UnreliableRemoteEvent = "rbxassetid://126244162339059",
+	RemoteFunction = "rbxassetid://108537517159060",
+	BindableEvent = "rbxassetid://116839398727495",
+	BindableFunction = "rbxassetid://112264959079193",
+}
+
+-- Functions
+local function UpdateLogNameSize(Log)
+	local TextSizeX, _TextSizeY =
+		wax.shared.GetTextBounds("x" .. #Log.Calls, Log.Button.Calls.FontFace, Log.Button.Calls.TextSize)
+	Log.Button.Name.Size = UDim2.new(1, -(TextSizeX + 24), 1, 0)
+end
+
+local function GetDPIScale()
+	local Scale = wax.shared.SaveManager:GetState("WindowDPIScale", "100%")
+	return (tonumber(Scale:sub(1, #Scale - 1)) or 100) / 100
+end
+wax.shared.GetDPIScale = GetDPIScale
+
+-- ContentProvider PreloadAsync bypass
+Images = AssetManager.GetRemoteImages(Images)
+
+local CobaltLogo = AssetManager.GetImage("Logo")
+
+local ScreenGui = Interface.New("ScreenGui", {
+	Name = "Cobalt",
+	ResetOnSpawn = false,
+	Parent = Interface.GetScreenParent(),
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+wax.shared.ScreenGui = ScreenGui
+
+local ScreenDPIScale = Interface.New("UIScale", {
+	Parent = ScreenGui,
+	Scale = GetDPIScale(),
+})
+
+local MainUICorner = Interface.New("UICorner", {
+	CornerRadius = UDim.new(0, 6),
+})
+
+local MainFrame = Interface.New("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(640, 420),
+	ZIndex = 0,
+
+	MainUICorner,
+	Parent = ScreenGui,
+})
+
+local ShowButton = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+	Position = UDim2.new(0.5, 0, 0, 36),
+	Size = UDim2.fromOffset(36, 36),
+	Text = "",
+	Visible = false,
+
+	["ImageLabel"] = {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Image = CobaltLogo,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, -10, 1, -10),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.new(1, 1, 1),
+	},
+
+	MainUICorner,
+	Parent = ScreenGui,
+})
+do
+	ShowButton.MouseButton1Click:Connect(function()
+		ShowButton.Visible = false
+		MainFrame.Visible = true
+	end)
+end
+
+-- Resizing
+Resize.new({
+	MainFrame = MainFrame,
+
+	MinimumSize = Vector2.new(585, 220),
+
+	CornerHandleSize = 20,
+	HandleSize = 6,
+})
+
+-- Context Menus
+local CurrentContext
+local ContextMenu = Interface.New("Frame", {
+	AutomaticSize = Enum.AutomaticSize.XY,
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	Size = UDim2.fromScale(0, 0),
+	ZIndex = 10000,
+	Visible = false,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 6),
+	},
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 0),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 4),
+		PaddingRight = UDim.new(0, 4),
+		PaddingTop = UDim.new(0, 4),
+		PaddingBottom = UDim.new(0, 4),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(25, 25, 25),
+		Thickness = 1,
+	},
+
+	Parent = ScreenGui,
+})
+
+local function CreateContextMenu(Parent: GuiObject, Options: {}, MouseOnCursorPosition: boolean?)
+	local ContextData = {
+		Parent = Parent,
+		Options = {},
+	}
+
+	local function BuildContextMenu(Options: {})
+		for Order, Data in pairs(Options) do
+			local TextButton = Interface.New("TextButton", {
+				BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+				BackgroundTransparency = 1,
+				LayoutOrder = Order,
+				Size = UDim2.new(1, 0, 0, 30),
+				Text = "",
+
+				["UICorner"] = {
+					CornerRadius = UDim.new(0, 6),
+				},
+
+				["UIPadding"] = {
+					PaddingBottom = UDim.new(0, 6),
+					PaddingLeft = UDim.new(0, 6),
+					PaddingRight = UDim.new(0, 6),
+					PaddingTop = UDim.new(0, 6),
+				},
+			})
+
+			local IconToSet = Data.Icon
+			if typeof(IconToSet) == "function" then
+				IconToSet = IconToSet()
+			end
+
+			local ItemIcon
+			if tostring(IconToSet):match("rbxasset") then
+				ItemIcon = Interface.New("ImageLabel", {
+					Image = IconToSet,
+					Size = UDim2.fromScale(1, 1),
+					SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+					Parent = TextButton,
+				})
+			else
+				ItemIcon = Interface.NewIcon(IconToSet, {
+					Size = UDim2.fromScale(1, 1),
+					SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+					Parent = TextButton,
+				})
+			end
+
+			local TextToSet = Data.Text
+			if typeof(TextToSet) == "function" then
+				TextToSet = TextToSet()
+			end
+
+			local ItemText = Interface.New("TextLabel", {
+				AutomaticSize = Enum.AutomaticSize.X,
+				Position = UDim2.fromOffset(Data.Icon == nil and 0 or 26, 0),
+				Size = UDim2.fromScale(0, 1),
+				Text = TextToSet,
+				TextSize = 16,
+				TextXAlignment = Enum.TextXAlignment.Left,
+
+				Parent = TextButton,
+			})
+
+			if Data.TextProperties then
+				local Properties = typeof(Data.TextProperties) == "function" and Data.TextProperties()
+					or Data.TextProperties
+				for Property, Value in pairs(Properties) do
+					ItemText[Property] = Value
+				end
+			end
+
+			TextButton.MouseEnter:Connect(function()
+				wax.shared.TweenService
+					:Create(TextButton, DefaultTweenInfo, {
+						BackgroundTransparency = 0,
+					})
+					:Play()
+			end)
+			TextButton.MouseLeave:Connect(function()
+				wax.shared.TweenService
+					:Create(TextButton, DefaultTweenInfo, {
+						BackgroundTransparency = 1,
+					})
+					:Play()
+			end)
+			TextButton.MouseButton1Click:Connect(function()
+				TextButton.BackgroundTransparency = 1
+
+				if Data.Callback then
+					Data.Callback()
+				end
+
+				if Data.CloseOnClick ~= false then
+					ContextData:Close()
+				else
+					for _, Option in pairs(ContextData.Options) do
+						Option:Display()
+					end
+				end
+			end)
+
+			function Data:Display()
+				if typeof(Data.Text) == "function" then
+					ItemText.Text = Data.Text()
+				end
+
+				if typeof(Data.Icon) == "function" then
+					IconToSet = Data.Icon()
+
+					if tostring(IconToSet):match("rbxasset") then
+						ItemIcon.ImageRectOffset = Vector2.new(0, 0)
+						ItemIcon.ImageRectSize = Vector2.new(0, 0)
+						ItemIcon.Image = IconToSet
+					else
+						Icons.SetIcon(ItemIcon, IconToSet)
+					end
+				end
+
+				if Data.TextProperties then
+					local Properties = typeof(Data.TextProperties) == "function" and Data.TextProperties()
+						or Data.TextProperties
+					for Property, Value in pairs(Properties) do
+						ItemText[Property] = Value
+					end
+				end
+			end
+
+			ContextData.Options[TextButton] = Data
+		end
+	end
+
+	function ContextData:Open()
+		if CurrentContext == ContextData then
+			return
+		end
+
+		if CurrentContext then
+			CurrentContext:Close()
+		end
+
+		CurrentContext = ContextData
+		for Object, Data in pairs(ContextData.Options) do
+			if Data.Condition and not Data.Condition() then
+				continue
+			end
+			Object.Parent = ContextMenu
+			Data:Display()
+		end
+
+		if MouseOnCursorPosition then
+			ContextMenu.Position = UDim2.fromOffset(
+				wax.shared.UserInputService:GetMouseLocation().X,
+				wax.shared.UserInputService:GetMouseLocation().Y - (45 / GetDPIScale())
+			)
+		else
+			ContextMenu.Position =
+				UDim2.fromOffset(
+					Parent.AbsolutePosition.X / GetDPIScale(),
+					(Parent.AbsolutePosition.Y + Parent.AbsoluteSize.Y) / GetDPIScale()
+				)
+		end
+		ContextMenu.Visible = true
+	end
+
+	function ContextData:Toggle()
+		if CurrentContext == ContextData then
+			ContextData:Close()
+			return
+		end
+
+		ContextData:Open()
+	end
+
+	function ContextData:Close()
+		if CurrentContext ~= ContextData then
+			return
+		end
+
+		ContextMenu.Visible = false
+		for Object, _ in pairs(ContextData.Options) do
+			Object.Parent = nil
+		end
+		CurrentContext = nil
+	end
+
+	function ContextData:SetContextMenu(Options: { any })
+		for Object, Data in pairs(ContextData.Options) do
+			Object:Destroy()
+		end
+		ContextData.Options = {}
+		BuildContextMenu(Options)
+	end
+
+	BuildContextMenu(Options)
+	return ContextData
+end
+
+-- Sonner toast
+local SonnerUI = Interface.New("ScrollingFrame", {
+	Name = "Sonner",
+	BackgroundTransparency = 1,
+	Size = UDim2.fromOffset(285, 115),
+	Position = UDim2.fromScale(1, 1),
+	AnchorPoint = Vector2.new(1, 1),
+	ZIndex = 5000,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	ScrollingEnabled = false,
+	ClipsDescendants = true,
+	Parent = MainFrame,
+})
+
+wax.shared.Sonner.init(SonnerUI)
+
+-- Modal
+local OpenedModal
+local ModalBackground = Interface.New("TextButton", {
+	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+	BackgroundTransparency = 0.5,
+	Size = UDim2.fromScale(1, 1),
+	Text = "",
+	Visible = false,
+	ZIndex = 2,
+
+	MainUICorner,
+	Parent = MainFrame,
+})
+
+local function OpenModal(Parent)
+	OpenedModal = Parent
+
+	OpenedModal.Visible = true
+	ModalBackground.Visible = true
+end
+
+local function CloseModal()
+	if OpenedModal then
+		OpenedModal.Visible = false
+		OpenedModal = nil
+	end
+
+	ModalBackground.Visible = false
+end
+
+ModalBackground.MouseButton1Click:Connect(CloseModal)
+
+local function ConnectCloseButton(Button, Image, Parent)
+	Button.MouseEnter:Connect(function()
+		wax.shared.TweenService
+			:Create(Image, DefaultTweenInfo, {
+				ImageTransparency = 0.25,
+			})
+			:Play()
+	end)
+	Button.MouseLeave:Connect(function()
+		wax.shared.TweenService
+			:Create(Image, DefaultTweenInfo, {
+				ImageTransparency = 0.5,
+			})
+			:Play()
+	end)
+	Button.MouseButton1Click:Connect(CloseModal)
+end
+
+local function CreateModalTop(Title: string, Icon: string, Parent: GuiObject)
+	local ModalTop = Interface.New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 36),
+		Parent = Parent,
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+	})
+
+	local ModalTitle = Interface.New("TextLabel", {
+		Text = Title,
+		TextSize = 17,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Size = UDim2.new(1, -60, 1, 0),
+		Position = UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Parent = ModalTop,
+	})
+
+	local ModalIcon
+
+	if Icon:match("rbxasset") then
+		ModalIcon = Interface.New("ImageLabel", {
+			Image = Icon,
+			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(4, 0),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+			Parent = ModalTop,
+		})
+	else
+		ModalIcon = Interface.NewIcon(Icon, {
+			ImageTransparency = 0.5,
+			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(4, 0),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+			Parent = ModalTop,
+		})
+	end
+
+	local CloseButton = Interface.New("ImageButton", {
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Parent = ModalTop,
+	})
+	local CloseImage = Interface.NewIcon("x", {
+		ImageTransparency = 0.5,
+		Size = UDim2.fromOffset(22, 22),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+		Parent = CloseButton,
+	})
+
+	ConnectCloseButton(CloseButton, CloseImage, Parent)
+
+	Interface.New("Frame", {
+		Parent = Parent,
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.fromOffset(0, 36),
+	})
+
+	return ModalTitle, ModalIcon
+end
+
+-- Settings
+local SettingsFrame = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0.65, 0, 0, 285),
+	Text = "",
+	Visible = false,
+	Parent = ModalBackground,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 8),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(25, 25, 25),
+		Thickness = 1,
+	},
+})
+
+Resize.new({
+	MainFrame = SettingsFrame,
+
+	MaximumSize = UDim2.new(1, -2, 1, -2),
+	MinimumSize = UDim2.fromScale(0.65, 0.712),
+	Mirrored = true,
+	LockedPosition = true,
+
+	CornerHandleSize = 20,
+	HandleSize = 6,
+})
+
+CreateModalTop("Settings", "settings", SettingsFrame)
+
+local SettingsScrollingFrame = Interface.New("ScrollingFrame", {
+	AnchorPoint = Vector2.new(0, 1),
+	BackgroundTransparency = 1,
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 1, -37),
+	ClipsDescendants = true,
+	ScrollBarThickness = 2,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.fromScale(0, 0),
+	Parent = SettingsFrame,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 15),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+	},
+})
+
+-- Plugins
+local PluginsFrame = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0.65, 0, 0, 285),
+	Text = "",
+	Visible = false,
+	Parent = ModalBackground,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 8),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(25, 25, 25),
+		Thickness = 1,
+	},
+})
+
+Resize.new({
+	MainFrame = PluginsFrame,
+
+	MaximumSize = UDim2.new(1, -2, 1, -2),
+	MinimumSize = UDim2.fromScale(0.65, 0.712),
+	Mirrored = true,
+	LockedPosition = true,
+
+	CornerHandleSize = 20,
+	HandleSize = 6,
+})
+
+CreateModalTop("Plugins", "blocks", PluginsFrame)
+
+local PluginsScrollingFrame = Interface.New("ScrollingFrame", {
+	AnchorPoint = Vector2.new(0, 1),
+	BackgroundTransparency = 1,
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 1, -37),
+	ClipsDescendants = true,
+	ScrollBarThickness = 2,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.fromScale(0, 0),
+	Parent = PluginsFrame,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 15),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+	},
+})
+
+local SettingsBuilder = {}
+local SectionBuilder = {}
+do
+	-- Builders
+	SettingsBuilder.__index = SettingsBuilder
+	SectionBuilder.__index = SectionBuilder
+
+	function SettingsBuilder.new(Parent: Frame)
+		return setmetatable({
+			Parent = Parent,
+		}, SettingsBuilder)
+	end
+
+	function SectionBuilder.new(Parent: Frame, DataSavePrefix: string?)
+		return setmetatable({
+			Parent = Parent,
+			DataSavePrefix = DataSavePrefix or "",
+		}, SectionBuilder)
+	end
+
+	-- Sections Constructor
+	function SettingsBuilder:CreateSection(SectionName: string, DataSavePrefix: string?)
+		local Section = Interface.New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			Parent = self.Parent,
+
+			["UIListLayout"] = {
+				FillDirection = Enum.FillDirection.Vertical,
+				HorizontalAlignment = Enum.HorizontalAlignment.Left,
+				Padding = UDim.new(0, 6),
+			},
+
+			["TextLabel"] = {
+				Text = SectionName,
+				FontFace = Font.fromId(12187365364, Enum.FontWeight.Bold),
+				TextSize = 18,
+				Size = UDim2.new(1, 0, 0, 18),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = -1,
+			},
+		})
+
+		return SectionBuilder.new(Section, DataSavePrefix)
+	end
+
+	-- Creates a horizontal sub-row inside a section and returns a SectionBuilder for it.
+	-- Use this when you want multiple elements side-by-side (e.g. two buttons in one row).
+	function SectionBuilder:CreateRow(Padding: UDim?)
+		local Row = Interface.New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Parent = self.Parent,
+
+			["UIListLayout"] = {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Left,
+				Padding = Padding or UDim.new(0, 8),
+			},
+		})
+		return SectionBuilder.new(Row, self.DataSavePrefix)
+	end
+
+	function SectionBuilder:AddLabel(Text: string, TextSize: number?)
+		return Interface.New("TextLabel", {
+			Text = Text,
+			TextSize = TextSize or 16,
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			BackgroundTransparency = 1,
+			Parent = self.Parent,
+			TextWrapped = true,
+		})
+	end
+
+	-- Section Element Constructors
+	function SectionBuilder:CreateButton(Text: string, Callback: () -> (), TextSize: number?)
+		local Button = Interface.New("TextButton", {
+			BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+			Size = UDim2.new(1, 0, 0, 24),
+			TextSize = 15,
+			Text = "",
+			Parent = self.Parent,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 4),
+			},
+
+			["UIStroke"] = {
+				Color = Color3.fromRGB(25, 25, 25),
+				Thickness = 1,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			},
+
+			["TextLabel"] = {
+				Text = Text,
+				TextSize = TextSize or 16,
+				TextTransparency = 0.5,
+				Size = UDim2.fromScale(1, 1),
+				Position = UDim2.fromOffset(0, -1),
+			},
+		})
+
+		Button.MouseButton1Click:Connect(function()
+			if Callback then
+				Callback()
+			end
+		end)
+
+		return Button
+	end
+
+	function SectionBuilder:CreateCheckbox(
+		Idx: string,
+		Options: {
+			Text: string,
+			Callback: (boolean) -> () | nil,
+			Default: boolean?,
+		}
+	)
+		Idx = self.DataSavePrefix .. Idx
+		local Checkbox = {
+			Default = Options.Default or false,
+			Value = wax.shared.SaveManager:GetState(Idx, Options.Default),
+		}
+
+		local CheckboxUI = Interface.New("TextButton", {
+			Text = Options.Text,
+			TextSize = 16,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 20),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = self.Parent,
+		})
+
+		local ToggleOnColor = Color3.fromRGB(52, 199, 89)
+		local ToggleOffColor = Color3.fromRGB(50, 50, 50)
+
+		local ToggleKnobOffSize = UDim2.fromOffset(16, 16)
+		local ToggleKnobOnSize = UDim2.fromOffset(18, 18)
+		local ToggleKnobInset = 10
+
+		local ToggleTrack = Interface.New("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(36, 20),
+			BackgroundColor3 = ToggleOffColor,
+			Parent = CheckboxUI,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(1, 0),
+			},
+		})
+
+		local ToggleKnob = Interface.New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Size = ToggleKnobOffSize,
+			Parent = ToggleTrack,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(1, 0),
+			},
+		})
+
+		local function UpdateToggleVisual(instant: boolean?)
+			local TargetTrackColor = if Checkbox.Value then ToggleOnColor else ToggleOffColor
+			local TargetKnobPosition = if Checkbox.Value
+				then UDim2.new(1, -ToggleKnobInset, 0.5, 0)
+				else UDim2.new(0, ToggleKnobInset, 0.5, 0)
+			local TargetKnobSize = if Checkbox.Value then ToggleKnobOnSize else ToggleKnobOffSize
+
+			if instant then
+				ToggleTrack.BackgroundColor3 = TargetTrackColor
+				ToggleKnob.Position = TargetKnobPosition
+				ToggleKnob.Size = TargetKnobSize
+			else
+				wax.shared.TweenService
+					:Create(ToggleTrack, DefaultTweenInfo, {
+						BackgroundColor3 = TargetTrackColor,
+					})
+					:Play()
+
+				wax.shared.TweenService
+					:Create(ToggleKnob, DefaultTweenInfo, {
+						Position = TargetKnobPosition,
+						Size = TargetKnobSize,
+					})
+					:Play()
+			end
+		end
+
+		UpdateToggleVisual(true)
+
+		local function Toggle()
+			Checkbox:SetValue(not Checkbox.Value)
+		end
+
+		CheckboxUI.MouseButton1Click:Connect(Toggle)
+
+		function Checkbox:Reset()
+			Checkbox:SetValue(Checkbox.Default)
+		end
+
+		function Checkbox:SetValue(NewValue)
+			if wax.shared.ActorCommunicator then
+				pcall(function()
+					wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, NewValue)
+				end)
+			end
+
+			wax.shared.SaveManager:SetState(Idx, NewValue)
+
+			Checkbox.Value = NewValue
+			UpdateToggleVisual()
+
+			if Options.Callback then
+				Options.Callback(Checkbox.Value)
+			end
+		end
+
+		if wax.shared.ActorCommunicator then
+			pcall(function()
+				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Checkbox.Value)
+			end)
+		end
+		wax.shared.Settings[Idx] = Checkbox
+		return Checkbox
+	end
+
+	function SectionBuilder:CreateTextBox(
+		Idx: string,
+		Options: {
+			Text: string,
+			Callback: (string) -> () | nil,
+			Default: string?,
+			Placeholder: string?,
+			ClearTextOnFocus: boolean?,
+			Width: number?,
+			NumericOnly: boolean?,
+		}
+	)
+		Idx = self.DataSavePrefix .. Idx
+		local NumericOnly = Options.NumericOnly == true
+		local TextBoxWidth = Options.Width or 160
+
+		local function NormalizeValue(NewValue: any): string
+			local Value = tostring(NewValue or "")
+
+			if not NumericOnly then
+				return Value
+			end
+
+			if Value == "" then
+				return ""
+			end
+
+			local Characters = table.create(#Value)
+			local HasDigits = false
+			local HasDecimal = false
+			local SignApplied = false
+
+			for Index = 1, #Value do
+				local Char = string.sub(Value, Index, Index)
+				local Byte = string.byte(Char)
+
+				if Char == "-" and not SignApplied and not HasDigits and not HasDecimal then
+					table.insert(Characters, Char)
+					SignApplied = true
+				elseif Char == "." and not HasDecimal then
+					table.insert(Characters, Char)
+					HasDecimal = true
+					SignApplied = true
+				elseif Byte and Byte >= 48 and Byte <= 57 then
+					table.insert(Characters, Char)
+					HasDigits = true
+					SignApplied = true
+				end
+			end
+
+			local Sanitized = table.concat(Characters)
+
+			if Sanitized == "-" or Sanitized == "." or Sanitized == "-." then
+				return ""
+			end
+
+			return Sanitized
+		end
+
+		local DefaultValue = NormalizeValue(Options.Default)
+		local SavedValue = wax.shared.SaveManager:GetState(Idx)
+		local InitialValue = NormalizeValue(if SavedValue ~= nil then SavedValue else DefaultValue)
+
+		local TextSetting = {
+			Default = DefaultValue,
+			Value = InitialValue,
+		}
+
+		local Container = Interface.New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 26),
+			Parent = self.Parent,
+
+			["UIPadding"] = {
+				PaddingLeft = UDim.new(0, 2),
+				PaddingRight = UDim.new(0, 2),
+			},
+		})
+
+		Interface.New("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(0, 0),
+			Size = UDim2.new(1, -TextBoxWidth - 6, 1, 0),
+			Text = Options.Text,
+			TextSize = 16,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			TextWrapped = true,
+			Parent = Container,
+		})
+
+		local Input = Interface.New("TextBox", {
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundColor3 = Color3.fromRGB(5, 5, 5),
+			ClearTextOnFocus = Options.ClearTextOnFocus or false,
+			PlaceholderColor3 = Color3.fromRGB(128, 128, 128),
+			PlaceholderText = Options.Placeholder or "",
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, TextBoxWidth, 1, -2),
+			Text = InitialValue,
+			TextSize = 16,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = Container,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 4),
+			},
+
+			["UIStroke"] = {
+				Color = Color3.fromRGB(25, 25, 25),
+				Thickness = 1,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			},
+
+			["UIPadding"] = {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+			},
+		})
+
+		local function SyncValue(NewValue: string, FireCallback: boolean?)
+			TextSetting.Value = NewValue
+			Input.Text = NewValue
+
+			if FireCallback ~= false and Options.Callback then
+				local ArgumentToPass = NewValue
+				if NumericOnly then
+					ArgumentToPass = tonumber(ArgumentToPass)
+				end
+
+				Options.Callback(ArgumentToPass)
+			end
+		end
+
+		function TextSetting:Reset()
+			TextSetting:SetValue(TextSetting.Default)
+		end
+
+		function TextSetting:SetValue(NewValue)
+			local PreparedValue = NormalizeValue(NewValue)
+
+			if PreparedValue == TextSetting.Value then
+				SyncValue(PreparedValue, false)
+				return
+			end
+
+			if wax.shared.ActorCommunicator then
+				pcall(function()
+					wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, PreparedValue)
+				end)
+			end
+
+			wax.shared.SaveManager:SetState(Idx, PreparedValue)
+			SyncValue(PreparedValue)
+		end
+
+		Input.FocusLost:Connect(function()
+			TextSetting:SetValue(Input.Text)
+		end)
+
+		if wax.shared.ActorCommunicator then
+			pcall(function()
+				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, TextSetting.Value)
+			end)
+		end
+
+		SyncValue(TextSetting.Value, false)
+
+		wax.shared.Settings[Idx] = TextSetting
+		return TextSetting
+	end
+
+	function SectionBuilder:CreateDropdown(
+		Idx: string,
+		Options: {
+			Multi: boolean?,
+			AllowNull: boolean?,
+			Values: { [any]: any },
+			Default: any | { [any]: any },
+			Callback: (any) -> () | nil,
+			Text: string,
+		}
+	)
+		Idx = self.DataSavePrefix .. Idx
+		local AllowNull = Options.AllowNull or false
+		assert(AllowNull or Options.Default ~= nil, "Default value must be provided when AllowNull is false")
+
+		local function CreateLookupTable(Values: { any } | any)
+			if typeof(Values) ~= "table" then
+				return Values
+			end
+
+			local LookupTable = {}
+			for _, Value in Values do
+				LookupTable[Value] = true
+			end
+			return LookupTable
+		end
+
+		local Dropdown = {
+			Values = Options.Values or {},
+			Default = Options.Default and CreateLookupTable(Options.Default)
+				or Options.AllowNull and (Options.Multi and {} or Options.Values[1])
+				or {},
+			Value = wax.shared.SaveManager:GetState(
+				Idx,
+				Options.Default and CreateLookupTable(Options.Default)
+					or Options.AllowNull and (Options.Multi and {} or Options.Values[1])
+					or {}
+			),
+			Multi = Options.Multi or false,
+			Callback = Options.Callback,
+		}
+
+		local DropdownUI = Interface.New("TextButton", {
+			Text = Options.Text,
+			TextSize = 16,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 24),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			Parent = self.Parent,
+		})
+
+		DropdownUI.AutoButtonColor = false
+
+		local DropdownDisplay = Interface.New("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(180, 24),
+			Parent = DropdownUI,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 4),
+			},
+
+			["UIStroke"] = {
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Color = Color3.fromRGB(25, 25, 25),
+				Thickness = 1,
+			},
+
+			["UIPadding"] = {
+				PaddingLeft = UDim.new(0, 8),
+				PaddingRight = UDim.new(0, 8),
+			},
+		})
+
+		local ValueLabel = Interface.New("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -16, 1, 0),
+			Text = "Select...",
+			TextSize = 16,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextTransparency = 0.45,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			Parent = DropdownDisplay,
+		})
+
+		local DropdownIcon = Interface.NewIcon("chevron-down", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			ImageTransparency = 0.2,
+			Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(12, 12),
+			Parent = DropdownDisplay,
+		})
+
+		local DisplayDefaultColor = DropdownDisplay.BackgroundColor3
+		local DisplayHoverColor = Color3.fromRGB(12, 12, 12)
+
+		local function TweenDisplayColor(TargetColor, TargetTransparency)
+			wax.shared.TweenService
+				:Create(DropdownDisplay, DefaultTweenInfo, {
+					BackgroundColor3 = TargetColor,
+				})
+				:Play()
+
+			if TargetTransparency then
+				wax.shared.TweenService
+					:Create(DropdownIcon, DefaultTweenInfo, {
+						ImageTransparency = TargetTransparency,
+					})
+					:Play()
+			end
+		end
+
+		DropdownUI.MouseEnter:Connect(function()
+			TweenDisplayColor(DisplayHoverColor, 0.05)
+		end)
+
+		DropdownUI.MouseLeave:Connect(function()
+			TweenDisplayColor(DisplayDefaultColor, 0.2)
+		end)
+
+		local function IterateValues(Callback: (any, string) -> ())
+			for Index, Object in Dropdown.Values do
+				local ActualValue = typeof(Index) == "number" and Object or Index
+				local DisplayText = typeof(Index) == "number" and tostring(Object) or tostring(Index)
+				Callback(ActualValue, DisplayText)
+			end
+		end
+
+		local function ResolveValueText(Value)
+			local Resolved
+			IterateValues(function(ActualValue, DisplayText)
+				if ActualValue == Value then
+					Resolved = DisplayText
+				end
+			end)
+			return Resolved or (Value ~= nil and tostring(Value) or "")
+		end
+
+		local function UpdateValueLabel()
+			local DisplayText = "Select..."
+			local Transparency = 0.45
+
+			if Dropdown.Multi then
+				local SelectedTexts = {}
+				IterateValues(function(Value, Text)
+					if Dropdown.Value[Value] then
+						table.insert(SelectedTexts, Text)
+					end
+				end)
+
+				if #SelectedTexts == 0 then
+					DisplayText = "None"
+					Transparency = 0.45
+				else
+					table.sort(SelectedTexts)
+					if #SelectedTexts <= 2 then
+						DisplayText = table.concat(SelectedTexts, ", ")
+					else
+						DisplayText = string.format("%s, +%d", SelectedTexts[1], #SelectedTexts - 1)
+					end
+					Transparency = 0
+				end
+			else
+				local CurrentValue = Dropdown.Value
+				if CurrentValue == nil or CurrentValue == "" then
+					DisplayText = "None"
+					Transparency = 0.45
+				else
+					local Resolved = ResolveValueText(CurrentValue)
+					if Resolved == "" then
+						DisplayText = tostring(CurrentValue)
+					else
+						DisplayText = Resolved
+					end
+					Transparency = 0
+				end
+			end
+
+			ValueLabel.Text = DisplayText
+			ValueLabel.TextTransparency = Transparency
+		end
+
+		local function BuildDropdownContext()
+			local Options = {}
+			for Index, Object in Dropdown.Values do
+				local IsArray = typeof(Index) == "number"
+
+				local ContextOption = {
+					Text = tostring(Object),
+					CloseOnClick = not Dropdown.Multi,
+					Callback = function()
+						local Value = IsArray and Object or Index
+
+						if Dropdown.Multi then
+							Dropdown.Value[Value] = not (Dropdown.Value[Value] or false)
+						else
+							Dropdown.Value = Value
+						end
+
+						if wax.shared.ActorCommunicator then
+							pcall(function()
+								wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Dropdown.Value)
+							end)
+						end
+
+						wax.shared.SaveManager:SetState(Idx, Dropdown.Value)
+
+						UpdateValueLabel()
+
+						if Dropdown.Callback then
+							Dropdown.Callback(Dropdown.Value)
+						end
+					end,
+					TextProperties = function()
+						local Value = IsArray and Object or Index
+
+						if Dropdown.Multi and Dropdown.Value[Value] then
+							return {
+								TextTransparency = 0,
+							}
+						elseif not Dropdown.Multi and Dropdown.Value == Value then
+							return {
+								TextTransparency = 0,
+							}
+						end
+
+						return {
+							TextTransparency = 0.5,
+						}
+					end,
+				}
+
+				if not IsArray then
+					ContextOption.Text = Index
+					ContextOption.Icon = Object
+				end
+
+				table.insert(Options, ContextOption)
+			end
+			return Options
+		end
+
+		local ContextMenu = CreateContextMenu(DropdownDisplay, BuildDropdownContext())
+
+		DropdownUI.MouseButton1Click:Connect(ContextMenu.Toggle)
+		function Dropdown:Reset()
+			if Dropdown.Multi then
+				local Cloned = {}
+				for Key, Value in pairs(Dropdown.Default) do
+					Cloned[Key] = Value
+				end
+				Dropdown:SetValue(Cloned)
+			else
+				Dropdown:SetValue(Dropdown.Default)
+			end
+
+			UpdateValueLabel()
+		end
+
+		function Dropdown:SetValue(NewValue)
+			if wax.shared.ActorCommunicator then
+				pcall(function()
+					wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, NewValue)
+				end)
+			end
+
+			wax.shared.SaveManager:SetState(Idx, NewValue)
+
+			ContextMenu:Close()
+
+			for Image, Object in pairs(Dropdown.Values) do
+				local IsArray = typeof(Image) == "number"
+				local Value = IsArray and Object or Image
+
+				if Dropdown.Multi then
+					Dropdown.Value[Value] = NewValue[Value]
+				else
+					Dropdown.Value = NewValue
+				end
+			end
+
+			UpdateValueLabel()
+		end
+
+		if wax.shared.ActorCommunicator then
+			pcall(function()
+				wax.shared.ActorCommunicator:Fire("MainSettingsSync", Idx, Dropdown.Value)
+			end)
+		end
+
+		UpdateValueLabel()
+
+		wax.shared.Settings[Idx] = Dropdown
+		return Dropdown
+	end
+
+	function SectionBuilder:CreateRemoteList(
+		Idx: string,
+		Options: {
+			Text: string,
+			Callback: (any) -> () | nil,
+			NullMessage: string,
+		}
+	)
+		Idx = self.DataSavePrefix .. Idx
+		local RemoteList = {
+			Value = {},
+			InfoMapping = {},
+		}
+
+		local RemoveIgnored
+
+		local RemoteListContainer = Interface.New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			Parent = self.Parent,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 8),
+			},
+
+			["UIListLayout"] = {
+				FillDirection = Enum.FillDirection.Vertical,
+				HorizontalAlignment = Enum.HorizontalAlignment.Left,
+				Padding = UDim.new(0, 6),
+			},
+
+			["UIPadding"] = {
+				PaddingLeft = UDim.new(0, 5),
+				PaddingRight = UDim.new(0, 5),
+				PaddingTop = UDim.new(0, 5),
+				PaddingBottom = UDim.new(0, 5),
+			},
+
+			["UIStroke"] = {
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Color = Color3.fromRGB(25, 25, 25),
+				Thickness = 1,
+			},
+		})
+
+		local NoRemotesText = Interface.New("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 100),
+			TextTransparency = 0.5,
+			Text = Options.NullMessage,
+			TextSize = 14,
+			Visible = true,
+			Parent = RemoteListContainer,
+		})
+
+		function RemoteList:Display()
+			for _, Object in pairs(RemoteListContainer:GetChildren()) do
+				if not Object:IsA("Frame") then
+					continue
+				end
+				Object:Destroy()
+			end
+
+			NoRemotesText.Visible = (#self.Value == 0)
+			RemoveIgnored.Visible = (#self.Value > 0)
+
+			for _, remoteData in self.Value do
+				local remote = remoteData.Instance
+				if not remote then
+					continue
+				end
+
+				local ListElement = Interface.New("Frame", {
+					BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+					Size = UDim2.new(1, 0, 0, 32),
+					Parent = RemoteListContainer,
+
+					["UICorner"] = {
+						CornerRadius = UDim.new(0, 4),
+					},
+
+					["UIStroke"] = {
+						Color = Color3.fromRGB(25, 25, 25),
+						Thickness = 1,
+						ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					},
+
+					["Frame"] = {
+						Size = UDim2.fromScale(1, 1),
+						BackgroundTransparency = 1,
+
+						["UIListLayout"] = {
+							FillDirection = Enum.FillDirection.Horizontal,
+							HorizontalAlignment = Enum.HorizontalAlignment.Left,
+							VerticalAlignment = Enum.VerticalAlignment.Center,
+							Padding = UDim.new(0, 4),
+						},
+
+						["UIPadding"] = {
+							PaddingLeft = UDim.new(0, 5),
+						},
+
+						["ImageLabel"] = {
+							Size = UDim2.new(1, -8, 1, -8),
+							SizeConstraint = Enum.SizeConstraint.RelativeYY,
+							Image = Images[remote.ClassName],
+							AnchorPoint = Vector2.new(0, 0.5),
+							BackgroundTransparency = 1,
+							LayoutOrder = 1,
+						},
+
+						["TextLabel"] = {
+							Text = `{remote.Name} ({remoteData.Type})`,
+							Size = UDim2.fromScale(1, 1),
+							AutomaticSize = Enum.AutomaticSize.X,
+							TextSize = 16,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							BackgroundTransparency = 1,
+							LayoutOrder = 2,
+						},
+					},
+				})
+
+				local RemoveButton = Interface.New("ImageButton", {
+					BackgroundTransparency = 1,
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.new(1, -8, 0.5, 0),
+					Size = UDim2.new(1, -12, 1, -12),
+					SizeConstraint = Enum.SizeConstraint.RelativeYY,
+					ImageTransparency = 0.5,
+					Parent = ListElement,
+				})
+
+				Icons.SetIcon(RemoveButton, "trash")
+
+				RemoveButton.MouseEnter:Connect(function()
+					wax.shared.TweenService
+						:Create(RemoveButton, DefaultTweenInfo, {
+							ImageTransparency = 0,
+						})
+						:Play()
+				end)
+
+				RemoveButton.MouseLeave:Connect(function()
+					wax.shared.TweenService
+						:Create(RemoveButton, DefaultTweenInfo, {
+							ImageTransparency = 0.5,
+						})
+						:Play()
+				end)
+
+				RemoveButton.MouseButton1Click:Connect(function()
+					self:RemoveFromList(remoteData)
+					if Options.Callback then
+						Options.Callback(remoteData)
+					end
+				end)
+			end
+		end
+
+		function RemoteList:AddToList(remote)
+			table.insert(self.Value, remote)
+
+			self:Display()
+		end
+
+		function RemoteList:RemoveFromList(remote)
+			local index = table.find(self.Value, remote)
+			if not index then
+				return
+			end
+
+			table.remove(self.Value, index)
+
+			self:Display()
+		end
+
+		function RemoteList:SetList(remotes: { SupportedRemoteTypes })
+			self.Value = remotes
+
+			self:Display()
+		end
+
+		RemoveIgnored = self:CreateButton("Remove All", function()
+			if not Options.Callback then
+				return
+			end
+
+			local ToRemove = {}
+			for _, remote in RemoteList.Value do
+				Options.Callback(remote)
+				table.insert(ToRemove, remote)
+			end
+
+			for _, remote in ToRemove do
+				RemoteList:RemoveFromList(remote)
+			end
+			wax.shared.Sonner.success("Removed all remotes")
+		end)
+		RemoveIgnored.Visible = false
+
+		RemoteList:Display()
+
+		wax.shared.Settings[Idx] = RemoteList
+		return RemoteList
+	end
+end
+
+local PluginSettings = SettingsBuilder.new(PluginsScrollingFrame)
+wax.shared.PluginSettings = PluginSettings
+
+local PluginsSection = PluginSettings:CreateSection("Plugins")
+do
+	local HeaderLabel = PluginsSection.Parent:FindFirstChildWhichIsA("TextLabel")
+	local SummaryLabel = Interface.New("TextLabel", {
+		Text = `<font transparency="0.5">Waiting for plugins...</font>`,
+		RichText = true,
+		TextSize = 13,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 1, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		BackgroundTransparency = 1,
+		Parent = HeaderLabel,
+	})
+
+	-- Container that holds all per-plugin cards
+	local PluginCardsContainer = Interface.New("Frame", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 0),
+		Parent = PluginsSection.Parent,
+
+		["UIListLayout"] = {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			Padding = UDim.new(0, 5),
+		},
+	})
+
+	local function CreatePluginCard(IsError: boolean, Title: string, Meta: string, Body: string)
+		local AccentColor = IsError and Color3.fromRGB(220, 55, 55) or Color3.fromRGB(55, 185, 100)
+
+		local Card = Interface.New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+			Size = UDim2.fromScale(1, 0),
+			Parent = PluginCardsContainer,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 6),
+			},
+
+			["UIStroke"] = {
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Color = Color3.fromRGB(35, 35, 35),
+				Thickness = 1,
+			},
+		})
+
+		-- Left accent bar
+		Interface.New("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = AccentColor,
+			Position = UDim2.new(0, 0, 0.5, 0),
+			Size = UDim2.new(0, 3, 1, -8),
+			BorderSizePixel = 0,
+			Parent = Card,
+		})
+
+
+		local Content = Interface.New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			Parent = Card,
+
+			["UIPadding"] = {
+				PaddingLeft  = UDim.new(0, 12),
+				PaddingRight = UDim.new(0, 12),
+				PaddingTop   = UDim.new(0, 7),
+				PaddingBottom = UDim.new(0, 7),
+			},
+
+			["UIListLayout"] = {
+				FillDirection = Enum.FillDirection.Vertical,
+				HorizontalAlignment = Enum.HorizontalAlignment.Left,
+				Padding = UDim.new(0, 2),
+			},
+		})
+
+		-- Title row: name + badge
+		local TitleRow = Interface.New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			Parent = Content,
+
+			["UIListLayout"] = {
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 6),
+			},
+		})
+
+		Interface.New("TextLabel", {
+			Text = Title,
+			RichText = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			AutomaticSize = Enum.AutomaticSize.XY,
+			BackgroundTransparency = 1,
+			LayoutOrder = 1,
+			Parent = TitleRow,
+		})
+
+		-- Status badge (only shown for errors)
+		if IsError then
+			local Badge = Interface.New("Frame", {
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundColor3 = AccentColor,
+				BackgroundTransparency = 0.75,
+				LayoutOrder = 2,
+				Parent = TitleRow,
+
+				["UICorner"] = {
+					CornerRadius = UDim.new(1, 0),
+				},
+
+				["UIPadding"] = {
+					PaddingLeft = UDim.new(0, 6),
+					PaddingRight = UDim.new(0, 6),
+					PaddingTop = UDim.new(0, 2),
+					PaddingBottom = UDim.new(0, 2),
+				},
+			})
+
+			Interface.New("TextLabel", {
+				Text = "ERROR",
+				Font = Enum.Font.GothamBold,
+				TextColor3 = AccentColor,
+				TextSize = 10,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundTransparency = 1,
+				Parent = Badge,
+			})
+		end
+
+		-- Meta line (version · author  OR  file path)
+		if Meta ~= "" then
+			Interface.New("TextLabel", {
+				Text = Meta,
+				RichText = false,
+				Font = Enum.Font.Gotham,
+				TextColor3 = Color3.fromRGB(160, 160, 160),
+				TextSize = 12,
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				TextWrapped = true,
+				Parent = Content,
+			})
+		end
+
+		-- Body (description or error message)
+		if Body ~= "" then
+			Interface.New("TextLabel", {
+				Text = Body,
+				RichText = false,
+				Font = Enum.Font.Gotham,
+				TextColor3 = IsError and Color3.fromRGB(210, 120, 120) or Color3.fromRGB(140, 140, 140),
+				TextSize = 12,
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				TextWrapped = true,
+				Parent = Content,
+			})
+		end
+	end
+
+	task.spawn(function()
+		while not wax.shared.CobaltPluginManager or not wax.shared.CobaltPluginManager.Initialized do
+			task.wait()
+		end
+
+		local Registry = wax.shared.CobaltPluginManager.Registry
+		local LoadedCount = #Registry.Plugins
+		local ErrorCount  = #Registry.Errored
+
+		-- Update summary label
+		local SummaryParts = {}
+		if LoadedCount > 0 then
+			table.insert(SummaryParts, `<font color="#37b964"><b>{LoadedCount}</b></font> loaded`)
+		end
+		if ErrorCount > 0 then
+			table.insert(SummaryParts, `<font color="#dc3737"><b>{ErrorCount}</b></font> errored`)
+		end
+		if #SummaryParts == 0 then
+			table.insert(SummaryParts, `<font transparency="0.5">No plugins installed.</font>`)
+		end
+		SummaryLabel.RichText = true
+		SummaryLabel.Text = table.concat(SummaryParts, `<font transparency="0.6"> · </font>`)
+
+		-- Errored plugins first (most actionable)
+		for _, ErrorInfo in Registry.Errored do
+			local FileName = string.match(ErrorInfo.FilePath, "([^/]+)$") or ErrorInfo.FilePath
+			local Title = ErrorInfo.Name or FileName
+			local Meta = if ErrorInfo.Name
+				then `v{ErrorInfo.Version or "1.0.0"}  ·  by {ErrorInfo.Author or "Unknown"}  ·  {FileName}`
+				else ErrorInfo.FilePath
+			CreatePluginCard(true, Title, Meta, ErrorInfo.Error)
+		end
+
+		-- Loaded plugins
+		for _, PluginInfo in Registry.Plugins do
+			local Data = PluginInfo.PluginData
+			local Name = Data.Name or "Unknown"
+			local Version = Data.Version or "1.0.0"
+			local Author = Data.Author or "Unknown"
+			local Desc = Data.Description or "No description."
+			CreatePluginCard(false, Name, `v{Version}  ·  by {Author}`, Desc)
+		end
+	end)
+end
+
+-- Main Settings
+-- God this warning box code is so ass 🥀
+if #wax.shared.ExecutorSupport.FailedChecks.NonEssential > 0 then
+	local WarningDisplay = Interface.New("Frame", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Color3.fromRGB(245, 60, 54),
+		BackgroundTransparency = 0.75,
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = SettingsScrollingFrame,
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+
+		["UIStroke"] = {
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Color = Color3.fromRGB(245, 60, 54),
+			Thickness = 1,
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 8),
+			PaddingRight = UDim.new(0, 8),
+			PaddingTop = UDim.new(0, 8),
+			PaddingBottom = UDim.new(0, 8),
+		},
+
+		["UIListLayout"] = {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+		},
+	})
+
+	local function CreatePaddingText(size: number)
+		return `<font size="{size}"> \n</font>`
+	end
+
+	local NoticeTitleInfoSeperator = CreatePaddingText(4)
+
+	Interface.New("TextLabel", {
+		Text = `<font size="16"><b>DETECTION NOTICE ⚠️</b></font>\n{NoticeTitleInfoSeperator}Cobalt can get detected because your executor does not support the following functions/libraries:`,
+		TextSize = 15,
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		BackgroundTransparency = 1,
+		Parent = WarningDisplay,
+		TextWrapped = true,
+	})
+
+	local NonEssentialFailures = wax.shared.ExecutorSupport.FailedChecks.NonEssential
+	local DetectionDetails = CreatePaddingText(6)
+	local DetectionSuffix = `\n{CreatePaddingText(7)}`
+	for _, Name in NonEssentialFailures do
+		DetectionDetails ..= `⚠️ <b><font color="#ff9900">{Name}</font></b>\n<i><font size="14" transparency="0.5">{wax.shared.ExecutorSupport[Name].Details}</font></i>{DetectionSuffix}`
+	end
+
+	DetectionDetails = DetectionDetails:sub(1, (#DetectionSuffix * -1) - 1)
+
+	Interface.New("TextLabel", {
+		Text = DetectionDetails,
+		TextSize = 15,
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Parent = WarningDisplay,
+		TextWrapped = true,
+	})
+end
+
+local MainSettings = SettingsBuilder.new(SettingsScrollingFrame)
+local ExecSupportSection = MainSettings:CreateSection("Support Info")
+do
+	ExecSupportSection:AddLabel(table.concat({
+		`Executor: <b>{wax.shared.ExecutorName}</b>`,
+		`Support: {#wax.shared.ExecutorSupport.FailedChecks.Essential == 0 and "<b>Full</b>" or "<b>Partial</b> (" .. #wax.shared.ExecutorSupport.FailedChecks.Essential .. " check(s) failed)"}`,
+	}, "\n"))
+
+	local PartialSupportText = ""
+	local SupportSuffix = "\n\n"
+	for _, Name in wax.shared.ExecutorSupport.FailedChecks.Essential do
+		PartialSupportText ..= `❌ <b><font color="#ff0000">{Name}</font></b>\n<i><font size="14" transparency="0.5">{wax.shared.ExecutorSupport[Name].Details}</font></i>{SupportSuffix}`
+	end
+
+	PartialSupportText = PartialSupportText:sub(1, (#SupportSuffix * -1) - 1)
+
+	if #wax.shared.ExecutorSupport.FailedChecks.Essential > 0 then
+		ExecSupportSection:AddLabel(PartialSupportText)
+	end
+end
+
+local CodeGenSection = MainSettings:CreateSection("Code Generation")
+
+CodeGenSection:CreateDropdown("InstancePathLookupChain", {
+	Text = "Instance Path Lookup Chain",
+	Values = {
+		["Index"] = "file",
+		["WaitForChild"] = "file-clock",
+		["FindFirstChild"] = "file-search",
+	},
+	Default = "Index",
+})
+
+CodeGenSection:CreateCheckbox("PreferBufferFromString", {
+	Text = "Prefer buffer.fromstring",
+	Default = false,
+})
+
+CodeGenSection:CreateCheckbox("ShowWatermark", {
+	Text = "Show Cobalt Watermark",
+	Default = true,
+})
+
+local MainSection = MainSettings:CreateSection("Main")
+
+MainSection:CreateDropdown("WindowDPIScale", {
+	Text = "DPI Scale",
+	Values = {
+		"50%",
+		"75%",
+		"100%",
+		"125%",
+		"150%"
+	},
+	Default = "100%",
+
+	Callback = function(value)
+		ScreenDPIScale.Scale = GetDPIScale()
+	end
+})
+
+MainSection:CreateTextBox("MaxItemPerPages", {
+	Text = "Logs Per Page",
+	Default = 20,
+	NumericOnly = true,
+
+	Callback = function(max)
+		PaginationHelper:SetItemsPerPage(max)
+
+		if not CurrentLog then
+			return
+		end
+
+		PaginationHelper:Update(#CurrentLog.Calls)
+		PaginationHelper:SetPage(1)
+		CurrentPage[CurrentLog] = 1
+
+		ShowLog(CurrentLog)
+	end,
+})
+
+MainSection:CreateCheckbox("ExecuteOnTeleport", {
+	Text = "Execute On Teleport",
+	Default = false,
+})
+
+MainSection:CreateCheckbox("UseAlternativeHooks", {
+	Text = "Use alternative metamethod hook",
+	Default = false,
+})
+
+MainSection:CreateCheckbox("AnticheatBypass", {
+	Text = "Built-in Anticheat Bypass",
+	Default = true,
+})
+
+if AnticheatData.Disabled then
+	MainSection:AddLabel(`Anticheat Detected: <b>{AnticheatData.Name}</b>`)
+end
+
+wax.shared.ClearLogs = function(FilterInstance: Instance?, FilterType: string?)
+	local ClearedAny = false
+	for Type, LogCategory in pairs(wax.shared.Logs) do
+		if FilterType and Type ~= FilterType then
+			continue
+		end
+
+		for Index, Log in pairs(LogCategory) do
+			if FilterInstance and Log.Instance ~= FilterInstance then
+				continue
+			end
+
+			if Log.Button then
+				Log.Button.Instance:Destroy()
+				Log.Button = nil
+			end
+
+			CurrentPage[Log] = nil
+
+			table.clear(Log.Calls)
+			table.clear(Log.GameCalls)
+			Log.Index = 0
+			ClearedAny = true
+		end
+	end
+
+	CleanLogsList()
+	if not FilterInstance then
+		CurrentLog = nil
+	elseif CurrentLog and CurrentLog.Instance == FilterInstance then
+		CurrentLog = nil
+	end
+
+	if ClearedAny then
+		wax.shared.Sonner.success(`Successfully Cleared {FilterInstance and FilterInstance.Name .. " " or ""}{FilterType or "All"} Logs`)
+	end
+end
+
+wax.shared.GetCurrentLog = function()
+	return CurrentLog
+end
+
+MainSection:CreateButton("Clear All Logs", wax.shared.ClearLogs)
+
+local FilterSection = MainSettings:CreateSection("Filter")
+
+FilterSection:CreateDropdown("IgnoredRemotesDropdown", {
+	Text = "Ignore Remotes",
+	Values = Images,
+	Default = { "BindableEvent", "BindableFunction" },
+	AllowNull = true,
+	Multi = true,
+})
+
+FilterSection:CreateCheckbox("AutoIgnoreSpammyEvents", {
+	Text = "Auto Ignore Spammy Events",
+	Default = false,
+})
+
+FilterSection:CreateCheckbox("LogActors", {
+	Text = "Log Events from Actors",
+	Default = true,
+})
+
+FilterSection:CreateCheckbox("IgnorePlayerModule", {
+	Text = "Ignore Player Module Remotes",
+	Default = true,
+})
+FilterSection:CreateCheckbox("ShowExecutorLogs", {
+	Text = `Show {wax.shared.ExecutorName} Remote Logs`,
+	Default = true,
+	Callback = function()
+		if not CurrentLog then
+			return
+		end
+
+		PaginationHelper:Update(#CurrentLog.Calls)
+		PaginationHelper:SetPage(1)
+		CurrentPage[CurrentLog] = 1
+
+		ShowLog(CurrentLog)
+	end,
+})
+FilterSection:CreateButton("Reset Filtering to Default", function()
+	wax.shared.Settings.IgnoredRemotesDropdown:Reset()
+	wax.shared.Settings.IgnoreSpammyRemotes:Reset()
+	wax.shared.Settings.IgnorePlayerModule:Reset()
+	wax.shared.Settings.ShowExecutorLogs:Reset()
+
+	wax.shared.Sonner.success("Successfully reset remote filtering to default")
+end)
+
+local IgnoredSection = MainSettings:CreateSection("Ignored")
+
+IgnoredSection:CreateRemoteList("IgnoredRemotes", {
+	Text = "Ignored Remotes",
+	NullMessage = "No remotes have been ignored yet.",
+	Callback = function(Remote)
+		Remote.Ignored = false
+	end,
+})
+
+local BlockedSection = MainSettings:CreateSection("Blocked")
+
+BlockedSection:CreateRemoteList("BlockedRemotes", {
+	Text = "Blocked Remotes",
+	NullMessage = "No remotes have been blocked yet.",
+	Callback = function(Remote)
+		Remote.Blocked = false
+	end,
+})
+
+local LoggingSection = MainSettings:CreateSection("Logging")
+local SessionLog
+
+LoggingSection:CreateCheckbox("EnableLogging", {
+	Text = `Enable File Logs`,
+	Default = false,
+	Callback = function(value)
+		if not value then
+			wax.shared.LogConnection:Disconnect()
+			wax.shared.LogConnection = nil
+			wax.shared.LogFileName = nil
+			SessionLog.Text = `Current Session Log: <b>Not Logging</b>`
+			wax.shared.Sonner.success("Successfully disabled file logging")
+			return
+		end
+
+		local LogConnection = wax.shared.SetupLoggingConnection()
+		SessionLog.Text = `Current Session Log: <b>{wax.shared.LogFileName:gsub("Cobalt/Logs/", "")}</b>`
+		wax.shared.LogConnection = wax.shared.Connect(wax.shared.Communicator.Event:Connect(LogConnection))
+
+		wax.shared.Sonner.success("Successfully enabled file logging")
+	end,
+})
+
+SessionLog = LoggingSection:AddLabel(`Current Session Log: <b>{wax.shared.Settings.EnableLogging.Value and wax.shared.LogFileName:gsub(
+	"Cobalt/Logs/",
+	""
+) or "Not Logging"}</b>`)
+
+LoggingSection:AddLabel(`Logs Path: <b>Cobalt/Logs</b>`)
+
+local SessionButtons = LoggingSection:CreateRow()
+
+local CopySessionName = SessionButtons:CreateButton("Copy Session Name", function()
+	if not wax.shared.Settings.EnableLogging.Value then
+		wax.shared.Sonner.error("File logging is not enabled")
+		return
+	end
+
+	local ActualLogFileName = wax.shared.LogFileName:gsub("Cobalt/Logs/", "")
+	local Success, Error = pcall(setclipboard, ActualLogFileName)
+
+	if not Success then
+		warn(Error)
+		wax.shared.Sonner.error("Failed to copy session name")
+		return
+	end
+
+	wax.shared.Sonner.success("Successfully copied session name to clipboard")
+end, 14)
+CopySessionName.Size = UDim2.new(0.5, -4, 0, 24)
+
+local CopyFullSessionPath = SessionButtons:CreateButton("Copy Full Path", function()
+	if not wax.shared.Settings.EnableLogging.Value then
+		wax.shared.Sonner.error("File logging is not enabled")
+		return
+	end
+
+	local Success, Error = pcall(setclipboard, wax.shared.LogFileName)
+
+	if not Success then
+		warn(Error)
+		wax.shared.Sonner.error("Failed to copy log path")
+		return
+	end
+
+	wax.shared.Sonner.success("Successfully copied log path to clipboard")
+end, 14)
+CopyFullSessionPath.Size = UDim2.new(0.5, -4, 0, 24)
+
+LoggingSection:CreateButton("Export Logs to HTML", function()
+	wax.shared.Sonner.promise(function(UpdateProgress)
+		assert(typeof(writefile) == "function", "Exploit does not support writefile")
+		
+		--// Collect all logs \\--
+		local AllCalls = SessionExporter:FetchAllLogs()
+		local SessionData = SessionExporter:GetSessionData(AllCalls)
+
+		--// Data Processing \\--
+		UpdateProgress("Sorting calls...")
+		SessionExporter:SortCalls(AllCalls)
+		local Events, StringMap = SessionExporter:ProcessCalls(
+			AllCalls,
+			SessionData,
+			UpdateProgress
+		)
+
+		--// Export \\--
+		local FileName = `Cobalt_Session_{os.time()}.html`
+		writefile(
+			FileName,
+			SessionExporter:ExportSessionToHTML(Events, StringMap, SessionData)
+		)
+		return FileName
+	end, {
+		loadingText = "Starting Export...",
+		successText = function(fileName) return `Successfully exported trace to {fileName}` end,
+		errorText = function(err) return `Export Failed: {err}` end,
+	})
+end, 14)
+
+local CreditsSection = MainSettings:CreateSection("Credits")
+
+local Credits = {
+	{
+		Credit = "upio",
+		Description = "Cobalt Developer",
+	},
+	{
+		Credit = "deivid",
+		Description = "Cobalt Developer",
+	},
+	{
+		Credit = "shadcn",
+		Description = 'UI Design Insipration (<font color="#3798ff">https://ui.shadcn.com/</font>)',
+	},
+	{
+		Credit = "lucide",
+		Description = 'Consistent and clean icons (<font color="#3798ff">https://lucide.dev/</font>)',
+	},
+	{
+		Credit = "Emil Kowalski",
+		Description = 'Creator of Sonner component (<font color="#3798ff">https://sonner.emilkowal.ski/</font>)',
+	},
+}
+
+local CreditsWrapper = Interface.New("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = CreditsSection.Parent,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 10),
+	},
+})
+
+for Order, Data in pairs(Credits) do
+	Interface.New("TextLabel", {
+		Text = `<b>{Data.Credit}</b>\n{Data.Description}`,
+		Size = UDim2.fromScale(1, 0),
+		TextSize = 14,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = Order,
+		Parent = CreditsWrapper,
+	})
+end
+
+-- Info
+local InfoFrame = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromScale(0.65, 0.712),
+	Text = "",
+	Visible = false,
+	Parent = ModalBackground,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 8),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(25, 25, 25),
+		Thickness = 1,
+	},
+})
+
+Resize.new({
+	MainFrame = InfoFrame,
+
+	MaximumSize = UDim2.new(1, -2, 1, -2),
+	MinimumSize = UDim2.fromScale(0.65, 0.712),
+	Mirrored = true,
+	LockedPosition = true,
+
+	CornerHandleSize = 20,
+	HandleSize = 6,
+})
+
+local InfoTitle, InfoIcon = CreateModalTop("...", Images["RemoteEvent"], InfoFrame)
+local InfoModalTab = {}
+
+local InfoTabsScroller = Interface.New("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 4, 0, 44),
+	Size = UDim2.new(1, -10, 0, 36),
+	CanvasSize = UDim2.fromScale(0, 0),
+	AutomaticCanvasSize = Enum.AutomaticSize.X,
+	ScrollBarThickness = 0,
+	ScrollingDirection = Enum.ScrollingDirection.X,
+	ClipsDescendants = true,
+	Parent = InfoFrame,
+})
+
+local InfoTabs = Interface.New("Frame", {
+	BackgroundTransparency = 1,
+	AutomaticSize = Enum.AutomaticSize.X,
+	Size = UDim2.fromScale(0, 1),
+	Parent = InfoTabsScroller,
+
+	["UIListLayout"] = {
+		Padding = UDim.new(0, 6),
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Top,
+	},
+
+	["UIPadding"] = {
+		PaddingRight = UDim.new(0, 20),
+		PaddingTop = UDim.new(0, 2),
+		PaddingLeft = UDim.new(0, 2),
+	},
+})
+
+-- Right gradient (always visible)
+Interface.New("Frame", {
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -6, 0, 44),
+	Size = UDim2.new(0, 30, 0, 36),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	BorderSizePixel = 0,
+	ZIndex = 10,
+	Parent = InfoFrame,
+
+	["UIGradient"] = {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
+	},
+})
+
+-- Left gradient (only visible after scrolling)
+local LeftGradient = Interface.New("Frame", {
+	Position = UDim2.new(0, 4, 0, 44),
+	Size = UDim2.new(0, 30, 0, 36),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	BorderSizePixel = 0,
+	ZIndex = 10,
+	Visible = false,
+	Parent = InfoFrame,
+
+	["UIGradient"] = {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+	},
+})
+
+InfoTabsScroller:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+	LeftGradient.Visible = InfoTabsScroller.CanvasPosition.X > 2
+end)
+
+local DefaultFooterButtons = {
+	{
+		Icon = "code",
+		Title = "Code",
+		Options = {
+			{
+				Text = "Calling Code",
+				Icon = "forward",
+				Callback = function()
+					if not CurrentInfo then
+						return
+					end
+
+					local Code = CodeGen:BuildCallCode(CurrentInfo)
+					local Success, Error = pcall(setclipboard, Code)
+
+					if Success then
+						wax.shared.Sonner.success("Copied code to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy code to clipboard")
+						warn("Failed to copy code to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Intercept Code",
+				Icon = "shield-alert",
+				Callback = function()
+					if not CurrentInfo then
+						return
+					end
+
+					local Code = CodeGen:BuildHookCode(CurrentInfo)
+					local Success, Error = pcall(setclipboard, Code)
+
+					if Success then
+						wax.shared.Sonner.success("Copied code to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy code to clipboard")
+						warn("Failed to copy code to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Function Info",
+				Icon = "parentheses",
+				Callback = function()
+					if not CurrentInfo then
+						return
+					end
+
+					local Info = {
+						Function = typeof(CurrentInfo.Function) == "function" and {
+							Name = CurrentInfo.Function and debug.info(CurrentInfo.Function, "n") or "Unknown",
+							Source = CurrentInfo.Source
+								or (CurrentInfo.Function and debug.info(CurrentInfo.Function, "s"))
+								or "Unknown",
+							Type = CurrentInfo.Function
+									and (iscclosure(CurrentInfo.Function) and "C Closure" or "Luau function")
+								or "N/A",
+							Address = tostring(CurrentInfo.Function),
+							Arguments = table.unpack(
+								CurrentInfo.Arguments,
+								1,
+								wax.shared.GetTableLength(CurrentInfo.Arguments)
+							),
+						} or CurrentInfo.Function,
+						Script = CurrentInfo.Origin,
+						Line = CurrentInfo.Line,
+					}
+
+					if typeof(CurrentInfo.Function) == "function" and islclosure(CurrentInfo.Function) then
+						local FunctionInfo = {
+							Constants = debug.getconstants,
+							Upvalues = debug.getupvalues,
+							Protos = debug.getprotos,
+						}
+
+						for Type, Func in pairs(FunctionInfo) do
+							if not Func then
+								continue
+							end
+
+							Info.Function[Type] = Func(CurrentInfo.Function)
+						end
+					end
+
+					local Success, Error = pcall(setclipboard, `local Info = {LuaEncode(Info, { Prettify = true, DisableNilParentHandler = true })}`)
+					if Success then
+						wax.shared.Sonner.success("Copied function info to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy function info to clipboard")
+						warn("Failed to copy function info to clipboard", Error)
+					end
+				end,
+			},
+		}
+	},
+	{
+		Icon = "scroll-text",
+		Title = "Origin",
+		Options = {
+			{
+				Text = "Remote Path",
+				Icon = "package-search",
+				Callback = function()
+					if not CurrentInfo then
+						return
+					end
+
+					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CurrentInfo.Instance, {
+						VariableName = "Event",
+						DisableNilParentHandler = false
+					}))
+					if Success then
+						wax.shared.Sonner.success("Copied remote path to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy remote path to clipboard")
+						warn("Failed to copy remote path to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Script Path",
+				Icon = "file-search",
+				Condition = function()
+					return CurrentInfo and typeof(CurrentInfo.Origin) == "Instance"
+				end,
+				Callback = function()
+					if not (CurrentInfo and typeof(CurrentInfo.Origin) == "Instance") then
+						return
+					end
+
+					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CurrentInfo.Origin))
+					if Success then
+						wax.shared.Sonner.success("Copied script path to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy script path to clipboard")
+						warn("Failed to copy script path to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Decompiled Script",
+				Icon = "file-text",
+				Condition = function()
+					return CurrentInfo and typeof(CurrentInfo.Origin) == "Instance" and typeof(decompile) == "function"
+				end,
+				Callback = function()
+					if not (CurrentInfo and typeof(CurrentInfo.Origin) == "Instance" and typeof(decompile) == "function") then
+						return
+					end
+
+					local Decompiled, Result = pcall(decompile, CurrentInfo.Origin)
+					if Decompiled then
+						local Success, Error = pcall(setclipboard, Result)
+						if Success then
+							wax.shared.Sonner.success("Copied decompiled script to clipboard")
+						else
+							wax.shared.Sonner.error("Failed to copy decompiled script to clipboard")
+							warn("Failed to copy decompield script to clipboard", Error)
+						end
+					else
+						wax.shared.Sonner.error("Failed to decompile script")
+						warn("Failed to decompile script", Result)
+					end
+				end,
+			},
+		}
+	},
+	{
+		Icon = "network",
+		Title = "Event",
+		Options = {
+			{
+				Text = "Replay",
+				Icon = "play",
+				Callback = function()
+					if not CurrentInfo then
+						return
+					end
+
+					wax.shared.Sonner.promise(function()
+						wax.shared.ReplayCallInfo(CurrentInfo, CurrentTab.Name)
+					end, {
+						loadingText = "Replaying event...",
+						successText = "Replayed event successfully!",
+						errorText = "Failed to replay event",
+						time = 4.5,
+					})
+				end,
+			},
+			{
+				Text = function()
+					if not CurrentLog then
+						return "Ignore"
+					end
+
+					return CurrentLog.Ignored and "Unignore" or "Ignore"
+				end,
+				Icon = function()
+					if not CurrentLog then
+						return "eye"
+					end
+
+					return CurrentLog.Ignored and "eye" or "eye-off"
+				end,
+				Callback = function()
+					if not CurrentLog then
+						return
+					end
+
+					CurrentLog:Ignore()
+					wax.shared.Sonner.success(`{CurrentLog.Ignored and "Started" or "Stopped"} ignoring event`)
+				end,
+			},
+			{
+				Text = function()
+					if not CurrentLog then
+						return "Block"
+					end
+
+					return CurrentLog.Blocked and "Unblock" or "Block"
+				end,
+				Icon = function()
+					if not CurrentLog then
+						return "lock"
+					end
+
+					return CurrentLog.Blocked and "lock" or "lock-open"
+				end,
+				Callback = function()
+					if not CurrentLog then
+						return
+					end
+
+					CurrentLog:Block()
+
+					local BlockedRemoteList = wax.shared.Settings["BlockedRemotes"]
+					if BlockedRemoteList then
+						if CurrentLog.Blocked then
+							BlockedRemoteList:AddToList(CurrentLog)
+						else
+							BlockedRemoteList:RemoveFromList(CurrentLog)
+						end
+					end
+
+					wax.shared.Sonner.success(`{CurrentLog.Blocked and "Started" or "Stopped"} blocking event`)
+				end,
+			},
+			{
+				Text = "Clear Logs",
+				Icon = "trash",
+				Callback = function()
+					if not CurrentLog then
+						return
+					end
+
+					CurrentLog.Calls = {}
+					PaginationHelper:Update(#CurrentLog.Calls)
+					PaginationHelper:SetPage(1)
+					CurrentPage[CurrentLog] = 1
+
+					CleanLogsList()
+
+					CurrentLog.Button.Calls.Text = "x" .. #CurrentLog.Calls
+					UpdateLogNameSize(CurrentLog)
+
+					ShowPagination(CurrentLog)
+					ShowCalls(CurrentLog, 1)
+
+					CloseModal()
+
+					wax.shared.Sonner.success("Cleared events for this remote")
+
+					if #CurrentLog.Calls == 0 then
+						CurrentLog.Button.Instance.Parent = nil
+					end
+				end,
+			}
+		}
+	}
+}
+
+InfoButtons = Interface.New("Frame", {
+	AnchorPoint = Vector2.new(0, 1),
+	BackgroundTransparency = 1,
+	Position = UDim2.new(0, 6, 1, -7),
+	Size = UDim2.new(1, -12, 0, 32),
+	Parent = InfoFrame,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, 6),
+	},
+})
+
+local function CreateInfoDropdownButton(Icon: string, Title: string, Options: {})
+	local Button = Interface.New("TextButton", {
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(0, 1),
+		Text = "",
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 6),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 8),
+			PaddingRight = UDim.new(0, 8),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+
+		["UIStroke"] = {
+			Color = Color3.fromRGB(25, 25, 25),
+			Thickness = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		},
+
+		["TextLabel"] = {
+			Text = Title,
+			TextSize = 15,
+			Size = UDim2.fromScale(0, 1),
+			Position = UDim2.fromOffset(28, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+		},
+
+		Parent = InfoButtons,
+	})
+
+	Interface.NewIcon(Icon, {
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+		Parent = Button,
+	})
+
+	local Menu = CreateContextMenu(Button, Options)
+
+	Button.MouseEnter:Connect(function()
+		wax.shared.TweenService
+			:Create(Button, DefaultTweenInfo, {
+				BackgroundTransparency = 0,
+			})
+			:Play()
+	end)
+	Button.MouseLeave:Connect(function()
+		wax.shared.TweenService
+			:Create(Button, DefaultTweenInfo, {
+				BackgroundTransparency = 1,
+			})
+			:Play()
+	end)
+	Button.MouseButton1Click:Connect(Menu.Toggle)
+	return Button
+end
+
+local CurrentInfoTab = nil
+
+local function UpdateFooterButtons()
+	for _, Element in InfoButtons:GetChildren() do
+		if Element:IsA("TextButton") then
+			Element.Parent = nil
+		end
+	end
+
+	local PluginManager = wax.shared.CobaltPluginManager
+	local TabRegistry = PluginManager and PluginManager.Registry.UIHooks.RemoteInfo.Tabs[CurrentInfoTab] or nil
+
+	if not (TabRegistry and TabRegistry.DisableDefaults) then
+		for _, ButtonDef in DefaultFooterButtons do
+			if not ButtonDef.Instance then
+				ButtonDef.Instance = CreateInfoDropdownButton(ButtonDef.Icon, ButtonDef.Title, ButtonDef.Options)
+			end
+			ButtonDef.Instance.Parent = InfoButtons
+		end
+	end
+
+	if TabRegistry and TabRegistry.Buttons then
+		for _, ButtonDef in TabRegistry.Buttons do
+			if not ButtonDef.Instance then
+				ButtonDef.Instance = CreateInfoDropdownButton(ButtonDef.Icon, ButtonDef.Title, ButtonDef.Options)
+			end
+			ButtonDef.Instance.Parent = InfoButtons
+		end
+	end
+end
+
+if wax.shared.CobaltPluginManager then
+	wax.shared.CobaltPluginManager.UI.RemoteInfo.UpdateFooterButtons = UpdateFooterButtons
+end
+
+local function CreateInfoTab(Icon: string, Title: string, TabContents: Frame?)
+	if not CurrentInfoTab then
+		CurrentInfoTab = Title
+	end
+
+	local IsTabSelected = CurrentInfoTab == Title
+
+	if TabContents then
+		TabContents.Parent = InfoFrame
+		TabContents.Visible = IsTabSelected
+	end
+
+	local ButtonColor = IsTabSelected and Color3.fromRGB(25, 25, 25) or Color3.fromRGB(0, 0, 0)
+	local TabButton = Interface.New("TextButton", {
+		BackgroundColor3 = ButtonColor,
+		Size = UDim2.fromScale(0, 1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Text = "",
+		Parent = InfoTabs,
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 8),
+		},
+
+		["UIStroke"] = {
+			Color = Color3.fromRGB(25, 25, 25),
+			Thickness = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		},
+
+		["Frame"] = {
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.fromScale(0, 1),
+			Size = UDim2.fromScale(1, 0.5),
+			BackgroundColor3 = ButtonColor,
+		},
+	})
+
+	InfoModalTab[Title] = {
+		TabButton = TabButton,
+		TabContents = TabContents,
+	}
+
+	local TextWrapper = Interface.New("Frame", {
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 24),
+		Parent = TabButton,
+
+		["UIListLayout"] = {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 5),
+		},
+
+		["UIPadding"] = {
+			PaddingRight = UDim.new(0, 8),
+			PaddingLeft = UDim.new(0, 8),
+		},
+
+		["TextLabel"] = {
+			Text = Title,
+			TextSize = 15,
+			Size = UDim2.fromScale(0, 1),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = 2,
+			ZIndex = 2,
+		},
+	})
+
+	Interface.NewIcon(Icon, {
+		Position = UDim2.fromOffset(8, 5),
+		Size = UDim2.fromOffset(16, 16),
+		LayoutOrder = 1,
+		ZIndex = 2,
+
+		Parent = TextWrapper,
+	})
+
+	wax.shared.Connect(TabButton.MouseButton1Click:Connect(function()
+		local OldTab = InfoModalTab[CurrentInfoTab]
+		local OldTabButton = OldTab.TabButton
+		local OldTabContents = OldTab.TabContents
+
+		OldTabButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		OldTabButton.Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		OldTabContents.Visible = false
+
+		CurrentInfoTab = Title
+		UpdateFooterButtons()
+
+		TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		TabButton.Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+		if TabContents then
+			TabContents.Visible = true
+		end
+	end))
+end
+
+local function CreateTabContent()
+	local Container = Interface.New("Frame", {
+		Position = UDim2.fromOffset(6, 71),
+		Size = UDim2.new(1, -12, 1, -118),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 6),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 8),
+			PaddingRight = UDim.new(0, 8),
+			PaddingTop = UDim.new(0, 8),
+			PaddingBottom = UDim.new(0, 8),
+		},
+
+		["UIStroke"] = {
+			Color = Color3.fromRGB(25, 25, 25),
+			Thickness = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		},
+	})
+
+	return Container,
+		Interface.New("ScrollingFrame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			AutomaticCanvasSize = Enum.AutomaticSize.XY,
+			CanvasSize = UDim2.fromScale(0, 0),
+			ScrollBarThickness = 0,
+			HorizontalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+			ScrollingDirection = Enum.ScrollingDirection.XY,
+			Parent = Container,
+		})
+end
+
+wax.shared.CreateRemoteInfoTab = CreateInfoTab
+wax.shared.CreateTabContent = CreateTabContent
+wax.shared.OpenModal = OpenModal
+wax.shared.CloseModal = CloseModal
+wax.shared.CreateModalTop = CreateModalTop
+wax.shared.CreateInfoDropdownButton = CreateInfoDropdownButton
+wax.shared.ModalBackground = ModalBackground
+
+local ArgumentInfoUI, ArgumentScrollingFrame = CreateTabContent()
+CreateInfoTab("ellipsis", "Arguments", ArgumentInfoUI)
+ArgumentScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local ArgumentsInfoFrame = Interface.New("Frame", {
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 0),
+
+	["UIListLayout"] = {
+		Padding = UDim.new(0, 6),
+	},
+
+	MainUICorner,
+
+	Parent = ArgumentScrollingFrame,
+})
+
+local CodeInfoUI, CodeScrollingFrame = CreateTabContent()
+CreateInfoTab("code", "Code", CodeInfoUI)
+CodeScrollingFrame.ScrollBarThickness = 3
+CodeScrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.None
+
+local CodeTextLabels = {}
+for i = 1, 5 do
+	CodeTextLabels[i] = Interface.New("TextLabel", {
+		AutomaticSize = Enum.AutomaticSize.XY,
+		TextSize = 16,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		FontFace = Font.fromId(16658246179),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Text = "",
+		Parent = CodeScrollingFrame,
+	})
+end
+
+function SetCodeText(Code: string)
+	for _, Label in CodeTextLabels do
+		Label.Text = ""
+	end
+
+	local HighlightedCode = SyntaxHighlighter.Run(Code)
+	local Lines = HighlightedCode:split("\n")
+	local CurrentCharacterCount = 0
+	local TextContents = {}
+	local CurrentLabel = 1
+
+	for _, Line in Lines do
+		if CurrentCharacterCount + #Line > 200000 then
+			CurrentLabel += 1
+			CurrentCharacterCount = 0
+			continue
+		end
+
+		CurrentCharacterCount += #Line
+		if not TextContents[CurrentLabel] then
+			TextContents[CurrentLabel] = {}
+		end
+
+		table.insert(TextContents[CurrentLabel], Line)
+	end
+
+	for Idx, Content in TextContents do
+		if not CodeTextLabels[Idx] then
+			CodeTextLabels[Idx] = Interface.New("TextLabel", {
+				AutomaticSize = Enum.AutomaticSize.XY,
+				TextSize = 16,
+				TextColor3 = Color3.fromRGB(255, 255, 255),
+				FontFace = Font.fromId(16658246179),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				Text = SyntaxHighlighter.Run("-- Loading..."),
+				Parent = CodeScrollingFrame,
+			})
+		end
+
+		CodeTextLabels[Idx].Text = table.concat(Content, "\n")
+	end
+end
+
+local FunctionInfoUI, FunctionScrollingFrame = CreateTabContent()
+CreateInfoTab("parentheses", "Function Info", FunctionInfoUI)
+
+local FunctionInfoText = Interface.New("TextLabel", {
+	AutomaticSize = Enum.AutomaticSize.XY,
+	TextSize = 16,
+	TextColor3 = Color3.fromRGB(255, 255, 255),
+	FontFace = Font.fromId(16658246179),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	BackgroundTransparency = 1,
+	Text = "",
+	Parent = FunctionScrollingFrame,
+})
+
+-- Search
+local ResultInfo = {}
+local CurrentResults = {}
+local SelectedResult = -1
+
+local SearchFrame = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0.5, 0, 0.8, 0),
+	Text = "",
+	Visible = false,
+	Parent = ModalBackground,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 6),
+	},
+
+	["UIStroke"] = {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(25, 25, 25),
+		Thickness = 1,
+	},
+})
+
+local SearchTop = Interface.New("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 36),
+	Parent = SearchFrame,
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 12),
+		PaddingRight = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+	},
+})
+
+local SearchBox = Interface.New("TextBox", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, -30, 1, 0),
+	PlaceholderText = "Search for logs...",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	PlaceholderColor3 = Color3.fromRGB(127, 127, 127),
+	Text = "",
+	TextSize = 17,
+	Parent = SearchTop,
+})
+
+local SearchCloseButton = Interface.New("ImageButton", {
+	Size = UDim2.fromScale(1, 1),
+	Position = UDim2.fromScale(1, 0),
+	AnchorPoint = Vector2.new(1, 0),
+	SizeConstraint = Enum.SizeConstraint.RelativeYY,
+	Parent = SearchTop,
+})
+local SearchCloseImage = Interface.NewIcon("x", {
+	ImageTransparency = 0.5,
+	Size = UDim2.fromOffset(22, 22),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+	Parent = SearchCloseButton,
+})
+
+ConnectCloseButton(SearchCloseButton, SearchCloseImage, SearchFrame)
+
+Interface.New("Frame", {
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Size = UDim2.new(1, 0, 0, 1),
+	Position = UDim2.fromOffset(0, 36),
+	Parent = SearchFrame,
+})
+
+local SearchFilterList = Interface.New("ScrollingFrame", {
+	AutomaticCanvasSize = Enum.AutomaticSize.X,
+	CanvasSize = UDim2.fromOffset(0, 0),
+	ScrollBarThickness = 2,
+	Position = UDim2.fromOffset(0, 37),
+	Size = UDim2.new(1, 0, 0, 36),
+	BackgroundTransparency = 1,
+	Parent = SearchFrame,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 6),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 6),
+		PaddingRight = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+	},
+})
+
+-- Search Filter
+local ExcludeSearchClass = {}
+local SearchFilterButtons = {}
+
+local FilterAllButton = Interface.New("TextButton", {
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Size = UDim2.fromScale(0, 1),
+	AutomaticSize = Enum.AutomaticSize.X,
+	TextSize = 15,
+	Text = "All",
+	Parent = SearchFilterList,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 4),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		PaddingTop = UDim.new(0, 0),
+		PaddingBottom = UDim.new(0, 0),
+	},
+})
+
+FilterAllButton.MouseButton1Click:Connect(function()
+	ExcludeSearchClass = {}
+	FilterAllButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	for _, Button in pairs(SearchFilterButtons) do
+		Button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	end
+	UpdateSearch()
+end)
+
+for Order, ClassName in pairs(ClassOrder) do
+	local ClassNameFilterButton = Interface.New("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		Size = UDim2.fromScale(0, 1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextSize = 15,
+		Text = "",
+		LayoutOrder = Order,
+		Parent = SearchFilterList,
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 10),
+			PaddingRight = UDim.new(0, 10),
+			PaddingTop = UDim.new(0, 0),
+			PaddingBottom = UDim.new(0, 0),
+		},
+
+		["UIListLayout"] = {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 6),
+		},
+
+		["TextLabel"] = {
+			LayoutOrder = 1,
+			Text = ClassName,
+			TextSize = 15,
+			Size = UDim2.fromScale(0, 1),
+			AutomaticSize = Enum.AutomaticSize.X,
+		},
+	})
+
+	local ImageLabel = Interface.New("ImageLabel", {
+		Image = Images[ClassName],
+		Size = UDim2.new(1, -8, 1, -8),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(0.5, 0),
+		Parent = ClassNameFilterButton,
+	})
+
+	ClassNameFilterButton.MouseButton1Click:Connect(function()
+		local FoundIndex = table.find(ExcludeSearchClass, ClassName)
+		if FoundIndex then
+			table.remove(ExcludeSearchClass, FoundIndex)
+			ClassNameFilterButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+			if #ExcludeSearchClass == 0 then
+				FilterAllButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+			end
+
+			UpdateSearch()
+			return
+		end
+
+		table.insert(ExcludeSearchClass, ClassName)
+		ClassNameFilterButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+		FilterAllButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+		UpdateSearch()
+	end)
+
+	table.insert(SearchFilterButtons, ClassNameFilterButton)
+end
+
+Interface.New("Frame", {
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Size = UDim2.new(1, 0, 0, 1),
+	Position = UDim2.fromOffset(0, 72),
+	Parent = SearchFrame,
+})
+
+local SearchResults = Interface.New("ScrollingFrame", {
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	Position = UDim2.fromOffset(0, 73),
+	ScrollBarThickness = 3,
+	Size = UDim2.new(1, 0, 1, -73),
+
+	Parent = SearchFrame,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.Name,
+	},
+
+	["UIPadding"] = {
+		PaddingBottom = UDim.new(0, 6),
+		PaddingLeft = UDim.new(0, 6),
+		PaddingRight = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 6),
+	},
+})
+
+local function CreateSearchResult(Instance: Instance, Type: string)
+	local SearchResult = Interface.New("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		BackgroundTransparency = 1,
+		Name = Instance.Name,
+		Size = UDim2.new(1, 0, 0, 36),
+		Text = "",
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 6),
+		},
+
+		["UIPadding"] = {
+			PaddingBottom = UDim.new(0, 6),
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+		},
+
+		["TextLabel"] = {
+			Position = UDim2.fromOffset(30, 0),
+			Size = UDim2.new(1, -30, 1, 0),
+			Text = Instance.Name,
+			TextSize = 17,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		},
+	})
+	do
+		SearchResult.MouseEnter:Connect(function()
+			local Index = table.find(CurrentResults, SearchResult)
+			if Index then
+				SelectResult(Index)
+			end
+		end)
+		SearchResult.MouseButton1Click:Connect(function()
+			local Index = table.find(CurrentResults, SearchResult)
+			if Index then
+				EnterResult(Index)
+			end
 		end)
 	end
 
-	self.Blocked = not self.Blocked
-	Log:SetConnectionsEnabled(not self.Blocked)
+	local Image = Interface.New("ImageLabel", {
+		BackgroundTransparency = 1,
+		Image = Images[Instance.ClassName],
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		Parent = SearchResult,
+	})
+
+	local TypeLabel = Interface.New("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Text = Type,
+		TextSize = 15,
+		TextTransparency = 0.5,
+		TextXAlignment = Enum.TextXAlignment.Right,
+
+		Parent = SearchResult,
+	})
+
+	return SearchResult
 end
 
-function Log:SetButton(Instance, Name, Calls)
-	self.Button = {
-		Instance = Instance,
-		Name = Name,
-		Calls = Calls,
+-- Topbar
+local TopBar = Interface.New("Frame", {
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Size = UDim2.new(1, 0, 0, 36),
+	ZIndex = 0,
+	MainUICorner,
+	Parent = MainFrame,
+
+	["TextLabel"] = {
+		Text = "Cobalt",
+		TextSize = 18,
+		Position = UDim2.fromOffset(0, 1),
+		Size = UDim2.new(1, 0, 1, -1),
+	},
+
+	["ImageLabel"] = {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 6, 0.5, 0),
+		Size = UDim2.new(1, -12, 1, -12),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		Image = CobaltLogo,
+	},
+})
+Interface.HideCorner(TopBar, UDim2.fromScale(1, 0.5), Vector2.yAxis)
+
+-- Topbar Buttons
+local TopButtons = Interface.New("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 1),
+	ZIndex = 2,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+	},
+	["UIPadding"] = {
+		PaddingBottom = UDim.new(0, 4),
+		PaddingLeft = UDim.new(0, 4),
+		PaddingRight = UDim.new(0, 4),
+		PaddingTop = UDim.new(0, 4),
+	},
+
+	Parent = TopBar,
+})
+
+local function CreateTopButton(IconName, Order: number, Callback: () -> ()?)
+	local Button = Interface.New("ImageButton", {
+		LayoutOrder = Order,
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+		["UIPadding"] = {
+			PaddingBottom = UDim.new(0, 3),
+			PaddingLeft = UDim.new(0, 3),
+			PaddingRight = UDim.new(0, 3),
+			PaddingTop = UDim.new(0, 3),
+		},
+
+		Parent = TopButtons,
+	})
+
+	local Image = Interface.NewIcon(IconName, {
+		ImageTransparency = 0.5,
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+
+		Parent = Button,
+	})
+
+	Button.MouseEnter:Connect(function()
+		wax.shared.TweenService
+			:Create(Image, DefaultTweenInfo, {
+				ImageTransparency = 0.25,
+			})
+			:Play()
+	end)
+	Button.MouseLeave:Connect(function()
+		wax.shared.TweenService
+			:Create(Image, DefaultTweenInfo, {
+				ImageTransparency = 0.5,
+			})
+			:Play()
+	end)
+	if Callback then
+		Button.MouseButton1Click:Connect(Callback)
+	end
+
+	return Button, Image
+end
+
+local function CreateTopSeperator(Order: number)
+	Interface.New("ImageLabel", {
+		LayoutOrder = Order,
+		Size = UDim2.fromScale(1, 1),
+		SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		BackgroundTransparency = 1,
+		Parent = TopButtons,
+
+		["Frame"] = {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+			Size = UDim2.fromOffset(4, 4),
+			Position = UDim2.fromScale(0.5, 0.5),
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(1, 0),
+			},
+		},
+	})
+end
+
+CreateTopButton("x", 5, wax.shared.Unload)
+CreateTopButton("minus", 4, function()
+	MainFrame.Visible = false
+	ShowButton.Visible = true
+end)
+CreateTopSeperator(3)
+CreateTopButton("settings", 2, function()
+	OpenModal(SettingsFrame)
+end)
+CreateTopButton("blocks", 1, function()
+	OpenModal(PluginsFrame)
+end)
+CreateTopButton("search", 0, function()
+	OpenSearch()
+end)
+
+Drag.Setup(MainFrame, TopBar)
+Drag.Setup(ShowButton, ShowButton)
+
+-- Remote List
+local LeftList = Interface.New("Frame", {
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.yAxis,
+	Size = UDim2.new(0, 240, 1, -36),
+	Position = UDim2.fromScale(0, 1),
+	Parent = MainFrame,
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 6),
+		PaddingRight = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+	},
+})
+
+-- Tabs
+local RemoteTabContainer = Interface.New("Frame", {
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Size = UDim2.new(1, 0, 0, 30),
+	Parent = LeftList,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 4),
+	},
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		HorizontalFlex = Enum.UIFlexAlignment.Fill,
+	},
+})
+
+-- Remote List
+local RemoteListWrapper = Interface.New("Frame", {
+	AnchorPoint = Vector2.yAxis,
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 1, -36),
+	Parent = LeftList,
+
+	["UICorner"] = {
+		CornerRadius = UDim.new(0, 4),
+	},
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalFlex = Enum.UIFlexAlignment.Fill,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+	},
+})
+
+local RemoteList = Interface.New("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 1),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	ScrollBarThickness = 2,
+	Parent = RemoteListWrapper,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 6),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 6),
+		PaddingRight = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+	},
+})
+
+local RemoteListLine = Interface.New("Frame", {
+	AnchorPoint = Vector2.yAxis,
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	Position = UDim2.new(0, 240, 1, 0),
+	Size = UDim2.new(0, 2, 1, -36),
+	Parent = MainFrame,
+})
+
+local RemoteListResize = Interface.New("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	BackgroundTransparency = 1,
+	Position = UDim2.fromScale(0.5, 0),
+	Size = UDim2.new(1, 4, 1, 0),
+	Text = "",
+
+	Parent = RemoteListLine,
+})
+do
+	RemoteListResize.MouseEnter:Connect(function()
+		wax.shared.TweenService
+			:Create(RemoteListLine, DefaultTweenInfo, {
+				BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+			})
+			:Play()
+	end)
+	RemoteListResize.MouseLeave:Connect(function()
+		wax.shared.TweenService
+			:Create(RemoteListLine, DefaultTweenInfo, {
+				BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+			})
+			:Play()
+	end)
+end
+
+-- Main Remote thing
+local LogsWrapper = Interface.New("Frame", {
+	AnchorPoint = Vector2.one,
+	BackgroundTransparency = 1,
+	Position = UDim2.fromScale(1, 1),
+	Size = UDim2.new(1, -242, 1, -36),
+	Parent = MainFrame,
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 4),
+		PaddingRight = UDim.new(0, 4),
+		PaddingTop = UDim.new(0, 4),
+		PaddingBottom = UDim.new(0, 6),
+	},
+})
+
+LogsList = Interface.New("ScrollingFrame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 1, -38),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	ScrollBarThickness = 2,
+	Parent = LogsWrapper,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Padding = UDim.new(0, 6),
+	},
+
+	["UIPadding"] = {
+		PaddingLeft = UDim.new(0, 2),
+		PaddingRight = UDim.new(0, 2),
+		PaddingTop = UDim.new(0, 2),
+		PaddingBottom = UDim.new(0, 2),
+	},
+})
+
+local LogsPagination = Interface.New("Frame", {
+	AnchorPoint = Vector2.yAxis,
+	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+	BackgroundTransparency = 1,
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 0, 32),
+	Parent = LogsWrapper,
+
+	["UIListLayout"] = {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, 6),
+	},
+})
+
+-- Functions
+
+function ShowTab(Tab)
+	for _, Object in pairs(RemoteList:GetChildren()) do
+		if Object.ClassName == "TextButton" then
+			Object.Parent = nil
+		end
+	end
+
+	if CurrentTab then
+		wax.shared.TweenService
+			:Create(CurrentTab.Instance, DefaultTweenInfo, {
+				BackgroundTransparency = 1,
+			})
+			:Play()
+	end
+
+	CurrentTab = Tab
+	wax.shared.TweenService
+		:Create(CurrentTab.Instance, DefaultTweenInfo, {
+			BackgroundTransparency = 0,
+		})
+		:Play()
+
+	for _, Log in pairs(Tab.Logs) do
+		if #Log.Calls == 0 then
+			continue
+		end
+
+		if not Log.Button then
+			local Button, Name, Calls = CreateLogButton(Log)
+			Log:SetButton(Button, Name, Calls)
+		end
+
+		Log.Button.Name.Text = Log.Instance.Name
+		Log.Button.Calls.Text = "x" .. #Log.Calls
+		UpdateLogNameSize(Log)
+		Log.Button.Instance.Parent = RemoteList
+	end
+end
+
+function CleanLogsList()
+	for _, Object in pairs(LogsList:GetChildren()) do
+		if Object.ClassName == "TextButton" then
+			Object:Destroy()
+		end
+	end
+end
+
+function ShowLog(Log)
+	CleanLogsList()
+	if not Log then
+		return
+	end
+
+	if CurrentLog ~= Log then
+		if CurrentLog then
+			wax.shared.TweenService
+				:Create(CurrentLog.Button.Instance, DefaultTweenInfo, {
+					BackgroundTransparency = 1,
+				})
+				:Play()
+		end
+
+		CurrentLog = Log
+		wax.shared.TweenService
+			:Create(CurrentLog.Button.Instance, DefaultTweenInfo, {
+				BackgroundTransparency = 0,
+			})
+			:Play()
+	end
+
+	local Page = CurrentPage[Log]
+	if not Page then
+		CurrentPage[Log] = 1
+		Page = 1
+	end
+
+	PaginationHelper:Update(#Log.Calls)
+	PaginationHelper:SetPage(Page)
+
+	LogsList.CanvasPosition = Vector2.zero
+	ShowPagination(Log)
+	ShowCalls(Log, Page)
+end
+
+ShowCalls = function(Log, Page)
+	local Start, End = PaginationHelper:GetIndexRanges(Page)
+
+	for Index = Start, End do
+		local Call
+		if wax.shared.Settings.ShowExecutorLogs.Value then
+			Call = Log.Calls[Index]
+		else
+			Call = Log.Calls[Log.GameCalls[Index]]
+		end
+
+		if not Call then
+			break
+		end
+
+		local Data = setmetatable({
+			Instance = Log.Instance,
+			Type = Log.Type,
+			Order = Index,
+		}, {
+			__index = Call,
+		})
+
+		CreateCallFrame(Data)
+	end
+end
+
+function CreatePaginationEllipsis(Order: number, Visible: boolean)
+	local Ellipsis = {
+		Ellipsis = Interface.New("TextBox", {
+			BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+			Size = UDim2.fromScale(1, 1),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+			LayoutOrder = Order,
+			PlaceholderText = "-",
+			Text = "",
+			TextSize = 15,
+			RichText = false,
+			Parent = Visible and LogsPagination or nil,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 4),
+			},
+		}),
 	}
+
+	function Ellipsis:SetVisible(Visible: boolean)
+		if not Visible then
+			self.Ellipsis.Text = ""
+		end
+		self.Ellipsis.Parent = Visible and LogsPagination or nil
+	end
+
+	Ellipsis.Ellipsis.FocusLost:Connect(function(EnterPressed)
+		if not EnterPressed then
+			return
+		end
+
+		local Page = tonumber(Ellipsis.Ellipsis.Text)
+		if not Page then
+			wax.shared.Sonner.error("Invalid page number provided!")
+			Ellipsis.Text = ""
+			return
+		end
+
+		if math.floor(Page) ~= Page then
+			wax.shared.Sonner.error("Invalid page number provided!")
+			Ellipsis.Ellipsis.Text = ""
+			return
+		end
+
+		if math.abs(Page) ~= Page or Page == 0 then
+			wax.shared.Sonner.error("Invalid page number provided!")
+			Ellipsis.Ellipsis.Text = ""
+			return
+		end
+
+		local Success = pcall(function()
+			PaginationHelper:SetPage(Page)
+			CurrentPage[CurrentLog] = Page
+			ShowLog(CurrentLog)
+		end)
+
+		if not Success then
+			wax.shared.Sonner.error("Invalid page number provided!")
+		end
+
+		Ellipsis.Ellipsis.Text = ""
+	end)
+
+	return Ellipsis
 end
 
-return Log
+function CreatePaginationButton(Order: number, Active: boolean, Visible: boolean)
+	local ButtonData = {
+		Button = Interface.New("TextButton", {
+			BackgroundColor3 = Active and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(25, 25, 25),
+			Size = UDim2.fromScale(1, 1),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+			Text = tostring(1),
+			LayoutOrder = Order,
+			TextSize = 15,
+			Parent = Visible and LogsPagination or nil,
+
+			["UICorner"] = {
+				CornerRadius = UDim.new(0, 4),
+			},
+		}),
+	}
+
+	function ButtonData:SetActive(Active: boolean)
+		self.Button.BackgroundColor3 = Active and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(25, 25, 25)
+	end
+
+	function ButtonData:SetText(Text: string)
+		self.Button.Text = Text
+	end
+
+	function ButtonData:SetVisible(Visible: boolean)
+		self.Button.Parent = Visible and LogsPagination or nil
+	end
+
+	ButtonData.Button.MouseButton1Click:Connect(function()
+		local Page = tonumber(ButtonData.Button.Text)
+
+		PaginationHelper:SetPage(Page)
+		CurrentPage[CurrentLog] = Page
+		ShowLog(CurrentLog)
+	end)
+
+	return ButtonData
+end
+
+local MaxButtons = (5 + PaginationHelper.SiblingCount * 2)
+local PaginationElements = {
+	Buttons = {},
+	Ellipsis = {
+		[2] = CreatePaginationEllipsis(1, false),
+		[MaxButtons - 1] = CreatePaginationEllipsis(MaxButtons - 1, false),
+	},
+}
+
+for i = 1, MaxButtons do
+	table.insert(PaginationElements.Buttons, CreatePaginationButton(i, false, false))
+end
+
+ShowPagination = function(Log)
+	local Pages = PaginationHelper:GetVisualInfo(nil, LogsList.AbsoluteSize.X)
+	for Order, Info in pairs(Pages) do
+		if Info == "none" then
+			local Ellipsis = PaginationElements.Ellipsis[Order]
+			if Ellipsis then
+				Ellipsis:SetVisible(false)
+			end
+
+			local Button = PaginationElements.Buttons[Order]
+			if Button then
+				Button:SetVisible(false)
+			end
+
+			continue
+		elseif Info == "ellipsis" then
+			local Ellipsis = PaginationElements.Ellipsis[Order]
+			if Ellipsis and Ellipsis.Parent == nil then
+				Ellipsis:SetVisible(true)
+			end
+
+			local Button = PaginationElements.Buttons[Order]
+			if Button then
+				Button:SetVisible(false)
+			end
+
+			continue
+		end
+
+		local Ellipsis = PaginationElements.Ellipsis[Order]
+		if Ellipsis then
+			Ellipsis:SetVisible(false)
+		end
+
+		local Button = PaginationElements.Buttons[Order]
+		if Button then
+			Button:SetVisible(true)
+			Button:SetText(tostring(Info))
+			Button:SetActive(CurrentPage[Log] == Info)
+		end
+	end
+end
+
+function CreateRemoteTab(TabName: string, Active: boolean, Logs)
+	local Button = Interface.New("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+		BackgroundTransparency = Active and 0 or 1,
+		Size = UDim2.fromScale(0, 1),
+		TextSize = 15,
+		Text = TabName,
+		Parent = RemoteTabContainer,
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+	})
+
+	local Tab = {
+		Name = TabName,
+		Logs = Logs,
+		Instance = Button,
+	}
+	Tabs[TabName] = Tab
+
+	if Active then
+		CurrentTab = Tab
+	end
+
+	Button.MouseButton1Click:Connect(function()
+		if CurrentTab == Tab then
+			return
+		end
+
+		ShowTab(Tab)
+	end)
+
+	return Button
+end
+
+function CreateLogButton(Log): (TextButton, TextLabel, TextLabel)
+	local Button = Interface.New("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+		BackgroundTransparency = 1,
+		LayoutOrder = Log.Index or 1,
+		Size = UDim2.new(1, 0, 0, 30),
+		Text = "",
+
+		["ImageLabel"] = {
+			Image = Images[Log.Instance.ClassName],
+			Size = UDim2.fromScale(1, 1),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		},
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+	})
+
+	local Text = Interface.New("TextLabel", {
+		Position = UDim2.fromOffset(24, 0),
+		Size = UDim2.new(1, -24, 1, 0),
+		Text = "",
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+
+		Parent = Button,
+	})
+
+	local Amount = Interface.New("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Right,
+
+		Parent = Button,
+	})
+
+	Button.MouseButton1Click:Connect(function()
+		if CurrentLog == Log then
+			return
+		end
+
+		ShowLog(Log)
+	end)
+
+	local ContextMenuOptions = {
+		{
+			Text = function()
+				if not Log then
+					return "Ignore"
+				end
+
+				return Log.Ignored and "Unignore" or "Ignore"
+			end,
+			Icon = function()
+				if not Log then
+					return "eye"
+				end
+
+				return Log.Ignored and "eye" or "eye-off"
+			end,
+			Callback = function()
+				Log:Ignore()
+
+				wax.shared.Sonner.success(`{Log.Ignored and "Started" or "Stopped"} ignoring event`)
+			end,
+		},
+		{
+			Text = function()
+				if not Log then
+					return "Block"
+				end
+
+				return Log.Blocked and "Unblock" or "Block"
+			end,
+			Icon = function()
+				if not Log then
+					return "lock"
+				end
+
+				return Log.Blocked and "lock" or "lock-open"
+			end,
+			Callback = function()
+				Log:Block()
+
+				local BlockedRemoteList = wax.shared.Settings["BlockedRemotes"]
+				if BlockedRemoteList then
+					if Log.Blocked then
+						BlockedRemoteList:AddToList(Log)
+					else
+						BlockedRemoteList:RemoveFromList(Log)
+					end
+				end
+
+				wax.shared.Sonner.success(`{Log.Blocked and "Started" or "Stopped"} blocking event`)
+			end,
+		},
+		{
+			Text = "Clear Logs",
+			Icon = "trash",
+			Callback = function()
+				if not Log then
+					return
+				end
+
+				Log.Calls = {}
+				CurrentPage[Log] = 1
+				Log.Button.Calls.Text = "x" .. #Log.Calls
+				UpdateLogNameSize(Log)
+
+				if CurrentLog == Log then
+					PaginationHelper:Update(#Log.Calls)
+					PaginationHelper:SetPage(1)
+
+					CleanLogsList()
+
+					ShowPagination(Log)
+					ShowCalls(Log, 1)
+				end
+
+				wax.shared.Sonner.success("Cleared events for this remote")
+
+				if #Log.Calls == 0 then
+					Log.Button.Instance.Parent = nil
+				end
+			end,
+		},
+	}
+
+	local PluginManager = wax.shared.CobaltPluginManager
+	if PluginManager and PluginManager.Registry.UIHooks.ContextMenus.RemoteList then
+		for _, Option in PluginManager.Registry.UIHooks.ContextMenus.RemoteList do
+			table.insert(ContextMenuOptions, {
+				Text = Option.Text,
+				Icon = Option.Icon,
+				Callback = function()
+					task.spawn(Option.Callback, Log)
+				end
+			})
+		end
+	end
+
+	local LogContextMenu = CreateContextMenu(Button, ContextMenuOptions, true)
+
+	Button.MouseButton2Click:Connect(LogContextMenu.Toggle)
+
+	return Button, Text, Amount
+end
+
+function CreateArgHolder(Index: number, Value: any, Parent: GuiObject)
+	local Holder = Interface.New("Frame", {
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		LayoutOrder = Index,
+		Size = UDim2.new(1, 0, 0, 27),
+
+		["UICorner"] = {
+			CornerRadius = UDim.new(0, 4),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+
+		Parent = Parent,
+	})
+
+	Interface.New("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Text = Index,
+		TextSize = 15,
+		TextTransparency = 0.5,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+
+		Parent = Holder,
+	})
+
+	local TypeLabel = Interface.New("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		Text = typeof(Value),
+		TextSize = 15,
+		TextTransparency = 0.5,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextYAlignment = Enum.TextYAlignment.Top,
+
+		Parent = Holder,
+	})
+	local TypeX = wax.shared.GetTextBounds(TypeLabel.Text, TypeLabel.FontFace, TypeLabel.TextSize)
+
+	local TextLabel = Interface.New("TextLabel", {
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -(TypeX + 22), 1, 0),
+		TextColor3 = Color3.fromHex(SyntaxHighlighter.GetArgumentColor(Value)),
+		Text = tostring(Helper.QuickSerializeArgument(Value)):gsub("<", "&lt;"):gsub(">", "&gt;"),
+		RichText = true,
+		TextSize = 15,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+
+		Parent = Holder,
+	})
+	local _, TextY =
+		wax.shared.GetTextBounds(TextLabel.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
+	Holder.Size = UDim2.new(1, 0, 0, TextY + 12)
+
+	return Holder
+end
+
+function CreateCallFrame(CallInfo)
+	if not wax.shared.Settings.ShowExecutorLogs.Value and not CallInfo.Origin then
+		return
+	end
+
+	local CallFrame = Interface.New("TextButton", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		LayoutOrder = CallInfo.Order,
+		Size = UDim2.fromScale(1, 0),
+		Text = "",
+
+		["UIListLayout"] = {
+			Padding = UDim.new(0, 6),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+
+		MainUICorner,
+
+		Parent = LogsList,
+	})
+
+	local HighlightStroke = Interface.New("UIStroke", {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Color3.fromRGB(75, 75, 75),
+		Thickness = 2,
+		Transparency = 1,
+
+		Parent = CallFrame,
+	})
+	do
+		local ContextMenuOptions = {
+			{
+				Text = "Copy Calling Code",
+				Icon = "forward",
+				Callback = function()
+					local Code = CodeGen:BuildCallCode(CallInfo)
+					local Success, Error = pcall(setclipboard, Code)
+
+					if Success then
+						wax.shared.Sonner.success("Copied code to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy code to clipboard", Error)
+						warn("Failed to copy code to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Copy Intercept Code",
+				Icon = "shield-alert",
+				Callback = function()
+					local Code = CodeGen:BuildHookCode(CallInfo, CurrentTab.Name)
+					local Success, Error = pcall(setclipboard, Code)
+
+					if Success then
+						wax.shared.Sonner.success("Copied code to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy code to clipboard", Error)
+						warn("Failed to copy code to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Copy Remote Path",
+				Icon = "package-search",
+				Callback = function()
+					if not CallInfo then
+						return
+					end
+
+					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CallInfo.Instance, {
+						VariableName = "Event",
+						DisableNilParentHandler = false,
+					}))
+
+					if Success then
+						wax.shared.Sonner.success("Copied remote path to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy remote path to clipboard")
+						warn("Failed to copy remote path to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Copy Script Path",
+				Icon = "file-search",
+				Condition = function()
+					return CallInfo and typeof(CallInfo.Origin) == "Instance"
+				end,
+				Callback = function()
+					if not CallInfo then
+						return
+					end
+
+					local Success, Error = pcall(setclipboard, CodeGen.GetFullPath(CallInfo.Origin))
+					if Success then
+						wax.shared.Sonner.success("Copied script path to clipboard")
+					else
+						wax.shared.Sonner.error("Failed to copy script path to clipboard")
+						warn("Failed to copy script path to clipboard", Error)
+					end
+				end,
+			},
+			{
+				Text = "Replay",
+				Icon = "play",
+				Callback = function()
+					if not CallInfo then
+						return
+					end
+
+					wax.shared.Sonner.promise(function()
+						wax.shared.ReplayCallInfo(CallInfo, CurrentTab.Name)
+					end, {
+						loadingText = "Replaying event...",
+						successText = "Replayed event successfully!",
+						errorText = "Failed to replay event",
+						time = 4.5,
+					})
+				end,
+			},
+		}
+
+		local PluginManager = wax.shared.CobaltPluginManager
+		if PluginManager and PluginManager.Registry.UIHooks.ContextMenus.CallList then
+			for _, Option in PluginManager.Registry.UIHooks.ContextMenus.CallList do
+				table.insert(ContextMenuOptions, {
+					Text = Option.Text,
+					Icon = Option.Icon,
+					Callback = function()
+						task.spawn(Option.Callback, CallInfo)
+					end
+				})
+			end
+		end
+
+		local CallFrameContextMenu = CreateContextMenu(CallFrame, ContextMenuOptions, true)
+
+		CallFrame.MouseEnter:Connect(function()
+			wax.shared.TweenService
+				:Create(HighlightStroke, DefaultTweenInfo, {
+					Transparency = 0,
+				})
+				:Play()
+		end)
+		CallFrame.MouseLeave:Connect(function()
+			wax.shared.TweenService
+				:Create(HighlightStroke, DefaultTweenInfo, {
+					Transparency = 1,
+				})
+				:Play()
+		end)
+		CallFrame.MouseButton1Click:Connect(function()
+			OpenInfo(CallInfo)
+		end)
+		CallFrame.MouseButton2Click:Connect(CallFrameContextMenu.Open)
+	end
+
+	local ArgumentsFrame = Interface.New("Frame", {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+		Size = UDim2.fromScale(1, 0),
+		Visible = wax.shared.GetTableLength(CallInfo.Arguments) > 0,
+
+		["UIListLayout"] = {
+			Padding = UDim.new(0, 6),
+		},
+
+		["UIPadding"] = {
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 6),
+		},
+
+		MainUICorner,
+
+		Parent = CallFrame,
+	})
+	do
+		for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
+			if Index % 15 == 0 then
+				task.wait()
+			end
+
+			local Value = CallInfo.Arguments[Index]
+			CreateArgHolder(Index, Value, ArgumentsFrame)
+		end
+	end
+
+	Interface.New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 22),
+
+		Interface.NewIcon(CallInfo.IsExecutor and "terminal" or "gamepad-2", {
+			AnchorPoint = Vector2.yAxis,
+			ImageTransparency = 0.5,
+			Position = UDim2.new(0, 2, 1, 0),
+			Size = UDim2.fromOffset(22, 22),
+			SizeConstraint = Enum.SizeConstraint.RelativeYY,
+		}),
+
+		Interface.New("TextLabel", {
+			AnchorPoint = Vector2.yAxis,
+			Position = UDim2.new(0, 30, 1, 0),
+			Size = UDim2.new(0.5, -24, 0, 22),
+			BackgroundTransparency = 1,
+			Text = CallInfo.IsExecutor and wax.shared.ExecutorName
+				or CallInfo.Origin and CallInfo.Origin.Name
+				or "Unknown",
+			TextSize = 16,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTransparency = 0.5,
+		}),
+
+		Interface.New("TextLabel", {
+			AnchorPoint = Vector2.one,
+			Position = UDim2.new(1, -2, 1, 0),
+			Size = UDim2.new(0.5, -2, 0, 22),
+			BackgroundTransparency = 1,
+			Text = "Time: " .. os.date("%X", CallInfo.CreationTime),
+			TextSize = 16,
+			TextTransparency = 0.5,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}),
+
+		Parent = CallFrame,
+	})
+
+	return CallFrame
+end
+
+-- UI Handling
+CreateRemoteTab("Outgoing", true, wax.shared.Logs.Outgoing)
+CreateRemoteTab("Incoming", false, wax.shared.Logs.Incoming)
+
+-- Search Functions
+function OpenSearch()
+	OpenModal(SearchFrame)
+	UpdateSearch()
+	SearchBox:CaptureFocus()
+end
+function HandleSearch(Text, Type)
+	for Instance, Log in pairs(wax.shared.Logs[Type]) do
+		if not Log.SearchResult then
+			local SearchResult = CreateSearchResult(Instance, Type)
+			Log.SearchResult = SearchResult
+			ResultInfo[SearchResult] = {
+				Type = Type,
+				Callback = function()
+					ShowLog(Log)
+				end,
+			}
+		end
+
+		local LoweredName = string.lower(Instance.Name)
+		if not LoweredName:match(Text) or table.find(ExcludeSearchClass, Instance.ClassName) then
+			Log.SearchResult.Parent = nil
+			continue
+		end
+
+		Log.SearchResult.BackgroundTransparency = 1
+		Log.SearchResult.Parent = SearchResults
+		table.insert(CurrentResults, Log.SearchResult)
+	end
+end
+
+function SelectResult(NewResult, UpdateCanvasPosition)
+	if SelectedResult > 0 and CurrentResults[SelectedResult] then
+		CurrentResults[SelectedResult].BackgroundTransparency = 1
+	end
+	if NewResult == -1 or #CurrentResults == 0 then
+		SelectedResult = -1
+		return
+	end
+
+	SelectedResult = math.clamp(NewResult, 1, #CurrentResults)
+	CurrentResults[SelectedResult].BackgroundTransparency = 0
+
+	if UpdateCanvasPosition then
+		local ScrollSize = SearchResults.AbsoluteSize.Y
+
+		local SelectedMin = CurrentResults[SelectedResult].AbsolutePosition.Y - SearchResults.AbsolutePosition.Y
+		local SelectedMax = SelectedMin + CurrentResults[SelectedResult].AbsoluteSize.Y
+
+		if SelectedMin < 0 then
+			SearchResults.CanvasPosition += Vector2.new(0, SelectedMin - 6)
+		elseif SelectedMax > ScrollSize then
+			SearchResults.CanvasPosition += Vector2.new(0, SelectedMax - ScrollSize + 6)
+		end
+	end
+end
+function EnterResult(ResultIndex)
+	local Info = ResultInfo[CurrentResults[SelectedResult]]
+	if not Info then
+		CloseModal()
+		return
+	end
+
+	pcall(ShowTab, Tabs[Info.Type])
+	pcall(Info.Callback)
+
+	CloseModal()
+end
+function HandleResults()
+	if #CurrentResults == 0 then
+		return
+	end
+
+	table.sort(CurrentResults, function(a, b)
+		return a.AbsolutePosition.Y < b.AbsolutePosition.Y
+	end)
+
+	SelectResult(1, true)
+end
+function UpdateSearch()
+	table.clear(CurrentResults)
+	SelectResult(-1)
+
+	local Text = string.lower(SearchBox.Text)
+	HandleSearch(Text, "Outgoing")
+	HandleSearch(Text, "Incoming")
+
+	HandleResults()
+end
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(UpdateSearch)
+
+-- Call Functions
+function OpenInfo(CallInfo)
+	if wax.shared.CobaltPluginManager and wax.shared.CobaltPluginManager.Initialized then
+		for _, Interceptor in wax.shared.CobaltPluginManager.Registry.UIHooks.RemoteInfo.Intercept do
+			local Success, Result = pcall(Interceptor, CallInfo)
+			
+			if Success and Result == false then
+				return
+			end
+		end
+	end
+
+	InfoTitle.Text = CallInfo.Instance.Name
+	InfoIcon.Image = Images[CallInfo.Instance.ClassName]
+
+	CurrentInfo = CallInfo
+
+	SetCodeText(CodeGen:BuildCallCode(CallInfo))
+
+	xpcall(function()
+		FunctionInfoText.Text = CodeGen:BuildFunctionInfo(CallInfo)
+	end, function(Error)
+		FunctionInfoText.Text =
+			`Error while fetching function data.\nCalling Function: {CallInfo.Function} (type: {typeof(
+				CallInfo.Function
+			)})\n\nError: {Error}`
+	end)
+	do
+		for _, Object in pairs(ArgumentsInfoFrame:GetChildren()) do
+			if Object.ClassName ~= "Frame" then
+				continue
+			end
+			Object:Destroy()
+		end
+
+		for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
+			if Index % 25 == 0 then
+				task.wait()
+			end
+
+			local Value = CallInfo.Arguments[Index]
+			CreateArgHolder(Index, Value, ArgumentsInfoFrame)
+		end
+	end
+
+	if wax.shared.CobaltPluginManager and wax.shared.CobaltPluginManager.Initialized then
+		for _, Plugin in wax.shared.CobaltPluginManager.Registry.UIHooks.RemoteInfo.Open do
+			task.spawn(Plugin, CallInfo)
+		end
+	end
+
+	for TabName, Tab in InfoModalTab do
+		if TabName == "Arguments" then
+			continue
+		end
+
+		local OldTabButton = Tab.TabButton
+		local OldTabContent = Tab.TabContents
+
+		OldTabButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		OldTabButton.Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+
+		OldTabContent.Visible = false
+	end
+
+	CurrentInfoTab = "Arguments"
+	UpdateFooterButtons()
+	
+	if InfoModalTab["Arguments"] then
+		local TabButton = InfoModalTab["Arguments"].TabButton
+		local TabContent = InfoModalTab["Arguments"].TabContents
+
+		TabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		TabButton.Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		TabContent.Visible = true
+	end
+
+	if CurrentContext then
+		CurrentContext:Close()
+	end
+
+	OpenModal(InfoFrame)
+end
+
+Drag.Setup(RemoteListLine, RemoteListResize, function(Info, Input: InputObject)
+	local Delta = (Input.Position - Info.StartPosition) / GetDPIScale() 
+	local FramePosition: UDim2 = Info.FramePosition
+	local Offset = math.clamp(FramePosition.X.Offset + Delta.X, 120, (MainFrame.AbsoluteSize.X - 2) / 2)
+
+	Info.Frame.Position = UDim2.new(FramePosition.X.Scale, Offset, FramePosition.Y.Scale, FramePosition.Y.Offset)
+
+	LeftList.Size = UDim2.new(0, Offset, 1, -36)
+	LogsWrapper.Size = UDim2.new(1, -(Offset + 2), 1, -36)
+end)
+
+wax.shared.Connect(wax.shared.Communicator.Event:Connect(function(Instance, Type, CallIndex)
+	if not (CurrentTab and CurrentTab.Name == Type) then
+		return
+	end
+
+	local Log = wax.shared.Logs[Type][Instance]
+	if not Log then
+		return
+	end
+
+	if #Log.Calls == 0 then
+		return
+	end
+
+	local CallInfo = Log.Calls[CallIndex]
+
+	local Page = CurrentPage[Log]
+	if not Page then
+		Page = 1
+		CurrentPage[Log] = Page
+	end
+
+	if not Log.Button then
+		local Button, Name, Calls = CreateLogButton(Log)
+		Log:SetButton(Button, Name, Calls)
+	end
+
+	Log.Button.Name.Text = Log.Instance.Name
+	UpdateLogNameSize(Log)
+	Log.Button.Calls.Text = "x" .. #Log.Calls
+	Log.Button.Instance.Parent = RemoteList
+
+	if CurrentLog == Log then
+		PaginationHelper:Update(#Log.Calls)
+
+		local Start, End = PaginationHelper:GetIndexRanges(Page)
+		if not wax.shared.Settings.ShowExecutorLogs.Value then
+			CallIndex = Log.GameCalls[CallIndex]
+			if not CallIndex then
+				return
+			end
+		end
+
+		if CallIndex < Start or CallIndex > End then
+			ShowPagination(Log)
+			return
+		end
+
+		local Data = setmetatable({
+			Instance = Instance,
+			Type = Type,
+			Order = CallIndex,
+		}, {
+			__index = CallInfo,
+		})
+
+		CreateCallFrame(Data)
+	end
+end))
+
+wax.shared.Connect(wax.shared.UserInputService.InputBegan:Connect(function(Input: InputObject)
+	if Helper.IsClickInput(Input) then
+		if
+			CurrentContext
+			and not (
+				Helper.IsMouseOverFrame(ContextMenu, Input.Position)
+				or Helper.IsMouseOverFrame(CurrentContext.Parent, Input.Position)
+			)
+		then
+			CurrentContext:Close()
+		end
+	elseif Input.KeyCode == Enum.KeyCode.K and wax.shared.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+		OpenSearch()
+	elseif OpenedModal == SearchFrame then
+		if Input.KeyCode == Enum.KeyCode.Escape then
+			CloseModal()
+		elseif Input.KeyCode == Enum.KeyCode.Return then
+			EnterResult(SelectedResult)
+		elseif Input.KeyCode == Enum.KeyCode.Up then
+			SelectResult(SelectedResult - 1, true)
+		elseif Input.KeyCode == Enum.KeyCode.Down then
+			SelectResult(SelectedResult + 1, true)
+		end
+	end
+end))
+
+return {}
+
+end)() end,
+    [41] = function()local wax,script,require=ImportGlobals(41)local ImportGlobals return (function(...)--[[
+
+Luau syntax highlighter with studio colors
+Based on: https://devforum.roblox.com/t/realtime-richtext-lua-syntax-highlighting/2500399
+
+]]
+
+local Highlighter = {
+	Colors = {
+		Keyword = "#f86d7c",
+		String = "#adf195",
+		Number = "#ffc600",
+		Nil = "#ffc600",
+		Boolean = "#ffc600",
+		Function = "#f86d7c",
+		Self = "#f86d7c",
+		Local = "#f86d7c",
+		Text = "#ffffff",
+		LocalMethod = "#fdfbac",
+		LocalProperty = "#61a1f1",
+		BuiltIn = "#84d6f7",
+		Comment = "#666666",
+	},
+
+	Keywords = {
+		Lua = {
+			"and",
+			"break",
+			"or",
+			"else",
+			"elseif",
+			"if",
+			"then",
+			"until",
+			"repeat",
+			"while",
+			"do",
+			"for",
+			"in",
+			"end",
+			"local",
+			"return",
+			"function",
+			"export",
+		},
+		Roblox = {
+			"game",
+			"workspace",
+			"script",
+			"math",
+			"string",
+			"table",
+			"task",
+			"wait",
+			"select",
+			"next",
+			"Enum",
+			"error",
+			"warn",
+			"tick",
+			"assert",
+			"shared",
+			"loadstring",
+			"tonumber",
+			"tostring",
+			"type",
+			"typeof",
+			"unpack",
+			"print",
+			"Instance",
+			"CFrame",
+			"Vector3",
+			"Vector2",
+			"Color3",
+			"UDim",
+			"UDim2",
+			"Ray",
+			"BrickColor",
+			"OverlapParams",
+			"RaycastParams",
+			"Axes",
+			"Random",
+			"Region3",
+			"Rect",
+			"TweenInfo",
+			"collectgarbage",
+			"not",
+			"utf8",
+			"pcall",
+			"xpcall",
+			"_G",
+			"setmetatable",
+			"getmetatable",
+			"os",
+			"pairs",
+			"ipairs",
+		},
+	},
+}
+
+local function CreateKeywordSet(keywords)
+	local keywordSet = {}
+	for _, keyword in ipairs(keywords) do
+		keywordSet[keyword] = true
+	end
+	return keywordSet
+end
+
+local LuaSet = CreateKeywordSet(Highlighter.Keywords.Lua)
+local RobloxSet = CreateKeywordSet(Highlighter.Keywords.Roblox)
+
+local function GetHighlightColor(tokens, index)
+	local token = tokens[index]
+
+	if tonumber(token) then
+		return Highlighter.Colors.Number
+	elseif token == "nil" then
+		return Highlighter.Colors.Nil
+	elseif token:sub(1, 2) == "--" then
+		return Highlighter.Colors.Comment
+	elseif LuaSet[token] then
+		return Highlighter.Colors.Keyword
+	elseif RobloxSet[token] or getgenv()[token] ~= nil then
+		return Highlighter.Colors.BuiltIn
+	elseif token:sub(1, 1) == '"' or token:sub(1, 1) == "'" then
+		return Highlighter.Colors.String
+	elseif token == "true" or token == "false" then
+		return Highlighter.Colors.Boolean
+	end
+
+	if tokens[index + 1] == "(" then
+		if tokens[index - 1] == ":" then
+			return Highlighter.Colors.LocalMethod
+		end
+		return Highlighter.Colors.LocalMethod
+	end
+
+	if tokens[index - 1] == "." then
+		if tokens[index - 2] == "Enum" then
+			return Highlighter.Colors.BuiltIn
+		end
+		return Highlighter.Colors.LocalProperty
+	end
+
+	return nil
+end
+
+local ArgumentColors = {
+	["boolean"] = Highlighter.Colors.Boolean,
+	["number"] = Highlighter.Colors.Number,
+	["Vector2"] = Highlighter.Colors.Number,
+	["Vector3"] = Highlighter.Colors.Number,
+	["CFrame"] = Highlighter.Colors.Number,
+	["string"] = Highlighter.Colors.String,
+	["EnumItem"] = Highlighter.Colors.BuiltIn,
+	["nil"] = Highlighter.Colors.Nil,
+}
+function Highlighter.GetArgumentColor(Argument)
+	return ArgumentColors[typeof(Argument)] or Highlighter.Colors.Text
+end
+
+function Highlighter.Run(source)
+	local tokens = {}
+	local currentToken = ""
+
+	local inString = false
+	local inComment = false
+	local commentPersist = false
+
+	for i = 1, #source do
+		local character = source:sub(i, i)
+
+		if inComment then
+			if character == "\n" and not commentPersist then
+				table.insert(tokens, currentToken)
+				table.insert(tokens, character)
+				currentToken = ""
+
+				inComment = false
+			elseif source:sub(i - 1, i) == "]]" and commentPersist then
+				currentToken = currentToken .. "]"
+
+				table.insert(tokens, currentToken)
+				currentToken = ""
+
+				inComment = false
+				commentPersist = false
+			else
+				currentToken = currentToken .. character
+			end
+		elseif inString then
+			if character == inString and source:sub(i - 1, i - 1) ~= "\\" or character == "\n" then
+				currentToken = currentToken .. character
+				table.insert(tokens, currentToken)
+				currentToken = ""
+				inString = false
+			else
+				currentToken = currentToken .. character
+			end
+		else
+			if source:sub(i, i + 1) == "--" then
+				table.insert(tokens, currentToken)
+				currentToken = "--"
+				inComment = true
+				commentPersist = source:sub(i + 2, i + 3) == "[["
+				i = i + 1
+			elseif character == '"' or character == "'" then
+				table.insert(tokens, currentToken)
+				currentToken = character
+				inString = character
+			elseif character:match("[%p]") and character ~= "_" then
+				table.insert(tokens, currentToken)
+				table.insert(tokens, character)
+				currentToken = ""
+			elseif character:match("[%w_]") then
+				currentToken = currentToken .. character
+			else
+				table.insert(tokens, currentToken)
+				table.insert(tokens, character)
+				currentToken = ""
+			end
+		end
+	end
+
+	if currentToken ~= "" then
+		table.insert(tokens, currentToken)
+	end
+
+	for i = #tokens, 1, -1 do
+		if tokens[i] == "" then
+			table.remove(tokens, i)
+		end
+	end
+
+	local highlighted = {}
+
+	for i, token in ipairs(tokens) do
+		local highlightColor = GetHighlightColor(tokens, i)
+
+		if highlightColor then
+			local syntax =
+				string.format('<font color="%s">%s</font>', highlightColor, token:gsub("<", "&lt;"):gsub(">", "&gt;"))
+
+			table.insert(highlighted, syntax)
+		else
+			table.insert(highlighted, token)
+		end
+	end
+
+	return table.concat(highlighted)
+end
+
+return Highlighter
+
+end)() end,
+    [44] = function()local wax,script,require=ImportGlobals(44)local ImportGlobals return (function(...)local Resize = {}
+Resize.__index = Resize
+
+local Interface = require(script.Parent.Interface)
+local Drag = require(script.Parent.Drag)
+
+local HANDLE_SIZE = 6
+local CORNER_HANDLE_SIZE = 20
+
+function Resize.new(Options: {
+	MainFrame: Frame,
+	MinimumSize: Vector2? | UDim2?,
+	MaximumSize: UDim2?,
+	HandleSize: number?,
+	CornerHandleSize: number?,
+	Mirrored: boolean?,
+	LockedPosition: boolean? | UDim2?,
+})
+	local MainFrame = Options.MainFrame
+	local HandleSize = Options.HandleSize or HANDLE_SIZE
+	local CornerHandleSize = Options.CornerHandleSize or CORNER_HANDLE_SIZE
+	local Mirrored = Options.Mirrored or false
+	local LockedPosition = Options.LockedPosition
+
+	local MinimumSize
+	if typeof(Options.MinimumSize) == "Vector2" then
+		MinimumSize = UDim2.fromOffset(Options.MinimumSize.X, Options.MinimumSize.Y)
+	elseif typeof(Options.MinimumSize) == "UDim2" then
+		MinimumSize = Options.MinimumSize
+	else
+		MinimumSize = UDim2.fromOffset(100, 100)
+	end
+
+	local MaximumSize = Options.MaximumSize
+
+	local self = setmetatable({
+		MainFrame = MainFrame,
+		ScreenGui = MainFrame:FindFirstAncestorOfClass("ScreenGui"),
+		Parent = MainFrame.Parent,
+	}, Resize)
+
+	local function CalculateResizeProperties(
+		initialFramePosition: UDim2,
+		initialFrameSize: UDim2,
+		mouseDelta: Vector2,
+		resizeTypeX: string?,
+		resizeTypeY: string?
+	)
+		if Mirrored then
+			local parentAbsSize = self.Parent.AbsoluteSize
+
+			local newSizeOffsetX = initialFrameSize.X.Offset
+			local newSizeOffsetY = initialFrameSize.Y.Offset
+
+			if resizeTypeX then
+				local deltaX = 0
+				if resizeTypeX == "Right" then
+					deltaX = 2 * mouseDelta.X
+				elseif resizeTypeX == "Left" then
+					deltaX = -2 * mouseDelta.X
+				end
+				newSizeOffsetX = initialFrameSize.X.Offset + deltaX
+
+				local minWidthAbs = MinimumSize.X.Scale * parentAbsSize.X + MinimumSize.X.Offset
+				local maxWidthAbs = (MaximumSize and (MaximumSize.X.Scale * parentAbsSize.X + MaximumSize.X.Offset))
+					or math.huge
+				local scaleContributionX = initialFrameSize.X.Scale * parentAbsSize.X
+				local minAllowedTotalOffsetX = minWidthAbs - scaleContributionX
+				local maxAllowedTotalOffsetX = maxWidthAbs - scaleContributionX
+				newSizeOffsetX = math.clamp(newSizeOffsetX, minAllowedTotalOffsetX, maxAllowedTotalOffsetX)
+			end
+
+			if resizeTypeY then
+				local deltaY = 0
+				if resizeTypeY == "Bottom" then
+					deltaY = 2 * mouseDelta.Y
+				elseif resizeTypeY == "Top" then
+					deltaY = -2 * mouseDelta.Y
+				end
+				newSizeOffsetY = initialFrameSize.Y.Offset + deltaY
+
+				local minHeightAbs = MinimumSize.Y.Scale * parentAbsSize.Y + MinimumSize.Y.Offset
+				local maxHeightAbs = (MaximumSize and (MaximumSize.Y.Scale * parentAbsSize.Y + MaximumSize.Y.Offset))
+					or math.huge
+				local scaleContributionY = initialFrameSize.Y.Scale * parentAbsSize.Y
+				local minAllowedTotalOffsetY = minHeightAbs - scaleContributionY
+				local maxAllowedTotalOffsetY = maxHeightAbs - scaleContributionY
+				newSizeOffsetY = math.clamp(newSizeOffsetY, minAllowedTotalOffsetY, maxAllowedTotalOffsetY)
+			end
+
+			local finalNewSize =
+				UDim2.new(initialFrameSize.X.Scale, newSizeOffsetX, initialFrameSize.Y.Scale, newSizeOffsetY)
+			local finalNewPosition = initialFramePosition
+			if typeof(LockedPosition) == "UDim2" then
+				finalNewPosition = LockedPosition
+			end
+			return finalNewSize, finalNewPosition
+		else
+			-- Non-mirrored logic
+			local currentScreenGuiAbsSize = self.ScreenGui.AbsoluteSize
+			local parentAbsSizeForMinMax = currentScreenGuiAbsSize -- As per original non-mirrored logic for min/max context
+
+			-- These will store the final UDim offset values for position and the absolute pixel values for size calculation
+			local finalPosOffsetX = initialFramePosition.X.Offset
+			local finalPosOffsetY = initialFramePosition.Y.Offset
+
+			-- Initial absolute pixel size of the frame
+			local initialAbsWidthPx = initialFrameSize.X.Scale * self.Parent.AbsoluteSize.X + initialFrameSize.X.Offset
+			local initialAbsHeightPx = initialFrameSize.Y.Scale * self.Parent.AbsoluteSize.Y + initialFrameSize.Y.Offset
+
+			local newAbsWidthPx = initialAbsWidthPx
+			local newAbsHeightPx = initialAbsHeightPx
+
+			-- Min/max pixel dimensions
+			local minWidthPx = MinimumSize.X.Scale * parentAbsSizeForMinMax.X + MinimumSize.X.Offset
+			local minHeightPx = MinimumSize.Y.Scale * parentAbsSizeForMinMax.Y + MinimumSize.Y.Offset
+			local maxWidthPx = MaximumSize and (MaximumSize.X.Scale * parentAbsSizeForMinMax.X + MaximumSize.X.Offset)
+				or math.huge
+			local maxHeightPx = MaximumSize and (MaximumSize.Y.Scale * parentAbsSizeForMinMax.Y + MaximumSize.Y.Offset)
+				or math.huge
+
+			-- Original edge calculation logic (assuming MainFrame.Position is center if AnchorPoint is 0.5,0.5 for these calcs)
+			local initialAbsCenterX = currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
+				+ initialFramePosition.X.Offset
+			local initialAbsSizeX_forEdgeCalc = initialFrameSize.X.Offset -- Original code used offset for this part of edge calculation
+			local initialRightEdgeX = initialAbsCenterX + initialAbsSizeX_forEdgeCalc / 2
+			local initialLeftEdgeX = initialAbsCenterX - initialAbsSizeX_forEdgeCalc / 2
+
+			local initialAbsCenterY = currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
+				+ initialFramePosition.Y.Offset
+			local initialAbsSizeY_forEdgeCalc = initialFrameSize.Y.Offset -- Original code used offset for this part of edge calculation
+			local initialBottomEdgeY = initialAbsCenterY + initialAbsSizeY_forEdgeCalc / 2
+			local initialTopEdgeY = initialAbsCenterY - initialAbsSizeY_forEdgeCalc / 2
+
+			if resizeTypeX then
+				if resizeTypeX == "Left" then
+					local newLeftEdge = initialLeftEdgeX + mouseDelta.X
+					newAbsWidthPx = math.clamp(initialRightEdgeX - newLeftEdge, minWidthPx, maxWidthPx)
+					if newAbsWidthPx ~= (initialRightEdgeX - newLeftEdge) then -- Readjust edge if clamped
+						newLeftEdge = initialRightEdgeX - newAbsWidthPx
+					end
+					if not LockedPosition then
+						local newAbsCenterX = newLeftEdge + newAbsWidthPx / 2 -- Assuming center is halfway for position update
+						finalPosOffsetX = newAbsCenterX - currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
+					end
+				elseif resizeTypeX == "Right" then
+					local newRightEdge = initialRightEdgeX + mouseDelta.X
+					newAbsWidthPx = math.clamp(newRightEdge - initialLeftEdgeX, minWidthPx, maxWidthPx)
+					if not LockedPosition then
+						local newAbsCenterX = initialLeftEdgeX + newAbsWidthPx / 2 -- Assuming center is halfway
+						finalPosOffsetX = newAbsCenterX - currentScreenGuiAbsSize.X * initialFramePosition.X.Scale
+					end
+				end
+			end
+
+			if resizeTypeY then
+				if resizeTypeY == "Top" then
+					local newTopEdge = initialTopEdgeY + mouseDelta.Y
+					newAbsHeightPx = math.clamp(initialBottomEdgeY - newTopEdge, minHeightPx, maxHeightPx)
+					if newAbsHeightPx ~= (initialBottomEdgeY - newTopEdge) then -- Readjust edge if clamped
+						newTopEdge = initialBottomEdgeY - newAbsHeightPx
+					end
+					if not LockedPosition then
+						local newAbsCenterY = newTopEdge + newAbsHeightPx / 2 -- Assuming center is halfway
+						finalPosOffsetY = newAbsCenterY - currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
+					end
+				elseif resizeTypeY == "Bottom" then
+					local newBottomEdge = initialBottomEdgeY + mouseDelta.Y
+					newAbsHeightPx = math.clamp(newBottomEdge - initialTopEdgeY, minHeightPx, maxHeightPx)
+					if not LockedPosition then
+						local newAbsCenterY = initialTopEdgeY + newAbsHeightPx / 2 -- Assuming center is halfway
+						finalPosOffsetY = newAbsCenterY - currentScreenGuiAbsSize.Y * initialFramePosition.Y.Scale
+					end
+				end
+			end
+
+			-- Convert final absolute pixel dimensions back to UDim offsets for size
+			local finalSizeOffsetX = newAbsWidthPx - (initialFrameSize.X.Scale * self.Parent.AbsoluteSize.X)
+			local finalSizeOffsetY = newAbsHeightPx - (initialFrameSize.Y.Scale * self.Parent.AbsoluteSize.Y)
+
+			local finalNewSize =
+				UDim2.new(initialFrameSize.X.Scale, finalSizeOffsetX, initialFrameSize.Y.Scale, finalSizeOffsetY)
+			local finalNewPosition = initialFramePosition -- Default if LockedPosition is true
+			if typeof(LockedPosition) == "UDim2" then
+				finalNewPosition = LockedPosition
+			elseif not LockedPosition then -- Only update if not locked (boolean false)
+				finalNewPosition = UDim2.new(
+					initialFramePosition.X.Scale,
+					finalPosOffsetX,
+					initialFramePosition.Y.Scale,
+					finalPosOffsetY
+				)
+			end
+			return finalNewSize, finalNewPosition
+		end
+	end
+
+	local function createDragHandler(resizeTypeX, resizeTypeY)
+		return function(Info, Input: InputObject)
+			local mouseDelta = Input.Position - Info.StartPosition
+			if wax.shared.GetDPIScale then
+				mouseDelta = mouseDelta / wax.shared.GetDPIScale()
+			end
+			
+			local newSize, newPosition =
+				CalculateResizeProperties(Info.FramePosition, Info.FrameSize, mouseDelta, resizeTypeX, resizeTypeY)
+
+			MainFrame.Size = newSize
+			MainFrame.Position = newPosition
+		end
+	end
+
+	local LeftSide = Interface.New("Frame", {
+		Size = UDim2.new(0, HandleSize, 1, -CornerHandleSize * 2),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6,
+	})
+	Drag.Setup(MainFrame, LeftSide, createDragHandler("Left", nil))
+
+	local RightSide = Interface.New("Frame", {
+		Size = UDim2.new(0, HandleSize, 1, -CornerHandleSize * 2),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6,
+	})
+	Drag.Setup(MainFrame, RightSide, createDragHandler("Right", nil))
+
+	local TopSide = Interface.New("Frame", {
+		Size = UDim2.new(1, -CornerHandleSize * 2, 0, HandleSize),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6,
+	})
+	Drag.Setup(MainFrame, TopSide, createDragHandler(nil, "Top"))
+
+	local BottomSide = Interface.New("Frame", {
+		Size = UDim2.new(1, -CornerHandleSize * 2, 0, HandleSize),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.fromScale(0.5, 1),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6,
+	})
+	Drag.Setup(MainFrame, BottomSide, createDragHandler(nil, "Bottom"))
+
+	local TopLeftCorner = Interface.New("Frame", {
+		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
+		AnchorPoint = Vector2.new(0, 0),
+		Position = UDim2.fromScale(0, 0),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6 + 1,
+	})
+	Drag.Setup(MainFrame, TopLeftCorner, createDragHandler("Left", "Top"))
+
+	local TopRightCorner = Interface.New("Frame", {
+		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6 + 1,
+	})
+	Drag.Setup(MainFrame, TopRightCorner, createDragHandler("Right", "Top"))
+
+	local BottomLeftCorner = Interface.New("Frame", {
+		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6 + 1,
+	})
+	Drag.Setup(MainFrame, BottomLeftCorner, createDragHandler("Left", "Bottom"))
+
+	local BottomRightCorner = Interface.New("Frame", {
+		Size = UDim2.fromOffset(CornerHandleSize, CornerHandleSize),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = MainFrame,
+		ZIndex = 9e6 + 1,
+	})
+	Drag.Setup(MainFrame, BottomRightCorner, createDragHandler("Right", "Bottom"))
+
+	return self
+end
+
+return Resize
 
 end)() end
 } -- [RefId] = Closure
@@ -9605,6 +11276,13 @@ local ObjectTree = {
         },
         {
             {
+                46,
+                2,
+                {
+                    "Window"
+                }
+            },
+            {
                 15,
                 1,
                 {
@@ -9612,49 +11290,103 @@ local ObjectTree = {
                 },
                 {
                     {
-                        27,
+                        29,
                         2,
                         {
-                            "Log"
+                            "Pagination"
                         }
                     },
                     {
-                        26,
+                        36,
+                        1,
+                        {
+                            "UI"
+                        },
+                        {
+                            {
+                                40,
+                                2,
+                                {
+                                    "Helper"
+                                }
+                            },
+                            {
+                                38,
+                                2,
+                                {
+                                    "AssetManager"
+                                }
+                            },
+                            {
+                                37,
+                                2,
+                                {
+                                    "Animations"
+                                }
+                            },
+                            {
+                                44,
+                                2,
+                                {
+                                    "Resize"
+                                }
+                            },
+                            {
+                                42,
+                                2,
+                                {
+                                    "Icons"
+                                }
+                            },
+                            {
+                                41,
+                                2,
+                                {
+                                    "Highlighter"
+                                }
+                            },
+                            {
+                                39,
+                                2,
+                                {
+                                    "Drag"
+                                }
+                            },
+                            {
+                                45,
+                                2,
+                                {
+                                    "Sonner"
+                                }
+                            },
+                            {
+                                43,
+                                2,
+                                {
+                                    "Interface"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        25,
+                        2,
+                        {
+                            "FileHelper"
+                        }
+                    },
+                    {
+                        27,
                         2,
                         {
                             "Hooking"
                         }
                     },
                     {
-                        16,
-                        1,
+                        35,
+                        2,
                         {
-                            "Anticheats"
-                        },
-                        {
-                            {
-                                18,
-                                1,
-                                {
-                                    "impl"
-                                },
-                                {
-                                    {
-                                        19,
-                                        2,
-                                        {
-                                            "Adonis"
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                17,
-                                2,
-                                {
-                                    "Main"
-                                }
-                            }
+                            "Signal"
                         }
                     },
                     {
@@ -9673,116 +11405,62 @@ local ObjectTree = {
                                 }
                             },
                             {
-                                22,
-                                2,
-                                {
-                                    "SessionExporter"
-                                }
-                            },
-                            {
                                 21,
                                 2,
                                 {
                                     "Generator"
                                 }
+                            },
+                            {
+                                22,
+                                2,
+                                {
+                                    "SessionExporter"
+                                }
                             }
                         }
                     },
                     {
-                        28,
-                        2,
-                        {
-                            "Pagination"
-                        }
-                    },
-                    {
-                        32,
+                        16,
                         1,
                         {
-                            "UI"
+                            "Anticheats"
                         },
                         {
                             {
-                                39,
+                                17,
                                 2,
                                 {
-                                    "Interface"
+                                    "Main"
                                 }
                             },
                             {
-                                36,
-                                2,
+                                18,
+                                1,
                                 {
-                                    "Highlighter"
-                                }
-                            },
-                            {
-                                41,
-                                2,
+                                    "impl"
+                                },
                                 {
-                                    "Sonner"
-                                }
-                            },
-                            {
-                                33,
-                                2,
-                                {
-                                    "Animations"
-                                }
-                            },
-                            {
-                                37,
-                                2,
-                                {
-                                    "Icons"
-                                }
-                            },
-                            {
-                                40,
-                                2,
-                                {
-                                    "Resize"
-                                }
-                            },
-                            {
-                                35,
-                                2,
-                                {
-                                    "Helper"
-                                }
-                            },
-                            {
-                                38,
-                                2,
-                                {
-                                    "ImageFetch"
-                                }
-                            },
-                            {
-                                34,
-                                2,
-                                {
-                                    "Drag"
+                                    {
+                                        19,
+                                        2,
+                                        {
+                                            "Adonis"
+                                        }
+                                    }
                                 }
                             }
                         }
                     },
                     {
-                        24,
-                        2,
-                        {
-                            "Connect"
-                        }
-                    },
-                    {
-                        30,
+                        33,
                         1,
                         {
                             "Serializer"
                         },
                         {
                             {
-                                31,
+                                34,
                                 2,
                                 {
                                     "LuaEncode"
@@ -9791,26 +11469,49 @@ local ObjectTree = {
                         }
                     },
                     {
-                        29,
+                        32,
                         2,
                         {
                             "SaveManager"
                         }
                     },
                     {
-                        25,
+                        30,
+                        1,
+                        {
+                            "Plugins"
+                        },
+                        {
+                            {
+                                31,
+                                2,
+                                {
+                                    "Manager"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        28,
+                        2,
+                        {
+                            "Log"
+                        }
+                    },
+                    {
+                        26,
                         2,
                         {
                             "FileLog"
                         }
+                    },
+                    {
+                        24,
+                        2,
+                        {
+                            "Connect"
+                        }
                     }
-                }
-            },
-            {
-                2,
-                2,
-                {
-                    "ExecutorSupport"
                 }
             },
             {
@@ -9828,21 +11529,28 @@ local ObjectTree = {
                         },
                         {
                             {
-                                6,
-                                5,
-                                {
-                                    "Unload",
-                                    Value = "local getrawmetatable = getrawmetatable or debug.getmetatable\n\nwax.shared.Communicator.Event:Connect(function(Type, ...)\n\tif Type ~= \"Unload\" then\n\t\treturn\n\tend\n\n\tlocal gameMetatable = getrawmetatable(game)\n\n\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking then\n\t\tpcall(oth.unhook, gameMetatable.__namecall)\n\t\tpcall(oth.unhook, gameMetatable.__newindex)\n\telse\n\t\tif wax.shared.ExecutorSupport[\"restorefunction\"].IsWorking and not wax.shared.AlternativeEnabled then\n\t\t\tpcall(restorefunction, gameMetatable.__namecall)\n\t\t\tpcall(restorefunction, gameMetatable.__newindex)\n\t\telse\n\t\t\twax.shared.Hooking.HookMetaMethod(game, \"__namecall\", wax.shared.NamecallHook)\n\t\t\twax.shared.Hooking.HookMetaMethod(game, \"__newindex\", wax.shared.NewIndexHook)\n\t\tend\n\tend\n\n\tfor Function, Original in pairs(wax.shared.Hooks) do\n\t\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking then\n\t\t\ttask.spawn(pcall, oth.unhook, Function)\n\t\telseif wax.shared.ExecutorSupport[\"restorefunction\"].IsWorking then\n\t\t\ttask.spawn(pcall, wax.shared.restorefunction, Function)\n\t\telse\n\t\t\tpcall(wax.shared.Hooking.HookFunction, Function, Original)\n\t\tend\n\tend\n\n\ttask.defer(function()\n\t\tgetgenv().CobaltInitialized = false\n\tend)\nend)\n"
-                                }
-                            },
-                            {
                                 5,
                                 5,
                                 {
                                     "Environment",
                                     Value = "--[[\n\n    Wax Environment replicated for actor env\n\n]]\n\nif getgenv().CobaltInitialized == true then\n\treturn\nend\n\ngetgenv().CobaltInitialized = true\n\ntype ActorData = {\n\tToken: string,\n\n\tIgnorePlayerModule: boolean,\n\tUseAlternativeHooks: boolean,\n\tIgnoredRemotesDropdown: { [string]: boolean },\n\n\tExecutorSupport: { [string]: { IsWorking: boolean } },\n}\n\nlocal Data: ActorData = COBALT_ACTOR_DATA\n\nlocal RelayChannel = get_comm_channel(...)\n\nlocal wax = { shared = {} }\n\nwax.shared.ExecutorSupport = Data.ExecutorSupport\n\nfor _, Service in pairs({\n\t\"Players\",\n\t\"HttpService\",\n}) do\n\twax.shared[Service] = cloneref(game:GetService(Service))\nend\n\nwax.shared.LocalPlayer = wax.shared.Players.LocalPlayer\nwax.shared.PlayerScripts = cloneref(wax.shared.LocalPlayer:WaitForChild(\"PlayerScripts\"))\nwax.shared.ExecutorName = string.split(identifyexecutor(), \" \")[1]\n\nwax.shared.newcclosure = wax.shared.ExecutorName == \"AWP\"\n\t\tand function(f)\n\t\t\tlocal env = getfenv(f)\n\t\t\tlocal x = setmetatable({\n\t\t\t\t__F = f,\n\t\t\t}, {\n\t\t\t\t__index = env,\n\t\t\t\t__newindex = env,\n\t\t\t})\n\n\t\t\tlocal nf = function(...)\n\t\t\t\treturn __F(...)\n\t\t\tend\n\t\t\tsetfenv(nf, x) -- set func env (env of nf gets deoptimized)\n\t\t\treturn newcclosure(nf)\n\t\tend\n\tor newcclosure\n\nwax.shared.getrawmetatable = wax.shared.ExecutorSupport[\"getrawmetatable\"].IsWorking\n\t\tand (getrawmetatable or debug.getmetatable)\n\tor function()\n\t\treturn setmetatable({}, {\n\t\t\t__index = function()\n\t\t\t\treturn function() end\n\t\t\tend,\n\t\t})\n\tend\n\nwax.shared.restorefunction = function(Function: (...any) -> ...any, Silent: boolean?)\n\tlocal Original = wax.shared.Hooks[Function]\n\n\tif Silent and not Original then\n\t\treturn\n\tend\n\n\tassert(Original, \"Function not hooked\")\n\n\tif restorefunction and isfunctionhooked(Function) then\n\t\trestorefunction(Function)\n\telse\n\t\twax.shared.Hooking.HookFunction(Function, Original)\n\tend\n\n\twax.shared.Hooks[Function] = nil\nend\n\nlocal Hooking = {}\n\nwax.shared.AlternativeEnabled = Data.UseAlternativeHooks\n\nHooking.HookFunction = function(Original, Replacement)\n\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking and iscclosure(Original) and islclosure(Replacement) then\n\t\treturn oth.hook(Original, Replacement)\n\tend\n\n\tif islclosure(Replacement) then\n\t\tReplacement = wax.shared.newcclosure(Replacement)\n\tend\n\n\tif not wax.shared.ExecutorSupport[\"hookfunction\"].IsWorking then\n\t\treturn Original\n\tend\n\n\treturn hookfunction(Original, Replacement)\nend\n\nHooking.HookMetaMethod = function(object, method, hook)\n\tlocal Metatable = wax.shared.getrawmetatable(object)\n\tlocal originalMethod = rawget(Metatable, method)\n\n\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking then\n\t\treturn oth.hook(originalMethod, hook)\n\tend\n\n\tif islclosure(hook) then\n\t\thook = wax.shared.newcclosure(hook)\n\tend\n\n\tif\n\t\tData.UseAlternativeHooks\n\t\tor (\n\t\t\tnot wax.shared.ExecutorSupport[\"hookmetamethod\"].IsWorking\n\t\t\tand wax.shared.ExecutorSupport[\"getrawmetatable\"].IsWorking\n\t\t)\n\tthen\n\t\tsetreadonly(Metatable, false)\n\t\trawset(Metatable, method, hook)\n\t\tsetreadonly(Metatable, true)\n\n\t\treturn originalMethod\n\tend\n\n\tif not wax.shared.ExecutorSupport[\"hookmetamethod\"].IsWorking then\n\t\tif method == \"__index\" then\n\t\t\tlocal _, Metamethod = xpcall(function()\n\t\t\t\treturn object[tostring(math.random())]\n\t\t\tend, function(err)\n\t\t\t\treturn debug.info(2, \"f\")\n\t\t\tend)\n\n\t\t\treturn Metamethod\n\t\telseif method == \"__newindex\" then\n\t\t\tlocal _, Metamethod = xpcall(function()\n\t\t\t\tobject[tostring(math.random())] = true\n\t\t\tend, function(err)\n\t\t\t\treturn debug.info(2, \"f\")\n\t\t\tend)\n\n\t\t\treturn Metamethod\n\t\telseif method == \"__namecall\" then\n\t\t\tlocal _, Metamethod = xpcall(function()\n\t\t\t\tobject:Mustard()\n\t\t\tend, function(err)\n\t\t\t\treturn debug.info(2, \"f\")\n\t\t\tend)\n\n\t\t\treturn Metamethod\n\t\tend\n\n\t\treturn nil\n\tend\n\n\treturn hookmetamethod(object, method, hook)\nend\n\nwax.shared.Hooking = Hooking\n\nwax.shared.Hooks = {}\nwax.shared.Settings = {\n\tIgnorePlayerModule = { Value = Data.IgnorePlayerModule },\n\tIgnoredRemotesDropdown = { Value = Data.IgnoredRemotesDropdown },\n}\n\nwax.shared.IsPlayerModule = function(Origin: LocalScript | ModuleScript, Instance: Instance): boolean\n\tif Instance and Instance.ClassName ~= \"BindableEvent\" then\n\t\treturn false\n\tend\n\n\tlocal PlayerModule = Origin and Origin.FindFirstAncestor(Origin, \"PlayerModule\") or nil\n\tif not PlayerModule then\n\t\treturn false\n\tend\n\n\tif PlayerModule.Parent == nil then\n\t\treturn true\n\tend\n\n\treturn compareinstances(PlayerModule.Parent, wax.shared.PlayerScripts)\nend\nwax.shared.ShouldIgnore = function(Instance, Origin)\n\treturn wax.shared.Settings.IgnoredRemotesDropdown.Value[Instance.ClassName] == true\n\t\tor (wax.shared.Settings.IgnorePlayerModule.Value and wax.shared.IsPlayerModule(Origin, Instance))\nend\n\nwax.shared.Connections = {}\n\nwax.shared.Connect = function(Connection)\n\ttable.insert(wax.shared.Connections, Connection)\n\treturn Connection\nend\n\nwax.shared.Disconnect = function(Connection)\n\tConnection:Disconnect()\n\n\tlocal Index = table.find(wax.shared.Connections, Connection)\n\tif Index then\n\t\ttable.remove(wax.shared.Connections, Index)\n\tend\n\n\treturn true\nend\n\nlocal OnUnload\n\nlocal RelayConnection\nRelayConnection = RelayChannel.Event:Connect(function(Type, ...)\n\tif Type == \"Unload\" then\n\t\tRelayConnection:Disconnect()\n\t\twax.shared.Unloaded = true\n\t\tfor _, Connection in wax.shared.Connections do\n\t\t\twax.shared.Disconnect(Connection)\n\t\tend\n\n\t\tif OnUnload then\n\t\t\tOnUnload()\n\t\tend\n\telseif Type == \"MainBlock\" then\n\t\tlocal Instance, EventType = ...\n\t\tlocal Log = wax.shared.Logs[EventType][Instance]\n\t\tif Log then\n\t\t\tLog:Block()\n\t\tend\n\telseif Type == \"MainIgnore\" then\n\t\tlocal Instance, EventType = ...\n\t\tlocal Log = wax.shared.Logs[EventType][Instance]\n\t\tif Log then\n\t\t\tLog:Ignore()\n\t\tend\n\telseif Type == \"MainSettingsSync\" then\n\t\tlocal Setting, Value = ...\n\t\tif wax.shared.Settings[Setting] then\n\t\t\twax.shared.Settings[Setting].Value = Value\n\t\tend\n\tend\nend)\n\nwax.shared.Unloaded = false\nwax.shared.Communicator = RelayChannel\n\nwax.shared.Log = {}\ndo\n\tlocal Log = wax.shared.Log\n\tLog.__index = Log\n\n\tfunction Log.new(Instance, Type, Method, Index, CallingScript)\n\t\tlocal NewLog = setmetatable({\n\t\t\tInstance = Instance,\n\t\t\tType = Type,\n\t\t\tMethod = Method,\n\t\t\tIndex = Index,\n\t\t\tCalls = {},\n\t\t\tIgnored = false,\n\t\t\tBlocked = false,\n\t\t}, Log)\n\n\t\treturn NewLog\n\tend\n\n\tlocal FunctionToMetatadata\n\n\tlocal GenerateUUID = wax.shared.HttpService.GenerateGUID\n\tlocal function GenerateId()\n\t\treturn GenerateUUID(wax.shared.HttpService, false)\n\tend\n\n\tlocal function FixTable(Table, Refs)\n\t\tif not Table then\n\t\t\treturn nil\n\t\tend\n\n\t\tlocal CyclicRefs = Refs or {}\n\t\tlocal Visited = {}\n\t\tlocal OutputTable = {}\n\t\tlocal ContainsCyclicRef = false\n\n\t\tfor Key, Value in Table do\n\t\t\tif type(Value) == \"table\" then\n\t\t\t\tif Visited[Value] then\n\t\t\t\t\tContainsCyclicRef = true\n\n\t\t\t\t\tOutputTable[Key] = {\n\t\t\t\t\t\t__CyclicRef = true,\n\t\t\t\t\t\t__Id = CyclicRefs[Value],\n\t\t\t\t\t}\n\t\t\t\t\tcontinue\n\t\t\t\tend\n\n\t\t\t\tif getmetatable(Value) then\n\t\t\t\t\tOutputTable[Key] =\n\t\t\t\t\t\t\"Cobalt: Impossible to bridge table with metatable from actor Environment to main Environment\"\n\t\t\t\tend\n\n\t\t\t\tlocal Result, CycleMetadata, ContainsCyclic = FixTable(Value, CyclicRefs)\n\t\t\t\tif not Result then\n\t\t\t\t\tcontinue\n\t\t\t\tend\n\n\t\t\t\tif not ContainsCyclic then\n\t\t\t\t\tOutputTable[Key] = Result\n\t\t\t\t\tcontinue\n\t\t\t\tend\n\n\t\t\t\t-- Merge the cycle metadata\n\t\t\t\tfor k, v in CycleMetadata do\n\t\t\t\t\tOutputTable[k] = v\n\t\t\t\tend\n\n\t\t\t\t-- Create a new cyclic reference\n\t\t\t\tlocal CycleId = GenerateId()\n\n\t\t\t\tOutputTable[Key] = {\n\t\t\t\t\t__CyclicRef = true,\n\t\t\t\t\t__Id = CycleId,\n\t\t\t\t}\n\n\t\t\t\tCyclicRefs[CycleId] = Value\n\n\t\t\t\tVisited[Value] = true\n\t\t\telseif type(Value) == \"function\" then\n\t\t\t\tOutputTable[Key] = FunctionToMetatadata(Value)\n\t\t\telse\n\t\t\t\tOutputTable[Key] = Value\n\t\t\tend\n\t\tend\n\n\t\treturn OutputTable, CyclicRefs, ContainsCyclicRef\n\tend\n\n\tFunctionToMetatadata = function(Function)\n\t\tif not Function then\n\t\t\treturn nil\n\t\tend\n\n\t\tlocal Metadata = {\n\t\t\tAddress = tostring(Function),\n\t\t\tName = debug.info(Function, \"n\"),\n\t\t\tSource = debug.info(Function, \"s\"),\n\t\t\tIsC = iscclosure(Function),\n\t\t}\n\n\t\tif not iscclosure(Function) then\n\t\t\tMetadata[\"Upvalues\"] = debug.getupvalues(Function)\n\t\t\tMetadata[\"Constants\"] = debug.getconstants(Function)\n\t\t\tMetadata[\"Protos\"] = debug.getprotos(Function)\n\t\t\t\n\t\t\tif getfunctionhash then\n\t\t\t\tMetadata[\"FunctionHash\"] = getfunctionhash(Function)\n\t\t\tend\n\t\tend\n\n\t\t-- to validate that this function was generated by FunctionToMetatadata\n\t\tMetadata[\"Validation\"] = Data.Token\n\t\tMetadata[\"__Function\"] = true\n\n\t\treturn Metadata\n\tend\n\n\tfunction DeepClone(orig, copies)\n\t\tcopies = copies or {}\n\t\tif typeof(orig) == \"Instance\" then\n\t\t\treturn cloneref(orig)\n\t\telseif typeof(orig) == \"userdata\" then\n\t\t\tif getmetatable(orig) then\n\t\t\t\treturn newproxy(true)\n\t\t\telse\n\t\t\t\treturn newproxy()\n\t\t\tend\n\t\telseif typeof(orig) == \"function\" then\n\t\t\tif clonefunction then\n\t\t\t\treturn clonefunction(orig)\n\t\t\tend\n\n\t\t\treturn orig\n\t\telseif type(orig) ~= \"table\" then\n\t\t\treturn orig\n\t\telseif copies[orig] then\n\t\t\treturn copies[orig]\n\t\tend\n\n\t\tlocal copy = {}\n\t\tcopies[orig] = copy\n\t\tfor k, v in next, orig do\n\t\t\tcopy[DeepClone(k, copies)] = DeepClone(v, copies)\n\t\tend\n\t\treturn copy\n\tend\n\n\tlocal ClassesConnectionsToggle = {\n\t\tRemoteEvent = \"OnClientEvent\",\n\t\tUnreliableRemoteEvent = \"OnClientEvent\",\n\t\tBindableEvent = \"Event\",\n\t}\n\n\tfunction Log:SetConnectionsEnabled(enabled: boolean)\n\t\tif not self.Instance or not ClassesConnectionsToggle[self.Instance.ClassName] then\n\t\t\treturn\n\t\tend\n\n\t\tlocal ConnectionName = ClassesConnectionsToggle[self.Instance.ClassName]\n\t\tif self.Type ~= \"Incoming\" or not ConnectionName then\n\t\t\treturn\n\t\tend\n\n\t\tfor _, Connection in getconnections(self.Instance[ConnectionName]) do\n\t\t\tif enabled then\n\t\t\t\tConnection:Enable()\n\t\t\telse\n\t\t\t\tConnection:Disable()\n\t\t\tend\n\t\tend\n\tend\n\n\tfunction Log:Call(RawInfo)\n\t\tif self.Instance == wax.shared.Communicator then\n\t\t\treturn\n\t\tend\n\n\t\tRawInfo[\"IsActor\"] = true\n\t\tlocal Info = DeepClone(RawInfo)\n\t\tlocal OldArguments = Info.Arguments\n\t\tInfo.Arguments = {\n\t\t\tData = OldArguments,\n\t\t\tn = OldArguments.n or rawlen(OldArguments),\n\t\t}\n\n\t\t-- Seliware puts their actor BindableEvents in CoreGui\n\t\tlocal identity = getthreadidentity()\n\t\tsetthreadidentity(8)\n\t\twax.shared.Communicator.Fire(wax.shared.Communicator, \"ActorCall\", self.Instance, self.Type, FixTable(Info))\n\t\tsetthreadidentity(identity)\n\tend\n\n\tfunction Log:Ignore()\n\t\tself.Ignored = not self.Ignored\n\tend\n\n\tfunction Log:Block()\n\t\tself.Blocked = not self.Blocked\n\t\tself:SetConnectionsEnabled(not self.Blocked)\n\tend\nend\n\nwax.shared.Logs = {\n\tOutgoing = {},\n\tIncoming = {},\n}\n\nwax.shared.NewLog = function(Instance, Type, Method, Index, CallingScript)\n\tlocal NewLog = wax.shared.Log.new(Instance, Type, Method, Index, CallingScript)\n\twax.shared.Logs[Type][Instance] = NewLog\n\treturn NewLog\nend\n"
                                 }
+                            },
+                            {
+                                6,
+                                5,
+                                {
+                                    "Unload",
+                                    Value = "local getrawmetatable = getrawmetatable or debug.getmetatable\n\nwax.shared.Communicator.Event:Connect(function(Type, ...)\n\tif Type ~= \"Unload\" then\n\t\treturn\n\tend\n\n\tlocal gameMetatable = getrawmetatable(game)\n\n\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking then\n\t\tpcall(oth.unhook, gameMetatable.__namecall)\n\t\tpcall(oth.unhook, gameMetatable.__newindex)\n\telse\n\t\tif wax.shared.ExecutorSupport[\"restorefunction\"].IsWorking and not wax.shared.AlternativeEnabled then\n\t\t\tpcall(restorefunction, gameMetatable.__namecall)\n\t\t\tpcall(restorefunction, gameMetatable.__newindex)\n\t\telse\n\t\t\twax.shared.Hooking.HookMetaMethod(game, \"__namecall\", wax.shared.NamecallHook)\n\t\t\twax.shared.Hooking.HookMetaMethod(game, \"__newindex\", wax.shared.NewIndexHook)\n\t\tend\n\tend\n\n\tfor Function, Original in pairs(wax.shared.Hooks) do\n\t\tif wax.shared.ExecutorSupport[\"oth\"].IsWorking then\n\t\t\ttask.spawn(pcall, oth.unhook, Function)\n\t\telseif wax.shared.ExecutorSupport[\"restorefunction\"].IsWorking then\n\t\t\ttask.spawn(pcall, wax.shared.restorefunction, Function)\n\t\telse\n\t\t\tpcall(wax.shared.Hooking.HookFunction, Function, Original)\n\t\tend\n\tend\n\n\ttask.defer(function()\n\t\tgetgenv().CobaltInitialized = false\n\tend)\nend)\n"
+                                }
                             }
+                        }
+                    },
+                    {
+                        14,
+                        2,
+                        {
+                            "Init"
                         }
                     },
                     {
@@ -9864,7 +11572,7 @@ local ObjectTree = {
                                         5,
                                         {
                                             "Incoming",
-                                            Value = "local ClassesToHook = {\n\tRemoteEvent = \"OnClientEvent\",\n\tRemoteFunction = \"OnClientInvoke\",\n\tUnreliableRemoteEvent = \"OnClientEvent\",\n\tBindableEvent = \"Event\",\n\tBindableFunction = \"OnInvoke\",\n}\n\ntype InstancesToHook = RemoteEvent | UnreliableRemoteEvent | RemoteFunction | BindableEvent | BindableFunction\ntype MethodsToHook = \"OnClientEvent\" | \"OnClientInvoke\" | \"Event\" | \"OnInvoke\"\n\nlocal LogConnectionFunctions = {}\nlocal SignalMapping = setmetatable({}, { __mode = \"kv\" })\n\nlocal function CreateLookupTable(table)\n\tlocal LookupTable = {}\n\tfor _, Method in next, table do\n\t\tLookupTable[Method] = true\n\tend\n\treturn LookupTable\nend\n\n\n--[[\n\tIndividually logs an incoming remote call.\n\n\t@param Instance The instance that was called.\n\t@param Method The method that was called (e.g., \"OnClientEvent\").\n\t@param Function The function that was called, if applicable.\n\t@param Info The information about the call, including arguments and origin. Can be nil.\n\t@param ... The arguments passed from the server to the client.\n\t@return boolean Returns true if the call was blocked, false otherwise.\n]]\nlocal function LogRemote(\n\tInstance: InstancesToHook,\n\tMethod: MethodsToHook,\n\tFunction: (...any) -> ...any,\n\tInfo: {\n\t\tArguments: { [number]: any, n: number },\n\t\tOrigin: Instance,\n\t\tFunction: (...any) -> ...any,\n\t\tLine: number,\n\t\tIsExecutor: boolean,\n\t}\n)\n\tif not wax.shared.ShouldIgnore(Instance, getcallingscript()) and not LogConnectionFunctions[Function] then\n\t\tlocal Log = wax.shared.Logs.Incoming[Instance]\n\t\tif not Log then\n\t\t\tLog = wax.shared.NewLog(Instance, \"Incoming\", Method, getcallingscript())\n\t\tend\n\n\t\tif Log.Blocked then\n\t\t\treturn true\n\t\telseif not Log.Ignored then\n\t\t\tLog:Call(Info)\n\t\tend\n\tend\n\n\treturn false\nend\n\n--[[\n\tCreates a function that can be used to pass to `Connect` which will log all the incoming calls. It will additonally add the function to a ignore list (`LogConnectionFunctions`) to prevent unneccessary logging.\n\t\n\t@param Instance The instance to log.\n\t@param Method The method to log (e.g., \"OnClientEvent\").\n\t@return function Returns a function that logs all calls to the given instance and method.\n]]\nlocal function CreateConnectionFunction(Instance: InstancesToHook, Method: MethodsToHook)\n\tlocal ConnectionFunction = function(...)\n\t\tfor _, Connection in pairs(getconnections((Instance :: any)[Method])) do\n\t\t\tif Connection.ForeignState then\n\t\t\t\tcontinue\n\t\t\tend\n\n\t\t\tlocal Function = typeof(Connection.Function) == \"function\" and Connection.Function or nil\n\t\t\tlocal Thread = Connection.Thread\n\n\t\t\tlocal Origin = nil\n\n\t\t\tif Thread and getscriptfromthread then\n\t\t\t\tOrigin = getscriptfromthread(Thread)\n\t\t\tend\n\n\t\t\tif not Origin and Function then\n\t\t\t\t-- ts is unreliable because people could js set the script global to nil\n\t\t\t\t-- if only debug.getinfo(Function).source or debug.info(Function, \"s\") returned an Instance...\n\n\t\t\t\tlocal Script = rawget(getfenv(Function), \"script\")\n\t\t\t\tif typeof(Script) == \"Instance\" then\n\t\t\t\t\tOrigin = Script\n\t\t\t\tend\n\t\t\tend\n\n\t\t\tLogRemote(Instance, Method, Function, {\n\t\t\t\tArguments = table.pack(...),\n\t\t\t\tOrigin = Origin,\n\t\t\t\tFunction = Function,\n\t\t\t\tLine = nil,\n\t\t\t\tIsExecutor = Function and isexecutorclosure(Function) or false,\n\t\t\t})\n\t\tend\n\tend\n\n\tLogConnectionFunctions[ConnectionFunction] = true\n\treturn ConnectionFunction\nend\n\n--[[\n\tCreates a function that can be used to pass to callbacks (.OnInvoke & .OnClientInvoke) which will log all the incoming calls.\n\t\n\t@param Instance The instance to log.\n\t@param Method The method to log (e.g., \"OnClientEvent\").\n\t@param Function The original callback of the RemoteFunction\n\t@return function Returns a function that logs all function calls to the given instance and method.\n]]\nlocal function CreateCallbackDetour(Instance: InstancesToHook, Method: MethodsToHook, Callback: (...any) -> ...any)\n\tlocal Detour = function(...)\n\t\tlocal Origin = nil\n\n\t\t-- May not exist in all executors\n\t\tif getscriptfromthread then\n\t\t\tOrigin = getscriptfromthread(coroutine.running())\n\t\tend\n\n\t\t-- Unreliable method to get script.\n\t\tif not Origin then\n\t\t\tlocal Script = rawget(getfenv(Callback), \"script\")\n\t\t\tif typeof(Script) == \"Instance\" then\n\t\t\t\tOrigin = Script\n\t\t\tend\n\t\tend\n\n\t\tlocal FunctionCaller = debug.info(2, \"f\")\n\t\tlocal IsExecutor = if typeof(FunctionCaller) == \"function\"\n\t\t\tthen isexecutorclosure(FunctionCaller)\n\t\t\telse isexecutorclosure(Callback)\n\n\t\tif\n\t\t\tLogRemote(Instance, Method, Callback, {\n\t\t\t\tArguments = table.pack(...),\n\t\t\t\tOrigin = Origin,\n\t\t\t\tFunction = Callback,\n\t\t\t\tLine = nil,\n\t\t\t\tIsExecutor = IsExecutor,\n\t\t\t})\n\t\tthen\n\t\t\treturn\n\t\tend\n\n\t\treturn Callback(...)\n\tend\n\n\tif wax.shared.ExecutorSupport[\"setstackhidden\"].IsWorking then\n\t\tsetstackhidden(Detour, true)\n\tend\n\n\treturn Detour\nend\n\n--[[\n\tHandles setting up logging for the appropriate instances.\n\n\t@param Instance The instance to handle.\n]]\nlocal function HandleInstance(Instance: any)\n\tif\n\t\tnot ClassesToHook[Instance.ClassName]\n\t\tor Instance == wax.shared.Communicator\n\t\tor Instance == wax.shared.ActorCommunicator\n\tthen\n\t\treturn\n\tend\n\n\tlocal Method = ClassesToHook[Instance.ClassName]\n\n\tif Instance.ClassName == \"RemoteEvent\" or Instance.ClassName == \"UnreliableRemoteEvent\" then\n\t\twax.shared.Connect(Instance.OnClientEvent:Connect(CreateConnectionFunction(Instance, Method)))\n\n\t\tSignalMapping[Instance.OnClientEvent] = Instance\n\telseif Instance.ClassName == \"BindableEvent\" then\n\t\twax.shared.Connect(Instance.Event:Connect(CreateConnectionFunction(Instance, Method)))\n\n\t\tSignalMapping[Instance.Event] = Instance\n\telseif Instance.ClassName == \"RemoteFunction\" or Instance.ClassName == \"BindableFunction\" then\n\t\tlocal Success, Callback = pcall(getcallbackvalue, Instance, Method)\n\t\tlocal IsCallable = (\n\t\t\ttypeof(Callback) == \"function\"\n\t\t\tor wax.shared.getrawmetatable(Callback) ~= nil and typeof(wax.shared.getrawmetatable(Callback)[\"__call\"]) == \"function\"\n\t\t\tor false\n\t\t)\n\n\t\tif not Success or not IsCallable then\n\t\t\treturn\n\t\tend\n\n\t\tInstance[Method] = CreateCallbackDetour(Instance, Method, Callback)\n\tend\nend\n\nwax.shared.Connect(game.DescendantAdded:Connect(HandleInstance))\n\nlocal CategoryToSearch = { game:QueryDescendants(\"RemoteEvent, RemoteFunction, UnreliableRemoteEvent, BindableEvent, BindableFunction\") }\nif wax.shared.ExecutorSupport[\"getnilinstances\"].IsWorking then\n\ttable.insert(CategoryToSearch, getnilinstances())\nend\n\nfor _, Category in CategoryToSearch do\n\tfor _, Instance in next, Category do\n\t\tHandleInstance(Instance)\n\tend\nend\n\nwax.shared.NewIndexHook = wax.shared.Hooking.HookMetaMethod(game, \"__newindex\", function(...)\n\tlocal self, key, value = ...\n\n\tif typeof(self) ~= \"Instance\" or not ClassesToHook[self.ClassName] then\n\t\treturn wax.shared.NewIndexHook(...)\n\tend\n\n\tif self.ClassName == \"RemoteFunction\" or self.ClassName == \"BindableFunction\" then\n\t\tlocal Method = ClassesToHook[self.ClassName]\n\n\t\tlocal IsCallable = (\n\t\t\ttypeof(value) == \"function\"\n\t\t\tor wax.shared.getrawmetatable(value) ~= nil and typeof(wax.shared.getrawmetatable(value)[\"__call\"]) == \"function\"\n\t\t\tor false\n\t\t)\n\n\t\tif key == Method and IsCallable then\n\t\t\treturn wax.shared.NewIndexHook(self, key, CreateCallbackDetour(self :: InstancesToHook, Method, value))\n\t\tend\n\tend\n\n\treturn wax.shared.NewIndexHook(...)\nend)\n\nlocal ConnectionKeys = CreateLookupTable({\n\t\"Connect\",\n\t\"ConnectParallel\",\n\t\"connect\",\n\t\"connectParallel\",\n\t\"once\",\n\t\"Once\",\n})\n\nlocal SignalMetatable = wax.shared.getrawmetatable(Instance.new(\"Part\").Touched)\nwax.shared.Hooks[SignalMetatable.__index] = wax.shared.Hooking.HookFunction(SignalMetatable.__index, function(...)\n\tlocal self, key = ...\n\n\tif ConnectionKeys[key] then\n\t\tlocal Instance = SignalMapping[self]\n\t\tlocal Connect = wax.shared.Hooks[SignalMetatable.__index](...)\n\n\t\tif not Instance then\n\t\t\treturn Connect\n\t\tend\n\n\t\tlocal Method = ClassesToHook[Instance.ClassName]\n\t\twax.shared.Hooks[Connect] = wax.shared.Hooking.HookFunction(Connect, function(...)\n\t\t\tlocal _self, callback = ...\n\n\t\t\tlocal Result = table.pack(wax.shared.Hooks[Connect](...))\n\t\t\tlocal Log = wax.shared.Logs.Incoming[Instance]\n\n\t\t\tif Log and Log.Blocked then\n\t\t\t\tfor _, Connection in pairs(getconnections(Instance[Method])) do\n\t\t\t\t\tif not Connection.ForeignState and Connection.Function ~= callback then\n\t\t\t\t\t\tcontinue\n\t\t\t\t\tend\n\n\t\t\t\t\tConnection:Disable()\n\t\t\t\tend\n\t\t\tend\n\n\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\tend)\n\n\t\treturn Connect\n\tend\n\n\treturn wax.shared.Hooks[SignalMetatable.__index](...)\nend)\n"
+                                            Value = "local ClassesToHook = {\n\tRemoteEvent = \"OnClientEvent\",\n\tRemoteFunction = \"OnClientInvoke\",\n\tUnreliableRemoteEvent = \"OnClientEvent\",\n\tBindableEvent = \"Event\",\n\tBindableFunction = \"OnInvoke\",\n}\n\ntype InstancesToHook = RemoteEvent | UnreliableRemoteEvent | RemoteFunction | BindableEvent | BindableFunction\ntype MethodsToHook = \"OnClientEvent\" | \"OnClientInvoke\" | \"Event\" | \"OnInvoke\"\n\nlocal LogConnectionFunctions = {}\nlocal SignalMapping = setmetatable({}, { __mode = \"kv\" })\n\nlocal function CreateLookupTable(table)\n\tlocal LookupTable = {}\n\tfor _, Method in next, table do\n\t\tLookupTable[Method] = true\n\tend\n\treturn LookupTable\nend\n\n\n--[[\n\tIndividually logs an incoming remote call.\n\n\t@param Instance The instance that was called.\n\t@param Method The method that was called (e.g., \"OnClientEvent\").\n\t@param Function The function that was called, if applicable.\n\t@param Info The information about the call, including arguments and origin. Can be nil.\n\t@param ... The arguments passed from the server to the client.\n\t@return boolean Returns true if the call was blocked, false otherwise.\n]]\nlocal function LogRemote(\n\tInstance: InstancesToHook,\n\tMethod: MethodsToHook,\n\tFunction: (...any) -> ...any,\n\tInfo: {\n\t\tArguments: { [number]: any, n: number },\n\t\tOrigin: Instance,\n\t\tFunction: (...any) -> ...any,\n\t\tLine: number,\n\t\tIsExecutor: boolean,\n\t}\n)\n\tif not wax.shared.ShouldIgnore(Instance, getcallingscript()) and not LogConnectionFunctions[Function] then\n\t\tlocal Log = wax.shared.Logs.Incoming[Instance]\n\t\tif not Log then\n\t\t\tLog = wax.shared.NewLog(Instance, \"Incoming\", Method, getcallingscript())\n\t\tend\n\n\t\tif Log.Blocked then\n\t\t\treturn true\n\t\telseif not Log.Ignored then\n\t\t\tLog:Call(Info)\n\t\tend\n\tend\n\n\treturn false\nend\n\n--[[\n\tCreates a function that can be used to pass to `Connect` which will log all the incoming calls. It will additonally add the function to a ignore list (`LogConnectionFunctions`) to prevent unneccessary logging.\n\t\n\t@param Instance The instance to log.\n\t@param Method The method to log (e.g., \"OnClientEvent\").\n\t@return function Returns a function that logs all calls to the given instance and method.\n]]\nlocal function CreateConnectionFunction(Instance: InstancesToHook, Method: MethodsToHook)\n\tlocal ConnectionFunction = function(...)\n\t\tfor _, Connection in getconnections((Instance :: any)[Method]) do\n\t\t\tif Connection.ForeignState then\n\t\t\t\tcontinue\n\t\t\tend\n\n\t\t\tlocal Function = typeof(Connection.Function) == \"function\" and Connection.Function or nil\n\t\t\tlocal Thread = Connection.Thread\n\n\t\t\tlocal Origin = nil\n\n\t\t\tif Thread and getscriptfromthread then\n\t\t\t\tOrigin = getscriptfromthread(Thread)\n\t\t\tend\n\n\t\t\tif not Origin and Function then\n\t\t\t\t-- ts is unreliable because people could js set the script global to nil\n\t\t\t\t-- if only debug.getinfo(Function).source or debug.info(Function, \"s\") returned an Instance...\n\n\t\t\t\tlocal Script = rawget(getfenv(Function), \"script\")\n\t\t\t\tif typeof(Script) == \"Instance\" then\n\t\t\t\t\tOrigin = Script\n\t\t\t\tend\n\t\t\tend\n\n\t\t\tLogRemote(Instance, Method, Function, {\n\t\t\t\tArguments = table.pack(...),\n\t\t\t\tOrigin = Origin,\n\t\t\t\tFunction = Function,\n\t\t\t\tLine = nil,\n\t\t\t\tIsExecutor = Function and isexecutorclosure(Function) or false,\n\t\t\t})\n\t\tend\n\tend\n\n\tLogConnectionFunctions[ConnectionFunction] = true\n\treturn ConnectionFunction\nend\n\n--[[\n\tCreates a function that can be used to pass to callbacks (.OnInvoke & .OnClientInvoke) which will log all the incoming calls.\n\t\n\t@param Instance The instance to log.\n\t@param Method The method to log (e.g., \"OnClientEvent\").\n\t@param Function The original callback of the RemoteFunction\n\t@return function Returns a function that logs all function calls to the given instance and method.\n]]\nlocal function CreateCallbackDetour(Instance: InstancesToHook, Method: MethodsToHook, Callback: (...any) -> ...any)\n\tlocal Detour = function(...)\n\t\tlocal Origin = nil\n\n\t\t-- May not exist in all executors\n\t\tif getscriptfromthread then\n\t\t\tOrigin = getscriptfromthread(coroutine.running())\n\t\tend\n\n\t\t-- Unreliable method to get script.\n\t\tif not Origin then\n\t\t\tlocal Script = rawget(getfenv(Callback), \"script\")\n\t\t\tif typeof(Script) == \"Instance\" then\n\t\t\t\tOrigin = Script\n\t\t\tend\n\t\tend\n\n\t\tlocal FunctionCaller = debug.info(2, \"f\")\n\t\tlocal IsExecutor = if typeof(FunctionCaller) == \"function\"\n\t\t\tthen isexecutorclosure(FunctionCaller)\n\t\t\telse isexecutorclosure(Callback)\n\n\t\tif\n\t\t\tLogRemote(Instance, Method, Callback, {\n\t\t\t\tArguments = table.pack(...),\n\t\t\t\tOrigin = Origin,\n\t\t\t\tFunction = Callback,\n\t\t\t\tLine = nil,\n\t\t\t\tIsExecutor = IsExecutor,\n\t\t\t})\n\t\tthen\n\t\t\treturn\n\t\tend\n\n\t\treturn Callback(...)\n\tend\n\n\tif wax.shared.ExecutorSupport[\"setstackhidden\"].IsWorking then\n\t\tsetstackhidden(Detour, true)\n\tend\n\n\treturn Detour\nend\n\n--[[\n\tHandles setting up logging for the appropriate instances.\n\n\t@param Instance The instance to handle.\n]]\nlocal function HandleInstance(Instance: any)\n\tif\n\t\tnot ClassesToHook[Instance.ClassName]\n\t\tor Instance == wax.shared.Communicator\n\t\tor Instance == wax.shared.ActorCommunicator\n\tthen\n\t\treturn\n\tend\n\n\tlocal Method = ClassesToHook[Instance.ClassName]\n\n\tif Instance.ClassName == \"RemoteEvent\" or Instance.ClassName == \"UnreliableRemoteEvent\" then\n\t\twax.shared.Connect(Instance.OnClientEvent:Connect(CreateConnectionFunction(Instance, Method)))\n\n\t\tSignalMapping[Instance.OnClientEvent] = Instance\n\telseif Instance.ClassName == \"BindableEvent\" then\n\t\twax.shared.Connect(Instance.Event:Connect(CreateConnectionFunction(Instance, Method)))\n\n\t\tSignalMapping[Instance.Event] = Instance\n\telseif Instance.ClassName == \"RemoteFunction\" or Instance.ClassName == \"BindableFunction\" then\n\t\tlocal Success, Callback = pcall(getcallbackvalue, Instance, Method)\n\t\tlocal IsCallable = (\n\t\t\ttypeof(Callback) == \"function\"\n\t\t\tor wax.shared.getrawmetatable(Callback) ~= nil and typeof(wax.shared.getrawmetatable(Callback)[\"__call\"]) == \"function\"\n\t\t\tor false\n\t\t)\n\n\t\tif not Success or not IsCallable then\n\t\t\treturn\n\t\tend\n\n\t\tInstance[Method] = CreateCallbackDetour(Instance, Method, Callback)\n\tend\nend\n\nwax.shared.Connect(game.DescendantAdded:Connect(HandleInstance))\n\nlocal CategoryToSearch = { game:QueryDescendants(\"RemoteEvent, RemoteFunction, UnreliableRemoteEvent, BindableEvent, BindableFunction\") }\nif wax.shared.ExecutorSupport[\"getnilinstances\"].IsWorking then\n\ttable.insert(CategoryToSearch, getnilinstances())\nend\n\nfor _, Category in CategoryToSearch do\n\tfor _, Instance in next, Category do\n\t\tHandleInstance(Instance)\n\tend\nend\n\nwax.shared.NewIndexHook = wax.shared.Hooking.HookMetaMethod(game, \"__newindex\", function(...)\n\tlocal self, key, value = ...\n\n\tif typeof(self) ~= \"Instance\" or not ClassesToHook[self.ClassName] then\n\t\treturn wax.shared.NewIndexHook(...)\n\tend\n\n\tif self.ClassName == \"RemoteFunction\" or self.ClassName == \"BindableFunction\" then\n\t\tlocal Method = ClassesToHook[self.ClassName]\n\n\t\tlocal IsCallable = (\n\t\t\ttypeof(value) == \"function\"\n\t\t\tor wax.shared.getrawmetatable(value) ~= nil and typeof(wax.shared.getrawmetatable(value)[\"__call\"]) == \"function\"\n\t\t\tor false\n\t\t)\n\n\t\tif key == Method and IsCallable then\n\t\t\treturn wax.shared.NewIndexHook(self, key, CreateCallbackDetour(self :: InstancesToHook, Method, value))\n\t\tend\n\tend\n\n\treturn wax.shared.NewIndexHook(...)\nend)\n\nlocal ConnectionKeys = CreateLookupTable({\n\t\"Connect\",\n\t\"ConnectParallel\",\n\t\"connect\",\n\t\"connectParallel\",\n\t\"Once\",\n})\n\nlocal SignalMetatable = wax.shared.getrawmetatable(Instance.new(\"Part\").Touched)\nwax.shared.Hooks[SignalMetatable.__index] = wax.shared.Hooking.HookFunction(SignalMetatable.__index, function(...)\n\tlocal self, key = ...\n\n\tif not wax.shared.Unloaded and ConnectionKeys[key] then\n\t\tlocal Instance = SignalMapping[self]\n\t\tlocal Connect = wax.shared.Hooks[SignalMetatable.__index](...)\n\n\t\tif not Instance then\n\t\t\treturn Connect\n\t\tend\n\n\t\tlocal Method = ClassesToHook[Instance.ClassName]\n\t\treturn wax.shared.newcclosure(function(...)\n\t\t\tlocal _self, callback = ...\n\n\t\t\tlocal Result = table.pack(Connect(...))\n\t\t\tlocal Log = wax.shared.Logs.Incoming[Instance]\n\n\t\t\tif Log and Log.Blocked then\n\t\t\t\tfor _, Connection in getconnections(Instance[Method]) do\n\t\t\t\t\tif not Connection.ForeignState and Connection.Function ~= callback then\n\t\t\t\t\t\tcontinue\n\t\t\t\t\tend\n\n\t\t\t\t\tConnection:Disable()\n\t\t\t\tend\n\t\t\tend\n\n\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\tend, debug.info(Connect, \"n\"))\n\tend\n\n\treturn wax.shared.Hooks[SignalMetatable.__index](...)\nend)\n"
                                         }
                                     },
                                     {
@@ -9901,21 +11609,14 @@ local ObjectTree = {
                                 }
                             }
                         }
-                    },
-                    {
-                        14,
-                        2,
-                        {
-                            "Init"
-                        }
                     }
                 }
             },
             {
-                42,
+                2,
                 2,
                 {
-                    "Window"
+                    "ExecutorSupport"
                 }
             }
         }
@@ -9925,31 +11626,34 @@ local ObjectTree = {
 -- Line offsets for debugging (only included when minifyTables is false)
 local LineOffsets = {
     8,
-    356,
-    [17] = 807,
-    [40] = 876,
-    [21] = 2649,
-    [39] = 1256,
-    [36] = 1377,
-    [28] = 1632,
-    [35] = 1784,
-    [33] = 1856,
-    [41] = 1973,
-    [12] = 2308,
-    [29] = 2593,
-    [24] = 2629,
-    [19] = 3503,
-    [31] = 8506,
-    [37] = 3453,
-    [22] = 8299,
-    [34] = 3582,
-    [42] = 3651,
-    [13] = 7817,
-    [25] = 8063,
-    [26] = 8217,
-    [38] = 1174,
-    [14] = 3280,
-    [27] = 9413
+    375,
+    [12] = 820,
+    [13] = 1102,
+    [14] = 1348,
+    [17] = 1521,
+    [19] = 1590,
+    [21] = 1669,
+    [22] = 2346,
+    [24] = 2553,
+    [25] = 2573,
+    [26] = 2703,
+    [27] = 2857,
+    [28] = 2941,
+    [29] = 3140,
+    [31] = 3292,
+    [32] = 4186,
+    [40] = 5822,
+    [38] = 5126,
+    [39] = 5251,
+    [37] = 5320,
+    [45] = 5437,
+    [42] = 5772,
+    [44] = 10956,
+    [35] = 5894,
+    [43] = 5985,
+    [46] = 6109,
+    [41] = 10701,
+    [34] = 4219
 }
 
 -- Misc AOT variable imports
