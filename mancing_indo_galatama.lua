@@ -1501,6 +1501,27 @@ do
     local instantFishingLoopRunning = false
     local instantFishingDelaySec = 4
     local instantFishingArmSeq = 0
+    local randomCastCmgrEnabled = false
+    local randomCastCmgrSync = false
+    local RandomCastCmgrToggleAuto
+    local RandomCastCmgrToggleInstant
+
+    local function setBothRandomCastCmgrToggles(enabled, skipInstance)
+        randomCastCmgrSync = true
+        randomCastCmgrEnabled = enabled
+        if RandomCastCmgrToggleAuto and RandomCastCmgrToggleAuto ~= skipInstance then
+            pcall(function()
+                RandomCastCmgrToggleAuto:Set(enabled)
+            end)
+        end
+        if RandomCastCmgrToggleInstant and RandomCastCmgrToggleInstant ~= skipInstance then
+            pcall(function()
+                RandomCastCmgrToggleInstant:Set(enabled)
+            end)
+        end
+        randomCastCmgrSync = false
+    end
+
     local minigameAutoSolveConn = nil
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 20
@@ -2306,8 +2327,12 @@ do
         if not CMGR then
             return
         end
+        local resultValue = 1
+        if randomCastCmgrEnabled then
+            resultValue = math.random(500, 1000) / 1000
+        end
         pcall(function()
-            CMGR:FireServer("Result", 1)
+            CMGR:FireServer("Result", resultValue)
         end)
     end
 
@@ -2411,6 +2436,20 @@ do
         Desc = "â€¦",
     })
 
+    RandomCastCmgrToggleAuto = AutoFishingSection:Toggle({
+        Title = "Random Cast",
+        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Instant fishing section.",
+        Flag = "galatama_main_randomCastCmgr",
+        Value = false,
+        Callback = function(enabled)
+            if randomCastCmgrSync then
+                randomCastCmgrEnabled = enabled
+                return
+            end
+            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleAuto)
+        end,
+    })
+
     AutoFishingSection:Toggle({
         Title = "Auto Fishing",
         Desc = "Finishes an in-progress reel minigame if needed, then equip â†’ cast â†’ CMGR Result â†’ wait for MGR Stop (same timing as main script auto mode).",
@@ -2460,6 +2499,20 @@ do
             if n and n >= 0 then
                 instantFishingDelaySec = n
             end
+        end,
+    })
+
+    RandomCastCmgrToggleInstant = InstantFishingSection:Toggle({
+        Title = "Random Cast",
+        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Auto Fishing section.",
+        Flag = "galatama_main_randomCastCmgr",
+        Value = false,
+        Callback = function(enabled)
+            if randomCastCmgrSync then
+                randomCastCmgrEnabled = enabled
+                return
+            end
+            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleInstant)
         end,
     })
 
