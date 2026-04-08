@@ -996,8 +996,8 @@ do
         return "  " .. child.Name .. " = " .. child.ClassName
     end
 
-    -- Humanoid fields to read via pcall (some may not exist on older clients).
-    local HUMANOID_INSPECT_PROPERTIES = {
+    -- Fallback fields if runtime property discovery is unavailable.
+    local HUMANOID_INSPECT_PROPERTIES_FALLBACK = {
         "AutoJumpEnabled",
         "AutoRotate",
         "BreakJointsOnDeath",
@@ -1028,7 +1028,7 @@ do
         "WalkToPoint",
     }
 
-    local PLAYER_INSPECT_PROPERTIES = {
+    local PLAYER_INSPECT_PROPERTIES_FALLBACK = {
         "AccountAge",
         "AutoJumpEnabled",
         "CanLoadCharacterAppearance",
@@ -1055,6 +1055,46 @@ do
         "TeamColor",
         "UserId",
     }
+
+    local function getReadablePropertyNames(instance: Instance, fallbackList: { string }): { string }
+        local names = {}
+        local seen = {}
+        local function addName(name: string)
+            if name == "" or seen[name] then
+                return
+            end
+            seen[name] = true
+            table.insert(names, name)
+        end
+
+        local getPropertiesFn = rawget(_G, "getproperties")
+        if type(getPropertiesFn) == "function" then
+            local ok = pcall(function()
+                local discovered = getPropertiesFn(instance)
+                if type(discovered) == "table" then
+                    for _, name in ipairs(discovered) do
+                        if type(name) == "string" then
+                            addName(name)
+                        end
+                    end
+                end
+            end)
+            if not ok then
+                -- Ignore and fall back to static property lists below.
+            end
+        end
+
+        if #names == 0 then
+            for _, name in ipairs(fallbackList) do
+                addName(name)
+            end
+        end
+
+        table.sort(names, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        return names
+    end
 
     local function buildPlayersInfoText(player)
         if not player then
@@ -1093,7 +1133,7 @@ do
         table.insert(lines, "LocalPlayer properties:")
         if localPlayer then
             local propRows = {}
-            for _, propName in ipairs(PLAYER_INSPECT_PROPERTIES) do
+            for _, propName in ipairs(getReadablePropertyNames(localPlayer, PLAYER_INSPECT_PROPERTIES_FALLBACK)) do
                 local ok, val = pcall(function()
                     return localPlayer[propName]
                 end)
@@ -1168,7 +1208,7 @@ do
         if humanoid then
             table.insert(lines, "Humanoid properties:")
             local propRows = {}
-            for _, propName in ipairs(HUMANOID_INSPECT_PROPERTIES) do
+            for _, propName in ipairs(getReadablePropertyNames(humanoid, HUMANOID_INSPECT_PROPERTIES_FALLBACK)) do
                 local ok, val = pcall(function()
                     return humanoid[propName]
                 end)
