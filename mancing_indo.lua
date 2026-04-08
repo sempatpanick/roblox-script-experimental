@@ -260,33 +260,35 @@ local function mergeFishRowIntoGlobalBestiary(entry: { [string]: any }): boolean
     return changed
 end
 
-function fetchAndMergeGlobalBestiaryFish(): boolean
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    if not remotes then
+local function mergeBestiaryRowsFromPayload(payload: any, depth: number?): boolean
+    local d = depth or 0
+    if d > 6 then
         return false
     end
-    local getBestiary = remotes:FindFirstChild("GetBestiary")
-    if not (getBestiary and getBestiary:IsA("RemoteFunction")) then
-        return false
-    end
-    local ok, payload = pcall(function()
-        return (getBestiary :: RemoteFunction):InvokeServer()
-    end)
-    if not ok or type(payload) ~= "table" then
+    if type(payload) ~= "table" then
         return false
     end
     local changed = false
-    for _, row in pairs(payload) do
-        if type(row) == "table" then
-            if mergeFishRowIntoGlobalBestiary(row) then
+    if mergeFishRowIntoGlobalBestiary(payload) then
+        changed = true
+    end
+    for _, child in pairs(payload) do
+        if type(child) == "table" then
+            if mergeBestiaryRowsFromPayload(child, d + 1) then
                 changed = true
             end
         end
     end
-    if changed or #GLOBAL_BESTIARY_FISH_LIST == 0 then
+    if changed then
         rebuildGlobalBestiaryFishList()
     end
     return changed
+end
+
+function fetchAndMergeGlobalBestiaryFish(): boolean
+    -- Intentionally no InvokeServer for GetBestiary; keep this cache passive-only.
+    -- Data is seeded locally and can be merged via other incoming client payloads.
+    return false
 end
 
 function getGlobalBestiaryFishList(): { string }
@@ -3311,6 +3313,24 @@ do
     local autoSellLoopRunning = false
     local autoSellLoopToken = 0
     local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
+    local AUTO_SELL_BACKPACK_REMOVE_WAIT_SEC = 0.8
+    local AUTO_SELL_RETRY_FIRE_SEC = 0.25
+    local autoSellBackpackRemoveConn: RBXScriptConnection? = nil
+    local autoSellBackpackRemoveSignalCount = 0
+
+    local function ensureBackpackRemoveListener()
+        if autoSellBackpackRemoveConn and autoSellBackpackRemoveConn.Connected then
+            return
+        end
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        local backpackRemove = remotes and remotes:FindFirstChild("BackpackRemove")
+        if not (backpackRemove and backpackRemove:IsA("RemoteEvent")) then
+            return
+        end
+        autoSellBackpackRemoveConn = backpackRemove.OnClientEvent:Connect(function()
+            autoSellBackpackRemoveSignalCount += 1
+        end)
+    end
 
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
@@ -3327,7 +3347,7 @@ do
         return false
     end
 
-    local function fireSellFishAll(): boolean
+    local function fireSellFishAllUntilBackpackRemove(): boolean
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if not remotes then
             return false
@@ -3336,35 +3356,29 @@ do
         if not (sellFish and sellFish:IsA("RemoteEvent")) then
             return false
         end
-        local backpackRemove = remotes:FindFirstChild("BackpackRemove")
-        local gotBackpackRemove = false
-        local removeConn = nil
-        if backpackRemove and backpackRemove:IsA("RemoteEvent") then
-            removeConn = backpackRemove.OnClientEvent:Connect(function()
-                gotBackpackRemove = true
+        ensureBackpackRemoveListener()
+
+        while autoSellEnabled do
+            local beforeSignalCount = autoSellBackpackRemoveSignalCount
+            pcall(function()
+                sellFish:FireServer("All")
             end)
-        end
 
-        local fired = pcall(function()
-            sellFish:FireServer("All")
-        end)
-        if not fired then
-            if removeConn then
-                removeConn:Disconnect()
+            local startedAt = os.clock()
+            while autoSellEnabled
+                and (autoSellBackpackRemoveSignalCount <= beforeSignalCount)
+                and (os.clock() - startedAt) < AUTO_SELL_BACKPACK_REMOVE_WAIT_SEC do
+                task.wait(0.05)
             end
-            return false
+
+            if autoSellBackpackRemoveSignalCount > beforeSignalCount then
+                return true
+            end
+
+            waitWithGameplayPauseDetect(AUTO_SELL_RETRY_FIRE_SEC)
         end
 
-        local startedAt = os.clock()
-        while removeConn and (not gotBackpackRemove) and (os.clock() - startedAt) < 6 do
-            waitWithGameplayPauseDetect(0.1)
-        end
-
-        if removeConn then
-            removeConn:Disconnect()
-        end
-
-        return gotBackpackRemove
+        return false
     end
 
     -- Filled in by Location section: pause/resume pin while Auto Sell teleports.
@@ -3394,9 +3408,9 @@ do
                 root.CFrame = SELL_TELEPORT_CFRAME
                 waitWithGameplayPauseDetect(0)
             end
-            local soldOk = fireSellFishAll()
+            local soldOk = fireSellFishAllUntilBackpackRemove()
             if not soldOk then
-                waitWithGameplayPauseDetect(1)
+                return
             end
             root = getCurrentRoot()
             if root and previousCFrame and root.Parent then
@@ -4181,7 +4195,6 @@ do
     })
 
     local fishInfoSelectedName: string? = nil
-    local fishInfoDisplayByName: { [string]: string } = {}
     local fishInfoNameByDisplay: { [string]: string } = {}
     local fishByPlaceSelectedBiome: string? = nil
     local fishByPlaceOrderBy = "Rarity"
@@ -4407,7 +4420,27 @@ do
 
     task.defer(function()
         local remotes = ReplicatedStorage:WaitForChild("Remotes", 60)
+        local function attachBestiaryIncomingListener(remoteInst: Instance)
+            if not (remoteInst and remoteInst:IsA("RemoteEvent")) then
+                return
+            end
+            if not remoteInst.Name:match("Bestiary") then
+                return
+            end
+            remoteInst.OnClientEvent:Connect(function(payload: any)
+                if mergeBestiaryRowsFromPayload(payload) then
+                    task.defer(refreshFishInformationSection)
+                    task.defer(refreshFavoriteRarityDropdown)
+                end
+            end)
+        end
         if remotes then
+            for _, child in ipairs(remotes:GetChildren()) do
+                attachBestiaryIncomingListener(child)
+            end
+            remotes.ChildAdded:Connect(function(child)
+                attachBestiaryIncomingListener(child)
+            end)
             local owned = remotes:FindFirstChild("OwnedRods")
             if owned and owned:IsA("RemoteEvent") then
                 owned.OnClientEvent:Connect(function(_rodNames: any, catalog: any)
