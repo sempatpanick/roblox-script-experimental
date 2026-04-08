@@ -130,6 +130,185 @@ function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     return base
 end
 
+-- */  Global: wait and automatically extend while LocalPlayer.GameplayPaused is true  /* --
+function waitWithGameplayPauseDetect(seconds: number, player: Player?)
+    local lp = player or Players.LocalPlayer
+    if not lp then
+        task.wait(seconds)
+        return
+    end
+
+    local pauseConn = nil
+    local stillPaused = false
+
+    local function refreshPauseState()
+        pcall(function()
+            stillPaused = lp.GameplayPaused == true
+        end)
+    end
+
+    pcall(function()
+        pauseConn = lp:GetPropertyChangedSignal("GameplayPaused"):Connect(refreshPauseState)
+    end)
+
+    refreshPauseState()
+    task.wait(seconds)
+    while stillPaused do
+        task.wait(0.25)
+        refreshPauseState()
+    end
+
+    if pauseConn then
+        pauseConn:Disconnect()
+    end
+end
+
+-- */  Global: bestiary fish cache/list reusable across tabs  /* --
+local GLOBAL_BESTIARY_FISH_BY_NAME: { [string]: { [string]: any } } = {}
+local GLOBAL_BESTIARY_FISH_LIST: { string } = {}
+local GLOBAL_BESTIARY_FISH_SEED: { [number]: { [string]: any } } = {
+    { IsDiscovered = true, Image = "rbxassetid://96439630667032", Name = "Cakalang", SizeRange = { 1, 8 }, BasePrice = 45, Rarity = "Common", Biome = { "Ocean", "Pulau Boomerang", "Pulau Raja Kepiting" } },
+    { IsDiscovered = true, Image = "rbxassetid://77549945082818", Name = "Kembung", SizeRange = { 1, 5 }, BasePrice = 45, Rarity = "Common", Biome = { "Bagang Teluk Dalam", "Pulau Seribu", "Nusa Giri", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://107245285598912", Name = "Selar", SizeRange = { 1, 5 }, BasePrice = 55, Rarity = "Common", Biome = { "Bagang Luar", "Bagang Ujung", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://118194707470807", Name = "Kiper", SizeRange = { 1, 3 }, BasePrice = 65, Rarity = "Common", Biome = { "Bagang Teluk Dalam", "Pulau Seribu", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://99521301596467", Name = "Bibir Tebal", SizeRange = { 1, 113 }, BasePrice = 12, Rarity = "Common", Biome = { "Pulau Raja Kepiting", "Nusa Giri", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://77354390600540", Name = "Bulan Bulan", SizeRange = { 1, 150 }, BasePrice = 35, Rarity = "Common", Biome = { "Bagang Teluk Dalam", "Bagang Tengah", "Bagang Luar", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://130209972808138", Name = "Baronang", SizeRange = { 1, 4 }, BasePrice = 45, Rarity = "Common", Biome = { "Bagang Teluk Dalam", "Bagang Tengah", "Bagang Ujung", "Bagang Luar", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://81110496110596", Name = "Lencam", SizeRange = { 1, 34 }, BasePrice = 29, Rarity = "Common", Biome = { "Pulau Seribu", "Nusa Giri", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://132334397594362", Name = "Korang Korang", SizeRange = { 1, 3 }, BasePrice = 65, Rarity = "Common", Biome = { "Bagang Tengah", "Nusa Giri", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://137586672510862", Name = "Belanak", SizeRange = { 1, 6 }, BasePrice = 45, Rarity = "Common", Biome = { "Bagang Teluk Dalam", "Bagang Tengah", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://83906784560832", Name = "Kerapu Macan", SizeRange = { 1, 11 }, BasePrice = 69, Rarity = "Uncommon", Biome = { "Bagang Teluk Dalam", "Bagang Tengah", "Pulau Seribu", "Bagang Luar", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://100797310349970", Name = "Kue", SizeRange = { 1, 15 }, BasePrice = 67, Rarity = "Uncommon", Biome = { "Bagang Ujung", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://94073280009938", Name = "Manyung", SizeRange = { 1, 15 }, BasePrice = 55, Rarity = "Uncommon", Biome = { "Bagang Tengah", "Nusa Giri", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://95432263206097", Name = "Bawal", SizeRange = { 1, 8 }, BasePrice = 80, Rarity = "Uncommon", Biome = { "Pulau Seribu", "Bagang Tengah", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://92221883833996", Name = "Kerapu", SizeRange = { 1, 15 }, BasePrice = 65, Rarity = "Uncommon", Biome = { "Pulau Seribu", "Nusa Giri", "Bagang Luar", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://107998878019525", Name = "Kuwe Lilin", SizeRange = { 1, 10 }, BasePrice = 72, Rarity = "Uncommon", Biome = { "Pulau Boomerang", "Nusa Giri", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://139246541408150", Name = "Layur", SizeRange = { 1, 6 }, BasePrice = 80, Rarity = "Uncommon", Biome = { "Bagang Luar", "Ocean", "Pulau Raja Kepiting" } },
+    { IsDiscovered = true, Image = "rbxassetid://72795767294489", Name = "Talang Talang", SizeRange = { 1, 10 }, BasePrice = 60, Rarity = "Uncommon", Biome = { "Pulau Boomerang", "Bagang Ujung", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://76756079077545", Name = "Kakap Merah", SizeRange = { 8, 20 }, BasePrice = 62, Rarity = "Uncommon", Biome = { "Bagang Ujung", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://84682284136574", Name = "Kakap Putih", SizeRange = { 2, 60 }, BasePrice = 92, Rarity = "Rare", Biome = { "Bagang Teluk Dalam", "Nusa Giri", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://88438720593196", Name = "Kuwe Gerong", SizeRange = { 20, 80 }, BasePrice = 98, Rarity = "Rare", Biome = { "Bagang Ujung", "Pulau Raja Kepiting", "Nusa Giri", "Bagang Luar", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://103462330327663", Name = "Kurau", SizeRange = { 2, 20 }, BasePrice = 85, Rarity = "Rare", Biome = { "Bagang Teluk Dalam", "Bagang Ujung", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://122444506982496", Name = "Cobia", SizeRange = { 5, 30 }, BasePrice = 95, Rarity = "Rare", Biome = { "Bagang Luar", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://77531513272128", Name = "Salem", SizeRange = { 1, 10 }, BasePrice = 88, Rarity = "Rare", Biome = { "Ocean", "Bagang Ujung", "Bagang Luar" } },
+    { IsDiscovered = true, Image = "rbxassetid://111030265375847", Name = "Kakatua", SizeRange = { 1, 75 }, BasePrice = 88, Rarity = "Rare", Biome = { "Pulau Seribu", "Pulau Raja Kepiting", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://107665961587222", Name = "Tenggiri", SizeRange = { 10, 70 }, BasePrice = 95, Rarity = "Rare", Biome = { "Ocean", "Pulau Boomerang" } },
+    { IsDiscovered = true, Image = "rbxassetid://112422725694591", Name = "Amberjack", SizeRange = { 5, 40 }, BasePrice = 90, Rarity = "Rare", Biome = { "Ocean", "Pulau Boomerang" } },
+    { IsDiscovered = true, Image = "rbxassetid://117949774683830", Name = "Lamadang", SizeRange = { 5, 25 }, BasePrice = 100, Rarity = "Rare", Biome = { "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://115542908243987", Name = "Madidihang", SizeRange = { 60, 180 }, BasePrice = 135, Rarity = "Legendary", Biome = { "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://77378600530681", Name = "Tuna Gigi Anjing", SizeRange = { 90, 248 }, BasePrice = 225, Rarity = "Legendary", Biome = { "Bagang Ujung", "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://125391107112862", Name = "Yellowfin", SizeRange = { 40, 150 }, BasePrice = 160, Rarity = "Legendary", Biome = { "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://101533617773805", Name = "Marlin", SizeRange = { 50, 300 }, BasePrice = 180, Rarity = "Legendary", Biome = { "Ocean" } },
+    { IsDiscovered = true, Image = "rbxassetid://90737568676663", Name = "Ikan Layaran", SizeRange = { 27, 90 }, BasePrice = 155, Rarity = "Legendary", Biome = { "Ocean", "Pulau Boomerang" } },
+    { IsDiscovered = true, Image = "rbxassetid://96008052578435", Name = "Alu Alu", SizeRange = { 10, 46 }, BasePrice = 120, Rarity = "Legendary", Biome = { "Ocean", "Pulau Boomerang" } },
+    { IsDiscovered = true, Image = "rbxassetid://139885975348132", Name = "Hiu Martil", SizeRange = { 50, 400 }, BasePrice = 200, Rarity = "Legendary", Biome = { "Ocean", "Pulau Boomerang" } },
+    { IsDiscovered = true, Image = "rbxassetid://126066757807448", Name = "Ikan Napoleon", SizeRange = { 40, 113 }, BasePrice = 198, Rarity = "Legendary", Biome = { "Pulau Raja Kepiting", "Pulau Seribu", "Ocean" } },
+    { IsDiscovered = false, Image = "rbxassetid://107665961587222", Name = "???", Rarity = "???", Biome = {} },
+}
+
+local function normalizeBestiaryFishName(raw: any): string?
+    if type(raw) ~= "string" then
+        return nil
+    end
+    local name = string.gsub(string.gsub(raw, "^%s+", ""), "%s+$", "")
+    if name == "" then
+        return nil
+    end
+    return name
+end
+
+local function isBestiaryUnknownToken(raw: any): boolean
+    if type(raw) ~= "string" then
+        return false
+    end
+    local s = string.gsub(string.gsub(raw, "^%s+", ""), "%s+$", "")
+    return s == "???"
+end
+
+local function rebuildGlobalBestiaryFishList()
+    GLOBAL_BESTIARY_FISH_LIST = {}
+    for name in pairs(GLOBAL_BESTIARY_FISH_BY_NAME) do
+        table.insert(GLOBAL_BESTIARY_FISH_LIST, name)
+    end
+    table.sort(GLOBAL_BESTIARY_FISH_LIST, function(a, b)
+        return string.lower(a) < string.lower(b)
+    end)
+end
+
+local function mergeFishRowIntoGlobalBestiary(entry: { [string]: any }): boolean
+    local fishName = normalizeBestiaryFishName(entry.Name)
+    if not fishName then
+        return false
+    end
+    if isBestiaryUnknownToken(fishName) or isBestiaryUnknownToken(entry.Rarity) then
+        return false
+    end
+    local existing = GLOBAL_BESTIARY_FISH_BY_NAME[fishName]
+    local changed = false
+    if not existing then
+        existing = {}
+        GLOBAL_BESTIARY_FISH_BY_NAME[fishName] = existing
+        changed = true
+    end
+    for k, v in pairs(entry) do
+        if existing[k] ~= v then
+            existing[k] = v
+            changed = true
+        end
+    end
+    existing.Name = fishName
+    return changed
+end
+
+function fetchAndMergeGlobalBestiaryFish(): boolean
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remotes then
+        return false
+    end
+    local getBestiary = remotes:FindFirstChild("GetBestiary")
+    if not (getBestiary and getBestiary:IsA("RemoteFunction")) then
+        return false
+    end
+    local ok, payload = pcall(function()
+        return (getBestiary :: RemoteFunction):InvokeServer()
+    end)
+    if not ok or type(payload) ~= "table" then
+        return false
+    end
+    local changed = false
+    for _, row in pairs(payload) do
+        if type(row) == "table" then
+            if mergeFishRowIntoGlobalBestiary(row) then
+                changed = true
+            end
+        end
+    end
+    if changed or #GLOBAL_BESTIARY_FISH_LIST == 0 then
+        rebuildGlobalBestiaryFishList()
+    end
+    return changed
+end
+
+function getGlobalBestiaryFishList(): { string }
+    local out: { string } = {}
+    for i, name in ipairs(GLOBAL_BESTIARY_FISH_LIST) do
+        out[i] = name
+    end
+    return out
+end
+
+for _, fish in ipairs(GLOBAL_BESTIARY_FISH_SEED) do
+    local name = normalizeBestiaryFishName(fish.Name)
+    if name and (not isBestiaryUnknownToken(name)) and (not isBestiaryUnknownToken(fish.Rarity)) and not GLOBAL_BESTIARY_FISH_BY_NAME[name] then
+        local row = {}
+        for k, v in pairs(fish) do
+            row[k] = v
+        end
+        GLOBAL_BESTIARY_FISH_BY_NAME[name] = row
+    end
+end
+rebuildGlobalBestiaryFishList()
+
 -- */  Elements Section  /* --
 local ElementsSection = Window:Section({
     Title = "Elements",
@@ -3127,6 +3306,7 @@ do
 
     local sellMode = "Loop"
     local sellIntervalSeconds = 60
+    local sellIntervalRevision = 0
     local autoSellEnabled = false
     local autoSellLoopRunning = false
     local autoSellLoopToken = 0
@@ -3147,18 +3327,44 @@ do
         return false
     end
 
-    local function fireSellFishAll()
+    local function fireSellFishAll(): boolean
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if not remotes then
-            return
+            return false
         end
         local sellFish = remotes:FindFirstChild("SellFish")
         if not (sellFish and sellFish:IsA("RemoteEvent")) then
-            return
+            return false
         end
-        pcall(function()
+        local backpackRemove = remotes:FindFirstChild("BackpackRemove")
+        local gotBackpackRemove = false
+        local removeConn = nil
+        if backpackRemove and backpackRemove:IsA("RemoteEvent") then
+            removeConn = backpackRemove.OnClientEvent:Connect(function()
+                gotBackpackRemove = true
+            end)
+        end
+
+        local fired = pcall(function()
             sellFish:FireServer("All")
         end)
+        if not fired then
+            if removeConn then
+                removeConn:Disconnect()
+            end
+            return false
+        end
+
+        local startedAt = os.clock()
+        while removeConn and (not gotBackpackRemove) and (os.clock() - startedAt) < 6 do
+            waitWithGameplayPauseDetect(0.1)
+        end
+
+        if removeConn then
+            removeConn:Disconnect()
+        end
+
+        return gotBackpackRemove
     end
 
     -- Filled in by Location section: pause/resume pin while Auto Sell teleports.
@@ -3171,43 +3377,6 @@ do
         local function getCurrentRoot()
             local ch = Players.LocalPlayer.Character
             return ch and ch:FindFirstChild("HumanoidRootPart")
-        end
-        local function waitWithPauseDetect(seconds: number, label: string)
-            local lp = Players.LocalPlayer
-            local pauseConn = nil
-            local wasPausedDuringWait = false
-
-            local function onPauseStateChanged()
-                local paused = false
-                pcall(function()
-                    paused = lp.GameplayPaused == true
-                end)
-                if paused then
-                    wasPausedDuringWait = true
-                end
-            end
-
-            pcall(function()
-                pauseConn = lp:GetPropertyChangedSignal("GameplayPaused"):Connect(onPauseStateChanged)
-            end)
-
-            onPauseStateChanged()
-            task.wait(seconds)
-
-            local stillPaused = false
-            pcall(function()
-                stillPaused = lp.GameplayPaused == true
-            end)
-            while stillPaused do
-                task.wait(0.25)
-                pcall(function()
-                    stillPaused = lp.GameplayPaused == true
-                end)
-            end
-
-            if pauseConn then
-                pauseConn:Disconnect()
-            end
         end
         local holdPausedForAutoSell = false
         if locationHoldApi.pauseForAutoSell then
@@ -3223,10 +3392,12 @@ do
             if root then
                 previousCFrame = root.CFrame
                 root.CFrame = SELL_TELEPORT_CFRAME
-                waitWithPauseDetect(1, "teleporting to sell point")
+                waitWithGameplayPauseDetect(0)
             end
-            fireSellFishAll()
-            waitWithPauseDetect(1, "selling fish")
+            local soldOk = fireSellFishAll()
+            if not soldOk then
+                waitWithGameplayPauseDetect(1)
+            end
             root = getCurrentRoot()
             if root and previousCFrame and root.Parent then
                 root.CFrame = previousCFrame
@@ -3293,6 +3464,7 @@ do
             local n = tonumber(value)
             if n and n >= 0 then
                 sellIntervalSeconds = n
+                sellIntervalRevision += 1
             end
         end,
     })
@@ -3318,8 +3490,20 @@ do
                     if sellMode == "Loop" then
                         runAutoSellWithFishingCoordination()
                     end
-                    local dur = math.max(sellIntervalSeconds, 0.05)
-                    task.wait(dur)
+                    local cycleStartedAt = os.clock()
+                    local seenRevision = sellIntervalRevision
+                    while autoSellEnabled and myToken == autoSellLoopToken do
+                        local dur = math.max(sellIntervalSeconds, 0.05)
+                        local elapsed = os.clock() - cycleStartedAt
+                        local remaining = dur - elapsed
+                        if remaining <= 0 then
+                            break
+                        end
+                        task.wait(math.min(remaining, 0.25))
+                        if seenRevision ~= sellIntervalRevision then
+                            seenRevision = sellIntervalRevision
+                        end
+                    end
                 end
                 if myToken == autoSellLoopToken then
                     autoSellLoopRunning = false
@@ -3328,6 +3512,16 @@ do
         end,
     })
     
+    MainTab:Space()
+
+    local LocationSection = MainTab:Section({
+        Title = "Location",
+        Desc = "Preset spots with facing; Teleport to Location pins you to the preset position and look direction while on",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
     MainTab:Space()
 
     local SpawnBoatSection = MainTab:Section({
@@ -3513,16 +3707,6 @@ do
                 })
             end
         end,
-    })
-
-    MainTab:Space()
-
-    local LocationSection = MainTab:Section({
-        Title = "Location",
-        Desc = "Preset spots with facing; Teleport to Location pins you to the preset position and look direction while on",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
     })
 
     local locationPresetRows = {
@@ -3754,6 +3938,9 @@ do
         if s == "" then
             return
         end
+        if s == "???" then
+            return
+        end
         set[s] = true
     end
 
@@ -3808,20 +3995,8 @@ do
     end
 
     local function mergeRaritiesFromBestiary(set: { [string]: boolean })
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if not remotes then
-            return
-        end
-        local gb = remotes:FindFirstChild("GetBestiary")
-        if not (gb and gb:IsA("RemoteFunction")) then
-            return
-        end
-        local ok, list = pcall(function()
-            return (gb :: RemoteFunction):InvokeServer()
-        end)
-        if not ok or type(list) ~= "table" then
-            return
-        end
+        fetchAndMergeGlobalBestiaryFish()
+        local list = GLOBAL_BESTIARY_FISH_BY_NAME
         local visited: { [any]: boolean } = {}
         for _, entry in pairs(list) do
             if type(entry) == "table" then
@@ -3977,6 +4152,117 @@ do
         end,
     })
 
+    BackpackTab:Space()
+
+    local FishInformationSection = BackpackTab:Section({
+        Title = "Fish Information",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local FishInformationParagraph = FishInformationSection:Paragraph({
+        Title = "Fish Description",
+        Desc = "Select a fish to show details from GetBestiary.",
+    })
+
+    local fishInfoSelectedName: string? = nil
+    local fishInfoDisplayByName: { [string]: string } = {}
+    local fishInfoNameByDisplay: { [string]: string } = {}
+    local FishInformationDropdown
+
+    local function buildFishInfoDisplay(name: string): string
+        local row = GLOBAL_BESTIARY_FISH_BY_NAME[name]
+        local rarity = "Unknown"
+        if type(row) == "table" and type(row.Rarity) == "string" and row.Rarity ~= "" then
+            rarity = row.Rarity
+        end
+        return string.format("%s (%s)", name, rarity)
+    end
+
+    local function fishInfoDescriptionForName(name: string?): string
+        if not name or name == "" then
+            return "Select a fish to show details from GetBestiary."
+        end
+        local row = GLOBAL_BESTIARY_FISH_BY_NAME[name]
+        if type(row) ~= "table" then
+            return "No details available yet. Try Refresh shortly."
+        end
+        local discovered = (row.IsDiscovered == true) and "Yes" or "No"
+        local rarity = (type(row.Rarity) == "string" and row.Rarity ~= "") and row.Rarity or "Unknown"
+        local basePrice = (type(row.BasePrice) == "number") and tostring(row.BasePrice) or "Unknown"
+        local sizeRange = "Unknown"
+        if type(row.SizeRange) == "table" and type(row.SizeRange[1]) == "number" and type(row.SizeRange[2]) == "number" then
+            sizeRange = string.format("%s - %s", tostring(row.SizeRange[1]), tostring(row.SizeRange[2]))
+        end
+        local biomeText = "Unknown"
+        if type(row.Biome) == "table" and #row.Biome > 0 then
+            local names: { string } = {}
+            for _, biomeName in ipairs(row.Biome) do
+                if type(biomeName) == "string" and biomeName ~= "" then
+                    table.insert(names, biomeName)
+                end
+            end
+            if #names > 0 then
+                biomeText = table.concat(names, ", ")
+            end
+        end
+        return string.format(
+            "Name: %s\nDiscovered: %s\nRarity: %s\nBase Price: %s\nSize Range: %s\nBiome: %s",
+            tostring(name),
+            discovered,
+            rarity,
+            basePrice,
+            sizeRange,
+            biomeText
+        )
+    end
+
+    local function refreshFishInformationSection(): boolean
+        local changed = fetchAndMergeGlobalBestiaryFish()
+        local names = getGlobalBestiaryFishList()
+        fishInfoDisplayByName = {}
+        fishInfoNameByDisplay = {}
+        local displayValues: { string } = {}
+        for _, name in ipairs(names) do
+            local display = buildFishInfoDisplay(name)
+            fishInfoDisplayByName[name] = display
+            fishInfoNameByDisplay[display] = name
+            table.insert(displayValues, display)
+        end
+        if FishInformationDropdown and FishInformationDropdown.Refresh then
+            FishInformationDropdown:Refresh(displayValues)
+        end
+        if fishInfoSelectedName and not table.find(names, fishInfoSelectedName) then
+            fishInfoSelectedName = nil
+            if FishInformationDropdown and FishInformationDropdown.Select then
+                FishInformationDropdown:Select(nil)
+            elseif FishInformationDropdown and FishInformationDropdown.Set then
+                FishInformationDropdown:Set(nil)
+            end
+        end
+        if FishInformationParagraph and FishInformationParagraph.SetDesc then
+            FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
+        end
+        return changed
+    end
+
+    FishInformationDropdown = FishInformationSection:Dropdown({
+        Title = "Fish",
+        Desc = "List sourced from Remotes.GetBestiary",
+        Flag = "mancing_backpack_fishInfoPick",
+        Values = {},
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            fishInfoSelectedName = (type(value) == "string" and fishInfoNameByDisplay[value]) or nil
+            if FishInformationParagraph and FishInformationParagraph.SetDesc then
+                FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
+            end
+        end,
+    })
+
     task.defer(function()
         local remotes = ReplicatedStorage:WaitForChild("Remotes", 60)
         if remotes then
@@ -3991,10 +4277,22 @@ do
             end
             local backpackAdd = remotes:FindFirstChild("BackpackAdd") or remotes:WaitForChild("BackpackAdd", 30)
             if backpackAdd and backpackAdd:IsA("RemoteEvent") then
-                backpackAdd.OnClientEvent:Connect(onBackpackAddClientPayload)
+                backpackAdd.OnClientEvent:Connect(function(payload: any)
+                    onBackpackAddClientPayload(payload)
+                    task.defer(refreshFishInformationSection)
+                end)
             end
         end
+        refreshFishInformationSection()
         refreshFavoriteRarityDropdown()
+        task.spawn(function()
+            while true do
+                task.wait(15)
+                if refreshFishInformationSection() then
+                    refreshFavoriteRarityDropdown()
+                end
+            end
+        end)
     end)
 end
 
