@@ -1565,6 +1565,27 @@ do
     local instantFishingCycleRunning = false
     local instantFishingDelaySec = 0.5
     local instantFishingArmSeq = 0
+    local randomCastCmgrEnabled = false
+    local randomCastCmgrSync = false
+    local RandomCastCmgrToggleAuto
+    local RandomCastCmgrToggleInstant
+
+    local function setBothRandomCastCmgrToggles(enabled: boolean, skipInstance: any)
+        randomCastCmgrSync = true
+        randomCastCmgrEnabled = enabled
+        if RandomCastCmgrToggleAuto and RandomCastCmgrToggleAuto ~= skipInstance then
+            pcall(function()
+                RandomCastCmgrToggleAuto:Set(enabled)
+            end)
+        end
+        if RandomCastCmgrToggleInstant and RandomCastCmgrToggleInstant ~= skipInstance then
+            pcall(function()
+                RandomCastCmgrToggleInstant:Set(enabled)
+            end)
+        end
+        randomCastCmgrSync = false
+    end
+
     local minigameAutoSolveConn = nil
 
     local function fishingAutomationActive(): boolean
@@ -2608,8 +2629,12 @@ do
         if not CMGR then
             return
         end
+        local resultValue: number = 1
+        if randomCastCmgrEnabled then
+            resultValue = math.random(500, 1000) / 1000
+        end
         pcall(function()
-            CMGR:FireServer("Result", 1)
+            CMGR:FireServer("Result", resultValue)
         end)
     end
 
@@ -2738,6 +2763,20 @@ do
         task.defer(updateAutoFishStatusParagraph)
     end
 
+    RandomCastCmgrToggleAuto = AutoFishingSection:Toggle({
+        Title = "Random Cast",
+        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Instant fishing section.",
+        Flag = "mancing_main_randomCastCmgr",
+        Value = false,
+        Callback = function(enabled)
+            if randomCastCmgrSync then
+                randomCastCmgrEnabled = enabled
+                return
+            end
+            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleAuto)
+        end,
+    })
+
     AutoFishingSection:Toggle({
         Title = "Auto Fishing",
         Desc = "Finishes an in-progress MGR minigame first if needed, then equip/cast/CMGR/MGR as usual",
@@ -2799,6 +2838,20 @@ do
             if n and n >= 0 then
                 instantFishingDelaySec = n
             end
+        end,
+    })
+
+    RandomCastCmgrToggleInstant = InstantFishingSection:Toggle({
+        Title = "Random Cast",
+        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Auto Fishing section.",
+        Flag = "mancing_main_randomCastCmgr",
+        Value = false,
+        Callback = function(enabled)
+            if randomCastCmgrSync then
+                randomCastCmgrEnabled = enabled
+                return
+            end
+            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleInstant)
         end,
     })
 
