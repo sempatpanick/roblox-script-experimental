@@ -4460,14 +4460,14 @@ do
         end
         refreshFishInformationSection()
         refreshFavoriteRarityDropdown()
-        task.spawn(function()
-            while true do
-                task.wait(15)
-                if refreshFishInformationSection() then
-                    refreshFavoriteRarityDropdown()
-                end
-            end
-        end)
+        -- task.spawn(function()
+        --     while true do
+        --         task.wait(15)
+        --         if refreshFishInformationSection() then
+        --             refreshFavoriteRarityDropdown()
+        --         end
+        --     end
+        -- end)
     end)
 end
 
@@ -4593,16 +4593,6 @@ do
         end)
     end
 
-    do
-        local elapsed = 0
-        RunService.Heartbeat:Connect(function(dt)
-            elapsed += dt
-            if elapsed >= 0.2 then
-                elapsed = 0
-                updateGalatamaQueueStatus()
-            end
-        end)
-    end
     task.defer(updateGalatamaQueueStatus)
 
     GalatamaSection:Button({
