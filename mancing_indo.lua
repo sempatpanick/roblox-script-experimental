@@ -62,7 +62,6 @@ local Window = WindUI:CreateWindow({
 local Green = Color3.fromHex("#10C550")
 -- Shared across tabs so Backpack features can validate fishing automation state.
 local fishingAutomationState = {
-    autoFishingEnabled = false,
     instantFishingEnabled = false,
 }
 
@@ -1950,38 +1949,19 @@ do
         Border = true,
     })
 
-    local AutoFishingSection = MainTab:Section({
-        Title = "Auto Fishing",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local AutoFishStatusParagraph
-    local AutoFishMinigameSwitchButton
-
-    local autoFishingEnabled = false
-    local autoFishingLoopRunning = false
     local autoFishingPausedForSell = false
-    local autoFishingCycleRunning = false
     local instantFishingEnabled = false
     local instantFishingLoopRunning = false
     local instantFishingCycleRunning = false
-    local instantFishingDelaySec = 0.5
+    local instantFishingDelaySec = 4.86
     local instantFishingArmSeq = 0
     local randomCastCmgrEnabled = false
     local randomCastCmgrSync = false
-    local RandomCastCmgrToggleAuto
     local RandomCastCmgrToggleInstant
 
-    local function setBothRandomCastCmgrToggles(enabled: boolean, skipInstance: any)
+    local function setRandomCastCmgrToggleInstant(enabled: boolean, skipInstance: any)
         randomCastCmgrSync = true
         randomCastCmgrEnabled = enabled
-        if RandomCastCmgrToggleAuto and RandomCastCmgrToggleAuto ~= skipInstance then
-            pcall(function()
-                RandomCastCmgrToggleAuto:Set(enabled)
-            end)
-        end
         if RandomCastCmgrToggleInstant and RandomCastCmgrToggleInstant ~= skipInstance then
             pcall(function()
                 RandomCastCmgrToggleInstant:Set(enabled)
@@ -1991,206 +1971,21 @@ do
     end
 
     local minigameAutoSolveConn = nil
-
-    local function fishingAutomationActive(): boolean
-        return autoFishingEnabled or instantFishingEnabled
-    end
     -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
     -- `finished` avoids BindableEvent missed-signal races when MGR "Stop" fires before the waiter runs.
     local minigameSessionWait = nil :: { seq: number, finished: boolean }?
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 10
-    -- Reel: deep hack + fast Complete are Instant fishing only. Auto Fishing uses VIM E/Q only.
+    -- Reel autoplay for Instant fishing uses VirtualInputManager E only.
     local REEL_AUTOPLAY_START_DELAY = 0.06
     local REEL_AUTOPLAY_TIMEOUT = 55
     local reelAutoplayLoopRunning = false
     -- MGR Spawn payload (challenge id lives only in the game's Minigames module, not on instances).
     local mgrPendingChallenge = nil :: { id: any, mode: string, hold: number }?
-    local mgrReelPendingToken: any = nil
     -- After enabling auto Fishing while already in minigame: extra pause once that minigame finishes.
     local autoFishDelay2sAfterPreEnableDrain = false
 
-    local minigamePreferenceAttrConn: RBXScriptConnection? = nil
-
-    local function classifyMinigamePreference(primary: string): "reel" | "tap" | nil
-        local p = string.lower(primary)
-        if p == "reel" then
-            return "reel"
-        end
-        if p == "tap" then
-            return "tap"
-        end
-        return nil
-    end
-
-    local function getMinigamePreferenceFromAttribute(): (string?, "reel" | "tap" | nil)
-        local lp = Players.LocalPlayer
-        local raw = lp and lp:GetAttribute("MinigamePreference") or nil
-        if type(raw) ~= "string" then
-            return nil, nil
-        end
-        local normalized = classifyMinigamePreference(raw)
-        return raw, normalized
-    end
-
-    local function getMinigameKindResolved(): "reel" | "tap" | nil
-        local _, kind = getMinigamePreferenceFromAttribute()
-        return kind
-    end
-
-    local function getMinigameKindForAutoSolve(): "reel" | "tap"
-        if instantFishingEnabled then
-            return "reel"
-        end
-        return getMinigameKindResolved() or "tap"
-    end
-
-    local function updateAutoFishStatusParagraph()
-        local primary, kind = getMinigamePreferenceFromAttribute()
-        if not primary then
-            primary = "Unknown — wait until MinigamePreference is Reel or Tap"
-        end
-        if AutoFishStatusParagraph and AutoFishStatusParagraph.SetDesc then
-            AutoFishStatusParagraph:SetDesc("Minigame: " .. primary)
-        end
-
-        if AutoFishMinigameSwitchButton and AutoFishMinigameSwitchButton.SetTitle then
-            if kind == "reel" then
-                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Tap & Hold")
-            elseif kind == "tap" then
-                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Reel")
-            else
-                AutoFishMinigameSwitchButton:SetTitle("Change Minigame to Reel")
-            end
-        end
-    end
-
-    AutoFishStatusParagraph = AutoFishingSection:Paragraph({
-        Title = "Status",
-        Desc = "Minigame: …",
-    })
-
-    AutoFishMinigameSwitchButton = AutoFishingSection:Button({
-        Title = "Change Minigame to Reel",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local k = getMinigameKindResolved()
-            local targetRemote = (k == "reel") and "Tap" or "Reel"
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            local cp = remotes and remotes:FindFirstChild("ChangePreference")
-            if cp and cp:IsA("RemoteEvent") then
-                pcall(function()
-                    (cp :: RemoteEvent):FireServer(targetRemote)
-                end)
-            end
-            pcall(function()
-                Players.LocalPlayer:SetAttribute("MinigamePreference", targetRemote)
-            end)
-            updateAutoFishStatusParagraph()
-        end,
-    })
-
-    task.defer(updateAutoFishStatusParagraph)
-    if not minigamePreferenceAttrConn then
-        minigamePreferenceAttrConn = Players.LocalPlayer:GetAttributeChangedSignal("MinigamePreference"):Connect(function()
-            task.defer(updateAutoFishStatusParagraph)
-        end)
-    end
-
-    task.spawn(function()
-        for _ = 1, 8 do
-            task.wait(1)
-            updateAutoFishStatusParagraph()
-        end
-    end)
-
-    -- Cosmetic: hide Minigames ScreenGui while still firing MGR (see ensureMinigameAutoSolve).
-    local hideMinigameUi = false
-    local minigameUiRestoreEnabled = true
-    local minigameUiEnforceConn: RBXScriptConnection? = nil
-    local minigameUiPlayerGuiConn: RBXScriptConnection? = nil
-
-    local function disconnectMinigameUiEnforce()
-        if minigameUiEnforceConn then
-            minigameUiEnforceConn:Disconnect()
-            minigameUiEnforceConn = nil
-        end
-    end
-
-    local function disconnectMinigameUiPlayerGui()
-        if minigameUiPlayerGuiConn then
-            minigameUiPlayerGuiConn:Disconnect()
-            minigameUiPlayerGuiConn = nil
-        end
-    end
-
-    local function applyHideToMinigameScreenGui(mg: ScreenGui)
-        disconnectMinigameUiEnforce()
-        if not hideMinigameUi then
-            return
-        end
-        minigameUiRestoreEnabled = mg.Enabled
-        mg.Enabled = false
-        minigameUiEnforceConn = mg:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if hideMinigameUi and mg.Parent and mg.Enabled then
-                mg.Enabled = false
-            end
-        end)
-    end
-
-    local function refreshMinigameUiHide()
-        if not hideMinigameUi then
-            return
-        end
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then
-            return
-        end
-        local mg = pg:FindFirstChild("Minigames")
-        if mg and mg:IsA("ScreenGui") then
-            applyHideToMinigameScreenGui(mg)
-        end
-    end
-
-    local function setMinigameUiHidden(hidden: boolean)
-        hideMinigameUi = hidden
-        if hidden then
-            disconnectMinigameUiPlayerGui()
-            local function armPlayerGuiListener(): boolean
-                local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-                if not (pg and pg:IsA("PlayerGui")) then
-                    return false
-                end
-                minigameUiPlayerGuiConn = pg.ChildAdded:Connect(function(child)
-                    if child.Name == "Minigames" and child:IsA("ScreenGui") then
-                        applyHideToMinigameScreenGui(child)
-                    end
-                end)
-                refreshMinigameUiHide()
-                return true
-            end
-            if not armPlayerGuiListener() then
-                task.defer(function()
-                    if hideMinigameUi then
-                        armPlayerGuiListener()
-                    end
-                end)
-            end
-            return
-        end
-        disconnectMinigameUiPlayerGui()
-        disconnectMinigameUiEnforce()
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            local mg = pg:FindFirstChild("Minigames")
-            if mg and mg:IsA("ScreenGui") then
-                mg.Enabled = minigameUiRestoreEnabled
-            end
-        end
-    end
-
-    -- Tap minigame: MGR "Spawn" then FireServer("Click", challengeId). Reel: VirtualInput E/Q drives
+    -- Tap minigame: MGR "Spawn" then FireServer("Click", challengeId). Reel: VirtualInput E drives
     -- MinigamesReel (same status phases as galatama script; no remote Complete).
     local function releaseMinigameSessionWait()
         local pending = minigameSessionWait
@@ -2199,39 +1994,6 @@ do
         end
         minigameSessionWait = nil
         pending.finished = true
-    end
-
-    local function getMinigamesMgArea(): GuiObject?
-        local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then
-            return nil
-        end
-        local mg = pg:FindFirstChild("Minigames")
-        if not (mg and mg:IsA("ScreenGui")) then
-            return nil
-        end
-        local canvas = mg:FindFirstChild("Canvas")
-        local area = canvas and canvas:FindFirstChild("MgArea")
-        if area and area:IsA("GuiObject") then
-            return area
-        end
-        return nil
-    end
-
-    -- True when MgArea has a visible challenge clone (siblings of Click/Hold templates).
-    local function isFishingMinigameCircleActive(): boolean
-        local area = getMinigamesMgArea()
-        if not area then
-            return false
-        end
-        local tClick = area:FindFirstChild("Click")
-        local tHold = area:FindFirstChild("Hold")
-        for _, child in area:GetChildren() do
-            if child ~= tClick and child ~= tHold and child:IsA("GuiObject") and child.Visible then
-                return true
-            end
-        end
-        return false
     end
 
     local function isReelMinigameActive(): boolean
@@ -2289,14 +2051,6 @@ do
         local f = (fill and fill:IsA("GuiObject")) and (fill :: GuiObject) or nil
         local sgui = (status and status:IsA("GuiObject")) and (status :: GuiObject) or nil
         return reelUi, sgui, nil, f
-    end
-
-    local function tryReelRemoteCompleteWithToken(mgr: RemoteEvent, token: any): boolean
-        if token == nil then
-            return false
-        end
-        mgr:FireServer("Complete", token)
-        return false
     end
 
     local function mancingGetReelStatusText(statusGui: GuiObject?): string
@@ -2377,21 +2131,17 @@ do
 
     local function runMancingReelAutoplayLoop()
         local keysWork = true
-        local eHeld, qHeld = false, false
+        local eHeld = false
         local rem = ReplicatedStorage:FindFirstChild("Remotes")
         local mgrEv = rem and rem:FindFirstChild("MGR")
 
-        if instantFishingEnabled and mgrEv and mgrEv:IsA("RemoteEvent") and mgrReelPendingToken ~= nil then
+        if instantFishingEnabled and mgrEv and mgrEv:IsA("RemoteEvent") then
             task.delay(math.max(0, instantFishingDelaySec), function()
-                if not fishingAutomationActive() or not isReelMinigameActive() then
-                    return
-                end
-                local tok = mgrReelPendingToken
-                if tok == nil then
+                if not instantFishingEnabled or not isReelMinigameActive() then
                     return
                 end
                 pcall(function()
-                    mgrEv:FireServer("Complete", tok)
+                    mgrEv:FireServer("Complete")
                 end)
             end)
         end
@@ -2400,10 +2150,6 @@ do
             if eHeld then
                 mancingVimKey(false, Enum.KeyCode.E)
                 eHeld = false
-            end
-            if qHeld then
-                mancingVimKey(false, Enum.KeyCode.Q)
-                qHeld = false
             end
         end
 
@@ -2419,28 +2165,15 @@ do
             eHeld = want
         end
 
-        local function setQ(want: boolean)
-            if want == qHeld or not keysWork then
-                return
-            end
-            if not mancingVimKey(want, Enum.KeyCode.Q) then
-                keysWork = false
-                releaseKeys()
-                return
-            end
-            qHeld = want
-        end
-
         if instantFishingEnabled and mgrEv and mgrEv:IsA("RemoteEvent") then
-            if not fishingAutomationActive() or not isReelMinigameActive() then
+            if not instantFishingEnabled or not isReelMinigameActive() then
                 return
             end
         end
 
         local t0 = os.clock()
-        while isReelMinigameActive() and fishingAutomationActive() and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
+        while isReelMinigameActive() and instantFishingEnabled and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
             RunService.Heartbeat:Wait()
-            tryReelRemoteCompleteWithToken(mgrEv, mgrReelPendingToken)
             local _, status, _, fill = mancingResolveReelParts()
             if fill then
                 local fillScale = fill.Size.X.Scale
@@ -2463,9 +2196,7 @@ do
                 releaseKeys()
             elseif phase == "reel_out" then
                 setE(false)
-                setQ(true)
             else
-                setQ(false)
                 setE(true)
             end
         end
@@ -2473,24 +2204,24 @@ do
         releaseKeys()
 
         if
-            fishingAutomationActive()
+            instantFishingEnabled
             and os.clock() - t0 >= REEL_AUTOPLAY_TIMEOUT
             and isReelMinigameActive()
         then
             warn(
-                "[Auto Fishing] reel autoplay timed out — need getconnections + debug, VirtualInputManager E/Q, or valid MGR token for nuke Complete."
+                "[Auto Fishing] reel autoplay timed out — Complete() + VirtualInputManager E did not finish in time."
             )
         end
     end
 
     local function scheduleMancingReelAutoplayIfNeeded()
-        if reelAutoplayLoopRunning or not fishingAutomationActive() then
+        if reelAutoplayLoopRunning or not instantFishingEnabled then
             return
         end
         reelAutoplayLoopRunning = true
         task.spawn(function()
             task.wait(REEL_AUTOPLAY_START_DELAY)
-            if not fishingAutomationActive() or not isReelMinigameActive() then
+            if not instantFishingEnabled or not isReelMinigameActive() then
                 reelAutoplayLoopRunning = false
                 return
             end
@@ -2502,71 +2233,6 @@ do
                 warn("[Auto Fishing] reel autoplay error: ", err)
             end
         end)
-    end
-
-    -- Triggers the game's own MGR:FireServer("Click", id) via its GuiButton connections (works when we missed Spawn args).
-    local function tryActivateMinigameChallengeUi(): boolean
-        local area = getMinigamesMgArea()
-        if not area then
-            return false
-        end
-        local mg = area:FindFirstAncestorWhichIsA("ScreenGui")
-        local hadToEnableScreenGui = false
-        if mg and not mg.Enabled then
-            hadToEnableScreenGui = true
-            if hideMinigameUi then
-                disconnectMinigameUiEnforce()
-            end
-            mg.Enabled = true
-        end
-        local anyOk = false
-        local tClick = area:FindFirstChild("Click")
-        local tHold = area:FindFirstChild("Hold")
-        for _, ch in area:GetChildren() do
-            if ch ~= tClick and ch ~= tHold and ch:IsA("GuiObject") and ch.Visible then
-                if ch:IsA("GuiButton") then
-                    local ok = pcall(function()
-                        ch:Activate()
-                    end)
-                    if ok then
-                        anyOk = true
-                        break
-                    end
-                end
-                local btn = ch:FindFirstChildWhichIsA("GuiButton", true)
-                if btn and btn:IsA("GuiButton") and btn.Visible then
-                    local ok = pcall(function()
-                        btn:Activate()
-                    end)
-                    if ok then
-                        anyOk = true
-                        break
-                    end
-                end
-            end
-        end
-        if not anyOk then
-            for _, d in area:GetDescendants() do
-                local underTemplate = (tClick ~= nil and d:IsDescendantOf(tClick)) or (tHold ~= nil and d:IsDescendantOf(tHold))
-                if not underTemplate and d:IsA("GuiButton") and d.Visible then
-                    local ok = pcall(function()
-                        d:Activate()
-                    end)
-                    if ok then
-                        anyOk = true
-                        break
-                    end
-                end
-            end
-        end
-        if hadToEnableScreenGui and mg then
-            if hideMinigameUi then
-                applyHideToMinigameScreenGui(mg)
-            else
-                mg.Enabled = false
-            end
-        end
-        return anyOk
     end
 
     -- Module uses u61(sizeOrFirst, challengeId, mode, hold); server may omit UDim2 and send id as 2nd arg.
@@ -2583,10 +2249,6 @@ do
         return id, mode, hold
     end
 
-    local function isValidChallengeId(v: any): boolean
-        return typeof(v) == "string" or typeof(v) == "number"
-    end
-
     local function ensureMinigameAutoSolve()
         if minigameAutoSolveConn then
             return
@@ -2600,35 +2262,15 @@ do
             return
         end
         minigameAutoSolveConn = MGR.OnClientEvent:Connect(function(action, a2, a3, a4, a5)
-            if action == "StartReel" then
-                task.defer(updateAutoFishStatusParagraph)
-                if type(a2) == "table" and a2.Token ~= nil then
-                    mgrReelPendingToken = a2.Token
-                end
-            elseif action == "StartTap" then
-                task.defer(updateAutoFishStatusParagraph)
-            end
-
             if action == "Start" then
                 mgrPendingChallenge = nil
-                mgrReelPendingToken = nil
             elseif action == "Spawn" then
-                if getMinigameKindForAutoSolve() ~= "reel" then
-                    local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
-                    if isValidChallengeId(challengeId) then
-                        mgrPendingChallenge = {
-                            id = challengeId,
-                            mode = mode,
-                            hold = hold,
-                        }
-                    end
-                end
+                -- Reel-only mode: ignore tap-style Spawn payload handling.
             elseif action == "Stop" then
                 mgrPendingChallenge = nil
-                mgrReelPendingToken = nil
             end
 
-            if not fishingAutomationActive() then
+            if not instantFishingEnabled then
                 if action == "Stop" then
                     releaseMinigameSessionWait()
                 end
@@ -2638,35 +2280,14 @@ do
                 releaseMinigameSessionWait()
                 return
             end
-            if action == "StartReel" and getMinigameKindForAutoSolve() == "reel" then
+            if action == "StartReel" then
                 task.defer(scheduleMancingReelAutoplayIfNeeded)
                 return
             end
             if action ~= "Spawn" then
                 return
             end
-            if getMinigameKindForAutoSolve() == "reel" then
-                return
-            end
-            local challengeId, mode, hold = parseMgrSpawnPayload(a2, a3, a4, a5)
-            if not isValidChallengeId(challengeId) then
-                return
-            end
-            local m = mode
-            local holdSec = hold
-            task.spawn(function()
-                if m == "Hold" and holdSec > 0 then
-                    task.wait(holdSec + 0.03)
-                else
-                    task.wait(0.08)
-                end
-                if not fishingAutomationActive() then
-                    return
-                end
-                pcall(function()
-                    MGR:FireServer("Click", challengeId)
-                end)
-            end)
+            -- Reel-only mode: do not run tap/click fallback on Spawn.
         end)
     end
 
@@ -2675,36 +2296,31 @@ do
         while
             (
                 mgrPendingChallenge ~= nil
-                or isFishingMinigameCircleActive()
-                or mgrReelPendingToken ~= nil
                 or isReelMinigameActive()
             )
-            and fishingAutomationActive()
+            and instantFishingEnabled
             and os.clock() - t0 < MINIGAME_SESSION_TIMEOUT
         do
             task.wait(0.05)
         end
         if
-            fishingAutomationActive()
+            instantFishingEnabled
             and os.clock() - t0 >= MINIGAME_SESSION_TIMEOUT
             and (
                 mgrPendingChallenge ~= nil
-                or mgrReelPendingToken ~= nil
-                or isFishingMinigameCircleActive()
                 or isReelMinigameActive()
             )
         then
             warn("[Auto Fishing] timed out waiting for minigame to end (" .. reason .. ")")
             mgrPendingChallenge = nil
-            mgrReelPendingToken = nil
         end
-        if fishingAutomationActive() then
+        if instantFishingEnabled then
             task.wait(0.2)
         end
     end
 
     local function completeOrWaitMinigameBeforeCast(): boolean
-        if not fishingAutomationActive() then
+        if not instantFishingEnabled then
             return false
         end
         ensureMinigameAutoSolve()
@@ -2714,55 +2330,9 @@ do
             return false
         end
 
-        if getMinigameKindForAutoSolve() == "reel" then
-            if mgrReelPendingToken ~= nil or isReelMinigameActive() then
-                task.defer(scheduleMancingReelAutoplayIfNeeded)
-                waitForMinigameCleared("reel E/Q autoplay drain")
-                return true
-            end
-        end
-
-        local pending = mgrPendingChallenge
-        if pending then
-            local m = pending.mode
-            local holdSec = pending.hold
-            if m == "Hold" and holdSec > 0 then
-                task.wait(holdSec + 0.03)
-            else
-                task.wait(0.08)
-            end
-            if not fishingAutomationActive() then
-                return false
-            end
-            pcall(function()
-                MGR:FireServer("Click", pending.id)
-            end)
-            waitForMinigameCleared("after MGR Click (snapshot)")
-            return true
-        end
-
-        if isFishingMinigameCircleActive() then
-            task.wait(0.05)
-            if not fishingAutomationActive() then
-                return false
-            end
-            tryActivateMinigameChallengeUi()
-            local tManual = os.clock()
-            while isFishingMinigameCircleActive() and mgrPendingChallenge == nil and fishingAutomationActive() and os.clock() - tManual < 0.35 do
-                task.wait(0.05)
-            end
-            if isFishingMinigameCircleActive() or mgrPendingChallenge ~= nil then
-                waitForMinigameCleared("after UI Activate fallback")
-            else
-                if fishingAutomationActive() then
-                    task.wait(0.2)
-                end
-            end
-            return true
-        end
-
-        if mgrPendingChallenge ~= nil then
-            waitForMinigameCleared("pending without circle")
+        if isReelMinigameActive() then
+            task.defer(scheduleMancingReelAutoplayIfNeeded)
+            waitForMinigameCleared("reel E autoplay drain")
             return true
         end
         return false
@@ -2840,10 +2410,10 @@ do
         if wantPostPreEnableDelay then
             autoFishDelay2sAfterPreEnableDrain = false
         end
-        if wantPostPreEnableDelay and drainedExistingMinigame and fishingAutomationActive() then
+        if wantPostPreEnableDelay and drainedExistingMinigame and instantFishingEnabled then
             task.wait(afterDrainWait)
         end
-        if not fishingAutomationActive() then
+        if not instantFishingEnabled then
             return false
         end
         if not select(1, getFishingRemotes()) then
@@ -2871,30 +2441,15 @@ do
             RunService.Heartbeat:Wait()
         end
 
-        if not fishingAutomationActive() then
+        if not instantFishingEnabled then
             return false
         end
         task.wait(afterMinigameWait)
         return true
     end
 
-    local function runAutoFishingCycleImpl(): boolean
-        return runFishingCycleImpl(0.2, 1, 2.5, 2)
-    end
-
     local function runInstantFishingCycleImpl(): boolean
         return runFishingCycleImpl(0.5, 0, 0, 0)
-    end
-
-    local function runAutoFishingCycle()
-        autoFishingCycleRunning = true
-        local ok, res = pcall(runAutoFishingCycleImpl)
-        autoFishingCycleRunning = false
-        if not ok then
-            warn("[Auto Fishing] cycle error: ", res)
-            return false
-        end
-        return res
     end
 
     local function runInstantFishingCycle()
@@ -2906,21 +2461,6 @@ do
             return false
         end
         return res
-    end
-
-    local function runAutoFishingLoop()
-        while autoFishingEnabled do
-            while autoFishingPausedForSell and autoFishingEnabled do
-                task.wait(0.05)
-            end
-            if not autoFishingEnabled then
-                break
-            end
-            if not runAutoFishingCycle() then
-                task.wait(0.5)
-            end
-        end
-        autoFishingLoopRunning = false
     end
 
     local function runInstantFishingLoop()
@@ -2939,7 +2479,8 @@ do
     end
 
     local function ensureMinigamePreferenceIsReel()
-        if getMinigameKindResolved() == "reel" then
+        local raw = Players.LocalPlayer:GetAttribute("MinigamePreference")
+        if type(raw) == "string" and string.lower(raw) == "reel" then
             return
         end
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -2952,68 +2493,7 @@ do
         pcall(function()
             Players.LocalPlayer:SetAttribute("MinigamePreference", "Reel")
         end)
-        task.defer(updateAutoFishStatusParagraph)
     end
-
-    RandomCastCmgrToggleAuto = AutoFishingSection:Toggle({
-        Title = "Random Cast",
-        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Instant fishing section.",
-        Flag = "mancing_main_randomCastCmgr",
-        Value = false,
-        Callback = function(enabled)
-            if randomCastCmgrSync then
-                randomCastCmgrEnabled = enabled
-                return
-            end
-            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleAuto)
-        end,
-    })
-
-    AutoFishingSection:Toggle({
-        Title = "Auto Fishing",
-        Desc = "Finishes an in-progress MGR minigame first if needed, then equip/cast/CMGR/MGR as usual",
-        Flag = "mancing_main_autoFishing",
-        Value = false,
-        Callback = function(enabled)
-            autoFishingEnabled = enabled
-            fishingAutomationState.autoFishingEnabled = enabled
-            if enabled then
-                instantFishingArmSeq += 1
-                instantFishingEnabled = false
-                fishingAutomationState.instantFishingEnabled = false
-                releaseMinigameSessionWait()
-                ensureMinigameAutoSolve()
-                autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil
-                    or isFishingMinigameCircleActive()
-                    or mgrReelPendingToken ~= nil
-                    or isReelMinigameActive()
-            else
-                releaseMinigameSessionWait()
-                autoFishingPausedForSell = false
-                autoFishDelay2sAfterPreEnableDrain = false
-            end
-            if not enabled then
-                return
-            end
-            if autoFishingLoopRunning then
-                return
-            end
-            autoFishingLoopRunning = true
-            task.spawn(runAutoFishingLoop)
-        end,
-    })
-
-    AutoFishingSection:Toggle({
-        Title = "Hide minigame UI",
-        Desc = "Hides PlayerGui Minigames (circle still runs; MGR auto-solve unchanged)",
-        Flag = "mancing_main_hideMinigameUi",
-        Value = false,
-        Callback = function(enabled)
-            setMinigameUiHidden(enabled)
-        end,
-    })
-
-    MainTab:Space()
 
     local InstantFishingSection = MainTab:Section({
         Title = "Instant fishing",
@@ -3037,7 +2517,7 @@ do
 
     RandomCastCmgrToggleInstant = InstantFishingSection:Toggle({
         Title = "Random Cast",
-        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1). Synced with Auto Fishing section.",
+        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1).",
         Flag = "mancing_main_randomCastCmgr",
         Value = false,
         Callback = function(enabled)
@@ -3045,19 +2525,17 @@ do
                 randomCastCmgrEnabled = enabled
                 return
             end
-            setBothRandomCastCmgrToggles(enabled, RandomCastCmgrToggleInstant)
+            setRandomCastCmgrToggleInstant(enabled, RandomCastCmgrToggleInstant)
         end,
     })
 
     InstantFishingSection:Toggle({
         Title = "Instant fishing",
-        Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Turns off Auto Fishing. Delay is the wait after each minigame.",
+        Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Delay is the wait after each minigame.",
         Flag = "mancing_main_instantFishing",
         Value = false,
         Callback = function(enabled)
             if enabled then
-                autoFishingEnabled = false
-                fishingAutomationState.autoFishingEnabled = false
                 releaseMinigameSessionWait()
                 instantFishingArmSeq += 1
                 local armSeq = instantFishingArmSeq
@@ -3071,8 +2549,6 @@ do
                     fishingAutomationState.instantFishingEnabled = true
                     ensureMinigameAutoSolve()
                     autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil
-                        or isFishingMinigameCircleActive()
-                        or mgrReelPendingToken ~= nil
                         or isReelMinigameActive()
                     if instantFishingLoopRunning then
                         return
@@ -3086,9 +2562,7 @@ do
                 fishingAutomationState.instantFishingEnabled = false
                 releaseMinigameSessionWait()
                 autoFishDelay2sAfterPreEnableDrain = false
-                if not autoFishingEnabled then
-                    autoFishingPausedForSell = false
-                end
+                autoFishingPausedForSell = false
             end
         end,
     })
@@ -3252,13 +2726,13 @@ do
         end
     end
 
-    -- If auto fishing is on: wait for current cycle (including MGR minigame) to finish, pause fishing, sell, resume.
+    -- If instant fishing is on: wait for current cycle (including MGR minigame) to finish, pause fishing, sell, resume.
     local function runAutoSellWithFishingCoordination()
         local pauseRequested = false
-        if autoFishingEnabled or instantFishingEnabled then
+        if instantFishingEnabled then
             autoFishingPausedForSell = true
             pauseRequested = true
-            while autoFishingCycleRunning or instantFishingCycleRunning do
+            while instantFishingCycleRunning do
                 if not autoSellEnabled then
                     autoFishingPausedForSell = false
                     return
@@ -3306,7 +2780,7 @@ do
 
     SellSection:Toggle({
         Title = "Auto Sell",
-        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Auto Fishing: waits for minigame, pauses, sells, 1s after return resumes",
+        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Instant fishing: waits for minigame, pauses, sells, 1s after return resumes",
         Flag = "mancing_main_autoSell",
         Value = false,
         Callback = function(enabled)
@@ -3908,7 +3382,7 @@ do
         if not autoFavoriteEnabled then
             return
         end
-        if not (fishingAutomationState.autoFishingEnabled or fishingAutomationState.instantFishingEnabled) then
+        if not fishingAutomationState.instantFishingEnabled then
             return
         end
         if type(payload) ~= "table" then
