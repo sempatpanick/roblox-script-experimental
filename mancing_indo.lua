@@ -5760,6 +5760,208 @@ do
         end
     })
 
+    ObjectsTab:Space()
+
+    local RunServiceSection = ObjectsTab:Section({
+        Title = "RunService",
+        Desc = "All direct children of RunService (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local runServiceDisplayList = {}
+    local runServiceKeyValueList = {}
+    local RunServiceDropdown
+    local RunServiceChildrenParagraph
+
+    local RUNSERVICE_SIGNAL_NAMES = {
+        "Heartbeat",
+        "Stepped",
+        "RenderStepped",
+        "PreSimulation",
+        "PostSimulation",
+        "PreAnimation",
+        "PreRender",
+        "Misprediction",
+    }
+
+    local RUNSERVICE_METHOD_NAMES = {
+        "BindToRenderStep(name, priority, function)",
+        "UnbindFromRenderStep(name)",
+        "IsServer()",
+        "IsClient()",
+        "IsStudio()",
+        "Pause()",
+        "Run()",
+        "Stop()",
+        "GetCoreScriptVersion()",
+        "GetRobloxVersion()",
+        "Set3dRenderingEnabled(bool)",
+    }
+
+    local function refreshRunServiceList()
+        runServiceDisplayList = {}
+        runServiceKeyValueList = {}
+        for _, child in ipairs(RunService:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(runServiceDisplayList, display)
+            runServiceKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if RunServiceDropdown and RunServiceDropdown.Refresh then
+            RunServiceDropdown:Refresh(runServiceDisplayList)
+        end
+        WindUI:Notify({ Title = "RunService", Content = "Listed " .. #runServiceDisplayList .. " objects", Icon = "check" })
+    end
+
+    RunServiceDropdown = RunServiceSection:Dropdown({
+        Title = "RunService (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = runServiceDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if RunServiceChildrenParagraph and RunServiceChildrenParagraph.SetDesc then
+                    RunServiceChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = runServiceKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local text = buildNestedObjectChildrenListText(entry.instance)
+            if RunServiceChildrenParagraph and RunServiceChildrenParagraph.SetDesc then
+                RunServiceChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    RunServiceChildrenParagraph = RunServiceSection:Paragraph({
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    })
+
+    RunServiceSection:Paragraph({
+        Title = "Signals (events, not children)",
+        Desc = table.concat(RUNSERVICE_SIGNAL_NAMES, "\n"),
+    })
+
+    RunServiceSection:Paragraph({
+        Title = "Useful API methods",
+        Desc = table.concat(RUNSERVICE_METHOD_NAMES, "\n"),
+    })
+
+    RunServiceSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshRunServiceList()
+        end
+    })
+
+    ObjectsTab:Space()
+
+    local MarketplaceServiceSection = ObjectsTab:Section({
+        Title = "MarketplaceService",
+        Desc = "All direct children of MarketplaceService (key = Name, value = ClassName)",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local marketplaceServiceDisplayList = {}
+    local marketplaceServiceKeyValueList = {}
+    local MarketplaceServiceDropdown
+    local MarketplaceServiceChildrenParagraph
+
+    local MARKETPLACE_SIGNAL_NAMES = {
+        "PromptProductPurchaseFinished(userId, productId, isPurchased)",
+        "PromptPurchaseFinished(player, assetId, isPurchased)",
+        "PromptGamePassPurchaseFinished(player, gamePassId, wasPurchased)",
+        "PromptBundlePurchaseFinished(player, bundleId, wasPurchased)",
+        "PromptSubscriptionPurchaseFinished(player, subscriptionId, wasPurchased)",
+        "PromptPremiumPurchaseFinished()",
+        "ClientLuaDialogRequested()",
+    }
+
+    local MARKETPLACE_METHOD_NAMES = {
+        "PromptProductPurchase(player, productId, equipIfPurchased?)",
+        "PromptPurchase(player, assetId, equipIfPurchased?)",
+        "PromptGamePassPurchase(player, gamePassId)",
+        "PromptBundlePurchase(player, bundleId)",
+        "PromptPremiumPurchase(player)",
+        "GetProductInfo(assetId, infoType?)",
+        "UserOwnsGamePassAsync(userId, gamePassId)",
+        "PlayerOwnsAsset(player, assetId)",
+    }
+
+    local function refreshMarketplaceServiceList()
+        marketplaceServiceDisplayList = {}
+        marketplaceServiceKeyValueList = {}
+        for _, child in ipairs(MarketplaceService:GetChildren()) do
+            local display = formatInstanceDisplay(child, nil, true)
+            table.insert(marketplaceServiceDisplayList, display)
+            marketplaceServiceKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        end
+        if MarketplaceServiceDropdown and MarketplaceServiceDropdown.Refresh then
+            MarketplaceServiceDropdown:Refresh(marketplaceServiceDisplayList)
+        end
+        WindUI:Notify({
+            Title = "MarketplaceService",
+            Content = "Listed " .. #marketplaceServiceDisplayList .. " objects",
+            Icon = "check",
+        })
+    end
+
+    MarketplaceServiceDropdown = MarketplaceServiceSection:Dropdown({
+        Title = "MarketplaceService (key = value)",
+        Desc = "Select an object to see its children listed below",
+        Values = marketplaceServiceDisplayList,
+        Value = nil,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(selectedDisplay)
+            if not selectedDisplay then
+                if MarketplaceServiceChildrenParagraph and MarketplaceServiceChildrenParagraph.SetDesc then
+                    MarketplaceServiceChildrenParagraph:SetDesc("Select an object above to list its children")
+                end
+                return
+            end
+            local entry = marketplaceServiceKeyValueList[selectedDisplay]
+            if not entry or not entry.instance then return end
+            local text = buildNestedObjectChildrenListText(entry.instance)
+            if MarketplaceServiceChildrenParagraph and MarketplaceServiceChildrenParagraph.SetDesc then
+                MarketplaceServiceChildrenParagraph:SetDesc(text)
+            end
+        end
+    })
+
+    MarketplaceServiceChildrenParagraph = MarketplaceServiceSection:Paragraph({
+        Title = "Children (nested)",
+        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    })
+
+    MarketplaceServiceSection:Paragraph({
+        Title = "Signals (events, not children)",
+        Desc = table.concat(MARKETPLACE_SIGNAL_NAMES, "\n"),
+    })
+
+    MarketplaceServiceSection:Paragraph({
+        Title = "Useful API methods",
+        Desc = table.concat(MARKETPLACE_METHOD_NAMES, "\n"),
+    })
+
+    MarketplaceServiceSection:Button({
+        Title = "Refresh",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            refreshMarketplaceServiceList()
+        end
+    })
+
 end
 
 -- */  Config Tab  /* --
