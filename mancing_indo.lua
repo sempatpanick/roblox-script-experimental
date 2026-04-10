@@ -1953,7 +1953,7 @@ do
     local instantFishingEnabled = false
     local instantFishingLoopRunning = false
     local instantFishingCycleRunning = false
-    local instantFishingDelaySec = 4.86
+    local instantFishingDelaySec = 5
     local instantFishingArmSeq = 0
     local randomCastCmgrEnabled = false
     local randomCastCmgrSync = false
