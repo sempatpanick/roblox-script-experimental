@@ -60,6 +60,11 @@ local Window = WindUI:CreateWindow({
 
 -- */  Colors  /* --
 local Green = Color3.fromHex("#10C550")
+-- Shared across tabs so Backpack features can validate fishing automation state.
+local fishingAutomationState = {
+    autoFishingEnabled = false,
+    instantFishingEnabled = false,
+}
 
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
 function formatValueForDisplay(val)
@@ -3185,9 +3190,11 @@ do
         Value = false,
         Callback = function(enabled)
             autoFishingEnabled = enabled
+            fishingAutomationState.autoFishingEnabled = enabled
             if enabled then
                 instantFishingArmSeq += 1
                 instantFishingEnabled = false
+                fishingAutomationState.instantFishingEnabled = false
                 releaseMinigameSessionWait()
                 ensureMinigameAutoSolve()
                 autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil
@@ -3264,6 +3271,7 @@ do
         Callback = function(enabled)
             if enabled then
                 autoFishingEnabled = false
+                fishingAutomationState.autoFishingEnabled = false
                 releaseMinigameSessionWait()
                 instantFishingArmSeq += 1
                 local armSeq = instantFishingArmSeq
@@ -3274,6 +3282,7 @@ do
                         return
                     end
                     instantFishingEnabled = true
+                    fishingAutomationState.instantFishingEnabled = true
                     ensureMinigameAutoSolve()
                     autoFishDelay2sAfterPreEnableDrain = mgrPendingChallenge ~= nil
                         or isFishingMinigameCircleActive()
@@ -3288,6 +3297,7 @@ do
             else
                 instantFishingArmSeq += 1
                 instantFishingEnabled = false
+                fishingAutomationState.instantFishingEnabled = false
                 releaseMinigameSessionWait()
                 autoFishDelay2sAfterPreEnableDrain = false
                 if not autoFishingEnabled then
@@ -3775,6 +3785,8 @@ do
     local selectedLocationName: string? = nil
     local teleportToLocationEnabled = false
     local locationHoldConn: RBXScriptConnection? = nil
+    local locationLastPinAt = 0
+    local LOCATION_PIN_INTERVAL_SEC = 1 / 20
 
     local function stopLocationHold()
         if locationHoldConn then
@@ -3787,6 +3799,11 @@ do
         if not teleportToLocationEnabled then
             return
         end
+        local now = os.clock()
+        if now - locationLastPinAt < LOCATION_PIN_INTERVAL_SEC then
+            return
+        end
+        locationLastPinAt = now
         if not selectedLocationName or selectedLocationName == "" then
             return
         end
@@ -3806,6 +3823,7 @@ do
 
     local function startLocationHold()
         stopLocationHold()
+        locationLastPinAt = 0
         locationHoldConn = RunService.Heartbeat:Connect(tickPinCharacterToPreset)
     end
 
@@ -4102,6 +4120,9 @@ do
 
     local function onBackpackAddClientPayload(payload: any)
         if not autoFavoriteEnabled then
+            return
+        end
+        if not (fishingAutomationState.autoFishingEnabled or fishingAutomationState.instantFishingEnabled) then
             return
         end
         if type(payload) ~= "table" then
@@ -4444,6 +4465,45 @@ do
     })
 
     task.defer(function()
+        local lastFishInfoRefreshAt = 0
+        local fishInfoRefreshQueued = false
+        local lastFavoriteRefreshAt = 0
+        local favoriteRefreshQueued = false
+        local function requestFishInfoRefresh()
+            local now = os.clock()
+            if now - lastFishInfoRefreshAt >= 0.35 then
+                lastFishInfoRefreshAt = now
+                task.defer(refreshFishInformationSection)
+                return
+            end
+            if fishInfoRefreshQueued then
+                return
+            end
+            fishInfoRefreshQueued = true
+            task.delay(0.35, function()
+                fishInfoRefreshQueued = false
+                lastFishInfoRefreshAt = os.clock()
+                refreshFishInformationSection()
+            end)
+        end
+        local function requestFavoriteRarityRefresh()
+            local now = os.clock()
+            if now - lastFavoriteRefreshAt >= 0.6 then
+                lastFavoriteRefreshAt = now
+                task.defer(refreshFavoriteRarityDropdown)
+                return
+            end
+            if favoriteRefreshQueued then
+                return
+            end
+            favoriteRefreshQueued = true
+            task.delay(0.6, function()
+                favoriteRefreshQueued = false
+                lastFavoriteRefreshAt = os.clock()
+                refreshFavoriteRarityDropdown()
+            end)
+        end
+
         local remotes = ReplicatedStorage:WaitForChild("Remotes", 60)
         local function attachBestiaryIncomingListener(remoteInst: Instance)
             if not (remoteInst and remoteInst:IsA("RemoteEvent")) then
@@ -4454,8 +4514,8 @@ do
             end
             remoteInst.OnClientEvent:Connect(function(payload: any)
                 if mergeBestiaryRowsFromPayload(payload) then
-                    task.defer(refreshFishInformationSection)
-                    task.defer(refreshFavoriteRarityDropdown)
+                    requestFishInfoRefresh()
+                    requestFavoriteRarityRefresh()
                 end
             end)
         end
@@ -4471,7 +4531,7 @@ do
                 owned.OnClientEvent:Connect(function(_rodNames: any, catalog: any)
                     if type(catalog) == "table" then
                         lastOwnedRodsCatalog = catalog
-                        refreshFavoriteRarityDropdown()
+                        requestFavoriteRarityRefresh()
                     end
                 end)
             end
@@ -4479,7 +4539,7 @@ do
             if backpackAdd and backpackAdd:IsA("RemoteEvent") then
                 backpackAdd.OnClientEvent:Connect(function(payload: any)
                     onBackpackAddClientPayload(payload)
-                    task.defer(refreshFishInformationSection)
+                    requestFishInfoRefresh()
                 end)
             end
         end
