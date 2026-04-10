@@ -1991,7 +1991,8 @@ do
         return autoFishingEnabled or instantFishingEnabled
     end
     -- Set after CMGR Result; cleared when MGR "Stop" fires or timeout (next cast waits for minigame end).
-    local minigameSessionWait = nil :: { seq: number, done: BindableEvent }?
+    -- `finished` avoids BindableEvent missed-signal races when MGR "Stop" fires before the waiter runs.
+    local minigameSessionWait = nil :: { seq: number, finished: boolean }?
     local minigameCycleSeq = 0
     local MINIGAME_SESSION_TIMEOUT = 10
     -- Reel: deep hack + fast Complete are Instant fishing only. Auto Fishing uses VIM E/Q only.
@@ -2196,7 +2197,7 @@ do
             return
         end
         minigameSessionWait = nil
-        pending.done:Fire()
+        pending.finished = true
     end
 
     local function getMinigamesMgArea(): GuiObject?
@@ -3068,15 +3069,16 @@ do
         task.wait(castToCmgrWait)
         setFishingCastResultRemote()
 
-        local waitDone = Instance.new("BindableEvent")
-        minigameSessionWait = { seq = cycleSeq, done = waitDone }
+        local sessionWait = { seq = cycleSeq, finished = false }
+        minigameSessionWait = sessionWait
         task.delay(MINIGAME_SESSION_TIMEOUT, function()
             if minigameSessionWait and minigameSessionWait.seq == cycleSeq then
                 releaseMinigameSessionWait()
             end
         end)
-        waitDone.Event:Wait()
-        waitDone:Destroy()
+        while not sessionWait.finished do
+            RunService.Heartbeat:Wait()
+        end
 
         if not fishingAutomationActive() then
             return false
