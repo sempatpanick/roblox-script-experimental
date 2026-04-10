@@ -2003,10 +2003,6 @@ do
     -- Reel: deep hack + fast Complete are Instant fishing only. Auto Fishing uses VIM E/Q only.
     local REEL_AUTOPLAY_START_DELAY = 0.06
     local REEL_AUTOPLAY_TIMEOUT = 55
-    local REEL_DEEP_NUKE_AFTER = 0.45
-    local REEL_AUTOPLAY_RS_HOOK_NAME = "MancingIndoReelDeepHack"
-    -- Fastest path when server accepts it (often feels instant vs. setupvalue/VIM). Delay uses Instant fishing "Delay (seconds)".
-    local REEL_TRY_FAST_REMOTE_COMPLETE = true
     local reelAutoplayLoopRunning = false
     -- MGR Spawn payload (challenge id lives only in the game's Minigames module, not on instances).
     local mgrPendingChallenge = nil :: { id: any, mode: string, hold: number }?
@@ -2284,9 +2280,6 @@ do
         if not canvas then
             return reelUi, nil, nil, nil
         end
-        local reelFrame = mancingFindNamedDescendant(canvas, "Reel")
-        local inner = reelFrame and mancingFindNamedDescendant(reelFrame, "Reel")
-        local _handle = inner and mancingFindNamedDescendant(inner, "Handle")
         local bar = mancingFindNamedDescendant(canvas, "Bar")
         local fill = bar and mancingFindNamedDescendant(bar, "Fill")
         local status = mancingFindNamedDescendant(canvas, "Status")
@@ -2298,187 +2291,12 @@ do
         return reelUi, sgui, nil, f
     end
 
-    -- Executor-only: getconnections + debug. All RenderStepped closures that close over MGR (not only first).
-    local reelDeepHookCachedRenderFns: { any } = {}
-    local reelDeepHookCachedConns: { any } = {}
-
-    local function mancingExploitGetConnections(sig: RBXScriptSignal): { any }?
-        local g = rawget(_G, "getconnections")
-        local synTbl = rawget(_G, "syn")
-        if type(g) ~= "function" and type(synTbl) == "table" then
-            g = synTbl.getconnections
-        end
-        if type(g) ~= "function" and type(getgenv) == "function" then
-            g = rawget(getgenv(), "getconnections")
-        end
-        if type(g) ~= "function" then
-            return nil
-        end
-        local ok, res = pcall(g, sig)
-        if ok and type(res) == "table" then
-            return res
-        end
-        return nil
-    end
-
-    local function mancingExploitConnFunction(conn: any): any
-        if type(conn) ~= "table" then
-            return nil
-        end
-        return conn.Function or rawget(conn, "f")
-    end
-
-    local function mancingFnReferencesInstance(fn: any, inst: Instance): boolean
-        if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
-            return false
-        end
-        local ok, found = pcall(function()
-            local i = 1
-            while true do
-                local name, val = debug.getupvalue(fn, i)
-                if name == nil then
-                    break
-                end
-                if val == inst then
-                    return true
-                end
-                i += 1
-            end
-            return false
-        end)
-        return ok and found == true
-    end
-
-    local function mancingReelDeepHackBuildCache(mgr: RemoteEvent): boolean
-        table.clear(reelDeepHookCachedRenderFns)
-        table.clear(reelDeepHookCachedConns)
-        local list = mancingExploitGetConnections(RunService.RenderStepped)
-        if not list then
-            return false
-        end
-        for _, c in list do
-            local fn = mancingExploitConnFunction(c)
-            if type(fn) == "function" and mancingFnReferencesInstance(fn, mgr) then
-                table.insert(reelDeepHookCachedRenderFns, fn)
-                table.insert(reelDeepHookCachedConns, c)
-            end
-        end
-        return #reelDeepHookCachedRenderFns > 0
-    end
-
-    local function mancingReelDeepHackEnsureCache(mgr: RemoteEvent): boolean
-        if #reelDeepHookCachedRenderFns > 0 then
-            local f0 = reelDeepHookCachedRenderFns[1]
-            if type(f0) == "function" and mancingFnReferencesInstance(f0, mgr) then
-                return true
-            end
-        end
-        return mancingReelDeepHackBuildCache(mgr)
-    end
-
-    local function mancingReelDeepHackTrySetupvalueU32(fn: any): boolean
-        if type(debug) ~= "table" or type(debug.getupvalue) ~= "function" or type(debug.setupvalue) ~= "function" then
-            return false
-        end
-        local candidates: { number } = {}
-        local okSet, did = pcall(function()
-            local i = 1
-            while true do
-                local name, val = debug.getupvalue(fn, i)
-                if name == nil then
-                    break
-                end
-                if name == "u32" and type(val) == "number" then
-                    debug.setupvalue(fn, i, 1)
-                    return true
-                end
-                if type(val) == "number" and val >= 0 and val <= 1 then
-                    table.insert(candidates, i)
-                end
-                i += 1
-            end
-            if #candidates == 1 then
-                debug.setupvalue(fn, candidates[1], 1)
-                return true
-            end
-            if #candidates > 1 then
-                local _, _, _, fill = mancingResolveReelParts()
-                if fill then
-                    local target = fill.Size.X.Scale
-                    local bestIdx: number? = nil
-                    local bestD = math.huge
-                    for _, idx in candidates do
-                        local _, v = debug.getupvalue(fn, idx)
-                        if type(v) == "number" then
-                            local d = math.abs(v - target)
-                            if d < bestD then
-                                bestD = d
-                                bestIdx = idx
-                            end
-                        end
-                    end
-                    if bestIdx and bestD < 0.55 then
-                        debug.setupvalue(fn, bestIdx, 1)
-                        return true
-                    end
-                end
-                local maxIdx: number? = nil
-                local maxV = -math.huge
-                for _, idx in candidates do
-                    local _, v = debug.getupvalue(fn, idx)
-                    if type(v) == "number" and v >= 0 and v <= 1 and v > maxV then
-                        maxV = v
-                        maxIdx = idx
-                    end
-                end
-                if maxIdx ~= nil then
-                    debug.setupvalue(fn, maxIdx, 1)
-                    return true
-                end
-            end
-            return false
-        end)
-        return okSet and did == true
-    end
-
-    local function mancingReelDeepHackTryDisableAndComplete(mgr: RemoteEvent, token: any): boolean
+    local function tryReelRemoteCompleteWithToken(mgr: RemoteEvent, token: any): boolean
         if token == nil then
             return false
         end
-        mancingReelDeepHackEnsureCache(mgr)
-        for _, c in reelDeepHookCachedConns do
-            if type(c) == "table" and type(c.Disable) == "function" and type(c.Enable) == "function" then
-                local ok = pcall(function()
-                    c:Disable()
-                    mgr:FireServer("Complete", token)
-                    task.wait(0.04)
-                    c:Enable()
-                end)
-                if ok then
-                    return true
-                end
-            end
-        end
+        mgr:FireServer("Complete", token)
         return false
-    end
-
-    local function mancingReelDeepHackTrySetupvalueWin(mgr: RemoteEvent): boolean
-        mancingReelDeepHackEnsureCache(mgr)
-        for _, fn in reelDeepHookCachedRenderFns do
-            if mancingReelDeepHackTrySetupvalueU32(fn) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function mancingReelDeepHackTryNukeComplete(mgr: RemoteEvent): boolean
-        return mancingReelDeepHackTryDisableAndComplete(mgr, mgrReelPendingToken)
-    end
-
-    local function mancingReelDeepHookClearCache()
-        table.clear(reelDeepHookCachedRenderFns)
-        table.clear(reelDeepHookCachedConns)
     end
 
     local function mancingGetReelStatusText(statusGui: GuiObject?): string
@@ -2557,16 +2375,13 @@ do
         return "spin"
     end
 
-    -- Instant: deep hack (getconnections + debug) + optional fast Complete; always E/Q phase loop. Auto: E/Q only.
     local function runMancingReelAutoplayLoop()
-        local useReelDeepHack = instantFishingEnabled
         local keysWork = true
         local eHeld, qHeld = false, false
         local rem = ReplicatedStorage:FindFirstChild("Remotes")
         local mgrEv = rem and rem:FindFirstChild("MGR")
-        local deepNukeDone = false
 
-        if useReelDeepHack and REEL_TRY_FAST_REMOTE_COMPLETE and mgrEv and mgrEv:IsA("RemoteEvent") and mgrReelPendingToken ~= nil then
+        if instantFishingEnabled and mgrEv and mgrEv:IsA("RemoteEvent") and mgrReelPendingToken ~= nil then
             task.delay(math.max(0, instantFishingDelaySec), function()
                 if not fishingAutomationActive() or not isReelMinigameActive() then
                     return
@@ -2616,39 +2431,16 @@ do
             qHeld = want
         end
 
-        local t0 = os.clock()
-        local rsBound = false
-        if useReelDeepHack and mgrEv and mgrEv:IsA("RemoteEvent") then
-            rsBound = pcall(function()
-                RunService:BindToRenderStep(
-                    REEL_AUTOPLAY_RS_HOOK_NAME,
-                    Enum.RenderPriority.Last.Value,
-                    function()
-                        if not fishingAutomationActive() or not isReelMinigameActive() then
-                            return
-                        end
-                        mancingReelDeepHackTrySetupvalueWin(mgrEv)
-                        task.defer(function()
-                            if fishingAutomationActive() and isReelMinigameActive() then
-                                mancingReelDeepHackTrySetupvalueWin(mgrEv)
-                            end
-                        end)
-                    end
-                )
-            end)
+        if instantFishingEnabled and mgrEv and mgrEv:IsA("RemoteEvent") then
+            if not fishingAutomationActive() or not isReelMinigameActive() then
+                return
+            end
         end
 
+        local t0 = os.clock()
         while isReelMinigameActive() and fishingAutomationActive() and os.clock() - t0 < REEL_AUTOPLAY_TIMEOUT do
             RunService.Heartbeat:Wait()
-            if useReelDeepHack and mgrEv and mgrEv:IsA("RemoteEvent") then
-                if not rsBound then
-                    mancingReelDeepHackTrySetupvalueWin(mgrEv)
-                end
-                if not deepNukeDone and os.clock() - t0 > REEL_DEEP_NUKE_AFTER then
-                    deepNukeDone = true
-                    mancingReelDeepHackTryNukeComplete(mgrEv)
-                end
-            end
+            tryReelRemoteCompleteWithToken(mgrEv, mgrReelPendingToken)
             local _, status, _, fill = mancingResolveReelParts()
             if fill then
                 local fillScale = fill.Size.X.Scale
@@ -2679,12 +2471,6 @@ do
         end
 
         releaseKeys()
-        if rsBound then
-            pcall(function()
-                RunService:UnbindFromRenderStep(REEL_AUTOPLAY_RS_HOOK_NAME)
-            end)
-        end
-        mancingReelDeepHookClearCache()
 
         if
             fishingAutomationActive()
