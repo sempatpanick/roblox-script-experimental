@@ -3334,6 +3334,26 @@ do
         end)
     end
 
+    local function isFishToolLockedOrFavorited(tool: Instance): boolean
+        local function attrTruthy(v: any): boolean
+            if v == true then
+                return true
+            end
+            if type(v) == "number" then
+                return v ~= 0
+            end
+            if type(v) == "string" then
+                local s = string.lower(v)
+                return s == "true" or s == "1" or s == "yes"
+            end
+            return false
+        end
+        return attrTruthy(tool:GetAttribute("IsLocked"))
+            or attrTruthy(tool:GetAttribute("Locked"))
+            or attrTruthy(tool:GetAttribute("IsFavorite"))
+            or attrTruthy(tool:GetAttribute("Favorite"))
+    end
+
     -- Fish sell tools use attribute UID (see in-game buyer dialog); rods use FishingRod.
     local function playerBackpackHasFish()
         local lp = Players.LocalPlayer
@@ -3342,7 +3362,10 @@ do
             return false
         end
         for _, child in ipairs(bp:GetChildren()) do
-            if child:IsA("Tool") and child:GetAttribute("FishingRod") == nil and child:GetAttribute("UID") ~= nil then
+            if child:IsA("Tool")
+                and child:GetAttribute("FishingRod") == nil
+                and child:GetAttribute("UID") ~= nil
+                and not isFishToolLockedOrFavorited(child) then
                 return true
             end
         end
@@ -5583,12 +5606,14 @@ do
     local OBJECTS_TREE_MAX_LINES = 600
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
-        return inst:IsA("Folder")
-            or inst:IsA("Backpack")
-            or inst:IsA("StarterGear")
+        return inst:IsA("Backpack")
+            or inst:IsA("Folder")
+            or inst:IsA("Frame")
             or inst:IsA("PlayerGui")
             or inst:IsA("ScreenGui")
-            or inst:IsA("Frame")
+            or inst:IsA("ScrollingFrame")
+            or inst:IsA("StarterGear")
+            or inst:IsA("TextButton")
     end
 
     local function buildNestedObjectChildrenListText(root: Instance): string
