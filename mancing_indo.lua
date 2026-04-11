@@ -89,6 +89,20 @@ local configLoadBridge: {
     suppressNextAutoSellLoopSpawn = false,
 }
 
+-- Distance-based tween duration (shared: Main "Go to Location", other features). Tune speed lower for stricter anti-cheat pacing.
+local MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC = 38
+local MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC = 2.5
+local MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC = 240
+
+function computeLocationArrivalDurationSec(startPos: Vector3, endPos: Vector3): number
+    local d = (endPos - startPos).Magnitude
+    if d < 0.05 then
+        return MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC
+    end
+    local t = d / MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC
+    return math.clamp(t, MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC, MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC)
+end
+
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
 function formatValueForDisplay(val)
     if val == nil then
@@ -2940,7 +2954,9 @@ do
 
     local LocationSection = MainTab:Section({
         Title = "Location",
-        Desc = "Preset spots with facing; Teleport to Location pins you to the preset position and look direction while on",
+        Desc = "Preset spots with facing. Go to Location tweens over a duration from distance (~"
+            .. tostring(MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC)
+            .. " studs/s cap), not instant snap. Ocean uses one invisible floor part to stand on water.",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -3159,50 +3175,126 @@ do
 
     local selectedLocationName: string? = nil
     local teleportToLocationEnabled = false
-    local locationHoldConn: RBXScriptConnection? = nil
-    local locationLastPinAt = 0
-    local LOCATION_PIN_INTERVAL_SEC = 1 / 20
+    local lastLocationArrivalTweenSec: number? = nil
+    local locationArrivalTweenToken = 0
+    local locationArrivalTweenActive: Tween? = nil
 
-    local function stopLocationHold()
-        if locationHoldConn then
-            locationHoldConn:Disconnect()
-            locationHoldConn = nil
+    local OCEAN_LOCATION_NAME = "Ocean"
+
+    local locationAssistFolder: Folder? = nil
+    local oceanStandPart: Part? = nil
+
+    local function ensureOceanStandPart(): Part
+        local existing = oceanStandPart
+        if existing and existing.Parent then
+            return existing
+        end
+        local folder = locationAssistFolder
+        if not folder or not folder.Parent then
+            local f = Instance.new("Folder")
+            f.Name = "MancingIndoLocationAssist"
+            f.Parent = Workspace
+            locationAssistFolder = f
+            folder = f
+        end
+        local p = Instance.new("Part")
+        p.Name = "OceanStand"
+        p.Anchored = true
+        p.CanCollide = true
+        p.Transparency = 1
+        p.CastShadow = false
+        p.CanQuery = false
+        p.Material = Enum.Material.SmoothPlastic
+        p.Size = Vector3.new(96, 1, 96)
+        p.CFrame = CFrame.new(0, -5000, 0)
+        p.Parent = folder
+        oceanStandPart = p
+        return p
+    end
+
+    local function setOceanStandForTargetCf(targetCf: CFrame)
+        local p = ensureOceanStandPart()
+        local pos = targetCf.Position
+        local halfY = p.Size.Y / 2
+        p.CanCollide = true
+        p.CFrame = CFrame.new(pos.X, pos.Y - halfY, pos.Z)
+    end
+
+    local function hideOceanStand()
+        local p = oceanStandPart
+        if p and p.Parent then
+            p.CanCollide = false
+            p.CFrame = CFrame.new(0, -5000, 0)
         end
     end
 
-    local function tickPinCharacterToPreset()
+    local function cancelLocationArrivalTween()
+        locationArrivalTweenToken += 1
+        if locationArrivalTweenActive then
+            pcall(function()
+                locationArrivalTweenActive:Cancel()
+            end)
+            locationArrivalTweenActive = nil
+        end
+    end
+
+    local function stopLocationHold()
+        cancelLocationArrivalTween()
+        hideOceanStand()
+    end
+
+    local function startLocationArrivalTween(): boolean
         if not teleportToLocationEnabled then
-            return
+            return false
         end
         if limitedEventState.blocksLocationHold then
-            return
+            cancelLocationArrivalTween()
+            hideOceanStand()
+            return false
         end
-        local now = os.clock()
-        if now - locationLastPinAt < LOCATION_PIN_INTERVAL_SEC then
-            return
-        end
-        locationLastPinAt = now
         if not selectedLocationName or selectedLocationName == "" then
-            return
+            cancelLocationArrivalTween()
+            hideOceanStand()
+            return false
         end
         local holdCf = locationHoldCfByName[selectedLocationName]
         if not holdCf then
-            return
+            cancelLocationArrivalTween()
+            hideOceanStand()
+            return false
         end
         local character = Players.LocalPlayer.Character
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
         if not rootPart or not rootPart:IsA("BasePart") then
-            return
+            hideOceanStand()
+            return false
         end
+
+        cancelLocationArrivalTween()
+        local myToken = locationArrivalTweenToken
+        if selectedLocationName == OCEAN_LOCATION_NAME then
+            setOceanStandForTargetCf(holdCf)
+        else
+            hideOceanStand()
+        end
+
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
-        rootPart.CFrame = holdCf
-    end
 
-    local function startLocationHold()
-        stopLocationHold()
-        locationLastPinAt = 0
-        locationHoldConn = RunService.Heartbeat:Connect(tickPinCharacterToPreset)
+        local durSec = computeLocationArrivalDurationSec(rootPart.Position, holdCf.Position)
+        lastLocationArrivalTweenSec = durSec
+
+        local ti = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tw = TweenService:Create(rootPart, ti, { CFrame = holdCf })
+        locationArrivalTweenActive = tw
+        tw.Completed:Connect(function()
+            if myToken ~= locationArrivalTweenToken then
+                return
+            end
+            locationArrivalTweenActive = nil
+        end)
+        tw:Play()
+        return true
     end
 
     local function tryActivateLocationHold(showFailureNotify: boolean): boolean
@@ -3227,9 +3319,7 @@ do
             end
             return false
         end
-        startLocationHold()
-        tickPinCharacterToPreset()
-        return true
+        return startLocationArrivalTween()
     end
 
     function locationHoldApi.pauseForAutoSell(): boolean
@@ -3256,8 +3346,7 @@ do
         if not locationHoldCfByName[selectedLocationName] then
             return
         end
-        startLocationHold()
-        tickPinCharacterToPreset()
+        startLocationArrivalTween()
     end
 
     limitedEventBridge.stopLocationHold = stopLocationHold
@@ -3272,8 +3361,7 @@ do
         if not locationHoldCfByName[selectedLocationName] then
             return
         end
-        startLocationHold()
-        tickPinCharacterToPreset()
+        startLocationArrivalTween()
     end
 
     LocationSection:Dropdown({
@@ -3294,8 +3382,10 @@ do
 
     local TeleportLocationToggle
     TeleportLocationToggle = LocationSection:Toggle({
-        Title = "Teleport to Location",
-        Desc = "While on, every frame snaps you to the preset position, facing, and clears root velocity",
+        Title = "Go to Location",
+        Desc = "When on, tweens to the preset over time from distance (speed capped ~"
+            .. tostring(MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC)
+            .. " studs/s; min/max duration clamped). Re-tweens if you change the dropdown.",
         Flag = "mancing_main_teleportToLocation",
         Value = false,
         Callback = function(enabled)
@@ -3305,9 +3395,15 @@ do
                 return
             end
             if tryActivateLocationHold(true) then
+                local sec = lastLocationArrivalTweenSec
+                local durText = (typeof(sec) == "number") and string.format("%.1f", sec) or "?"
                 WindUI:Notify({
                     Title = "Location",
-                    Content = "Holding at " .. tostring(selectedLocationName),
+                    Content = "Tweening to "
+                        .. tostring(selectedLocationName)
+                        .. " (~"
+                        .. durText
+                        .. "s for this distance)",
                     Icon = "check",
                 })
             end
