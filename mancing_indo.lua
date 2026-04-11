@@ -90,7 +90,7 @@ local configLoadBridge: {
 }
 
 -- Distance-based tween duration (shared: Main "Go to Location", other features). Tune speed lower for stricter anti-cheat pacing.
-local MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC = 38
+local MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC = 30
 local MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC = 2.5
 local MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC = 240
 
@@ -101,6 +101,114 @@ function computeLocationArrivalDurationSec(startPos: Vector3, endPos: Vector3): 
     end
     local t = d / MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC
     return math.clamp(t, MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC, MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC)
+end
+
+-- Main tab "Go to Location": optional invisible platform under preset (see locationPresetRows.spawnLocationAssist + locationAssistPartName).
+local MANCING_LOCATION_ASSIST_PLATFORM_SIZE = Vector3.new(30, 1, 30)
+local MANCING_LOCATION_ASSIST_STASH_Y = -5000
+-- Match existing spawned parts by center position (studs).
+local MANCING_LOCATION_ASSIST_POSITION_MATCH_EPS = 1
+
+local locationAssistFolder: Folder? = nil
+local locationAssistPlatformPart: Part? = nil
+
+local function getOrCreateLocationAssistFolder(): Folder
+    local folder = locationAssistFolder
+    if folder and folder.Parent then
+        return folder
+    end
+    local existing = Workspace:FindFirstChild("MancingIndoLocationAssist")
+    if existing and existing:IsA("Folder") then
+        locationAssistFolder = existing
+        return existing
+    end
+    local f = Instance.new("Folder")
+    f.Name = "MancingIndoLocationAssist"
+    f.Parent = Workspace
+    locationAssistFolder = f
+    return f
+end
+
+local function computeLocationAssistPlatformCenterFromTarget(targetCf: CFrame): Vector3
+    local pos = targetCf.Position
+    local halfY = MANCING_LOCATION_ASSIST_PLATFORM_SIZE.Y / 2
+    return Vector3.new(pos.X, pos.Y - halfY, pos.Z)
+end
+
+local function findLocationAssistPartByNameAndPosition(folder: Folder, partName: string, expectedCenter: Vector3): Part?
+    for _, d in folder:GetDescendants() do
+        if d:IsA("BasePart") and d.Name == partName then
+            if (d.Position - expectedCenter).Magnitude <= MANCING_LOCATION_ASSIST_POSITION_MATCH_EPS then
+                return d
+            end
+        end
+    end
+    return nil
+end
+
+-- Reuse our stashed platform (hideLocationAssist) so we do not stack duplicates when name+position check misses hidden Y.
+local function findStashedLocationAssistPartByName(folder: Folder, partName: string): Part?
+    local ch = folder:FindFirstChild(partName)
+    if ch and ch:IsA("BasePart") and ch.Position.Y < (MANCING_LOCATION_ASSIST_STASH_Y + 500) then
+        return ch
+    end
+    return nil
+end
+
+function ensureLocationAssistPlatform(assistPartName: string?, targetCf: CFrame?): Part
+    local resolvedName = (typeof(assistPartName) == "string" and assistPartName ~= "") and assistPartName or "LocationAssistPlatform"
+
+    local existing = locationAssistPlatformPart
+    if existing and existing.Parent then
+        if resolvedName ~= existing.Name then
+            existing.Name = resolvedName
+        end
+        return existing
+    end
+
+    local folder = getOrCreateLocationAssistFolder()
+
+    if targetCf then
+        local expectedCenter = computeLocationAssistPlatformCenterFromTarget(targetCf)
+        local found = findLocationAssistPartByNameAndPosition(folder, resolvedName, expectedCenter)
+        if not found then
+            found = findStashedLocationAssistPartByName(folder, resolvedName)
+        end
+        if found then
+            locationAssistPlatformPart = found
+            return found
+        end
+    end
+
+    local p = Instance.new("Part")
+    p.Name = resolvedName
+    p.Anchored = true
+    p.CanCollide = true
+    p.Transparency = 1
+    p.CastShadow = false
+    p.CanQuery = false
+    p.Material = Enum.Material.SmoothPlastic
+    p.Size = MANCING_LOCATION_ASSIST_PLATFORM_SIZE
+    p.CFrame = CFrame.new(0, MANCING_LOCATION_ASSIST_STASH_Y, 0)
+    p.Parent = folder
+    locationAssistPlatformPart = p
+    return p
+end
+
+function setLocationAssistForTargetCFrame(targetCf: CFrame, assistPartName: string?)
+    local p = ensureLocationAssistPlatform(assistPartName, targetCf)
+    local pos = targetCf.Position
+    local halfY = p.Size.Y / 2
+    p.CanCollide = true
+    p.CFrame = CFrame.new(pos.X, pos.Y - halfY, pos.Z)
+end
+
+function hideLocationAssist()
+    local p = locationAssistPlatformPart
+    if p and p.Parent then
+        p.CanCollide = false
+        p.CFrame = CFrame.new(0, MANCING_LOCATION_ASSIST_STASH_Y, 0)
+    end
 end
 
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
@@ -3197,19 +3305,27 @@ do
     })
 
     local locationPresetRows = {
-        { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38), look = Vector3.new(-0.8572, -0.0000, -0.5150) },
-        { name = "Bagang Teluk Dalam", pos = Vector3.new(967.70, 7.95, 1269.47), look = Vector3.new(-0.8870, -0.0000, -0.4618) },
-        { name = "Bagang Teluk Tengah", pos = Vector3.new(3324.97, 7.95, -4416.49), look = Vector3.new(-0.3504, -0.0000, 0.9366) },
-        { name = "Bagang Teluk Luar", pos = Vector3.new(-1901.70, 7.95, -1312.37), look = Vector3.new(-0.9483, -0.0000, -0.3174) },
-        { name = "Bagang Ujung", pos = Vector3.new(-2927.68, 7.95, 4303.74), look = Vector3.new(0.3254, -0.0000, -0.9456) },
-        { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45), look = Vector3.new(-0.1478, -0.0000, -0.9890) },
-        { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86), look = Vector3.new(-0.0348, -0.0000, -0.9994) },
-        { name = "Pulau Batu Karang", pos = Vector3.new(-798.19, 11.92, -3331.46), look = Vector3.new(0.3664, -0.0000, 0.9304) },
-        { name = "Ocean", pos = Vector3.new(-3832.58, 5, -2252.42), look = Vector3.new(0.7629, 0.0000, 0.6465) },
+        { name = "Pulau Raja Kepiting", pos = Vector3.new(2212.17, 11.65, -669.38), look = Vector3.new(-0.8572, -0.0000, -0.5150), spawnLocationAssist = false },
+        { name = "Bagang Teluk Dalam", pos = Vector3.new(967.70, 7.95, 1269.47), look = Vector3.new(-0.8870, -0.0000, -0.4618), spawnLocationAssist = false },
+        { name = "Bagang Teluk Tengah", pos = Vector3.new(3324.97, 7.95, -4416.49), look = Vector3.new(-0.3504, -0.0000, 0.9366), spawnLocationAssist = false },
+        { name = "Bagang Teluk Luar", pos = Vector3.new(-1901.70, 7.95, -1312.37), look = Vector3.new(-0.9483, -0.0000, -0.3174), spawnLocationAssist = false },
+        { name = "Bagang Ujung", pos = Vector3.new(-2927.68, 7.95, 4303.74), look = Vector3.new(0.3254, -0.0000, -0.9456), spawnLocationAssist = false },
+        { name = "Pulau Seribu", pos = Vector3.new(1219.55, 2.15, 3283.45), look = Vector3.new(-0.1478, -0.0000, -0.9890), spawnLocationAssist = false },
+        { name = "Pulau Boomerang", pos = Vector3.new(-1474.06, 2.06, 101.86), look = Vector3.new(-0.0348, -0.0000, -0.9994), spawnLocationAssist = false },
+        { name = "Pulau Batu Karang", pos = Vector3.new(-798.19, 11.92, -3331.46), look = Vector3.new(0.3664, -0.0000, 0.9304), spawnLocationAssist = false },
+        {
+            name = "Ocean",
+            pos = Vector3.new(-3832.58, 5, -2252.42),
+            look = Vector3.new(0.7629, 0.0000, 0.6465),
+            spawnLocationAssist = true,
+            locationAssistPartName = "OceanStand",
+        },
     }
 
     local locationDisplayList: { string } = {}
     local locationHoldCfByName: { [string]: CFrame } = {}
+    local locationSpawnAssistByName: { [string]: boolean } = {}
+    local locationAssistPartNameByName: { [string]: string } = {}
     for _, row in ipairs(locationPresetRows) do
         table.insert(locationDisplayList, row.name)
         local look = row.look
@@ -3218,6 +3334,11 @@ do
         else
             locationHoldCfByName[row.name] = CFrame.new(row.pos)
         end
+        locationSpawnAssistByName[row.name] = row.spawnLocationAssist == true
+        if row.spawnLocationAssist == true then
+            local n = row.locationAssistPartName
+            locationAssistPartNameByName[row.name] = (typeof(n) == "string" and n ~= "") and n or "LocationAssistPlatform"
+        end
     end
 
     local selectedLocationName: string? = nil
@@ -3225,55 +3346,6 @@ do
     local lastLocationArrivalTweenSec: number? = nil
     local locationArrivalTweenToken = 0
     local locationArrivalTweenActive: Tween? = nil
-
-    local OCEAN_LOCATION_NAME = "Ocean"
-
-    local locationAssistFolder: Folder? = nil
-    local oceanStandPart: Part? = nil
-
-    local function ensureOceanStandPart(): Part
-        local existing = oceanStandPart
-        if existing and existing.Parent then
-            return existing
-        end
-        local folder = locationAssistFolder
-        if not folder or not folder.Parent then
-            local f = Instance.new("Folder")
-            f.Name = "MancingIndoLocationAssist"
-            f.Parent = Workspace
-            locationAssistFolder = f
-            folder = f
-        end
-        local p = Instance.new("Part")
-        p.Name = "OceanStand"
-        p.Anchored = true
-        p.CanCollide = true
-        p.Transparency = 1
-        p.CastShadow = false
-        p.CanQuery = false
-        p.Material = Enum.Material.SmoothPlastic
-        p.Size = Vector3.new(96, 1, 96)
-        p.CFrame = CFrame.new(0, -5000, 0)
-        p.Parent = folder
-        oceanStandPart = p
-        return p
-    end
-
-    local function setOceanStandForTargetCf(targetCf: CFrame)
-        local p = ensureOceanStandPart()
-        local pos = targetCf.Position
-        local halfY = p.Size.Y / 2
-        p.CanCollide = true
-        p.CFrame = CFrame.new(pos.X, pos.Y - halfY, pos.Z)
-    end
-
-    local function hideOceanStand()
-        local p = oceanStandPart
-        if p and p.Parent then
-            p.CanCollide = false
-            p.CFrame = CFrame.new(0, -5000, 0)
-        end
-    end
 
     local function cancelLocationArrivalTween()
         locationArrivalTweenToken += 1
@@ -3287,7 +3359,7 @@ do
 
     local function stopLocationHold()
         cancelLocationArrivalTween()
-        hideOceanStand()
+        hideLocationAssist()
     end
 
     local function startLocationArrivalTween(): boolean
@@ -3296,51 +3368,78 @@ do
         end
         if limitedEventState.blocksLocationHold then
             cancelLocationArrivalTween()
-            hideOceanStand()
+            hideLocationAssist()
             return false
         end
         if not selectedLocationName or selectedLocationName == "" then
             cancelLocationArrivalTween()
-            hideOceanStand()
+            hideLocationAssist()
             return false
         end
         local holdCf = locationHoldCfByName[selectedLocationName]
         if not holdCf then
             cancelLocationArrivalTween()
-            hideOceanStand()
+            hideLocationAssist()
             return false
         end
         local character = Players.LocalPlayer.Character
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
         if not rootPart or not rootPart:IsA("BasePart") then
-            hideOceanStand()
+            hideLocationAssist()
             return false
         end
 
         cancelLocationArrivalTween()
         local myToken = locationArrivalTweenToken
-        if selectedLocationName == OCEAN_LOCATION_NAME then
-            setOceanStandForTargetCf(holdCf)
+        if locationSpawnAssistByName[selectedLocationName] then
+            setLocationAssistForTargetCFrame(holdCf, locationAssistPartNameByName[selectedLocationName])
         else
-            hideOceanStand()
+            hideLocationAssist()
         end
 
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
 
-        local durSec = computeLocationArrivalDurationSec(rootPart.Position, holdCf.Position)
+        local startPos = rootPart.Position
+        local rotNow = rootPart.CFrame - rootPart.CFrame.Position
+        local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + 10, startPos.Z)) * rotNow
+
+        local targetPos = holdCf.Position
+        local rotHold = holdCf - holdCf.Position
+        local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + 10, targetPos.Z)) * rotHold
+
+        local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
         lastLocationArrivalTweenSec = durSec
 
-        local ti = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tw = TweenService:Create(rootPart, ti, { CFrame = holdCf })
-        locationArrivalTweenActive = tw
-        tw.Completed:Connect(function()
+        local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        local tw1 = TweenService:Create(rootPart, ease, { CFrame = cfLift })
+        locationArrivalTweenActive = tw1
+        tw1.Completed:Connect(function()
             if myToken ~= locationArrivalTweenToken then
                 return
             end
-            locationArrivalTweenActive = nil
+            local tw2 = TweenService:Create(rootPart, easeTravel, { CFrame = cfAboveTarget })
+            locationArrivalTweenActive = tw2
+            tw2.Completed:Connect(function()
+                if myToken ~= locationArrivalTweenToken then
+                    return
+                end
+                local tw3 = TweenService:Create(rootPart, easeLand, { CFrame = holdCf })
+                locationArrivalTweenActive = tw3
+                tw3.Completed:Connect(function()
+                    if myToken ~= locationArrivalTweenToken then
+                        return
+                    end
+                    locationArrivalTweenActive = nil
+                end)
+                tw3:Play()
+            end)
+            tw2:Play()
         end)
-        tw:Play()
+        tw1:Play()
         return true
     end
 
@@ -3430,9 +3529,9 @@ do
     local TeleportLocationToggle
     TeleportLocationToggle = LocationSection:Toggle({
         Title = "Go to Location",
-        Desc = "When on, tweens to the preset over time from distance (speed capped ~"
+        Desc = "When on: tween up +10Y (1s), tween to spot +10Y (speed ~"
             .. tostring(MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC)
-            .. " studs/s; min/max duration clamped). Re-tweens if you change the dropdown.",
+            .. " studs/s, min/max clamped), then land on preset (1s). Re-tweens if you change the dropdown.",
         Flag = "mancing_main_teleportToLocation",
         Value = false,
         Callback = function(enabled)
@@ -3450,7 +3549,7 @@ do
                         .. tostring(selectedLocationName)
                         .. " (~"
                         .. durText
-                        .. "s for this distance)",
+                        .. "s travel + 2s vertical)",
                     Icon = "check",
                 })
             end
