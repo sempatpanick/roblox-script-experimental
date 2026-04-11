@@ -4423,6 +4423,7 @@ do
     local GALATAMA_QUEUE_MAX_Y = 8.00
     local GALATAMA_QUEUE_MIN_Z = -801
     local GALATAMA_QUEUE_MAX_Z = -775
+    local GALATAMA_SERVER_PLACE_ID = 78404864377525
 
     local GalatamaQueueStatusParagraph = GalatamaSection:Paragraph({
         Title = "Status",
@@ -4474,6 +4475,46 @@ do
     local autoJoinGalatamaQueueEnabled = false
     local autoJoinGalatamaQueueLoopRunning = false
     local AUTO_JOIN_GALATAMA_RETRY_SEC = 1.0
+
+    local autoJoinGalatamaServerEnabled = false
+    local autoJoinGalatamaServerLoopRunning = false
+    local AUTO_JOIN_GALATAMA_SERVER_RETRY_SEC = 5
+
+    local function tryTeleportToGalatamaServer(): boolean
+        local TeleportService = game:GetService("TeleportService")
+        local ok, err = pcall(function()
+            TeleportService:Teleport(GALATAMA_SERVER_PLACE_ID, Players.LocalPlayer)
+        end)
+        if not ok then
+            WindUI:Notify({
+                Title = "Galatama",
+                Content = "Teleport failed: " .. tostring(err),
+                Icon = "x",
+            })
+            return false
+        end
+        return true
+    end
+
+    local function ensureAutoJoinGalatamaServerLoop()
+        if autoJoinGalatamaServerLoopRunning then
+            return
+        end
+        autoJoinGalatamaServerLoopRunning = true
+        task.spawn(function()
+            while autoJoinGalatamaServerEnabled do
+                if game.PlaceId == GALATAMA_SERVER_PLACE_ID then
+                    break
+                end
+                tryTeleportToGalatamaServer()
+                if not autoJoinGalatamaServerEnabled then
+                    break
+                end
+                task.wait(AUTO_JOIN_GALATAMA_SERVER_RETRY_SEC)
+            end
+            autoJoinGalatamaServerLoopRunning = false
+        end)
+    end
 
     local function fireJoinGalatamaQueue(): (boolean, string?)
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -4575,6 +4616,32 @@ do
             autoJoinGalatamaQueueEnabled = enabled
             if enabled then
                 ensureAutoJoinGalatamaQueueLoop()
+            end
+        end,
+    })
+
+    GalatamaSection:Space()
+
+    GalatamaSection:Button({
+        Title = "Join Galatama Server",
+        Justify = "Center",
+        Icon = "",
+        Callback = function()
+            tryTeleportToGalatamaServer()
+        end,
+    })
+
+    GalatamaSection:Toggle({
+        Title = "Auto Join Galatama Server",
+        Desc = "While on, retries teleport to the Galatama place every "
+            .. tostring(AUTO_JOIN_GALATAMA_SERVER_RETRY_SEC)
+            .. "s until you leave this game or arrive (same place id).",
+        Flag = "mancing_event_autoJoinGalatamaServer",
+        Value = false,
+        Callback = function(enabled)
+            autoJoinGalatamaServerEnabled = enabled
+            if enabled then
+                ensureAutoJoinGalatamaServerLoop()
             end
         end,
     })
