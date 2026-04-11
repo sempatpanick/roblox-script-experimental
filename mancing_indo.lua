@@ -2235,19 +2235,6 @@ do
         end)
     end
 
-    -- Module uses u61(sizeOrFirst, challengeId, mode, hold); server may omit UDim2 and send id as 2nd arg.
-    local function parseMgrSpawnPayload(a2: any, a3: any, a4: any, a5: any): (any?, string, number)
-        if typeof(a2) == "UDim2" then
-            local id = a3
-            local mode = typeof(a4) == "string" and a4 or "Click"
-            local hold = typeof(a5) == "number" and a5 or 0
-            return id, mode, hold
-        end
-        local id = a2
-        local mode = typeof(a3) == "string" and a3 or "Click"
-        local hold = typeof(a4) == "number" and a4 or 0
-        return id, mode, hold
-    end
 
     local function ensureMinigameAutoSolve()
         if minigameAutoSolveConn then
@@ -2835,7 +2822,7 @@ do
 
     local SpawnBoatSection = MainTab:Section({
         Title = "Spawn Boat",
-        Desc = "Owned boats are rows in the boat shop whose Price label is Owned. Spawn uses Remotes.SpawnBoat.",
+        Desc = "Owned boats: shop rows with Price = Owned. Spawn: Remotes.SpawnBoat. Top speed: BoatUI label + best-effort ReplicatedStorage.BoatShared.BoatConfig.",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -4921,19 +4908,167 @@ do
         Border = true,
     })
 
-    -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
+    -- Nested tree: only under Instance types selected in Show Children (see section at top of this tab).
     local OBJECTS_TREE_MAX_DEPTH = 14
-    local OBJECTS_TREE_MAX_LINES = 600
+    local OBJECTS_TREE_MAX_LINES = 3000
+    -- WindUI / Roblox TextLabel can clip very long descriptions; split across extra Paragraphs.
+    local OBJECTS_CHILDREN_DESC_MAX_CHARS = 4000
+    local OBJECTS_CHILDREN_PARAGRAPH_DESC = "Nested under the types you enable in Show Children (name sort; max depth "
+        .. OBJECTS_TREE_MAX_DEPTH
+        .. ", max "
+        .. OBJECTS_TREE_MAX_LINES
+        .. " lines). Long output splits into extra paragraphs (~"
+        .. OBJECTS_CHILDREN_DESC_MAX_CHARS
+        .. " chars each)."
+
+    -- Multi-select: which ClassNames recurse when listing children (IsA match).
+    local OBJECTS_NEST_CLASS_OPTIONS: { string } = {
+        "Accessory",
+        "Actor",
+        "Attachment",
+        "Backpack",
+        "BillboardGui",
+        "BodyColors",
+        "Camera",
+        "CanvasGroup",
+        "Configuration",
+        "CornerWedgePart",
+        "Folder",
+        "Frame",
+        "Humanoid",
+        "ImageButton",
+        "ImageLabel",
+        "MeshPart",
+        "Model",
+        "ModuleScript",
+        "Part",
+        "PlayerGui",
+        "ProximityPrompt",
+        "ScreenGui",
+        "ScrollingFrame",
+        "StarterGear",
+        "StarterPack",
+        "SurfaceGui",
+        "Terrain",
+        "TextBox",
+        "TextButton",
+        "TextLabel",
+        "Tool",
+        "TrussPart",
+        "UnionOperation",
+        "VehicleSeat",
+        "WedgePart",
+    }
+    local OBJECTS_NEST_EXPAND_DEFAULT: { string } = {
+        "Backpack",
+        "BillboardGui",
+        "Frame",
+        "Folder",
+        "PlayerGui",
+        "ScreenGui",
+    }
+    local objectsNestExpandClassSet: { [string]: boolean } = {}
+
+    local function syncObjectsNestExpandClassSetFromDropdownValue(value: any)
+        local s: { [string]: boolean } = {}
+        if type(value) == "table" then
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" then
+                    s[name] = true
+                end
+            end
+        elseif type(value) == "string" and value ~= "" then
+            s[value] = true
+        end
+        objectsNestExpandClassSet = s
+    end
+
+    syncObjectsNestExpandClassSetFromDropdownValue(OBJECTS_NEST_EXPAND_DEFAULT)
+
+    local function splitStringForParagraphChunks(s: string, maxChunk: number): { string }
+        if maxChunk < 256 then
+            maxChunk = 256
+        end
+        if s == nil or s == "" then
+            return { "" }
+        end
+        if #s <= maxChunk then
+            return { s }
+        end
+        local chunks: { string } = {}
+        local pos = 1
+        local n = #s
+        while pos <= n do
+            local endPos = math.min(pos + maxChunk - 1, n)
+            if endPos < n then
+                local searchStart = math.max(pos, endPos - 500)
+                local cut = 0
+                for i = endPos, searchStart, -1 do
+                    if string.byte(s, i) == 10 then
+                        cut = i
+                        break
+                    end
+                end
+                if cut > pos then
+                    endPos = cut
+                end
+            end
+            table.insert(chunks, string.sub(s, pos, endPos))
+            pos = endPos + 1
+        end
+        if #chunks == 0 then
+            return { s }
+        end
+        return chunks
+    end
+
+    local function clearObjectsTabOverflowParagraphs(refs: { any })
+        for i = #refs, 1, -1 do
+            local p = refs[i]
+            if p and p.Destroy then
+                pcall(function()
+                    p:Destroy()
+                end)
+            end
+            refs[i] = nil
+        end
+    end
+
+    local function setNestedChildrenParagraphsWithOverflow(
+        section,
+        primaryParagraph,
+        overflowParagraphRefs: { any },
+        text: string?,
+        continuationTitleBase: string,
+        emptyPlaceholder: string
+    )
+        clearObjectsTabOverflowParagraphs(overflowParagraphRefs)
+        if not (primaryParagraph and primaryParagraph.SetDesc) then
+            return
+        end
+        local body = (text and text ~= "") and text or emptyPlaceholder
+        local chunks = splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
+        primaryParagraph:SetDesc(chunks[1] or body)
+        for ci = 2, #chunks do
+            local newP = section:Paragraph({
+                Title = continuationTitleBase .. " (part " .. tostring(ci) .. ")",
+                Desc = chunks[ci],
+            })
+            table.insert(overflowParagraphRefs, newP)
+        end
+    end
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
-        return inst:IsA("Backpack")
-            or inst:IsA("Folder")
-            or inst:IsA("Frame")
-            or inst:IsA("PlayerGui")
-            or inst:IsA("ScreenGui")
-            or inst:IsA("ScrollingFrame")
-            or inst:IsA("StarterGear")
-            or inst:IsA("TextButton")
+        if next(objectsNestExpandClassSet) == nil then
+            return false
+        end
+        for className, _ in pairs(objectsNestExpandClassSet) do
+            if inst:IsA(className) then
+                return true
+            end
+        end
+        return false
     end
 
     local function buildNestedObjectChildrenListText(root: Instance): string
@@ -4971,6 +5106,68 @@ do
         return table.concat(lines, "\n")
     end
 
+    -- WindUI passes the selected entry from Values as-is. Duplicate display strings
+    -- would collide on a string-keyed map and break selection; use { Title, Instance }.
+    local function buildObjectsServiceDropdownValues(children: { Instance }): { any }
+        local displayCounts: { [string]: number } = {}
+        local values: { any } = {}
+        for _, child in ipairs(children) do
+            local display = formatInstanceDisplay(child, nil, true)
+            local c = (displayCounts[display] or 0) + 1
+            displayCounts[display] = c
+            local title = display
+            if c > 1 then
+                title = display .. "  [" .. child:GetDebugId() .. "]"
+            end
+            table.insert(values, { Title = title, Instance = child })
+        end
+        return values
+    end
+
+    local function objectsDropdownSelectedInstance(selected: any): Instance?
+        if typeof(selected) == "table" then
+            local inst = (selected :: any).Instance
+            if inst ~= nil and typeof(inst) == "Instance" then
+                return inst :: Instance
+            end
+        end
+        return nil
+    end
+
+    local ShowChildrenSection = ObjectsTab:Section({
+        Title = "Show Children",
+        Desc = "Multi-select Instance class names. The nested children list expands one level under any child that matches any selected type (Roblox IsA). Default: Backpack, Folder, PlayerGui, ScreenGui, BillboardGui.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    local ObjectsNestClassesDropdown
+    do
+        local nestDefaultCopy: { string } = {}
+        for _, v in ipairs(OBJECTS_NEST_EXPAND_DEFAULT) do
+            table.insert(nestDefaultCopy, v)
+        end
+        ObjectsNestClassesDropdown = ShowChildrenSection:Dropdown({
+            Title = "Types to expand in nested tree",
+            Desc = "Applies to all Children (nested) views in this tab.",
+            Flag = "mancing_objects_showChildrenTypes",
+            Values = OBJECTS_NEST_CLASS_OPTIONS,
+            Value = nestDefaultCopy,
+            Multi = true,
+            AllowNone = true,
+            SearchBarEnabled = true,
+            Callback = function(value)
+                syncObjectsNestExpandClassSetFromDropdownValue(value)
+            end,
+        })
+    end
+    if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
+        syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
+    end
+
+    ObjectsTab:Space()
+
     local ReplicatedStorageSection = ObjectsTab:Section({
         Title = "ReplicatedStorage",
         Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
@@ -4980,18 +5177,12 @@ do
     })
 
     local rsDisplayList = {}
-    local rsKeyValueList = {}
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
+    local rsChildrenOverflowParagraphs = {}
 
     local function refreshReplicatedStorageList()
-        rsDisplayList = {}
-        rsKeyValueList = {}
-        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(rsDisplayList, display)
-            rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        rsDisplayList = buildObjectsServiceDropdownValues(ReplicatedStorage:GetChildren())
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
             ReplicatedStorageDropdown:Refresh(rsDisplayList)
         end
@@ -5005,25 +5196,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                    ReplicatedStorageChildrenParagraph:SetDesc("Select an object above to list its children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    ReplicatedStorageSection,
+                    ReplicatedStorageChildrenParagraph,
+                    rsChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = rsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                ReplicatedStorageChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ReplicatedStorageSection,
+                ReplicatedStorageChildrenParagraph,
+                rsChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select an object above to list its children"
+            )
         end
     })
 
     ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ReplicatedStorageSection:Button({
@@ -5046,18 +5249,12 @@ do
     })
 
     local plrsDisplayList = {}
-    local plrsKeyValueList = {}
     local PlayersServiceDropdown
     local PlayersServiceChildrenParagraph
+    local plrsChildrenOverflowParagraphs = {}
 
     local function refreshPlayersServiceList()
-        plrsDisplayList = {}
-        plrsKeyValueList = {}
-        for _, child in ipairs(Players:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(plrsDisplayList, display)
-            plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        plrsDisplayList = buildObjectsServiceDropdownValues(Players:GetChildren())
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
             PlayersServiceDropdown:Refresh(plrsDisplayList)
         end
@@ -5071,25 +5268,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                    PlayersServiceChildrenParagraph:SetDesc("Select a player above to list their children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    PlayersServiceSection,
+                    PlayersServiceChildrenParagraph,
+                    plrsChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select a player above to list their children"
+                )
                 return
             end
-            local entry = plrsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                PlayersServiceChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                PlayersServiceSection,
+                PlayersServiceChildrenParagraph,
+                plrsChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select a player above to list their children"
+            )
         end
     })
 
     PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     PlayersServiceSection:Button({
@@ -5112,19 +5321,13 @@ do
     })
 
     local lpDisplayList = {}
-    local lpKeyValueList = {}
     local LocalPlayerDropdown
     local LocalPlayerChildrenParagraph
+    local lpChildrenOverflowParagraphs = {}
 
     local function refreshLocalPlayerList()
-        lpDisplayList = {}
-        lpKeyValueList = {}
         local localPlayer = Players.LocalPlayer
-        for _, child in ipairs(localPlayer:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(lpDisplayList, display)
-            lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        lpDisplayList = buildObjectsServiceDropdownValues(localPlayer:GetChildren())
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
             LocalPlayerDropdown:Refresh(lpDisplayList)
         end
@@ -5138,25 +5341,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                    LocalPlayerChildrenParagraph:SetDesc("Select an object above to list its children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    LocalPlayerSection,
+                    LocalPlayerChildrenParagraph,
+                    lpChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = lpKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                LocalPlayerChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                LocalPlayerSection,
+                LocalPlayerChildrenParagraph,
+                lpChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select an object above to list their children"
+            )
         end
     })
 
     LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     LocalPlayerSection:Button({
@@ -5179,18 +5394,12 @@ do
     })
 
     local wsDisplayList = {}
-    local wsKeyValueList = {}
     local WorkspaceDropdown
     local WorkspaceChildrenParagraph
+    local wsChildrenOverflowParagraphs = {}
 
     local function refreshWorkspaceList()
-        wsDisplayList = {}
-        wsKeyValueList = {}
-        for _, child in ipairs(Workspace:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(wsDisplayList, display)
-            wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        wsDisplayList = buildObjectsServiceDropdownValues(Workspace:GetChildren())
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
             WorkspaceDropdown:Refresh(wsDisplayList)
         end
@@ -5204,25 +5413,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                    WorkspaceChildrenParagraph:SetDesc("Select an object above to list its children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    WorkspaceSection,
+                    WorkspaceChildrenParagraph,
+                    wsChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = wsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                WorkspaceChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                WorkspaceSection,
+                WorkspaceChildrenParagraph,
+                wsChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select an object above to list its children"
+            )
         end
     })
 
     WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     WorkspaceSection:Button({
@@ -5245,9 +5466,9 @@ do
     })
 
     local runServiceDisplayList = {}
-    local runServiceKeyValueList = {}
     local RunServiceDropdown
     local RunServiceChildrenParagraph
+    local runServiceChildrenOverflowParagraphs = {}
 
     local RUNSERVICE_SIGNAL_NAMES = {
         "Heartbeat",
@@ -5275,13 +5496,7 @@ do
     }
 
     local function refreshRunServiceList()
-        runServiceDisplayList = {}
-        runServiceKeyValueList = {}
-        for _, child in ipairs(RunService:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(runServiceDisplayList, display)
-            runServiceKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        runServiceDisplayList = buildObjectsServiceDropdownValues(RunService:GetChildren())
         if RunServiceDropdown and RunServiceDropdown.Refresh then
             RunServiceDropdown:Refresh(runServiceDisplayList)
         end
@@ -5295,25 +5510,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if RunServiceChildrenParagraph and RunServiceChildrenParagraph.SetDesc then
-                    RunServiceChildrenParagraph:SetDesc("Select an object above to list its children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    RunServiceSection,
+                    RunServiceChildrenParagraph,
+                    runServiceChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = runServiceKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if RunServiceChildrenParagraph and RunServiceChildrenParagraph.SetDesc then
-                RunServiceChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                RunServiceSection,
+                RunServiceChildrenParagraph,
+                runServiceChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select an object above to list its children"
+            )
         end
     })
 
     RunServiceChildrenParagraph = RunServiceSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     RunServiceSection:Paragraph({
@@ -5346,9 +5573,9 @@ do
     })
 
     local marketplaceServiceDisplayList = {}
-    local marketplaceServiceKeyValueList = {}
     local MarketplaceServiceDropdown
     local MarketplaceServiceChildrenParagraph
+    local marketplaceChildrenOverflowParagraphs = {}
 
     local MARKETPLACE_SIGNAL_NAMES = {
         "PromptProductPurchaseFinished(userId, productId, isPurchased)",
@@ -5372,13 +5599,7 @@ do
     }
 
     local function refreshMarketplaceServiceList()
-        marketplaceServiceDisplayList = {}
-        marketplaceServiceKeyValueList = {}
-        for _, child in ipairs(MarketplaceService:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(marketplaceServiceDisplayList, display)
-            marketplaceServiceKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
-        end
+        marketplaceServiceDisplayList = buildObjectsServiceDropdownValues(MarketplaceService:GetChildren())
         if MarketplaceServiceDropdown and MarketplaceServiceDropdown.Refresh then
             MarketplaceServiceDropdown:Refresh(marketplaceServiceDisplayList)
         end
@@ -5396,25 +5617,37 @@ do
         Value = nil,
         AllowNone = true,
         SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if MarketplaceServiceChildrenParagraph and MarketplaceServiceChildrenParagraph.SetDesc then
-                    MarketplaceServiceChildrenParagraph:SetDesc("Select an object above to list its children")
-                end
+        Callback = function(selected)
+            if not selected then
+                setNestedChildrenParagraphsWithOverflow(
+                    MarketplaceServiceSection,
+                    MarketplaceServiceChildrenParagraph,
+                    marketplaceChildrenOverflowParagraphs,
+                    nil,
+                    "Children (nested)",
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = marketplaceServiceKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if MarketplaceServiceChildrenParagraph and MarketplaceServiceChildrenParagraph.SetDesc then
-                MarketplaceServiceChildrenParagraph:SetDesc(text)
+            local inst = objectsDropdownSelectedInstance(selected)
+            if not inst then
+                return
             end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                MarketplaceServiceSection,
+                MarketplaceServiceChildrenParagraph,
+                marketplaceChildrenOverflowParagraphs,
+                text,
+                "Children (nested)",
+                "Select an object above to list its children"
+            )
         end
     })
 
     MarketplaceServiceChildrenParagraph = MarketplaceServiceSection:Paragraph({
         Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     MarketplaceServiceSection:Paragraph({
