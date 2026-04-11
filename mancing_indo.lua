@@ -3177,15 +3177,15 @@ do
                 WindUI:Notify({ Title = "Spawn Boat", Content = "Remotes.SpawnBoat not found", Icon = "x" })
                 return
             end
-            local ok, success, errMsg = pcall(function()
+            local invokeOk, expected, errMsg = pcall(function()
                 return spawnBoat:InvokeServer(selectedSpawnBoatId)
             end)
-            if not ok then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Invoke failed: " .. tostring(success), Icon = "x" })
+            if not invokeOk then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Invoke failed: " .. tostring(expected), Icon = "x" })
                 return
             end
-            if success then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Spawn requested", Icon = "check" })
+            if expected then
+                WindUI:Notify({ Title = "Spawn Boat", Content = "Spawn successful", Icon = "check" })
             else
                 WindUI:Notify({
                     Title = "Spawn Boat",
