@@ -65,6 +65,30 @@ local fishingAutomationState = {
     instantFishingEnabled = false,
 }
 
+-- Limited Event (Event tab) ↔ Main: location pin vs Auto Sell priority.
+local limitedEventState = {
+    pausedForAutoSell = false,
+    blocksLocationHold = false,
+    -- When frozen at the limited-event spot, Auto Sell tweens back here (5s) then refreezes; cleared when the LE session ends.
+    returnFromSellTweenCf = nil :: CFrame?,
+}
+local limitedEventBridge: {
+    stopLocationHold: (() -> ())?,
+    resumeTeleportToLocationAfterLimitedEvent: (() -> ())?,
+    stopLimitedEventFreezeForAutoSell: (() -> ())?,
+    restartLimitedEventFreezeAfterSell: ((CFrame) -> ())?,
+} = {}
+
+-- Config tab: sequential profile apply (Auto Sell trip → Teleport → Limited Event). Filled in Main tab.
+local configLoadBridge: {
+    suppressNextAutoSellLoopSpawn: boolean,
+    runAutoSellWithFishingCoordination: (() -> ())?,
+    startAutoSellSellLoop: ((boolean?) -> ())?,
+    bumpAutoSellLoopToken: (() -> ())?,
+} = {
+    suppressNextAutoSellLoopSpawn = false,
+}
+
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
 function formatValueForDisplay(val)
     if val == nil then
@@ -2458,6 +2482,11 @@ do
             if not instantFishingEnabled then
                 break
             end
+            -- Auto Sell sets autoFishingPausedForSell after instantFishingCycleRunning goes false;
+            -- re-check here so we never start a new cycle between those two moments.
+            if autoFishingPausedForSell then
+                continue
+            end
             if not runInstantFishingCycle() then
                 task.wait(0.25)
             end
@@ -2572,6 +2601,9 @@ do
     local autoSellLoopRunning = false
     local autoSellLoopToken = 0
     local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
+    local AUTO_SELL_LIMITED_EVENT_RETURN_TWEEN_SEC = 5
+    -- Max time at buyer position (sell attempts + waits); avoids staying stuck if BackpackRemove never fires.
+    local AUTO_SELL_TRIP_TIMEOUT_SEC = 5
     local AUTO_SELL_BACKPACK_REMOVE_WAIT_SEC = 0.8
     local AUTO_SELL_RETRY_FIRE_SEC = 0.25
     local autoSellBackpackRemoveConn: RBXScriptConnection? = nil
@@ -2629,7 +2661,7 @@ do
         return false
     end
 
-    local function fireSellFishAllUntilBackpackRemove(): boolean
+    local function fireSellFishAllUntilBackpackRemove(deadlineClock: number?): boolean
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if not remotes then
             return false
@@ -2640,7 +2672,14 @@ do
         end
         ensureBackpackRemoveListener()
 
+        local function tripTimedOut(): boolean
+            return deadlineClock ~= nil and os.clock() >= deadlineClock
+        end
+
         while autoSellEnabled do
+            if tripTimedOut() then
+                return false
+            end
             local beforeSignalCount = autoSellBackpackRemoveSignalCount
             pcall(function()
                 sellFish:FireServer("All")
@@ -2650,7 +2689,14 @@ do
             while autoSellEnabled
                 and (autoSellBackpackRemoveSignalCount <= beforeSignalCount)
                 and (os.clock() - startedAt) < AUTO_SELL_BACKPACK_REMOVE_WAIT_SEC do
+                if tripTimedOut() then
+                    return false
+                end
                 task.wait(0.05)
+            end
+
+            if tripTimedOut() then
+                return false
             end
 
             if autoSellBackpackRemoveSignalCount > beforeSignalCount then
@@ -2669,6 +2715,10 @@ do
     local function runAutoSellTeleportSellAndReturn()
         if not playerBackpackHasFish() then
             return
+        end
+        limitedEventState.pausedForAutoSell = true
+        if limitedEventBridge.stopLimitedEventFreezeForAutoSell then
+            pcall(limitedEventBridge.stopLimitedEventFreezeForAutoSell)
         end
         local function getCurrentRoot()
             local ch = Players.LocalPlayer.Character
@@ -2690,19 +2740,66 @@ do
                 root.CFrame = SELL_TELEPORT_CFRAME
                 waitWithGameplayPauseDetect(0)
             end
-            local soldOk = fireSellFishAllUntilBackpackRemove()
-            if not soldOk then
-                return
-            end
-            root = getCurrentRoot()
-            if root and previousCFrame and root.Parent then
-                root.CFrame = previousCFrame
-            elseif previousCFrame then
-                WindUI:Notify({
-                    Title = "Auto Sell",
-                    Content = "Could not return to previous position (character/root changed after pause)",
-                    Icon = "x",
-                })
+            local tripDeadline = os.clock() + AUTO_SELL_TRIP_TIMEOUT_SEC
+            local soldOk = fireSellFishAllUntilBackpackRemove(tripDeadline)
+            if soldOk then
+                root = getCurrentRoot()
+                local leTweenCf = limitedEventState.returnFromSellTweenCf
+                if root and root.Parent and leTweenCf then
+                    local tweenOk, tweenErr = pcall(function()
+                        local ti = TweenInfo.new(
+                            AUTO_SELL_LIMITED_EVENT_RETURN_TWEEN_SEC,
+                            Enum.EasingStyle.Quad,
+                            Enum.EasingDirection.Out
+                        )
+                        local tw = TweenService:Create(root, ti, { CFrame = leTweenCf })
+                        tw:Play()
+                        tw.Completed:Wait()
+                    end)
+                    if not tweenOk then
+                        WindUI:Notify({
+                            Title = "Auto Sell",
+                            Content = "Limited event return tween failed: " .. tostring(tweenErr),
+                            Icon = "x",
+                        })
+                        root.CFrame = leTweenCf
+                    end
+                    if limitedEventBridge.restartLimitedEventFreezeAfterSell then
+                        pcall(limitedEventBridge.restartLimitedEventFreezeAfterSell, leTweenCf)
+                    end
+                elseif root and previousCFrame and root.Parent then
+                    root.CFrame = previousCFrame
+                elseif previousCFrame then
+                    WindUI:Notify({
+                        Title = "Auto Sell",
+                        Content = "Could not return to previous position (character/root changed after pause)",
+                        Icon = "x",
+                    })
+                end
+            else
+                root = getCurrentRoot()
+                if root and previousCFrame and root.Parent then
+                    root.CFrame = previousCFrame
+                elseif previousCFrame then
+                    WindUI:Notify({
+                        Title = "Auto Sell",
+                        Content = "Could not return to previous position (character/root changed after pause)",
+                        Icon = "x",
+                    })
+                end
+                local leCf = limitedEventState.returnFromSellTweenCf
+                if leCf and limitedEventBridge.restartLimitedEventFreezeAfterSell then
+                    pcall(limitedEventBridge.restartLimitedEventFreezeAfterSell, leCf)
+                end
+                if autoSellEnabled and os.clock() >= tripDeadline then
+                    WindUI:Notify({
+                        Title = "Auto Sell",
+                        Content = "Sell timed out after "
+                            .. tostring(AUTO_SELL_TRIP_TIMEOUT_SEC)
+                            .. "s — returned from buyer.",
+                        Icon = "x",
+                    })
+                end
             end
         end)
         if restoreAssist then
@@ -2711,6 +2808,7 @@ do
         if locationHoldApi.resumeAfterAutoSell then
             locationHoldApi.resumeAfterAutoSell(holdPausedForAutoSell)
         end
+        limitedEventState.pausedForAutoSell = false
     end
 
     -- If instant fishing is on: wait for current cycle (including MGR minigame) to finish, pause fishing, sell, resume.
@@ -2723,6 +2821,18 @@ do
                 if not autoSellEnabled then
                     autoFishingPausedForSell = false
                     return
+                end
+                task.wait(0.05)
+            end
+            -- Cycle flag cleared before the fishing loop re-reads autoFishingPausedForSell; yield so
+            -- runInstantFishingLoop cannot start another cast before pausing (see continue before runInstantFishingCycle).
+            RunService.Heartbeat:Wait()
+            RunService.Heartbeat:Wait()
+            -- Reel UI / deferred reel autoplay can outlive the CMGR session wait inside the cycle.
+            local settleT0 = os.clock()
+            while instantFishingEnabled and autoSellEnabled and (os.clock() - settleT0) < 45 do
+                if not isReelMinigameActive() and not reelAutoplayLoopRunning then
+                    break
                 end
                 task.wait(0.05)
             end
@@ -2765,6 +2875,49 @@ do
         end,
     })
 
+    local function startAutoSellSellLoop(skipFirstCoordSell: boolean?)
+        if autoSellLoopRunning then
+            autoSellLoopToken += 1
+        end
+        local myToken = autoSellLoopToken
+        autoSellLoopRunning = true
+        local skipOnce = skipFirstCoordSell == true
+        task.spawn(function()
+            while autoSellEnabled and myToken == autoSellLoopToken do
+                if not skipOnce then
+                    if sellMode == "Loop" then
+                        runAutoSellWithFishingCoordination()
+                    end
+                else
+                    skipOnce = false
+                end
+                local cycleStartedAt = os.clock()
+                local seenRevision = sellIntervalRevision
+                while autoSellEnabled and myToken == autoSellLoopToken do
+                    local dur = math.max(sellIntervalSeconds, 0.05)
+                    local elapsed = os.clock() - cycleStartedAt
+                    local remaining = dur - elapsed
+                    if remaining <= 0 then
+                        break
+                    end
+                    task.wait(math.min(remaining, 0.25))
+                    if seenRevision ~= sellIntervalRevision then
+                        seenRevision = sellIntervalRevision
+                    end
+                end
+            end
+            if myToken == autoSellLoopToken then
+                autoSellLoopRunning = false
+            end
+        end)
+    end
+
+    configLoadBridge.runAutoSellWithFishingCoordination = runAutoSellWithFishingCoordination
+    configLoadBridge.startAutoSellSellLoop = startAutoSellSellLoop
+    configLoadBridge.bumpAutoSellLoopToken = function()
+        autoSellLoopToken += 1
+    end
+
     SellSection:Toggle({
         Title = "Auto Sell",
         Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Instant fishing: waits for minigame, pauses, sells, 1s after return resumes",
@@ -2776,38 +2929,13 @@ do
                 autoSellLoopToken += 1
                 return
             end
-            if autoSellLoopRunning then
-                autoSellLoopToken += 1
+            if configLoadBridge.suppressNextAutoSellLoopSpawn then
+                return
             end
-            local myToken = autoSellLoopToken
-            autoSellLoopRunning = true
-            task.spawn(function()
-                while autoSellEnabled and myToken == autoSellLoopToken do
-                    if sellMode == "Loop" then
-                        runAutoSellWithFishingCoordination()
-                    end
-                    local cycleStartedAt = os.clock()
-                    local seenRevision = sellIntervalRevision
-                    while autoSellEnabled and myToken == autoSellLoopToken do
-                        local dur = math.max(sellIntervalSeconds, 0.05)
-                        local elapsed = os.clock() - cycleStartedAt
-                        local remaining = dur - elapsed
-                        if remaining <= 0 then
-                            break
-                        end
-                        task.wait(math.min(remaining, 0.25))
-                        if seenRevision ~= sellIntervalRevision then
-                            seenRevision = sellIntervalRevision
-                        end
-                    end
-                end
-                if myToken == autoSellLoopToken then
-                    autoSellLoopRunning = false
-                end
-            end)
+            startAutoSellSellLoop()
         end,
     })
-    
+
     MainTab:Space()
 
     local LocationSection = MainTab:Section({
@@ -3046,6 +3174,9 @@ do
         if not teleportToLocationEnabled then
             return
         end
+        if limitedEventState.blocksLocationHold then
+            return
+        end
         local now = os.clock()
         if now - locationLastPinAt < LOCATION_PIN_INTERVAL_SEC then
             return
@@ -3076,6 +3207,10 @@ do
 
     local function tryActivateLocationHold(showFailureNotify: boolean): boolean
         if not teleportToLocationEnabled then
+            return false
+        end
+        if limitedEventState.blocksLocationHold then
+            stopLocationHold()
             return false
         end
         if not selectedLocationName or selectedLocationName == "" then
@@ -3109,6 +3244,25 @@ do
         if not wasPaused then
             return
         end
+        if not teleportToLocationEnabled then
+            return
+        end
+        if limitedEventState.blocksLocationHold then
+            return
+        end
+        if not selectedLocationName or selectedLocationName == "" then
+            return
+        end
+        if not locationHoldCfByName[selectedLocationName] then
+            return
+        end
+        startLocationHold()
+        tickPinCharacterToPreset()
+    end
+
+    limitedEventBridge.stopLocationHold = stopLocationHold
+    function limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent()
+        limitedEventState.blocksLocationHold = false
         if not teleportToLocationEnabled then
             return
         end
@@ -3812,6 +3966,353 @@ do
         IconShape = "Square",
         Border = true,
     })
+
+    -- Limited Event: hourly :30 (+5s delay) staging at Bagang Teluk Tengah, optional teleport to
+    -- Workspace.BiomeRegion.LimitedEvent.LimitedEvent (Y forced to 5), freeze until :50, then return.
+    local LIMITED_EVENT_STAGING_CF = CFrame.lookAt(
+        Vector3.new(3324.97, 7.95, -4416.49),
+        Vector3.new(3324.97, 7.95, -4416.49) + Vector3.new(-0.3504, 0, 0.9366).Unit
+    )
+    local LIMITED_EVENT_STAGING_DELAY_SEC = 5
+    -- After teleporting to staging (Bagang Teluk Tengah), only wait this long for LimitedEvent to appear; then return home.
+    local LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC = 5
+    local LIMITED_EVENT_CLOCK_POLL_SEC = 0.5
+    -- Full-rate Heartbeat freeze + fish-catch UI spikes can starve the frame; snap ~20–25 Hz is enough to hold position.
+    local LIMITED_EVENT_FREEZE_APPLY_INTERVAL_SEC = 1 / 22
+
+    local function limitedEventGetHumanoidRootPart(): BasePart?
+        local character = Players.LocalPlayer.Character
+        if not character then
+            return nil
+        end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+        local pp = character.PrimaryPart
+        if pp and pp:IsA("BasePart") then
+            return pp
+        end
+        return nil
+    end
+
+    local function limitedEventGetTargetPart(): BasePart?
+        local br = Workspace:FindFirstChild("BiomeRegion")
+        if not br then
+            return nil
+        end
+        local leFolder = br:FindFirstChild("LimitedEvent")
+        if not leFolder then
+            return nil
+        end
+        local node = leFolder:FindFirstChild("LimitedEvent")
+        if not node then
+            return nil
+        end
+        if node:IsA("BasePart") then
+            return node
+        end
+        if node:IsA("ObjectValue") then
+            local v = node.Value
+            if v and v:IsA("BasePart") then
+                return v
+            end
+        end
+        if node:IsA("Model") then
+            local pp = node.PrimaryPart
+            if pp and pp:IsA("BasePart") then
+                return pp
+            end
+            local fb = node:FindFirstChildWhichIsA("BasePart", true)
+            if fb and fb:IsA("BasePart") then
+                return fb
+            end
+        end
+        return nil
+    end
+
+    local autoLimitedTeleportEnabled = false
+    local limitedEventLoopToken = 0
+    local limitedEventFreezeConn: RBXScriptConnection? = nil
+    local limitedEventFreezeCf: CFrame? = nil
+    local limitedEventSavedReturnCf: CFrame? = nil
+    local limitedEventSessionBusy = false
+    local limitedEventLastHourlyBucket = -1
+    local limitedEventCachedRootForFreeze: BasePart? = nil
+    local limitedEventLastFreezeApplyAt = 0
+
+    local function limitedEventClearFreezeRootCache()
+        limitedEventCachedRootForFreeze = nil
+    end
+
+    local function limitedEventGetRootForFreeze(): BasePart?
+        local c = limitedEventCachedRootForFreeze
+        if c and c.Parent then
+            return c
+        end
+        c = limitedEventGetHumanoidRootPart()
+        limitedEventCachedRootForFreeze = c
+        return c
+    end
+
+    Players.LocalPlayer.CharacterAdded:Connect(function()
+        limitedEventClearFreezeRootCache()
+    end)
+
+    local function limitedEventStopFreeze()
+        if limitedEventFreezeConn then
+            limitedEventFreezeConn:Disconnect()
+            limitedEventFreezeConn = nil
+        end
+        limitedEventFreezeCf = nil
+        limitedEventLastFreezeApplyAt = 0
+        limitedEventClearFreezeRootCache()
+    end
+
+    function limitedEventBridge.stopLimitedEventFreezeForAutoSell()
+        limitedEventStopFreeze()
+        limitedEventState.blocksLocationHold = false
+    end
+
+    local function limitedEventApplyFreezeStep()
+        if not autoLimitedTeleportEnabled or limitedEventState.pausedForAutoSell then
+            return
+        end
+        local cf = limitedEventFreezeCf
+        if not cf then
+            return
+        end
+        local now = os.clock()
+        if now - limitedEventLastFreezeApplyAt < LIMITED_EVENT_FREEZE_APPLY_INTERVAL_SEC then
+            return
+        end
+        limitedEventLastFreezeApplyAt = now
+        local root = limitedEventGetRootForFreeze()
+        if not root then
+            return
+        end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = cf
+    end
+
+    local function limitedEventStartFreezeAt(cf: CFrame)
+        limitedEventStopFreeze()
+        limitedEventFreezeCf = cf
+        limitedEventState.returnFromSellTweenCf = cf
+        limitedEventState.blocksLocationHold = true
+        if limitedEventBridge.stopLocationHold then
+            pcall(limitedEventBridge.stopLocationHold)
+        end
+        limitedEventLastFreezeApplyAt = 0
+        limitedEventApplyFreezeStep()
+        limitedEventFreezeConn = RunService.Heartbeat:Connect(limitedEventApplyFreezeStep)
+    end
+
+    function limitedEventBridge.restartLimitedEventFreezeAfterSell(cf: CFrame)
+        if not autoLimitedTeleportEnabled then
+            return
+        end
+        limitedEventStopFreeze()
+        limitedEventFreezeCf = cf
+        limitedEventState.returnFromSellTweenCf = cf
+        limitedEventState.blocksLocationHold = true
+        if limitedEventBridge.stopLocationHold then
+            pcall(limitedEventBridge.stopLocationHold)
+        end
+        limitedEventLastFreezeApplyAt = 0
+        limitedEventApplyFreezeStep()
+        limitedEventFreezeConn = RunService.Heartbeat:Connect(limitedEventApplyFreezeStep)
+    end
+
+    local function limitedEventTeleportRootToCf(cf: CFrame)
+        local root = limitedEventGetHumanoidRootPart()
+        if not root then
+            return false
+        end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = cf
+        return true
+    end
+
+    local function limitedEventReturnToSavedAndRelease()
+        limitedEventStopFreeze()
+        limitedEventState.returnFromSellTweenCf = nil
+        local root = limitedEventGetHumanoidRootPart()
+        local back = limitedEventSavedReturnCf
+        limitedEventSavedReturnCf = nil
+        limitedEventState.blocksLocationHold = false
+        if root and back then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = back
+        end
+        if limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent then
+            pcall(limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent)
+        end
+    end
+
+    local function limitedEventWallMinuteSecond(): (number, number)
+        local t = os.date("*t")
+        return t.min, t.sec
+    end
+
+    local function limitedEventRunSession(trigger: string)
+        if not autoLimitedTeleportEnabled or limitedEventSessionBusy then
+            return
+        end
+        if limitedEventState.pausedForAutoSell then
+            return
+        end
+        limitedEventSessionBusy = true
+        local myToken = limitedEventLoopToken
+        local ok, err = pcall(function()
+            if not autoLimitedTeleportEnabled or myToken ~= limitedEventLoopToken then
+                return
+            end
+            limitedEventState.returnFromSellTweenCf = nil
+            while limitedEventState.pausedForAutoSell and autoLimitedTeleportEnabled and myToken == limitedEventLoopToken do
+                task.wait(0.25)
+            end
+            if not autoLimitedTeleportEnabled or myToken ~= limitedEventLoopToken then
+                return
+            end
+
+            local root = limitedEventGetHumanoidRootPart()
+            if root then
+                limitedEventSavedReturnCf = root.CFrame
+            else
+                limitedEventSavedReturnCf = nil
+            end
+            limitedEventState.blocksLocationHold = true
+            if limitedEventBridge.stopLocationHold then
+                pcall(limitedEventBridge.stopLocationHold)
+            end
+            limitedEventTeleportRootToCf(LIMITED_EVENT_STAGING_CF)
+
+            local foundPart: BasePart? = nil
+            local stagingWaitDeadline = os.clock() + LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC
+            while autoLimitedTeleportEnabled and myToken == limitedEventLoopToken do
+                if limitedEventState.pausedForAutoSell then
+                    task.wait(0.25)
+                else
+                    foundPart = limitedEventGetTargetPart()
+                    if foundPart then
+                        break
+                    end
+                    local m, s = limitedEventWallMinuteSecond()
+                    if m > 50 or (m == 50 and s >= 0) then
+                        break
+                    end
+                    if os.clock() >= stagingWaitDeadline then
+                        break
+                    end
+                    task.wait(0.25)
+                end
+            end
+
+            if not autoLimitedTeleportEnabled or myToken ~= limitedEventLoopToken then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
+
+            if not foundPart then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
+
+            local p = foundPart.Position
+            local atCf = CFrame.new(Vector3.new(p.X, 5, p.Z))
+            limitedEventTeleportRootToCf(atCf)
+            limitedEventStartFreezeAt(atCf)
+
+            while autoLimitedTeleportEnabled and myToken == limitedEventLoopToken do
+                if limitedEventState.pausedForAutoSell then
+                    task.wait(0.25)
+                else
+                    local m, s = limitedEventWallMinuteSecond()
+                    if m > 50 or (m == 50 and s >= 0) then
+                        break
+                    end
+                    task.wait(LIMITED_EVENT_CLOCK_POLL_SEC)
+                end
+            end
+
+            limitedEventReturnToSavedAndRelease()
+        end)
+        limitedEventSessionBusy = false
+        if not ok then
+            warn("[Limited Event] session error (" .. tostring(trigger) .. "): " .. tostring(err))
+            limitedEventReturnToSavedAndRelease()
+        end
+    end
+
+    local function limitedEventEnsureClockLoop()
+        task.spawn(function()
+            local myToken = limitedEventLoopToken
+            while autoLimitedTeleportEnabled and myToken == limitedEventLoopToken do
+                task.wait(1)
+                if not autoLimitedTeleportEnabled or myToken ~= limitedEventLoopToken then
+                    break
+                end
+                if limitedEventState.pausedForAutoSell or limitedEventSessionBusy then
+                    continue
+                end
+                local t = os.date("*t")
+                local bucket = math.floor(os.time() / 3600)
+                if t.min == 30 and t.sec >= LIMITED_EVENT_STAGING_DELAY_SEC and t.sec <= 20 and bucket ~= limitedEventLastHourlyBucket then
+                    limitedEventLastHourlyBucket = bucket
+                    task.spawn(function()
+                        limitedEventRunSession("hourly")
+                    end)
+                end
+            end
+        end)
+    end
+
+    local LimitedEventSection = EventTab:Section({
+        Title = "Limited Event",
+        Desc = "When enabled: runs immediately, and again each hour at :"
+            .. tostring(30)
+            .. " + "
+            .. tostring(LIMITED_EVENT_STAGING_DELAY_SEC)
+            .. "s (local clock). Teleport to Bagang Teluk Tengah, wait up to "
+            .. tostring(LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC)
+            .. "s for LimitedEvent; if it never appears, return home. If it appears, teleport with Y=5 and freeze until :50, then return. Pauses Teleport to Location while active. Auto Sell pauses this feature.",
+        Box = true,
+        BoxBorder = true,
+        Opened = true,
+    })
+
+    LimitedEventSection:Toggle({
+        Title = "Auto Teleport",
+        Desc = "Priority with Main tab: Auto Sell > Limited Event > Teleport to Location",
+        Flag = "mancing_event_limitedAutoTeleport",
+        Value = false,
+        Callback = function(enabled)
+            autoLimitedTeleportEnabled = enabled
+            limitedEventLoopToken += 1
+            limitedEventLastHourlyBucket = -1
+            if not enabled then
+                limitedEventStopFreeze()
+                limitedEventState.returnFromSellTweenCf = nil
+                limitedEventState.blocksLocationHold = false
+                limitedEventSavedReturnCf = nil
+                limitedEventSessionBusy = false
+                if limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent then
+                    pcall(limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent)
+                end
+                return
+            end
+            task.spawn(function()
+                limitedEventRunSession("initial")
+            end)
+            limitedEventEnsureClockLoop()
+        end,
+    })
+
+    EventTab:Space()
 
     local GalatamaSection = EventTab:Section({
         Title = "Galatama",
@@ -5683,7 +6184,7 @@ do
 
     local ConfigManagementSection = ConfigTab:Section({
         Title = "Config management",
-        Desc = "Named profiles in WindUI/" .. tostring(Window.Folder or "sempatpanick") .. "/config (executor file APIs). Main, Shop, and Teleport options use Flags. Event tab is actions only (nothing to save).",
+        Desc = "Named profiles in WindUI/" .. tostring(Window.Folder or "sempatpanick") .. "/config (executor file APIs). Main, Shop, and Teleport options use Flags. Event tab: Limited Event Auto Teleport uses a Flag; Galatama actions are not saved.",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -5845,6 +6346,117 @@ do
         return cm:Config(name, false)
     end
 
+    -- WindUI cfg:Load() spawns each element load in arbitrary order. After it settles, re-apply in order:
+    -- (1) Auto Sell toggle + one coordinated sell trip if on, then background sell loop;
+    -- (2) Teleport to Location;
+    -- (3) Limited Event Auto Teleport.
+    local CONFIG_SEQ_FLAG_AUTO_SELL = "mancing_main_autoSell"
+    local CONFIG_SEQ_FLAG_TELEPORT = "mancing_main_teleportToLocation"
+    local CONFIG_SEQ_FLAG_LIMITED = "mancing_event_limitedAutoTeleport"
+
+    local function readProfileElementsTable(cm, profileName)
+        local trimmed = sanitizeConfigName(profileName)
+        if trimmed == "" or type(isfile) ~= "function" or type(readfile) ~= "function" then
+            return nil
+        end
+        local path = cm.Path .. trimmed .. ".json"
+        if not isfile(path) then
+            return nil
+        end
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(path))
+        end)
+        if not ok or type(data) ~= "table" then
+            return nil
+        end
+        if not data.__version then
+            data = { __elements = data, __custom = {} }
+        end
+        return data.__elements
+    end
+
+    local function getSavedElement(elements, flag)
+        if type(elements) ~= "table" then
+            return nil
+        end
+        local s = elements[flag]
+        if s == nil then
+            s = elements[tostring(flag)]
+        end
+        return s
+    end
+
+    local function applyConfigLoadSequentialSellTeleportLimited(cm, cfg, profileName)
+        if not cm or not cfg or not cm.Parser then
+            return
+        end
+        local elements = readProfileElementsTable(cm, profileName)
+        if type(elements) ~= "table" then
+            return
+        end
+        local parser = cm.Parser
+        local br = configLoadBridge
+
+        if type(br.bumpAutoSellLoopToken) == "function" then
+            br.bumpAutoSellLoopToken()
+        end
+
+        local sellSaved = getSavedElement(elements, CONFIG_SEQ_FLAG_AUTO_SELL)
+        local telSaved = getSavedElement(elements, CONFIG_SEQ_FLAG_TELEPORT)
+        local limSaved = getSavedElement(elements, CONFIG_SEQ_FLAG_LIMITED)
+
+        local sellElem = cfg.Elements and cfg.Elements[CONFIG_SEQ_FLAG_AUTO_SELL]
+        if sellElem and type(sellSaved) == "table" and sellSaved.__type and parser[sellSaved.__type] and parser[sellSaved.__type].Load then
+            local wantSell = sellSaved.value == true
+            if wantSell then
+                br.suppressNextAutoSellLoopSpawn = true
+            end
+            local pok, err = pcall(function()
+                parser[sellSaved.__type].Load(sellElem, sellSaved)
+            end)
+            br.suppressNextAutoSellLoopSpawn = false
+            if not pok then
+                warn("[Mancing Indo] Config sequential load (Auto Sell): " .. tostring(err))
+            elseif wantSell then
+                if type(br.runAutoSellWithFishingCoordination) == "function" then
+                    pcall(br.runAutoSellWithFishingCoordination)
+                end
+                if type(br.startAutoSellSellLoop) == "function" then
+                    br.startAutoSellSellLoop(true)
+                end
+            end
+        end
+
+        local telElem = cfg.Elements and cfg.Elements[CONFIG_SEQ_FLAG_TELEPORT]
+        if telElem and type(telSaved) == "table" and telSaved.__type and parser[telSaved.__type] and parser[telSaved.__type].Load then
+            local pok, err = pcall(function()
+                parser[telSaved.__type].Load(telElem, telSaved)
+            end)
+            if not pok then
+                warn("[Mancing Indo] Config sequential load (Teleport): " .. tostring(err))
+            end
+        end
+
+        local limElem = cfg.Elements and cfg.Elements[CONFIG_SEQ_FLAG_LIMITED]
+        if limElem and type(limSaved) == "table" and limSaved.__type and parser[limSaved.__type] and parser[limSaved.__type].Load then
+            local pok, err = pcall(function()
+                parser[limSaved.__type].Load(limElem, limSaved)
+            end)
+            if not pok then
+                warn("[Mancing Indo] Config sequential load (Limited Event): " .. tostring(err))
+            end
+        end
+    end
+
+    local function scheduleSequentialConfigLoadAfterProfile(cm, cfg, profileName)
+        task.defer(function()
+            for _ = 1, 2 do
+                RunService.Heartbeat:Wait()
+            end
+            applyConfigLoadSequentialSellTeleportLimited(cm, cfg, profileName)
+        end)
+    end
+
     local function syncPersistedAutoLoadToUi()
         if not AutoLoadSavedDropdown then
             return
@@ -5886,6 +6498,7 @@ do
             warn("[Mancing Indo] Auto-load: ", loadErr)
             return
         end
+        scheduleSequentialConfigLoadAfterProfile(cm, cfg, name)
         WindUI:Notify({
             Title = "Config",
             Content = "Auto-loaded \"" .. name .. "\"",
@@ -5981,6 +6594,7 @@ do
                 })
                 return
             end
+            scheduleSequentialConfigLoadAfterProfile(cm, cfg, name)
             WindUI:Notify({ Title = "Config", Content = "Loaded \"" .. name .. "\"", Icon = "check" })
         end,
     })
