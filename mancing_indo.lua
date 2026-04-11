@@ -1679,26 +1679,73 @@ do
         Icon = "",
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
+            local lp = Players.LocalPlayer
             local placeId = game.PlaceId
             local jobId = game.JobId
-            if placeId and jobId and #jobId > 0 then
-                local ok, err = pcall(function()
-                    TeleportService:TeleportToPlaceInstance(placeId, jobId)
-                end)
-                if not ok then
-                    WindUI:Notify({
-                        Title = "Rejoin",
-                        Content = "Failed: " .. tostring(err),
-                        Icon = "close",
-                    })
-                end
-            else
+            local privateServerId = game.PrivateServerId
+
+            if not placeId or placeId == 0 then
                 WindUI:Notify({
                     Title = "Rejoin",
-                    Content = "Cannot rejoin (missing PlaceId or JobId)",
+                    Content = "Invalid PlaceId",
                     Icon = "close",
                 })
+                return
             end
+
+            local function tryTeleportToJobInstance(): boolean
+                if type(jobId) ~= "string" or jobId == "" then
+                    return false
+                end
+                local ok = pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, jobId, lp)
+                end)
+                if ok then
+                    return true
+                end
+                local opts = Instance.new("TeleportOptions")
+                opts.ServerInstanceId = jobId
+                ok = pcall(function()
+                    TeleportService:Teleport(placeId, lp, opts)
+                end)
+                return ok
+            end
+
+            local function tryTeleportToPrivateServer(): boolean
+                if type(privateServerId) ~= "string" or privateServerId == "" then
+                    return false
+                end
+                return pcall(function()
+                    TeleportService:TeleportToPrivateServer(placeId, privateServerId, { lp })
+                end)
+            end
+
+            local function tryTeleportToPlaceOnly(): boolean
+                return pcall(function()
+                    TeleportService:Teleport(placeId, lp)
+                end)
+            end
+
+            if tryTeleportToPrivateServer() then
+                return
+            end
+            if tryTeleportToJobInstance() then
+                return
+            end
+            if tryTeleportToPlaceOnly() then
+                WindUI:Notify({
+                    Title = "Rejoin",
+                    Content = "Joined same experience on a new server (instance rejoin unavailable).",
+                    Icon = "check",
+                })
+                return
+            end
+
+            WindUI:Notify({
+                Title = "Rejoin",
+                Content = "Teleport failed. If this is a private server, rejoin from the Roblox menu or check executor/client teleport permissions.",
+                Icon = "close",
+            })
         end,
     })
 
