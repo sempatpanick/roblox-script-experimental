@@ -2973,7 +2973,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 
 				if not DropdownSettings.MultipleOptions then
-					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]}
+					local pick = DropdownSettings.CurrentOption[1]
+					DropdownSettings.CurrentOption = pick ~= nil and { pick } or {}
 				end
 
 				if DropdownSettings.MultipleOptions then
@@ -2985,7 +2986,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 						Dropdown.Selected.Text = "Various"
 					end
 				else
-					Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
+					Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] or "None"
 				end
 
 
@@ -3016,7 +3017,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				--SaveConfiguration()
 			end
 
-			function DropdownSettings:Refresh(optionsTable: table) -- updates a dropdown with new options from optionsTable
+			function DropdownSettings:Refresh(optionsTable: { any }) -- updates a dropdown with new options from optionsTable
 				DropdownSettings.Options = optionsTable
 				for _, option in Dropdown.List:GetChildren() do
 					if option.ClassName == "Frame" and option.Name ~= "Placeholder" then
