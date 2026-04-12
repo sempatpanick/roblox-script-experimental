@@ -7,6 +7,30 @@ local tween = game:GetService("TweenService")
 local tweeninfo = TweenInfo.new
 local input = game:GetService("UserInputService")
 local run = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+-- Player:GetMouse() is unreliable in some clients; fall back to UserInputService.
+local function kavoCursorXY()
+    local lp = Players.LocalPlayer
+    if lp then
+        local ok, mouse = pcall(function()
+            return lp:GetMouse()
+        end)
+        if ok and mouse then
+            local xOk, x = pcall(function()
+                return mouse.X
+            end)
+            local yOk, y = pcall(function()
+                return mouse.Y
+            end)
+            if xOk and yOk and type(x) == "number" and type(y) == "number" then
+                return x, y
+            end
+        end
+    end
+    local p = input:GetMouseLocation()
+    return p.X, p.Y
+end
 
 local Utility = {}
 local Objects = {}
@@ -132,12 +156,22 @@ local SettingsT = {
 local Name = "KavoConfig.JSON"
 
 pcall(function()
-
-if not pcall(function() readfile(Name) end) then
-writefile(Name, game:service'HttpService':JSONEncode(SettingsT))
-end
-
-Settings = game:service'HttpService':JSONEncode(readfile(Name))
+    local Http = game:GetService("HttpService")
+    if typeof(readfile) == "function" and typeof(writefile) == "function" then
+        if not pcall(function()
+            readfile(Name)
+        end) then
+            pcall(function()
+                writefile(Name, Http:JSONEncode(SettingsT))
+            end)
+        end
+        local okR, data = pcall(function()
+            return readfile(Name)
+        end)
+        if okR and data then
+            Settings = Http:JSONEncode(data)
+        end
+    end
 end)
 
 local LibName = tostring(math.random(1, 100))..tostring(math.random(1,50))..tostring(math.random(1, 100))
@@ -688,8 +722,6 @@ function Kavo.CreateLib(kavName, themeList)
                 updateSectionFrame()
                                 UpdateSize()
 
-                local ms = game.Players.LocalPlayer:GetMouse()
-
                 local btn = buttonElement
                 local sample = Sample
 
@@ -698,7 +730,8 @@ function Kavo.CreateLib(kavName, themeList)
                         callback()
                         local c = sample:Clone()
                         c.Parent = btn
-                        local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                        local mx, my = kavoCursorXY()
+                        local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                         c.Position = UDim2.new(0, x, 0, y)
                         local len, size = 0.35, nil
                         if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -1090,8 +1123,6 @@ function Kavo.CreateLib(kavName, themeList)
                     UICorner.CornerRadius = UDim.new(0, 4)
                     UICorner.Parent = moreInfo
 
-                    local ms = game.Players.LocalPlayer:GetMouse()
-
                     if themeList.SchemeColor == Color3.fromRGB(255,255,255) then
                         Utility:TweenObject(moreInfo, {TextColor3 = Color3.fromRGB(0,0,0)}, 0.2)
                     end 
@@ -1115,7 +1146,8 @@ function Kavo.CreateLib(kavName, themeList)
                                 }):Play()
                                 local c = sample:Clone()
                                 c.Parent = btn
-                                local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                                local mx, my = kavoCursorXY()
+                                local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                                 c.Position = UDim2.new(0, x, 0, y)
                                 local len, size = 0.35, nil
                                 if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -1135,7 +1167,8 @@ function Kavo.CreateLib(kavName, themeList)
                                 }):Play()
                                 local c = sample:Clone()
                                 c.Parent = btn
-                                local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                                local mx, my = kavoCursorXY()
+                                local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                                 c.Position = UDim2.new(0, x, 0, y)
                                 local len, size = 0.35, nil
                                 if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -1376,9 +1409,6 @@ function Kavo.CreateLib(kavName, themeList)
 
                                 updateSectionFrame()
                 UpdateSize()
-                local mouse = game:GetService("Players").LocalPlayer:GetMouse();
-
-                local ms = game.Players.LocalPlayer:GetMouse()
                 local uis = game:GetService("UserInputService")
                 local btn = sliderElement
                 local infBtn = viewInfo
@@ -1426,14 +1456,18 @@ function Kavo.CreateLib(kavName, themeList)
                         pcall(function()
                             callback(Value)
                         end)
-                        sliderDrag:TweenSize(UDim2.new(0, math.clamp(mouse.X - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
-                        moveconnection = mouse.Move:Connect(function()
-                            val.Text = Value
-                            Value = math.floor((((tonumber(maxvalue) - tonumber(minvalue)) / 149) * sliderDrag.AbsoluteSize.X) + tonumber(minvalue))
-                            pcall(function()
-                                callback(Value)
-                            end)
-                            sliderDrag:TweenSize(UDim2.new(0, math.clamp(mouse.X - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
+                        local mx0 = select(1, kavoCursorXY())
+                        sliderDrag:TweenSize(UDim2.new(0, math.clamp(mx0 - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
+                        moveconnection = uis.InputChanged:Connect(function(inp)
+                            if inp.UserInputType == Enum.UserInputType.MouseMovement then
+                                val.Text = Value
+                                local mx = inp.Position.X
+                                Value = math.floor((((tonumber(maxvalue) - tonumber(minvalue)) / 149) * sliderDrag.AbsoluteSize.X) + tonumber(minvalue))
+                                pcall(function()
+                                    callback(Value)
+                                end)
+                                sliderDrag:TweenSize(UDim2.new(0, math.clamp(mx - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
+                            end
                         end)
                         releaseconnection = uis.InputEnded:Connect(function(Mouse)
                             if Mouse.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -1445,8 +1479,12 @@ function Kavo.CreateLib(kavName, themeList)
                                 game.TweenService:Create(val, TweenInfo.new(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In), {
                                     TextTransparency = 1
                                 }):Play()
-                                sliderDrag:TweenSize(UDim2.new(0, math.clamp(mouse.X - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
-                                moveconnection:Disconnect()
+                                local mx1 = select(1, kavoCursorXY())
+                                sliderDrag:TweenSize(UDim2.new(0, math.clamp(mx1 - sliderDrag.AbsolutePosition.X, 0, 149), 0, 6), "InOut", "Linear", 0.05, true)
+                                if moveconnection then
+                                    moveconnection:Disconnect()
+                                    moveconnection = nil
+                                end
                                 releaseconnection:Disconnect()
                             end
                         end)
@@ -1500,7 +1538,6 @@ function Kavo.CreateLib(kavName, themeList)
                 local UIListLayout = Instance.new("UIListLayout")
                 local Sample = Instance.new("ImageLabel")
 
-                local ms = game.Players.LocalPlayer:GetMouse()
                 Sample.Name = "Sample"
                 Sample.Parent = dropOpen
                 Sample.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -1538,7 +1575,8 @@ function Kavo.CreateLib(kavName, themeList)
                             UpdateSize()
                             local c = sample:Clone()
                             c.Parent = btn
-                            local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                            local mx, my = kavoCursorXY()
+                            local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                             c.Position = UDim2.new(0, x, 0, y)
                             local len, size = 0.35, nil
                             if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -1560,7 +1598,8 @@ function Kavo.CreateLib(kavName, themeList)
                             UpdateSize()
                             local c = sample:Clone()
                             c.Parent = btn
-                            local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                            local mx, my = kavoCursorXY()
+                            local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                             c.Position = UDim2.new(0, x, 0, y)
                             local len, size = 0.35, nil
                             if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -1624,26 +1663,12 @@ function Kavo.CreateLib(kavName, themeList)
                 UICorner.CornerRadius = UDim.new(0, 4)
                 UICorner.Parent = dropOpen
 
-                local Sample = Instance.new("ImageLabel")
-
-                Sample.Name = "Sample"
-                Sample.Parent = dropOpen
-                Sample.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Sample.BackgroundTransparency = 1.000
-                Sample.Image = "http://www.roblox.com/asset/?id=4560909609"
-                Sample.ImageColor3 = themeList.SchemeColor
-                Sample.ImageTransparency = 0.600
-
                 UIListLayout.Parent = dropFrame
                 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
                 UIListLayout.Padding = UDim.new(0, 3)
 
                 updateSectionFrame() 
                 UpdateSize()
-
-                local ms = game.Players.LocalPlayer:GetMouse()
-                local uis = game:GetService("UserInputService")
-                local infBtn = viewInfo
 
                 local moreInfo = Instance.new("TextLabel")
                 local UICorner = Instance.new("UICorner")
@@ -1728,7 +1753,6 @@ function Kavo.CreateLib(kavName, themeList)
                     local UICorner_2 = Instance.new("UICorner")
                     local Sample1 = Instance.new("ImageLabel")
 
-                    local ms = game.Players.LocalPlayer:GetMouse()
                     Sample1.Name = "Sample1"
                     Sample1.Parent = optionSelect
                     Sample1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -1762,7 +1786,8 @@ function Kavo.CreateLib(kavName, themeList)
                             UpdateSize()
                             local c = sample1:Clone()
                             c.Parent = optionSelect
-                            local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                            local mx, my = kavoCursorXY()
+                            local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                             c.Position = UDim2.new(0, x, 0, y)
                             local len, size = 0.35, nil
                             if optionSelect.AbsoluteSize.X >= optionSelect.AbsoluteSize.Y then
@@ -1819,6 +1844,7 @@ function Kavo.CreateLib(kavName, themeList)
                 function DropFunction:Refresh(newList)
                     newList = newList or {}
                     itemTextbox.Text = dropname
+                    DropYSize = 33
                     for i,v in next, dropFrame:GetChildren() do
                         if v.Name == "optionSelect" then
                             v:Destroy()
@@ -1828,7 +1854,6 @@ function Kavo.CreateLib(kavName, themeList)
                         local optionSelect = Instance.new("TextButton")
                         local UICorner_2 = Instance.new("UICorner")
                         local Sample11 = Instance.new("ImageLabel")
-                        local ms = game.Players.LocalPlayer:GetMouse()
                         Sample11.Name = "Sample11"
                         Sample11.Parent = optionSelect
                         Sample11.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -1864,7 +1889,8 @@ function Kavo.CreateLib(kavName, themeList)
                                 UpdateSize()
                                 local c = sample11:Clone()
                                 c.Parent = optionSelect
-                                local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                                local mx, my = kavoCursorXY()
+                                local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                                 c.Position = UDim2.new(0, x, 0, y)
                                 local len, size = 0.35, nil
                                 if optionSelect.AbsoluteSize.X >= optionSelect.AbsoluteSize.Y then
@@ -1886,8 +1912,8 @@ function Kavo.CreateLib(kavName, themeList)
                                 Utility:TweenObject(blurFrame, {BackgroundTransparency = 1}, 0.2)
                             end
                         end)
-                                        updateSectionFrame()
-                UpdateSize()
+                        updateSectionFrame()
+                        UpdateSize()
                         local hov = false
                         optionSelect.MouseEnter:Connect(function()
                             if not focusing then
@@ -1942,7 +1968,6 @@ function Kavo.CreateLib(kavName, themeList)
                 local Sample = Instance.new("ImageLabel")
                 local togName_2 = Instance.new("TextLabel")
 
-                local ms = game.Players.LocalPlayer:GetMouse()
                 local uis = game:GetService("UserInputService")
                 local infBtn = viewInfo
 
@@ -1971,7 +1996,8 @@ function Kavo.CreateLib(kavName, themeList)
                         end
                         local c = sample:Clone()
                         c.Parent = keybindElement
-                        local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                        local mx, my = kavoCursorXY()
+                        local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                         c.Position = UDim2.new(0, x, 0, y)
                         local len, size = 0.35, nil
                         if keybindElement.AbsoluteSize.X >= keybindElement.AbsoluteSize.Y then
@@ -2147,7 +2173,6 @@ function Kavo.CreateLib(kavName, themeList)
                 callback = callback or function() end
                 defcolor = defcolor or Color3.fromRGB(1,1,1)
                 local h, s, v = Color3.toHSV(defcolor)
-                local ms = game.Players.LocalPlayer:GetMouse()
                 local colorOpened = false
                 local colorElement = Instance.new("TextButton")
                 local UICorner = Instance.new("UICorner")
@@ -2207,7 +2232,8 @@ function Kavo.CreateLib(kavName, themeList)
                             UpdateSize()
                             local c = sample:Clone()
                             c.Parent = btn
-                            local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                            local mx, my = kavoCursorXY()
+                            local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                             c.Position = UDim2.new(0, x, 0, y)
                             local len, size = 0.35, nil
                             if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -2229,7 +2255,8 @@ function Kavo.CreateLib(kavName, themeList)
                             UpdateSize()
                             local c = sample:Clone()
                             c.Parent = btn
-                            local x, y = (ms.X - c.AbsolutePosition.X), (ms.Y - c.AbsolutePosition.Y)
+                            local mx, my = kavoCursorXY()
+                            local x, y = (mx - c.AbsolutePosition.X), (my - c.AbsolutePosition.Y)
                             c.Position = UDim2.new(0, x, 0, y)
                             local len, size = 0.35, nil
                             if btn.AbsoluteSize.X >= btn.AbsoluteSize.Y then
@@ -2502,8 +2529,7 @@ function Kavo.CreateLib(kavName, themeList)
                 end)()
                 updateSectionFrame()
                 UpdateSize()
-                local plr = game.Players.LocalPlayer
-                local mouse = plr:GetMouse()
+                local plr = Players.LocalPlayer
                 local uis = game:GetService('UserInputService')
                 local rs = game:GetService("RunService")
                 local colorpicker = false
@@ -2521,7 +2547,14 @@ function Kavo.CreateLib(kavName, themeList)
                 local function zigzag(X) return math.acos(math.cos(X*math.pi))/math.pi end
                 counter = 0
                 local function mouseLocation()
-                    return plr:GetMouse()
+                    local ok, m = pcall(function()
+                        return plr and plr:GetMouse()
+                    end)
+                    if ok and m then
+                        return m
+                    end
+                    local p = uis:GetMouseLocation()
+                    return { X = p.X, Y = p.Y }
                 end
                 local function cp()
                     if colorpicker then
@@ -2598,7 +2631,11 @@ function Kavo.CreateLib(kavName, themeList)
 
                 onrainbow.MouseButton1Click:Connect(togglerainbow)
                 --
-                mouse.Move:connect(cp)
+                uis.InputChanged:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseMovement then
+                        cp()
+                    end
+                end)
                 rgb.MouseButton1Down:connect(function()colorpicker=true end)
                 dark.MouseButton1Down:connect(function()darknesss=true end)
                 uis.InputEnded:Connect(function(input)
