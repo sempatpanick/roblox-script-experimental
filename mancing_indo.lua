@@ -69,11 +69,12 @@ local fishingAutomationState = {
 local limitedEventState = {
     pausedForAutoSell = false,
     blocksLocationHold = false,
-    -- When frozen at the limited-event spot, Auto Sell tweens back here (5s) then refreezes; cleared when the LE session ends.
+    -- When at the limited-event spot, Auto Sell tweens back here (5s) then restores stand; cleared when the LE session ends.
     returnFromSellTweenCf = nil :: CFrame?,
 }
 local limitedEventBridge: {
     stopLocationHold: (() -> ())?,
+    cancelMainLocationArrivalTweenOnly: (() -> ())?,
     resumeTeleportToLocationAfterLimitedEvent: (() -> ())?,
     stopLimitedEventFreezeForAutoSell: (() -> ())?,
     restartLimitedEventFreezeAfterSell: ((CFrame) -> ())?,
@@ -3496,6 +3497,9 @@ do
     end
 
     limitedEventBridge.stopLocationHold = stopLocationHold
+    function limitedEventBridge.cancelMainLocationArrivalTweenOnly()
+        cancelLocationArrivalTween()
+    end
     function limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent()
         limitedEventState.blocksLocationHold = false
         if not teleportToLocationEnabled then
@@ -4209,18 +4213,18 @@ do
         Border = true,
     })
 
-    -- Limited Event: hourly :30 (+5s delay) staging at Bagang Teluk Tengah, optional teleport to
-    -- Workspace.BiomeRegion.LimitedEvent.LimitedEvent (Y forced to 5), freeze until :50, then return.
+    -- Limited Event: hourly :30 (+5s delay) staging at Bagang Teluk Tengah, tween to
+    -- Workspace.BiomeRegion.LimitedEvent.LimitedEvent (Y forced to 5), assist stand until :50, then return.
     local LIMITED_EVENT_STAGING_CF = CFrame.lookAt(
         Vector3.new(3324.97, 7.95, -4416.49),
         Vector3.new(3324.97, 7.95, -4416.49) + Vector3.new(-0.3504, 0, 0.9366).Unit
     )
+    local LIMITED_EVENT_ASSIST_STAGING_NAME = "LimitedEventStagingStand"
+    local LIMITED_EVENT_ASSIST_SPOT_NAME = "LimitedEventSpotStand"
     local LIMITED_EVENT_STAGING_DELAY_SEC = 5
     -- After teleporting to staging (Bagang Teluk Tengah), only wait this long for LimitedEvent to appear; then return home.
     local LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC = 5
     local LIMITED_EVENT_CLOCK_POLL_SEC = 0.5
-    -- Full-rate Heartbeat freeze + fish-catch UI spikes can starve the frame; snap ~20–25 Hz is enough to hold position.
-    local LIMITED_EVENT_FREEZE_APPLY_INTERVAL_SEC = 1 / 22
 
     local function limitedEventGetHumanoidRootPart(): BasePart?
         local character = Players.LocalPlayer.Character
@@ -4275,40 +4279,14 @@ do
 
     local autoLimitedTeleportEnabled = false
     local limitedEventLoopToken = 0
-    local limitedEventFreezeConn: RBXScriptConnection? = nil
-    local limitedEventFreezeCf: CFrame? = nil
     local limitedEventSavedReturnCf: CFrame? = nil
     local limitedEventSessionBusy = false
     local limitedEventLastHourlyBucket = -1
-    local limitedEventCachedRootForFreeze: BasePart? = nil
-    local limitedEventLastFreezeApplyAt = 0
-
-    local function limitedEventClearFreezeRootCache()
-        limitedEventCachedRootForFreeze = nil
-    end
-
-    local function limitedEventGetRootForFreeze(): BasePart?
-        local c = limitedEventCachedRootForFreeze
-        if c and c.Parent then
-            return c
-        end
-        c = limitedEventGetHumanoidRootPart()
-        limitedEventCachedRootForFreeze = c
-        return c
-    end
-
-    Players.LocalPlayer.CharacterAdded:Connect(function()
-        limitedEventClearFreezeRootCache()
-    end)
+    local limitedEventMoveTween: Tween? = nil
+    local limitedEventMoveTweenToken = 0
 
     local function limitedEventStopFreeze()
-        if limitedEventFreezeConn then
-            limitedEventFreezeConn:Disconnect()
-            limitedEventFreezeConn = nil
-        end
-        limitedEventFreezeCf = nil
-        limitedEventLastFreezeApplyAt = 0
-        limitedEventClearFreezeRootCache()
+        -- Legacy name: previously disconnected Heartbeat freeze; spot is held by assist part only now.
     end
 
     function limitedEventBridge.stopLimitedEventFreezeForAutoSell()
@@ -4316,39 +4294,15 @@ do
         limitedEventState.blocksLocationHold = false
     end
 
-    local function limitedEventApplyFreezeStep()
-        if not autoLimitedTeleportEnabled or limitedEventState.pausedForAutoSell then
-            return
-        end
-        local cf = limitedEventFreezeCf
-        if not cf then
-            return
-        end
-        local now = os.clock()
-        if now - limitedEventLastFreezeApplyAt < LIMITED_EVENT_FREEZE_APPLY_INTERVAL_SEC then
-            return
-        end
-        limitedEventLastFreezeApplyAt = now
-        local root = limitedEventGetRootForFreeze()
-        if not root then
-            return
-        end
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame = cf
-    end
-
-    local function limitedEventStartFreezeAt(cf: CFrame)
+    -- At the event spot: invisible assist platform only. Must not call stopLocationHold — it hides assist.
+    local function limitedEventEnterLimitedEventSpot(cf: CFrame)
         limitedEventStopFreeze()
-        limitedEventFreezeCf = cf
         limitedEventState.returnFromSellTweenCf = cf
         limitedEventState.blocksLocationHold = true
-        if limitedEventBridge.stopLocationHold then
-            pcall(limitedEventBridge.stopLocationHold)
+        if limitedEventBridge.cancelMainLocationArrivalTweenOnly then
+            pcall(limitedEventBridge.cancelMainLocationArrivalTweenOnly)
         end
-        limitedEventLastFreezeApplyAt = 0
-        limitedEventApplyFreezeStep()
-        limitedEventFreezeConn = RunService.Heartbeat:Connect(limitedEventApplyFreezeStep)
+        setLocationAssistForTargetCFrame(cf, LIMITED_EVENT_ASSIST_SPOT_NAME)
     end
 
     function limitedEventBridge.restartLimitedEventFreezeAfterSell(cf: CFrame)
@@ -4356,39 +4310,138 @@ do
             return
         end
         limitedEventStopFreeze()
-        limitedEventFreezeCf = cf
         limitedEventState.returnFromSellTweenCf = cf
         limitedEventState.blocksLocationHold = true
-        if limitedEventBridge.stopLocationHold then
-            pcall(limitedEventBridge.stopLocationHold)
+        if limitedEventBridge.cancelMainLocationArrivalTweenOnly then
+            pcall(limitedEventBridge.cancelMainLocationArrivalTweenOnly)
         end
-        limitedEventLastFreezeApplyAt = 0
-        limitedEventApplyFreezeStep()
-        limitedEventFreezeConn = RunService.Heartbeat:Connect(limitedEventApplyFreezeStep)
+        setLocationAssistForTargetCFrame(cf, LIMITED_EVENT_ASSIST_SPOT_NAME)
     end
 
-    local function limitedEventTeleportRootToCf(cf: CFrame)
-        local root = limitedEventGetHumanoidRootPart()
-        if not root then
-            return false
+    local function limitedEventCancelActiveTravelTween()
+        limitedEventMoveTweenToken += 1
+        if limitedEventMoveTween then
+            pcall(function()
+                limitedEventMoveTween:Cancel()
+            end)
+            limitedEventMoveTween = nil
         end
+    end
+
+    -- Same 3-phase path as Main "Go to Location": +10Y (1s), travel (computeLocationArrivalDurationSec), land (1s).
+    -- returnMode: homeward tween — only chain cancel / missing root abort (still runs if Auto Limited is off).
+    local function limitedEventTweenRootThreePhase(
+        root: BasePart,
+        holdCf: CFrame,
+        sessionToken: number,
+        onDone: (boolean) -> (),
+        returnMode: boolean?
+    )
+        if not root.Parent then
+            onDone(false)
+            return
+        end
+        limitedEventMoveTweenToken += 1
+        local chainToken = limitedEventMoveTweenToken
+        if limitedEventMoveTween then
+            pcall(function()
+                limitedEventMoveTween:Cancel()
+            end)
+            limitedEventMoveTween = nil
+        end
+
         root.AssemblyLinearVelocity = Vector3.zero
         root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame = cf
-        return true
+
+        local function aborted(): boolean
+            if chainToken ~= limitedEventMoveTweenToken then
+                return true
+            end
+            if not root.Parent then
+                return true
+            end
+            if returnMode == true then
+                return false
+            end
+            if sessionToken ~= limitedEventLoopToken then
+                return true
+            end
+            if not autoLimitedTeleportEnabled then
+                return true
+            end
+            return false
+        end
+
+        local startPos = root.Position
+        local rotNow = root.CFrame - root.CFrame.Position
+        local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + 10, startPos.Z)) * rotNow
+
+        local targetPos = holdCf.Position
+        local rotHold = holdCf - holdCf.Position
+        local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + 10, targetPos.Z)) * rotHold
+
+        local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
+
+        local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+        local tw1 = TweenService:Create(root, ease, { CFrame = cfLift })
+        limitedEventMoveTween = tw1
+        tw1.Completed:Connect(function()
+            if aborted() then
+                onDone(false)
+                return
+            end
+            local tw2 = TweenService:Create(root, easeTravel, { CFrame = cfAboveTarget })
+            limitedEventMoveTween = tw2
+            tw2.Completed:Connect(function()
+                if aborted() then
+                    onDone(false)
+                    return
+                end
+                local tw3 = TweenService:Create(root, easeLand, { CFrame = holdCf })
+                limitedEventMoveTween = tw3
+                tw3.Completed:Connect(function()
+                    if aborted() then
+                        onDone(false)
+                        return
+                    end
+                    limitedEventMoveTween = nil
+                    onDone(true)
+                end)
+                tw3:Play()
+            end)
+            tw2:Play()
+        end)
+        tw1:Play()
     end
 
     local function limitedEventReturnToSavedAndRelease()
+        limitedEventCancelActiveTravelTween()
         limitedEventStopFreeze()
         limitedEventState.returnFromSellTweenCf = nil
-        local root = limitedEventGetHumanoidRootPart()
-        local back = limitedEventSavedReturnCf
+        local backCf = limitedEventSavedReturnCf
         limitedEventSavedReturnCf = nil
         limitedEventState.blocksLocationHold = false
-        if root and back then
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = back
+        hideLocationAssist()
+
+        local root = limitedEventGetHumanoidRootPart()
+        if root and backCf and root.Parent then
+            local returnDone = false
+            local returnOk = false
+            limitedEventTweenRootThreePhase(root, backCf, 0, function(ok)
+                returnOk = ok
+                returnDone = true
+            end, true)
+            while not returnDone do
+                task.wait(0.05)
+            end
+            if not returnOk and root.Parent then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = backCf
+            end
         end
         if limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent then
             pcall(limitedEventBridge.resumeTeleportToLocationAfterLimitedEvent)
@@ -4431,7 +4484,32 @@ do
             if limitedEventBridge.stopLocationHold then
                 pcall(limitedEventBridge.stopLocationHold)
             end
-            limitedEventTeleportRootToCf(LIMITED_EVENT_STAGING_CF)
+
+            if not root or not root.Parent then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
+
+            setLocationAssistForTargetCFrame(LIMITED_EVENT_STAGING_CF, LIMITED_EVENT_ASSIST_STAGING_NAME)
+
+            local stagingTravelOk = false
+            local stagingTravelDone = false
+            limitedEventTweenRootThreePhase(root, LIMITED_EVENT_STAGING_CF, myToken, function(ok)
+                stagingTravelOk = ok
+                stagingTravelDone = true
+            end)
+            while not stagingTravelDone do
+                if myToken ~= limitedEventLoopToken or not autoLimitedTeleportEnabled then
+                    limitedEventCancelActiveTravelTween()
+                    limitedEventReturnToSavedAndRelease()
+                    return
+                end
+                task.wait(0.05)
+            end
+            if not stagingTravelOk then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
 
             local foundPart: BasePart? = nil
             local stagingWaitDeadline = os.clock() + LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC
@@ -4466,8 +4544,35 @@ do
 
             local p = foundPart.Position
             local atCf = CFrame.new(Vector3.new(p.X, 5, p.Z))
-            limitedEventTeleportRootToCf(atCf)
-            limitedEventStartFreezeAt(atCf)
+
+            root = limitedEventGetHumanoidRootPart()
+            if not root or not root.Parent then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
+
+            setLocationAssistForTargetCFrame(atCf, LIMITED_EVENT_ASSIST_SPOT_NAME)
+
+            local spotTravelOk = false
+            local spotTravelDone = false
+            limitedEventTweenRootThreePhase(root, atCf, myToken, function(ok)
+                spotTravelOk = ok
+                spotTravelDone = true
+            end)
+            while not spotTravelDone do
+                if myToken ~= limitedEventLoopToken or not autoLimitedTeleportEnabled then
+                    limitedEventCancelActiveTravelTween()
+                    limitedEventReturnToSavedAndRelease()
+                    return
+                end
+                task.wait(0.05)
+            end
+            if not spotTravelOk then
+                limitedEventReturnToSavedAndRelease()
+                return
+            end
+
+            limitedEventEnterLimitedEventSpot(atCf)
 
             while autoLimitedTeleportEnabled and myToken == limitedEventLoopToken do
                 if limitedEventState.pausedForAutoSell then
@@ -4519,9 +4624,9 @@ do
             .. tostring(30)
             .. " + "
             .. tostring(LIMITED_EVENT_STAGING_DELAY_SEC)
-            .. "s (local clock). Teleport to Bagang Teluk Tengah, wait up to "
+            .. "s (local clock). Tween to Bagang Teluk Tengah (3-phase + assist platform), wait up to "
             .. tostring(LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC)
-            .. "s for LimitedEvent; if it never appears, return home. If it appears, teleport with Y=5 and freeze until :50, then return. Pauses Teleport to Location while active. Auto Sell pauses this feature.",
+            .. "s for LimitedEvent; if it never appears, tween home (3-phase). If it appears, tween to the spot (Y=5) with assist platform until :50, then tween home. Pauses Teleport to Location while active. Auto Sell pauses this feature.",
         Box = true,
         BoxBorder = true,
         Opened = true,
@@ -4537,6 +4642,7 @@ do
             limitedEventLoopToken += 1
             limitedEventLastHourlyBucket = -1
             if not enabled then
+                limitedEventCancelActiveTravelTween()
                 limitedEventStopFreeze()
                 limitedEventState.returnFromSellTweenCf = nil
                 limitedEventState.blocksLocationHold = false
