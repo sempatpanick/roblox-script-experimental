@@ -1679,6 +1679,9 @@ do
 
     local AutoSummitCpParagraph
     local function updateAutoSummitCpParagraph()
+        if not autoSummitEnabled then
+            return
+        end
         if not AutoSummitCpParagraph then
             return
         end
@@ -1782,6 +1785,7 @@ do
             end
 
             autoSummitRestartFromDeath = false
+            updateAutoSummitCpParagraph()
 
             if autoSummitDeathCheckConn then
                 autoSummitDeathCheckConn:Disconnect()
