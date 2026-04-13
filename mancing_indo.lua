@@ -69,7 +69,7 @@ local fishingAutomationState = {
 local limitedEventState = {
     pausedForAutoSell = false,
     blocksLocationHold = false,
-    -- When at the limited-event spot, Auto Sell tweens back here (5s) then restores stand; cleared when the LE session ends.
+    -- When at the limited-event spot, Auto Sell tweens back here (duration via computeLocationArrivalDurationSec) then restores stand; cleared when the LE session ends.
     returnFromSellTweenCf = nil :: CFrame?,
 }
 local limitedEventBridge: {
@@ -90,18 +90,53 @@ local configLoadBridge: {
     suppressNextAutoSellLoopSpawn = false,
 }
 
--- Distance-based tween duration (shared: Main "Go to Location", other features). Tune speed lower for stricter anti-cheat pacing.
-local MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC = 30
-local MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC = 2.5
-local MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC = 240
+-- Distance-based tween duration (shared: Main "Go to Location", other features). Tune MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC only.
+local MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC = 20
 
 function computeLocationArrivalDurationSec(startPos: Vector3, endPos: Vector3): number
     local d = (endPos - startPos).Magnitude
-    if d < 0.05 then
-        return MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC
+    return d / MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC
+end
+
+-- 3-phase tweens (Main "Go to Location", Limited Event travel): cruise leg is anchor Y + lift (was fixed +10).
+local MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_MIN_STUDS = 10
+local MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_MAX_STUDS = 14
+local MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_REQUEST_STUDS = 14
+
+local function effectiveLocationCruiseLiftStuds(): number
+    return math.clamp(
+        MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_REQUEST_STUDS,
+        MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_MIN_STUDS,
+        MANCING_LOCATION_ARRIVAL_CRUISE_LIFT_MAX_STUDS
+    )
+end
+
+-- If HumanoidRootPart world Y is above this, tween down to this Y first (same X/Z, keep facing). Used by location 3-phase, Auto Sell, etc.
+local MANCING_LOCATION_ARRIVAL_START_WORLD_Y_MAX = 14
+
+local function tweenHumanoidRootWorldYDownToCapIfNeededSync(rootPart: BasePart)
+    if not rootPart.Parent then
+        return
     end
-    local t = d / MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC
-    return math.clamp(t, MANCING_LOCATION_ARRIVAL_MIN_TWEEN_SEC, MANCING_LOCATION_ARRIVAL_MAX_TWEEN_SEC)
+    local capY = MANCING_LOCATION_ARRIVAL_START_WORLD_Y_MAX
+    local p = rootPart.Position
+    if p.Y <= capY then
+        return
+    end
+    local rot = rootPart.CFrame - rootPart.CFrame.Position
+    local capCf = CFrame.new(Vector3.new(p.X, capY, p.Z)) * rot
+    local durSec = computeLocationArrivalDurationSec(p, capCf.Position)
+    local ok = pcall(function()
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+        local ti = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tw = TweenService:Create(rootPart, ti, { CFrame = capCf })
+        tw:Play()
+        tw.Completed:Wait()
+    end)
+    if not ok and rootPart.Parent then
+        rootPart.CFrame = capCf
+    end
 end
 
 -- Main tab "Go to Location": optional invisible platform under preset (see locationPresetRows.spawnLocationAssist + locationAssistPartName).
@@ -2771,7 +2806,6 @@ do
     local autoSellLoopRunning = false
     local autoSellLoopToken = 0
     local SELL_TELEPORT_CFRAME = CFrame.new(2621.24, -0.11, -911.08)
-    local AUTO_SELL_LIMITED_EVENT_RETURN_TWEEN_SEC = 5
     -- Max time at buyer position (sell attempts + waits); avoids staying stuck if BackpackRemove never fires.
     local AUTO_SELL_TRIP_TIMEOUT_SEC = 5
     local AUTO_SELL_BACKPACK_REMOVE_WAIT_SEC = 0.8
@@ -2879,10 +2913,10 @@ do
         return false
     end
 
-    -- Filled in by Location section: pause/resume pin while Auto Sell teleports.
+    -- Filled in by Location section: pause/resume pin while Auto Sell travels (tween) to/from buyer.
     local locationHoldApi: { pauseForAutoSell: (() -> boolean)?, resumeAfterAutoSell: ((boolean) -> ())? } = {}
 
-    local function runAutoSellTeleportSellAndReturn()
+    local function runAutoSellTweenSellAndReturn()
         if not playerBackpackHasFish() then
             return
         end
@@ -2893,6 +2927,34 @@ do
         local function getCurrentRoot()
             local ch = Players.LocalPlayer.Character
             return ch and ch:FindFirstChild("HumanoidRootPart")
+        end
+        local function tweenRootToCFrame(rootPart: BasePart, targetCf: CFrame, failureLabel: string)
+            if not rootPart.Parent then
+                return
+            end
+            tweenHumanoidRootWorldYDownToCapIfNeededSync(rootPart)
+            if not rootPart.Parent then
+                return
+            end
+            local durSec = computeLocationArrivalDurationSec(rootPart.Position, targetCf.Position)
+            local tweenOk, tweenErr = pcall(function()
+                rootPart.AssemblyLinearVelocity = Vector3.zero
+                rootPart.AssemblyAngularVelocity = Vector3.zero
+                local ti = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                local tw = TweenService:Create(rootPart, ti, { CFrame = targetCf })
+                tw:Play()
+                tw.Completed:Wait()
+            end)
+            if not tweenOk then
+                WindUI:Notify({
+                    Title = "Auto Sell",
+                    Content = failureLabel .. tostring(tweenErr),
+                    Icon = "x",
+                })
+                if rootPart.Parent then
+                    rootPart.CFrame = targetCf
+                end
+            end
         end
         local holdPausedForAutoSell = false
         if locationHoldApi.pauseForAutoSell then
@@ -2905,9 +2967,9 @@ do
             restoreAssist = autoSellTripAssist.begin()
         end
         pcall(function()
-            if root then
+            if root and root:IsA("BasePart") then
                 previousCFrame = root.CFrame
-                root.CFrame = SELL_TELEPORT_CFRAME
+                tweenRootToCFrame(root, SELL_TELEPORT_CFRAME, "Trip to buyer tween failed: ")
                 waitWithGameplayPauseDetect(0)
             end
             local tripDeadline = os.clock() + AUTO_SELL_TRIP_TIMEOUT_SEC
@@ -2915,30 +2977,13 @@ do
             if soldOk then
                 root = getCurrentRoot()
                 local leTweenCf = limitedEventState.returnFromSellTweenCf
-                if root and root.Parent and leTweenCf then
-                    local tweenOk, tweenErr = pcall(function()
-                        local ti = TweenInfo.new(
-                            AUTO_SELL_LIMITED_EVENT_RETURN_TWEEN_SEC,
-                            Enum.EasingStyle.Quad,
-                            Enum.EasingDirection.Out
-                        )
-                        local tw = TweenService:Create(root, ti, { CFrame = leTweenCf })
-                        tw:Play()
-                        tw.Completed:Wait()
-                    end)
-                    if not tweenOk then
-                        WindUI:Notify({
-                            Title = "Auto Sell",
-                            Content = "Limited event return tween failed: " .. tostring(tweenErr),
-                            Icon = "x",
-                        })
-                        root.CFrame = leTweenCf
-                    end
+                if root and root:IsA("BasePart") and root.Parent and leTweenCf then
+                    tweenRootToCFrame(root, leTweenCf, "Limited event return tween failed: ")
                     if limitedEventBridge.restartLimitedEventFreezeAfterSell then
                         pcall(limitedEventBridge.restartLimitedEventFreezeAfterSell, leTweenCf)
                     end
-                elseif root and previousCFrame and root.Parent then
-                    root.CFrame = previousCFrame
+                elseif root and root:IsA("BasePart") and previousCFrame and root.Parent then
+                    tweenRootToCFrame(root, previousCFrame, "Return from buyer tween failed: ")
                 elseif previousCFrame then
                     WindUI:Notify({
                         Title = "Auto Sell",
@@ -2948,8 +2993,8 @@ do
                 end
             else
                 root = getCurrentRoot()
-                if root and previousCFrame and root.Parent then
-                    root.CFrame = previousCFrame
+                if root and root:IsA("BasePart") and previousCFrame and root.Parent then
+                    tweenRootToCFrame(root, previousCFrame, "Return from buyer tween failed: ")
                 elseif previousCFrame then
                     WindUI:Notify({
                         Title = "Auto Sell",
@@ -3013,7 +3058,7 @@ do
             end
             return
         end
-        runAutoSellTeleportSellAndReturn()
+        runAutoSellTweenSellAndReturn()
         if pauseRequested then
             task.wait(1)
             autoFishingPausedForSell = false
@@ -3401,46 +3446,80 @@ do
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
 
-        local startPos = rootPart.Position
-        local rotNow = rootPart.CFrame - rootPart.CFrame.Position
-        local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + 10, startPos.Z)) * rotNow
-
-        local targetPos = holdCf.Position
-        local rotHold = holdCf - holdCf.Position
-        local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + 10, targetPos.Z)) * rotHold
-
-        local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
-        lastLocationArrivalTweenSec = durSec
-
-        local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        local tw1 = TweenService:Create(rootPart, ease, { CFrame = cfLift })
-        locationArrivalTweenActive = tw1
-        tw1.Completed:Connect(function()
+        local function beginLiftTravelLandThreePhase()
             if myToken ~= locationArrivalTweenToken then
                 return
             end
-            local tw2 = TweenService:Create(rootPart, easeTravel, { CFrame = cfAboveTarget })
-            locationArrivalTweenActive = tw2
-            tw2.Completed:Connect(function()
+            if not rootPart.Parent then
+                locationArrivalTweenActive = nil
+                return
+            end
+
+            local startPos = rootPart.Position
+            local rotNow = rootPart.CFrame - rootPart.CFrame.Position
+            local cruiseLift = effectiveLocationCruiseLiftStuds()
+            local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + cruiseLift, startPos.Z)) * rotNow
+
+            local targetPos = holdCf.Position
+            local rotHold = holdCf - holdCf.Position
+            local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + cruiseLift, targetPos.Z)) * rotHold
+
+            local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
+            lastLocationArrivalTweenSec = durSec
+
+            local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+            local tw1 = TweenService:Create(rootPart, ease, { CFrame = cfLift })
+            locationArrivalTweenActive = tw1
+            tw1.Completed:Connect(function()
                 if myToken ~= locationArrivalTweenToken then
                     return
                 end
-                local tw3 = TweenService:Create(rootPart, easeLand, { CFrame = holdCf })
-                locationArrivalTweenActive = tw3
-                tw3.Completed:Connect(function()
+                local tw2 = TweenService:Create(rootPart, easeTravel, { CFrame = cfAboveTarget })
+                locationArrivalTweenActive = tw2
+                tw2.Completed:Connect(function()
                     if myToken ~= locationArrivalTweenToken then
                         return
                     end
-                    locationArrivalTweenActive = nil
+                    local tw3 = TweenService:Create(rootPart, easeLand, { CFrame = holdCf })
+                    locationArrivalTweenActive = tw3
+                    tw3.Completed:Connect(function()
+                        if myToken ~= locationArrivalTweenToken then
+                            return
+                        end
+                        locationArrivalTweenActive = nil
+                    end)
+                    tw3:Play()
                 end)
-                tw3:Play()
+                tw2:Play()
             end)
-            tw2:Play()
-        end)
-        tw1:Play()
+            tw1:Play()
+        end
+
+        local capY = MANCING_LOCATION_ARRIVAL_START_WORLD_Y_MAX
+        local p0 = rootPart.Position
+        if p0.Y > capY then
+            local rotCap = rootPart.CFrame - rootPart.CFrame.Position
+            local capCf = CFrame.new(Vector3.new(p0.X, capY, p0.Z)) * rotCap
+            local durCap = computeLocationArrivalDurationSec(p0, capCf.Position)
+            local twCap = TweenService:Create(
+                rootPart,
+                TweenInfo.new(durCap, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { CFrame = capCf }
+            )
+            locationArrivalTweenActive = twCap
+            twCap.Completed:Connect(function()
+                if myToken ~= locationArrivalTweenToken then
+                    return
+                end
+                beginLiftTravelLandThreePhase()
+            end)
+            twCap:Play()
+        else
+            beginLiftTravelLandThreePhase()
+        end
         return true
     end
 
@@ -4328,7 +4407,7 @@ do
         end
     end
 
-    -- Same 3-phase path as Main "Go to Location": +10Y (1s), travel (computeLocationArrivalDurationSec), land (1s).
+    -- Same 3-phase path as Main "Go to Location": optional tween to world Y <= MANCING_LOCATION_ARRIVAL_START_WORLD_Y_MAX, then cruise Y (clamp 10–14 studs) + 1s lift, travel, 1s land.
     -- returnMode: homeward tween — only chain cancel / missing root abort (still runs if Auto Limited is off).
     local function limitedEventTweenRootThreePhase(
         root: BasePart,
@@ -4372,49 +4451,82 @@ do
             return false
         end
 
-        local startPos = root.Position
-        local rotNow = root.CFrame - root.CFrame.Position
-        local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + 10, startPos.Z)) * rotNow
-
-        local targetPos = holdCf.Position
-        local rotHold = holdCf - holdCf.Position
-        local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + 10, targetPos.Z)) * rotHold
-
-        local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
-
-        local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-        local tw1 = TweenService:Create(root, ease, { CFrame = cfLift })
-        limitedEventMoveTween = tw1
-        tw1.Completed:Connect(function()
+        local function beginLiftTravelLandThreePhase()
             if aborted() then
                 onDone(false)
                 return
             end
-            local tw2 = TweenService:Create(root, easeTravel, { CFrame = cfAboveTarget })
-            limitedEventMoveTween = tw2
-            tw2.Completed:Connect(function()
+
+            local startPos = root.Position
+            local rotNow = root.CFrame - root.CFrame.Position
+            local cruiseLift = effectiveLocationCruiseLiftStuds()
+            local cfLift = CFrame.new(Vector3.new(startPos.X, startPos.Y + cruiseLift, startPos.Z)) * rotNow
+
+            local targetPos = holdCf.Position
+            local rotHold = holdCf - holdCf.Position
+            local cfAboveTarget = CFrame.new(Vector3.new(targetPos.X, targetPos.Y + cruiseLift, targetPos.Z)) * rotHold
+
+            local durSec = computeLocationArrivalDurationSec(cfLift.Position, cfAboveTarget.Position)
+
+            local ease = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local easeTravel = TweenInfo.new(durSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local easeLand = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+            local tw1 = TweenService:Create(root, ease, { CFrame = cfLift })
+            limitedEventMoveTween = tw1
+            tw1.Completed:Connect(function()
                 if aborted() then
                     onDone(false)
                     return
                 end
-                local tw3 = TweenService:Create(root, easeLand, { CFrame = holdCf })
-                limitedEventMoveTween = tw3
-                tw3.Completed:Connect(function()
+                local tw2 = TweenService:Create(root, easeTravel, { CFrame = cfAboveTarget })
+                limitedEventMoveTween = tw2
+                tw2.Completed:Connect(function()
                     if aborted() then
                         onDone(false)
                         return
                     end
-                    limitedEventMoveTween = nil
-                    onDone(true)
+                    local tw3 = TweenService:Create(root, easeLand, { CFrame = holdCf })
+                    limitedEventMoveTween = tw3
+                    tw3.Completed:Connect(function()
+                        if aborted() then
+                            onDone(false)
+                            return
+                        end
+                        limitedEventMoveTween = nil
+                        onDone(true)
+                    end)
+                    tw3:Play()
                 end)
-                tw3:Play()
+                tw2:Play()
             end)
-            tw2:Play()
-        end)
-        tw1:Play()
+            tw1:Play()
+        end
+
+        local capY = MANCING_LOCATION_ARRIVAL_START_WORLD_Y_MAX
+        local p0 = root.Position
+        if p0.Y > capY then
+            local rotCap = root.CFrame - root.CFrame.Position
+            local capCf = CFrame.new(Vector3.new(p0.X, capY, p0.Z)) * rotCap
+            local durCap = computeLocationArrivalDurationSec(p0, capCf.Position)
+            local twCap = TweenService:Create(
+                root,
+                TweenInfo.new(durCap, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { CFrame = capCf }
+            )
+            limitedEventMoveTween = twCap
+            twCap.Completed:Connect(function()
+                if aborted() then
+                    limitedEventMoveTween = nil
+                    onDone(false)
+                    return
+                end
+                beginLiftTravelLandThreePhase()
+            end)
+            twCap:Play()
+        else
+            beginLiftTravelLandThreePhase()
+        end
     end
 
     local function limitedEventReturnToSavedAndRelease()
