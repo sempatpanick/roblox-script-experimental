@@ -455,8 +455,6 @@ do
         end
     end
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateSection("Walk Speed")
 
     local defaultWalkSpeed = 16
@@ -509,8 +507,6 @@ do
         return true
     end
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateButton({
         Name = "Get Current Walk Speed",
         Ext = true,
@@ -521,8 +517,6 @@ do
 
     -- Keep the input defaulted to current character speed when available.
     syncWalkSpeedInputFromCharacter(false)
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateButton({
         Name = "Apply",
@@ -544,8 +538,6 @@ do
         end
     })
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateButton({
         Name = "Reset",
         Ext = true,
@@ -565,8 +557,6 @@ do
             mountNotify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed), Icon = "check" })
         end,
     })
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateSection("Jump Height")
 
@@ -620,8 +610,6 @@ do
         return true
     end
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateButton({
         Name = "Get Current Jump Height",
         Ext = true,
@@ -632,8 +620,6 @@ do
 
     -- Keep the input defaulted to current character jump height when available.
     syncJumpHeightInputFromCharacter(false)
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateButton({
         Name = "Apply",
@@ -654,8 +640,6 @@ do
             mountNotify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
         end,
     })
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateSection("ESP")
 
@@ -832,8 +816,6 @@ do
             if espAnyEnabled() then espApplyForAllPlayers() end
         end,
     })
-
-    LocalPlayerTab:CreateDivider()
 
     local function espOnRenderStep()
         if not espAnyEnabled() then return end
@@ -1241,8 +1223,6 @@ do
         end
     end
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateSection("Players Info")
 
     PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
@@ -1277,8 +1257,6 @@ do
         end,
     })
 
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateButton({
         Name = "Refresh details",
         Ext = true,
@@ -1302,8 +1280,6 @@ do
             refreshPlayersInfoList(false)
         end)
     end)
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateSection("Server")
 
@@ -1446,8 +1422,6 @@ do
             restoreAll()
         end)
     end
-    LocalPlayerTab:CreateDivider()
-
     LocalPlayerTab:CreateSection("Animation")
 
     LocalPlayerTab:CreateDropdown({
@@ -1473,8 +1447,6 @@ do
             mountNotify({ Title = "Animation", Content = "Unknown animation selected", Icon = "x" })
         end,
     })
-
-    LocalPlayerTab:CreateDivider()
 
     LocalPlayerTab:CreateButton({
         Name = "Clear Console",
@@ -2016,8 +1988,6 @@ do
         end,
     })
 
-    TeleportTab:CreateDivider()
-
     TeleportTab:CreateButton({
         Name = "Teleport",
         Ext = true,
@@ -2046,8 +2016,6 @@ do
             })
         end,
     })
-
-    TeleportTab:CreateDivider()
 
     local tweenDurationValue = "5"
     TeleportTab:CreateInput({
@@ -2093,8 +2061,6 @@ do
         end,
     })
 
-    TeleportTab:CreateDivider()
-
     TeleportTab:CreateSection("Teleport to camp")
 
     local function teleportToCampCoords(x, y, z, placeName)
@@ -2133,8 +2099,6 @@ do
     end
 
     -- */  Teleport to Players  /* --
-    TeleportTab:CreateDivider()
-
     TeleportTab:CreateSection("Teleport to Players")
 
     local TELEPORT_PLAYER_NONE = "(None)"
@@ -2202,8 +2166,6 @@ do
             refreshPlayerList(true)
         end,
     })
-
-    TeleportTab:CreateDivider()
 
     TeleportTab:CreateButton({
         Name = "Teleport",
@@ -2364,8 +2326,6 @@ do
         end,
     })
 
-    ObjectsTab:CreateDivider()
-
     ObjectsTab:CreateSection("Players")
 
     local plrsDisplayList = {}
@@ -2428,8 +2388,6 @@ do
             refreshPlayersServiceList()
         end,
     })
-
-    ObjectsTab:CreateDivider()
 
     ObjectsTab:CreateSection("Local Player")
 
@@ -2494,8 +2452,6 @@ do
             refreshLocalPlayerList()
         end,
     })
-
-    ObjectsTab:CreateDivider()
 
     ObjectsTab:CreateSection("Workspace")
 
