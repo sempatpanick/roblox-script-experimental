@@ -14,52 +14,58 @@ local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local WindUI
+local RayfieldLibrary
 
 do
     local ok, result = pcall(function()
-        return require("./src/Init")
+        return require("./rayfield_library")
     end)
-    
+
     if ok then
-        WindUI = result
-    else 
+        RayfieldLibrary = result
+    else
         if cloneref(RunService):IsStudio() then
-            WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+            RayfieldLibrary = require(cloneref(ReplicatedStorage):WaitForChild("rayfield_library"))
         else
-            WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+            RayfieldLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/rayfield_library.lua"))()
         end
     end
 end
 
--- */  Window  /* --
-local Window = WindUI:CreateWindow({
-    Title = "sempatpanick | Mancing Indo",
-    Folder = "sempatpanick_mancing_indo",
-    Icon = "solar:folder-2-bold-duotone",
-    NewElements = true,
-    HideSearchBar = false,
-    OpenButton = {
-        Title = "Open SempatPanick UI",
-        CornerRadius = UDim.new(1,0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Scale = 0.5,
-        Color = ColorSequence.new(
-            Color3.fromHex("#30FF6A"), 
-            Color3.fromHex("#e7ff2f")
-        )
-    },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Mac",
-    },
-})
+local function mountNotify(opts)
+    local img
+    local ic = opts.Icon
+    if ic == "check" then
+        img = 4483362748
+    elseif ic == "x" or ic == "close" then
+        img = 4384402990
+    end
+    RayfieldLibrary:Notify({
+        Title = opts.Title,
+        Content = opts.Content,
+        Image = img,
+        Duration = opts.Duration or 4,
+    })
+end
 
--- */  Colors  /* --
-local Green = Color3.fromHex("#10C550")
+local function rayfieldDropdownFirst(opts)
+    return type(opts) == "table" and opts[1] or opts
+end
+
+-- */  Window  /* --
+local Window = RayfieldLibrary:CreateWindow({
+    Name = "sempatpanick | Mancing Indo",
+    LoadingTitle = "sempatpanick",
+    LoadingSubtitle = "Mancing Indo",
+    Icon = 4483362458,
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "sempatpanick",
+        FileName = "mancing_indo",
+    },
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings = true,
+})
 -- Shared across tabs so Backpack features can validate fishing automation state.
 local fishingAutomationState = {
     instantFishingEnabled = false,
@@ -497,32 +503,14 @@ for _, fish in ipairs(GLOBAL_BESTIARY_FISH_SEED) do
 end
 rebuildGlobalBestiaryFishList()
 
--- */  Elements Section  /* --
-local ElementsSection = Window:Section({
-    Title = "Elements",
-    Opened = true,
-})
-
 -- Bridged from Local Player tab: temporary fly + no clip for underground auto-sell (Main tab).
 local autoSellTripAssist = {}
 
 -- */  Local Player Tab  /* --
 do
-    local LocalPlayerTab = ElementsSection:Tab({
-        Title = "Local Player",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local LocalPlayerTab = Window:CreateTab("Local Player", 4483362458)
 
-    local MiscSection = LocalPlayerTab:Section({
-        Title = "Misc",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Misc")
     local infiniteJumpConnection = nil
     local antiAfkConnection = nil
     local noClipEnabled = false
@@ -648,10 +636,9 @@ do
 
     startAntiAfk()
 
-    MiscSection:Toggle({
-        Title = "Anti AFK",
-        Desc = "Prevent kick for inactivity (resets idle when Roblox detects AFK)",
-        Value = true,
+    LocalPlayerTab:CreateToggle({
+        Name = "Anti AFK",
+        CurrentValue = true,
         Callback = function(enabled)
             if enabled then
                 startAntiAfk()
@@ -661,8 +648,8 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Infinite Jump",
+    LocalPlayerTab:CreateToggle({
+        Name = "Infinite Jump",
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -682,9 +669,8 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "No Clip",
-        Desc = "Pass through walls (disables character collision)",
+    LocalPlayerTab:CreateToggle({
+        Name = "No Clip",
         Callback = function(enabled)
             setNoClipActive(enabled)
         end
@@ -703,9 +689,8 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Fly",
-        Desc = "WASD + Space (up) / Ctrl (down), camera direction",
+    LocalPlayerTab:CreateToggle({
+        Name = "Fly",
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -816,9 +801,8 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Free Camera",
-        Desc = "Detach camera. Hold LMB/RMB + drag to look; WASD + Space/Ctrl to move. Character stays in place; cursor visible when not dragging.",
+    LocalPlayerTab:CreateToggle({
+        Name = "Free Camera",
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -829,9 +813,8 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Camera Penetrate",
-        Desc = "Allow camera zoom to pass objects",
+    LocalPlayerTab:CreateToggle({
+        Name = "Camera Penetrate",
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
             local lp = Players.LocalPlayer
@@ -858,16 +841,7 @@ do
             applyNoClip(Players.LocalPlayer.Character, true)
         end
     end
-
-    LocalPlayerTab:Space()
-
-    local WalkSpeedSection = LocalPlayerTab:Section({
-        Title = "Walk Speed",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Walk Speed")
     local defaultWalkSpeed = 16
 
     local function getCurrentCharacterWalkSpeed()
@@ -883,14 +857,14 @@ do
     end
 
     local currentWalkSpeed = getCurrentCharacterWalkSpeed()
-    local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
+    local walkSpeedCurrentValue = tostring(currentWalkSpeed or defaultWalkSpeed)
 
-    local WalkSpeedInput = WalkSpeedSection:Input({
-        Title = "Speed",
-        Placeholder = "e.g. 16 or 100",
-        Value = walkSpeedValue,
+    local WalkSpeedInput = LocalPlayerTab:CreateInput({
+        Name = "Speed",
+        PlaceholderText = "e.g. 16 or 100",
+        CurrentValue = walkSpeedCurrentValue,
         Callback = function(value)
-            walkSpeedValue = value
+            walkSpeedCurrentValue = value
         end
     })
 
@@ -898,13 +872,13 @@ do
         local speed, errMessage = getCurrentCharacterWalkSpeed()
         if not speed then
             if showNotify then
-                WindUI:Notify({ Title = "Walk Speed", Content = errMessage, Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = errMessage })
             end
             return false
         end
 
         local speedText = tostring(speed)
-        walkSpeedValue = speedText
+        walkSpeedCurrentValue = speedText
         if WalkSpeedInput and WalkSpeedInput.Set then
             WalkSpeedInput:Set(speedText)
         elseif WalkSpeedInput and WalkSpeedInput.SetValue then
@@ -912,17 +886,12 @@ do
         end
 
         if showNotify then
-            WindUI:Notify({ Title = "Walk Speed", Content = "Current speed: " .. speedText, Icon = "check" })
+            mountNotify({ Title = "Walk Speed", Content = "Current speed: " .. speedText })
         end
         return true
     end
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Get Current Walk Speed",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Walk Speed",
         Callback = function()
             syncWalkSpeedInputFromCharacter(true)
         end
@@ -930,62 +899,43 @@ do
 
     -- Keep the input defaulted to current character speed when available.
     syncWalkSpeedInputFromCharacter(false)
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Character not loaded" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Humanoid not found" })
                 return
             end
-            local speed = tonumber(walkSpeedValue) or defaultWalkSpeed
+            local speed = tonumber(walkSpeedCurrentValue) or defaultWalkSpeed
             humanoid.WalkSpeed = math.max(0, speed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Set to " .. tostring(humanoid.WalkSpeed), Icon = "check" })
+            mountNotify({ Title = "Walk Speed", Content = "Set to " .. tostring(humanoid.WalkSpeed) })
         end
     })
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Reset",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Reset",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Character not loaded" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Humanoid not found" })
                 return
             end
             humanoid.WalkSpeed = defaultWalkSpeed
-            walkSpeedValue = tostring(defaultWalkSpeed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed), Icon = "check" })
+            walkSpeedCurrentValue = tostring(defaultWalkSpeed)
+            mountNotify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed) })
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local JumpHeightSection = LocalPlayerTab:Section({
-        Title = "Jump Height",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Jump Height")
     local defaultJumpHeight = 7.2
 
     local function getCurrentCharacterJumpHeight()
@@ -1003,10 +953,10 @@ do
     local currentJumpHeight = getCurrentCharacterJumpHeight()
     local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
 
-    local JumpHeightInput = JumpHeightSection:Input({
-        Title = "Height",
-        Placeholder = "e.g. 7.2 or 50",
-        Value = jumpHeightValue,
+    local JumpHeightInput = LocalPlayerTab:CreateInput({
+        Name = "Height",
+        PlaceholderText = "e.g. 7.2 or 50",
+        CurrentValue = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
         end
@@ -1016,7 +966,7 @@ do
         local jumpHeight, errMessage = getCurrentCharacterJumpHeight()
         if not jumpHeight then
             if showNotify then
-                WindUI:Notify({ Title = "Jump Height", Content = errMessage, Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = errMessage })
             end
             return false
         end
@@ -1030,17 +980,12 @@ do
         end
 
         if showNotify then
-            WindUI:Notify({ Title = "Jump Height", Content = "Current jump height: " .. jumpHeightText, Icon = "check" })
+            mountNotify({ Title = "Jump Height", Content = "Current jump height: " .. jumpHeightText })
         end
         return true
     end
-
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Get Current Jump Height",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Jump Height",
         Callback = function()
             syncJumpHeightInputFromCharacter(true)
         end
@@ -1048,39 +993,25 @@ do
 
     -- Keep the input defaulted to current character jump height when available.
     syncJumpHeightInputFromCharacter(false)
-
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Jump Height", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = "Character not loaded" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Jump Height", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = "Humanoid not found" })
                 return
             end
             local jumpHeight = tonumber(jumpHeightValue) or defaultJumpHeight
             humanoid.JumpHeight = math.max(0, jumpHeight)
-            WindUI:Notify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
+            mountNotify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight) })
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local ESPSection = LocalPlayerTab:Section({
-        Title = "ESP",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("ESP")
     local espNamesEnabled = false
     local espDistanceEnabled = false
     local espCharacterEnabled = false
@@ -1290,10 +1221,10 @@ do
         return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled
     end
 
-    ESPSection:Input({
-        Title = "ESP Max Distance",
-        Placeholder = "0 = unlimited, e.g. 10000",
-        Value = tostring(espMaxDistance),
+    LocalPlayerTab:CreateInput({
+        Name = "ESP Max Distance",
+        PlaceholderText = "0 = unlimited, e.g. 10000",
+        CurrentValue = tostring(espMaxDistance),
         Callback = function(value)
             local n = tonumber(value)
             if not n then
@@ -1305,9 +1236,6 @@ do
             end
         end
     })
-
-    ESPSection:Space()
-
     local function espOnRenderStep()
         if not espAnyEnabled() then
             return
@@ -1371,10 +1299,9 @@ do
         end
     end
 
-    ESPSection:Toggle({
-        Title = "ESP Player Names",
-        Desc = "Show player name above character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Names",
+        CurrentValue = false,
         Callback = function(enabled)
             espNamesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -1384,10 +1311,9 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Distance",
-        Desc = "Show player distance in meters (below name)",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Distance",
+        CurrentValue = false,
         Callback = function(enabled)
             espDistanceEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -1397,10 +1323,9 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Character",
-        Desc = "Highlight player character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Character",
+        CurrentValue = false,
         Callback = function(enabled)
             espCharacterEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -1410,10 +1335,9 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Lines",
-        Desc = "Draw line from your character to players",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Lines",
+        CurrentValue = false,
         Callback = function(enabled)
             espLinesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -1422,17 +1346,7 @@ do
             end
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local PlayersInfoSection = LocalPlayerTab:Section({
-        Title = "Players Info",
-        Desc = "Pick a player to view username, display name, speed, location, Humanoid properties, and Humanoid children",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Players Info")
     local infoPlayerList = {}
     local infoPlayerDisplayNames = {}
     local selectedInfoPlayer = nil
@@ -1718,8 +1632,11 @@ do
     end
 
     local function updatePlayersInfoParagraph()
-        if PlayersInfoParagraph and PlayersInfoParagraph.SetDesc then
-            PlayersInfoParagraph:SetDesc(buildPlayersInfoText(selectedInfoPlayer))
+        if PlayersInfoParagraph and PlayersInfoParagraph.Set then
+            PlayersInfoParagraph:Set({
+                Title = "Details",
+                Content = buildPlayersInfoText(selectedInfoPlayer),
+            })
         end
     end
 
@@ -1739,22 +1656,19 @@ do
             if not table.find(infoPlayerList, selectedInfoPlayer) then
                 selectedInfoPlayer = nil
                 if PlayersInfoDropdown and PlayersInfoDropdown.Select then PlayersInfoDropdown:Select(nil) end
-                if PlayersInfoDropdown and PlayersInfoDropdown.Set then PlayersInfoDropdown:Set(nil) end
+                if PlayersInfoDropdown and PlayersInfoDropdown.Set then PlayersInfoDropdown:Set({}) end
             end
         end
         updatePlayersInfoParagraph()
         if showNotify then
-            WindUI:Notify({ Title = "Players Info", Content = "Player list refreshed (" .. #infoPlayerList .. ")", Icon = "check" })
+            mountNotify({ Title = "Players Info", Content = "Player list refreshed (" .. #infoPlayerList .. ")" })
         end
     end
 
-    PlayersInfoDropdown = PlayersInfoSection:Dropdown({
-        Title = "Player",
-        Desc = "All players in this server",
-        Values = infoPlayerDisplayNames,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
+        Name = "Player",
+        Options = infoPlayerDisplayNames,
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             selectedInfoPlayer = nil
             if value then
@@ -1767,33 +1681,26 @@ do
         end,
     })
 
-    PlayersInfoParagraph = PlayersInfoSection:Paragraph({
+    PlayersInfoParagraph = LocalPlayerTab:CreateParagraph({
         Title = "Details",
-        Desc = "Select a player from the list.",
+        Content = "Select a player from the list.",
     })
 
-    PlayersInfoSection:Button({
-        Title = "Refresh list",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh list",
         Callback = function()
             refreshPlayersInfoList(true)
         end,
     })
-
-    PlayersInfoSection:Space()
-
-    PlayersInfoSection:Button({
-        Title = "Refresh details",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh details",
         Callback = function()
             if not selectedInfoPlayer then
-                WindUI:Notify({ Title = "Players Info", Content = "Select a player first", Icon = "x" })
+                mountNotify({ Title = "Players Info", Content = "Select a player first" })
                 return
             end
             updatePlayersInfoParagraph()
-            WindUI:Notify({ Title = "Players Info", Content = "Details updated", Icon = "check" })
+            mountNotify({ Title = "Players Info", Content = "Details updated" })
         end,
     })
 
@@ -1807,20 +1714,9 @@ do
             refreshPlayersInfoList(false)
         end)
     end)
-
-    LocalPlayerTab:Space()
-
-    local ServerSection = LocalPlayerTab:Section({
-        Title = "Server",
-        Desc = "Server-related actions",
-        Box = true,
-        BoxBorder = true,
-    })
-
-    ServerSection:Button({
-        Title = "Rejoin server",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateSection("Server")
+    LocalPlayerTab:CreateButton({
+        Name = "Rejoin server",
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
             local lp = Players.LocalPlayer
@@ -1829,10 +1725,9 @@ do
             local privateServerId = game.PrivateServerId
 
             if not placeId or placeId == 0 then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Rejoin",
                     Content = "Invalid PlaceId",
-                    Icon = "close",
                 })
                 return
             end
@@ -1877,42 +1772,36 @@ do
                 return
             end
             if tryTeleportToPlaceOnly() then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Rejoin",
                     Content = "Joined same experience on a new server (instance rejoin unavailable).",
-                    Icon = "check",
                 })
                 return
             end
 
-            WindUI:Notify({
+            mountNotify({
                 Title = "Rejoin",
                 Content = "Teleport failed. If this is a private server, rejoin from the Roblox menu or check executor/client teleport permissions.",
-                Icon = "close",
             })
         end,
     })
 
-    ServerSection:Button({
-        Title = "Copy game ID",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Copy game ID",
         Callback = function()
             local paste = setclipboard or toclipboard
             if not paste then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Server",
                     Content = "Clipboard not supported in this environment",
-                    Icon = "x",
                 })
                 return
             end
             local id = tostring(game.PlaceId)
             paste(id)
-            WindUI:Notify({
+            mountNotify({
                 Title = "Server",
                 Content = "Copied PlaceId " .. id,
-                Icon = "check",
             })
         end,
     })
@@ -1967,7 +1856,7 @@ do
         local head = character and character:FindFirstChild("Head")
         if not character or not humanoid or humanoid.RigType ~= Enum.HumanoidRigType.R6 or not torso or not rightArm or not head then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "R6 character parts not ready", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "R6 character parts not ready" })
             return
         end
 
@@ -1975,14 +1864,14 @@ do
         local neck = torso:FindFirstChild("Neck")
         if not (rightShoulder and rightShoulder:IsA("Motor6D") and neck and neck:IsA("Motor6D")) then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "R6 joints not found", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "R6 joints not found" })
             return
         end
 
         local accessory, hairHandle = findHairAccessory(character)
         if not accessory or not hairHandle then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "No hair accessory found", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "No hair accessory found" })
             return
         end
 
@@ -2057,23 +1946,12 @@ do
             restoreAll()
         end)
     end
-
-    LocalPlayerTab:Space()
-
-    local AnimationSection = LocalPlayerTab:Section({
-        Title = "Animation",
-        Desc = "R6 local animations with accessory interaction",
-        Box = true,
-        BoxBorder = true,
-    })
-
-    AnimationSection:Dropdown({
-        Title = "Animation list",
-        Desc = "Select one animation",
-        Values = animationOptions,
-        Value = selectedAnimationName,
-        AllowNone = false,
-        SearchBarEnabled = false,
+    LocalPlayerTab:CreateSection("Animation")
+    LocalPlayerTab:CreateDropdown({
+        Name = "Animation list",
+        Options = animationOptions,
+        CurrentOption = selectedAnimationName,
+        Search = false,
         Callback = function(value)
             if value then
                 selectedAnimationName = value
@@ -2081,25 +1959,18 @@ do
         end,
     })
 
-    AnimationSection:Button({
-        Title = "Animate",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Animate",
         Callback = function()
             if selectedAnimationName == "Hair Grab (R6)" then
                 playHairGrabAnimationR6()
                 return
             end
-            WindUI:Notify({ Title = "Animation", Content = "Unknown animation selected", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "Unknown animation selected" })
         end,
     })
-
-    LocalPlayerTab:Space()
-
-    LocalPlayerTab:Button({
-        Title = "Clear Console",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Clear Console",
         Callback = function()
             local cleared = false
             local clearFn = rawget(_G, "clearconsole") or rawget(_G, "rconsoleclear")
@@ -2107,7 +1978,7 @@ do
                 clearFn()
                 cleared = true
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Console",
                 Content = cleared and "Console cleared" or "Clear not available (try clearconsole)",
                 Icon = cleared and "check" or "x",
@@ -2170,13 +2041,7 @@ end
 
 -- */  Main Tab  /* --
 do
-    local MainTab = ElementsSection:Tab({
-        Title = "Main",
-        Icon = "solar:home-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local MainTab = Window:CreateTab("Main", 4483362458)
 
     local autoFishingPausedForSell = false
     local instantFishingEnabled = false
@@ -2716,18 +2581,12 @@ do
         end)
     end
 
-    local InstantFishingSection = MainTab:Section({
-        Title = "Instant fishing",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    InstantFishingSection:Input({
-        Title = "Delay (seconds)",
-        Placeholder = "e.g. 0.5",
+    MainTab:CreateSection("Instant fishing")
+    MainTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "e.g. 0.5",
         Flag = "mancing_main_instantFishingDelaySec",
-        Value = tostring(instantFishingDelaySec),
+        CurrentValue = tostring(instantFishingDelaySec),
         Callback = function(value)
             local n = tonumber(value)
             if n and n >= 0 then
@@ -2736,11 +2595,10 @@ do
         end,
     })
 
-    RandomCastCmgrToggleInstant = InstantFishingSection:Toggle({
-        Title = "Random Cast",
-        Desc = "CMGR Result strength random between 0.5 and 1 (off = always 1).",
+    RandomCastCmgrToggleInstant = MainTab:CreateToggle({
+        Name = "Random Cast",
         Flag = "mancing_main_randomCastCmgr",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             if randomCastCmgrSync then
                 randomCastCmgrEnabled = enabled
@@ -2750,11 +2608,10 @@ do
         end,
     })
 
-    InstantFishingSection:Toggle({
-        Title = "Instant fishing",
-        Desc = "If minigame is not Reel, switches to Reel first; then fast cast/reel loop. Delay is the wait after each minigame.",
+    MainTab:CreateToggle({
+        Name = "Instant fishing",
         Flag = "mancing_main_instantFishing",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             if enabled then
                 releaseMinigameSessionWait()
@@ -2789,16 +2646,7 @@ do
     })
 
     task.defer(ensureMinigameAutoSolve)
-    
-    MainTab:Space()
-
-    local SellSection = MainTab:Section({
-        Title = "Sell",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    MainTab:CreateSection("Sell")
     local sellMode = "Loop"
     local sellIntervalSeconds = 60
     local sellIntervalRevision = 0
@@ -2946,10 +2794,9 @@ do
                 tw.Completed:Wait()
             end)
             if not tweenOk then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Auto Sell",
                     Content = failureLabel .. tostring(tweenErr),
-                    Icon = "x",
                 })
                 if rootPart.Parent then
                     rootPart.CFrame = targetCf
@@ -2985,10 +2832,9 @@ do
                 elseif root and root:IsA("BasePart") and previousCFrame and root.Parent then
                     tweenRootToCFrame(root, previousCFrame, "Return from buyer tween failed: ")
                 elseif previousCFrame then
-                    WindUI:Notify({
+                    mountNotify({
                         Title = "Auto Sell",
                         Content = "Could not return to previous position (character/root changed after pause)",
-                        Icon = "x",
                     })
                 end
             else
@@ -2996,10 +2842,9 @@ do
                 if root and root:IsA("BasePart") and previousCFrame and root.Parent then
                     tweenRootToCFrame(root, previousCFrame, "Return from buyer tween failed: ")
                 elseif previousCFrame then
-                    WindUI:Notify({
+                    mountNotify({
                         Title = "Auto Sell",
                         Content = "Could not return to previous position (character/root changed after pause)",
-                        Icon = "x",
                     })
                 end
                 local leCf = limitedEventState.returnFromSellTweenCf
@@ -3007,12 +2852,11 @@ do
                     pcall(limitedEventBridge.restartLimitedEventFreezeAfterSell, leCf)
                 end
                 if autoSellEnabled and os.clock() >= tripDeadline then
-                    WindUI:Notify({
+                    mountNotify({
                         Title = "Auto Sell",
                         Content = "Sell timed out after "
                             .. tostring(AUTO_SELL_TRIP_TIMEOUT_SEC)
                             .. "s — returned from buyer.",
-                        Icon = "x",
                     })
                 end
             end
@@ -3065,22 +2909,21 @@ do
         end
     end
 
-    SellSection:Dropdown({
-        Title = "Sell type",
-        Desc = "More modes can be added later",
+    MainTab:CreateDropdown({
+        Name = "Sell type",
         Flag = "mancing_main_sellType",
-        Values = { "Loop" },
-        Value = "Loop",
+        Options = { "Loop" },
+        CurrentOption = "Loop",
         Callback = function(value)
             sellMode = value or "Loop"
         end,
     })
 
-    SellSection:Input({
-        Title = "Duration (seconds)",
-        Placeholder = "e.g. 60",
+    MainTab:CreateInput({
+        Name = "Duration (seconds)",
+        PlaceholderText = "e.g. 60",
         Flag = "mancing_main_sellIntervalSec",
-        Value = tostring(sellIntervalSeconds),
+        CurrentValue = tostring(sellIntervalSeconds),
         Callback = function(value)
             local n = tonumber(value)
             if n and n >= 0 then
@@ -3133,11 +2976,10 @@ do
         autoSellLoopToken += 1
     end
 
-    SellSection:Toggle({
-        Title = "Auto Sell",
-        Desc = "If Backpack has no fish (fish Tool with UID), skips. Else enables fly + no clip for the trip, teleports underground to sell, SellFish \"All\", returns and restores prior fly/no clip. Instant fishing: waits for minigame, pauses, sells, 1s after return resumes",
+    MainTab:CreateToggle({
+        Name = "Auto Sell",
         Flag = "mancing_main_autoSell",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             autoSellEnabled = enabled
             if not enabled then
@@ -3150,29 +2992,8 @@ do
             startAutoSellSellLoop()
         end,
     })
-
-    MainTab:Space()
-
-    local LocationSection = MainTab:Section({
-        Title = "Location",
-        Desc = "Preset spots with facing. Go to Location tweens over a duration from distance (~"
-            .. tostring(MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC)
-            .. " studs/s cap), not instant snap. Ocean uses one invisible floor part to stand on water.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    MainTab:Space()
-
-    local SpawnBoatSection = MainTab:Section({
-        Title = "Spawn Boat",
-        Desc = "Owned boats: shop rows with Price = Owned. Spawn: Remotes.SpawnBoat. Top speed: BoatUI label + best-effort ReplicatedStorage.BoatShared.BoatConfig.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    MainTab:CreateSection("Location")
+    MainTab:CreateSection("Spawn Boat")
     local spawnBoatOwnedIds = {}
     local spawnBoatDisplayList = {}
     local spawnBoatIdList = {}
@@ -3272,19 +3093,16 @@ do
                 SpawnBoatDropdown:Select(nil)
             end
             if SpawnBoatDropdown and SpawnBoatDropdown.Set then
-                SpawnBoatDropdown:Set(nil)
+                SpawnBoatDropdown:Set({})
             end
         end
     end
 
-    SpawnBoatDropdown = SpawnBoatSection:Dropdown({
-        Title = "Owned boat",
-        Desc = "Only boats whose shop row Price is Owned (BoatUI Body.ScrollingFrame)",
+    SpawnBoatDropdown = MainTab:CreateDropdown({
+        Name = "Owned boat",
         Flag = "mancing_main_spawnBoatPick",
-        Values = spawnBoatDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = spawnBoatDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             selectedSpawnBoatId = nil
             if value then
@@ -3296,14 +3114,12 @@ do
         end,
     })
 
-    SpawnBoatSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    MainTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshSpawnBoatDropdown()
             local n = #spawnBoatIdList
-            WindUI:Notify({
+            mountNotify({
                 Title = "Spawn Boat",
                 Content = (n == 0) and "No rows with Price = Owned (open BoatUI shop so templates load, then Refresh)"
                     or ("Updated list (" .. n .. " owned)"),
@@ -3312,39 +3128,36 @@ do
         end,
     })
 
-    SpawnBoatSection:Button({
-        Title = "Spawn",
-        Justify = "Center",
-        Icon = "",
+    MainTab:CreateButton({
+        Name = "Spawn",
         Callback = function()
             if not selectedSpawnBoatId or selectedSpawnBoatId == "" then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Select an owned boat from the dropdown first", Icon = "x" })
+                mountNotify({ Title = "Spawn Boat", Content = "Select an owned boat from the dropdown first" })
                 return
             end
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             if not remotes then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Remotes folder not found", Icon = "x" })
+                mountNotify({ Title = "Spawn Boat", Content = "Remotes folder not found" })
                 return
             end
             local spawnBoat = remotes:FindFirstChild("SpawnBoat")
             if not (spawnBoat and spawnBoat:IsA("RemoteFunction")) then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Remotes.SpawnBoat not found", Icon = "x" })
+                mountNotify({ Title = "Spawn Boat", Content = "Remotes.SpawnBoat not found" })
                 return
             end
             local invokeOk, expected, errMsg = pcall(function()
                 return spawnBoat:InvokeServer(selectedSpawnBoatId)
             end)
             if not invokeOk then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Invoke failed: " .. tostring(expected), Icon = "x" })
+                mountNotify({ Title = "Spawn Boat", Content = "Invoke failed: " .. tostring(expected) })
                 return
             end
             if expected then
-                WindUI:Notify({ Title = "Spawn Boat", Content = "Spawn successful", Icon = "check" })
+                mountNotify({ Title = "Spawn Boat", Content = "Spawn successful" })
             else
-                WindUI:Notify({
+                mountNotify({
                     Title = "Spawn Boat",
                     Content = (typeof(errMsg) == "string" and errMsg ~= "" and errMsg) or "Spawn failed",
-                    Icon = "x",
                 })
             end
         end,
@@ -3534,14 +3347,14 @@ do
         if not selectedLocationName or selectedLocationName == "" then
             stopLocationHold()
             if showFailureNotify then
-                WindUI:Notify({ Title = "Location", Content = "Select a location first", Icon = "x" })
+                mountNotify({ Title = "Location", Content = "Select a location first" })
             end
             return false
         end
         if not locationHoldCfByName[selectedLocationName] then
             stopLocationHold()
             if showFailureNotify then
-                WindUI:Notify({ Title = "Location", Content = "Unknown location", Icon = "x" })
+                mountNotify({ Title = "Location", Content = "Unknown location" })
             end
             return false
         end
@@ -3593,14 +3406,11 @@ do
         startLocationArrivalTween()
     end
 
-    LocationSection:Dropdown({
-        Title = "Location",
-        Desc = "Preset world positions",
+    MainTab:CreateDropdown({
+        Name = "Location",
         Flag = "mancing_main_locationPick",
-        Values = locationDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = locationDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             selectedLocationName = (value and value ~= "") and value or nil
             if teleportToLocationEnabled then
@@ -3610,13 +3420,12 @@ do
     })
 
     local TeleportLocationToggle
-    TeleportLocationToggle = LocationSection:Toggle({
-        Title = "Go to Location",
-        Desc = "When on: tween up +10Y (1s), tween to spot +10Y (speed ~"
+    TeleportLocationToggle = MainTab:CreateToggle({
+        Name = "Go to Location"
             .. tostring(MANCING_LOCATION_ARRIVAL_SPEED_STUDS_PER_SEC)
             .. " studs/s, min/max clamped), then land on preset (1s). Re-tweens if you change the dropdown.",
         Flag = "mancing_main_teleportToLocation",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             teleportToLocationEnabled = enabled
             if not enabled then
@@ -3626,14 +3435,13 @@ do
             if tryActivateLocationHold(true) then
                 local sec = lastLocationArrivalTweenSec
                 local durText = (typeof(sec) == "number") and string.format("%.1f", sec) or "?"
-                WindUI:Notify({
+                mountNotify({
                     Title = "Location",
                     Content = "Tweening to "
                         .. tostring(selectedLocationName)
                         .. " (~"
                         .. durText
                         .. "s travel + 2s vertical)",
-                    Icon = "check",
                 })
             end
         end,
@@ -3664,13 +3472,7 @@ end
 -- Rarity strings: game client uses these in FishCatchNotification + FishingRodGui (RodBackpackHandler);
 -- live data from Remotes.OwnedRods catalog (.Rarity per rod), GetBestiary entries, and fish Tools (UID, Rarity attr).
 do
-    local BackpackTab = ElementsSection:Tab({
-        Title = "Backpack",
-        Icon = "solar:backpack-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local BackpackTab = Window:CreateTab("Backpack", 4483362458)
 
     local MANCING_DEFAULT_RARITY_ORDER = {
         "Common",
@@ -3878,22 +3680,14 @@ do
         end)
     end
 
-    local FavoriteSection = BackpackTab:Section({
-        Title = "Favorite",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    BackpackTab:CreateSection("Favorite")
     local FavoriteByRarityDropdown
-    FavoriteByRarityDropdown = FavoriteSection:Dropdown({
-        Title = "By Rarity",
-        Desc = "Multi-select. Auto Favorite runs ToggleLock(UID) when fish Rarity matches any selected tier.",
+    FavoriteByRarityDropdown = BackpackTab:CreateDropdown({
+        Name = "By Rarity",
         Flag = "mancing_backpack_favoriteByRarity",
-        Values = copyStringArray(MANCING_DEFAULT_RARITY_ORDER),
-        Value = {},
+        Options = copyStringArray(MANCING_DEFAULT_RARITY_ORDER),
+        CurrentOption = {},
         Multi = true,
-        AllowNone = true,
         Callback = function(value)
             syncFavoriteKeysFromMultiDropdownValue(value)
         end,
@@ -3928,42 +3722,23 @@ do
         applyFavoriteRarityDropdownPicks(newPicks)
     end
 
-    FavoriteSection:Toggle({
-        Title = "Auto Favorite",
-        Desc = "BackpackAdd: if Rarity is one of the selected tiers → ToggleLock(UID). Skips IsLocked.",
+    BackpackTab:CreateToggle({
+        Name = "Auto Favorite",
         Flag = "mancing_backpack_autoFavorite",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             autoFavoriteEnabled = enabled
         end,
     })
-
-    BackpackTab:Space()
-
-    local FishInformationSection = BackpackTab:Section({
-        Title = "Fish Information",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local FishInformationParagraph = FishInformationSection:Paragraph({
+    BackpackTab:CreateSection("Fish Information")
+    local FishInformationParagraph = BackpackTab:CreateParagraph({
         Title = "Fish Description",
-        Desc = "Select a fish to show details from GetBestiary.",
+        Content = "Select a fish to show details from GetBestiary.",
     })
-
-    BackpackTab:Space()
-
-    local FishByPlaceSection = BackpackTab:Section({
-        Title = "Fish by Place",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local FishByPlaceParagraph = FishByPlaceSection:Paragraph({
+    BackpackTab:CreateSection("Fish by Place")
+    local FishByPlaceParagraph = BackpackTab:CreateParagraph({
         Title = "Fish List",
-        Desc = "Select a location to see fish from that biome.",
+        Content = "Select a location to see fish from that biome.",
     })
 
     local fishInfoSelectedName: string? = nil
@@ -4114,11 +3889,13 @@ do
             if FishInformationDropdown and FishInformationDropdown.Select then
                 FishInformationDropdown:Select(nil)
             elseif FishInformationDropdown and FishInformationDropdown.Set then
-                FishInformationDropdown:Set(nil)
+                FishInformationDropdown:Set({})
             end
         end
-        if FishInformationParagraph and FishInformationParagraph.SetDesc then
-            FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
+        if FishInformationParagraph and FishInformationParagraph.Set then
+            FishInformationParagraph:Set({
+                Content = fishInfoDescriptionForName(fishInfoSelectedName),
+            })
         end
 
         local biomes = getDistinctBiomeValues()
@@ -4130,62 +3907,62 @@ do
             if FishByPlaceDropdown and FishByPlaceDropdown.Select then
                 FishByPlaceDropdown:Select(nil)
             elseif FishByPlaceDropdown and FishByPlaceDropdown.Set then
-                FishByPlaceDropdown:Set(nil)
+                FishByPlaceDropdown:Set({})
             end
         end
-        if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
-            FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
+        if FishByPlaceParagraph and FishByPlaceParagraph.Set then
+            FishByPlaceParagraph:Set({
+                Content = fishListByBiomeDescription(fishByPlaceSelectedBiome),
+            })
         end
         return changed
     end
 
-    FishInformationDropdown = FishInformationSection:Dropdown({
-        Title = "Fish",
-        Desc = "List sourced from Remotes.GetBestiary",
+    FishInformationDropdown = BackpackTab:CreateDropdown({
+        Name = "Fish",
         Flag = "mancing_backpack_fishInfoPick",
-        Values = {},
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = {},
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             fishInfoSelectedName = (type(value) == "string" and fishInfoNameByDisplay[value]) or nil
-            if FishInformationParagraph and FishInformationParagraph.SetDesc then
-                FishInformationParagraph:SetDesc(fishInfoDescriptionForName(fishInfoSelectedName))
+            if FishInformationParagraph and FishInformationParagraph.Set then
+                FishInformationParagraph:Set({
+                    Content = fishInfoDescriptionForName(fishInfoSelectedName),
+                })
             end
         end,
     })
 
-    FishByPlaceDropdown = FishByPlaceSection:Dropdown({
-        Title = "Location",
-        Desc = "Distinct biome values from bestiary",
+    FishByPlaceDropdown = BackpackTab:CreateDropdown({
+        Name = "Location",
         Flag = "mancing_backpack_fishByPlaceBiome",
-        Values = {},
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = {},
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             fishByPlaceSelectedBiome = (type(value) == "string" and value ~= "") and value or nil
-            if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
-                FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
+            if FishByPlaceParagraph and FishByPlaceParagraph.Set then
+                FishByPlaceParagraph:Set({
+                    Content = fishListByBiomeDescription(fishByPlaceSelectedBiome),
+                })
             end
         end,
     })
 
-    FishByPlaceSection:Dropdown({
-        Title = "Order By",
-        Desc = "Sort fish list by Name or Rarity",
+    BackpackTab:CreateDropdown({
+        Name = "Order By",
         Flag = "mancing_backpack_fishByPlaceOrderBy",
-        Values = { "Name", "Rarity" },
-        Value = "Rarity",
-        AllowNone = false,
+        Options = { "Name", "Rarity" },
+        CurrentOption = "Rarity",
         Callback = function(value)
             if value == "Name" or value == "Rarity" then
                 fishByPlaceOrderBy = value
             else
                 fishByPlaceOrderBy = "Rarity"
             end
-            if FishByPlaceParagraph and FishByPlaceParagraph.SetDesc then
-                FishByPlaceParagraph:SetDesc(fishListByBiomeDescription(fishByPlaceSelectedBiome))
+            if FishByPlaceParagraph and FishByPlaceParagraph.Set then
+                FishByPlaceParagraph:Set({
+                    Content = fishListByBiomeDescription(fishByPlaceSelectedBiome),
+                })
             end
         end,
     })
@@ -4284,13 +4061,7 @@ end
 
 -- */  Event Tab  /* --
 do
-    local EventTab = ElementsSection:Tab({
-        Title = "Event",
-        Icon = "solar:calendar-mark-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local EventTab = Window:CreateTab("Event", 4483362458)
 
     -- Limited Event: hourly :30 (+5s delay) staging at Bagang Teluk Tengah, tween to
     -- Workspace.BiomeRegion.LimitedEvent.LimitedEvent (Y forced to 5), assist stand until :50, then return.
@@ -4730,25 +4501,11 @@ do
         end)
     end
 
-    local LimitedEventSection = EventTab:Section({
-        Title = "Limited Event",
-        Desc = "When enabled: runs immediately, and again each hour at :"
-            .. tostring(30)
-            .. " + "
-            .. tostring(LIMITED_EVENT_STAGING_DELAY_SEC)
-            .. "s (local clock). Tween to Bagang Teluk Tengah (3-phase + assist platform), wait up to "
-            .. tostring(LIMITED_EVENT_STAGING_WAIT_FOR_EVENT_SEC)
-            .. "s for LimitedEvent; if it never appears, tween home (3-phase). If it appears, tween to the spot (Y=5) with assist platform until :50, then tween home. Pauses Teleport to Location while active. Auto Sell pauses this feature.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    LimitedEventSection:Toggle({
-        Title = "Auto Teleport",
-        Desc = "Priority with Main tab: Auto Sell > Limited Event > Teleport to Location",
+    EventTab:CreateSection("Limited Event")
+    EventTab:CreateToggle({
+        Name = "Auto Teleport",
         Flag = "mancing_event_limitedAutoTeleport",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             autoLimitedTeleportEnabled = enabled
             limitedEventLoopToken += 1
@@ -4771,16 +4528,7 @@ do
             limitedEventEnsureClockLoop()
         end,
     })
-
-    EventTab:Space()
-
-    local GalatamaSection = EventTab:Section({
-        Title = "Galatama",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    EventTab:CreateSection("Galatama")
     local GALATAMA_QUEUE_MIN_X = 2557
     local GALATAMA_QUEUE_MAX_X = 2577.50
     local GALATAMA_QUEUE_MIN_Y = 2.7
@@ -4789,9 +4537,9 @@ do
     local GALATAMA_QUEUE_MAX_Z = -775
     local GALATAMA_SERVER_PLACE_ID = 78404864377525
 
-    local GalatamaQueueStatusParagraph = GalatamaSection:Paragraph({
+    local GalatamaQueueStatusParagraph = EventTab:CreateParagraph({
         Title = "Status",
-        Desc = "Queue: Checking...",
+        Content = "Queue: Checking...",
     })
 
     local function isInsideGalatamaQueueArea(pos: Vector3): boolean
@@ -4820,19 +4568,21 @@ do
     end
 
     local function updateGalatamaQueueStatus()
-        if not (GalatamaQueueStatusParagraph and GalatamaQueueStatusParagraph.SetDesc) then
+        if not (GalatamaQueueStatusParagraph and GalatamaQueueStatusParagraph.Set) then
             return
         end
         local root = getLocalPlayerRootPart()
         if not root then
-            GalatamaQueueStatusParagraph:SetDesc("Queue: Unknown (character/root not ready)")
+            GalatamaQueueStatusParagraph:Set({
+                Content = "Queue: Unknown (character/root not ready)",
+            })
             return
         end
         local inQueue = isInsideGalatamaQueueArea(root.Position)
         if inQueue then
-            GalatamaQueueStatusParagraph:SetDesc("Queue: In queue")
+            GalatamaQueueStatusParagraph:Set({ Content = "Queue: In queue" })
         else
-            GalatamaQueueStatusParagraph:SetDesc("Queue: Not in queue")
+            GalatamaQueueStatusParagraph:Set({ Content = "Queue: Not in queue" })
         end
     end
 
@@ -4850,10 +4600,9 @@ do
             TeleportService:Teleport(GALATAMA_SERVER_PLACE_ID, Players.LocalPlayer)
         end)
         if not ok then
-            WindUI:Notify({
+            mountNotify({
                 Title = "Galatama",
                 Content = "Teleport failed: " .. tostring(err),
-                Icon = "x",
             })
             return false
         end
@@ -4917,7 +4666,7 @@ do
                 if inQueue == false then
                     local ok, err = fireJoinGalatamaQueue()
                     if not ok then
-                        WindUI:Notify({ Title = "Galatama", Content = tostring(err), Icon = "x" })
+                        mountNotify({ Title = "Galatama", Content = tostring(err) })
                     end
                     task.defer(updateGalatamaQueueStatus)
                 end
@@ -4929,53 +4678,45 @@ do
 
     task.defer(updateGalatamaQueueStatus)
 
-    GalatamaSection:Button({
-        Title = "Join Queue",
-        Justify = "Center",
-        Icon = "",
+    EventTab:CreateButton({
+        Name = "Join Queue",
         Callback = function()
             local ok, err = fireJoinGalatamaQueue()
             if not ok then
-                WindUI:Notify({ Title = "Galatama", Content = tostring(err), Icon = "x" })
+                mountNotify({ Title = "Galatama", Content = tostring(err) })
             else
                 task.defer(updateGalatamaQueueStatus)
             end
         end,
     })
 
-    GalatamaSection:Button({
-        Title = "Leave Queue",
-        Justify = "Center",
-        Icon = "",
+    EventTab:CreateButton({
+        Name = "Leave Queue",
         Callback = function()
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             if not remotes then
-                WindUI:Notify({ Title = "Galatama", Content = "Remotes folder not found", Icon = "x" })
+                mountNotify({ Title = "Galatama", Content = "Remotes folder not found" })
                 return
             end
             local evt = remotes:FindFirstChild("LeaveGalatamaQueue")
             if not (evt and evt:IsA("RemoteEvent")) then
-                WindUI:Notify({ Title = "Galatama", Content = "LeaveGalatamaQueue remote not found", Icon = "x" })
+                mountNotify({ Title = "Galatama", Content = "LeaveGalatamaQueue remote not found" })
                 return
             end
             local ok, err = pcall(function()
                 evt:FireServer()
             end)
             if not ok then
-                WindUI:Notify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err), Icon = "x" })
+                mountNotify({ Title = "Galatama", Content = "FireServer failed: " .. tostring(err) })
             else
                 task.defer(updateGalatamaQueueStatus)
             end
         end,
     })
-
-    GalatamaSection:Space()
-
-    GalatamaSection:Toggle({
-        Title = "Auto Join Queue",
-        Desc = "Automatically calls Join Queue when status is Not in queue",
+    EventTab:CreateToggle({
+        Name = "Auto Join Queue",
         Flag = "mancing_event_autoJoinGalatamaQueue",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             autoJoinGalatamaQueueEnabled = enabled
             if enabled then
@@ -4983,25 +4724,19 @@ do
             end
         end,
     })
-
-    GalatamaSection:Space()
-
-    GalatamaSection:Button({
-        Title = "Join Galatama Server",
-        Justify = "Center",
-        Icon = "",
+    EventTab:CreateButton({
+        Name = "Join Galatama Server",
         Callback = function()
             tryTeleportToGalatamaServer()
         end,
     })
 
-    GalatamaSection:Toggle({
-        Title = "Auto Join Galatama Server",
-        Desc = "While on, retries teleport to the Galatama place every "
+    EventTab:CreateToggle({
+        Name = "Auto Join Galatama Server"
             .. tostring(AUTO_JOIN_GALATAMA_SERVER_RETRY_SEC)
             .. "s until you leave this game or arrive (same place id).",
         Flag = "mancing_event_autoJoinGalatamaServer",
-        Value = false,
+        CurrentValue = false,
         Callback = function(enabled)
             autoJoinGalatamaServerEnabled = enabled
             if enabled then
@@ -5013,22 +4748,9 @@ end
 
 -- */  Shop Tab  /* --
 do
-    local ShopTab = ElementsSection:Tab({
-        Title = "Shop",
-        Icon = "solar:shop-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local ShopTab = Window:CreateTab("Shop", 4483362458)
 
-    local BuyRodSection = ShopTab:Section({
-        Title = "Buy Rod",
-        Desc = "Rods are read from FishingRodShopGui. Use Refresh if the list is empty.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ShopTab:CreateSection("Buy Rod")
     -- Parallel lists: dropdown shows rodDisplayList; Buy uses rodIdList[index].
     local rodDisplayList = {}
     local rodIdList = {}
@@ -5212,8 +4934,10 @@ do
     end
 
     local function updateBuyRodDetailParagraph()
-        if BuyRodDetailParagraph and BuyRodDetailParagraph.SetDesc then
-            BuyRodDetailParagraph:SetDesc(buildRodDetailText(selectedRodId))
+        if BuyRodDetailParagraph and BuyRodDetailParagraph.Set then
+            BuyRodDetailParagraph:Set({
+                Content = buildRodDetailText(selectedRodId),
+            })
         end
     end
 
@@ -5256,12 +4980,12 @@ do
                 BuyRodDropdown:Select(nil)
             end
             if BuyRodDropdown and BuyRodDropdown.Set then
-                BuyRodDropdown:Set(nil)
+                BuyRodDropdown:Set({})
             end
         end
         updateBuyRodDetailParagraph()
         if showNotify then
-            WindUI:Notify({
+            mountNotify({
                 Title = "Buy Rod",
                 Content = (#rodIdList == 0) and "No rods found (open the in-game rod shop once or wait for UI to load)" or ("Found " .. #rodIdList .. " rod(s)"),
                 Icon = (#rodIdList == 0) and "x" or "check",
@@ -5269,14 +4993,11 @@ do
         end
     end
 
-    BuyRodDropdown = BuyRodSection:Dropdown({
-        Title = "Rod",
-        Desc = "Name and price from the rod shop row (PriceLabel or button text)",
+    BuyRodDropdown = ShopTab:CreateDropdown({
+        Name = "Rod",
         Flag = "mancing_shop_rodPick",
-        Values = rodDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = rodDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(value)
             selectedRodId = nil
             if value then
@@ -5289,72 +5010,54 @@ do
         end,
     })
 
-    BuyRodDetailParagraph = BuyRodSection:Paragraph({
+    BuyRodDetailParagraph = ShopTab:CreateParagraph({
         Title = "Rod details",
-        Desc = "Select a rod from the dropdown to see name, price, and statistics.",
+        Content = "Select a rod from the dropdown to see name, price, and statistics.",
     })
 
-    BuyRodSection:Button({
-        Title = "Buy",
-        Justify = "Center",
-        Icon = "",
+    ShopTab:CreateButton({
+        Name = "Buy",
         Callback = function()
             if not selectedRodId or selectedRodId == "" then
-                WindUI:Notify({ Title = "Buy Rod", Content = "Select a rod from the dropdown first", Icon = "x" })
+                mountNotify({ Title = "Buy Rod", Content = "Select a rod from the dropdown first" })
                 return
             end
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             local purchaseRod = remotes and remotes:FindFirstChild("PurchaseRod")
             if not (purchaseRod and purchaseRod:IsA("RemoteFunction")) then
-                WindUI:Notify({ Title = "Buy Rod", Content = "Remotes.PurchaseRod not found", Icon = "x" })
+                mountNotify({ Title = "Buy Rod", Content = "Remotes.PurchaseRod not found" })
                 return
             end
             local ok, result = pcall(function()
                 return purchaseRod:InvokeServer(selectedRodId)
             end)
             if not ok then
-                WindUI:Notify({ Title = "Buy Rod", Content = "Invoke failed: " .. tostring(result), Icon = "x" })
+                mountNotify({ Title = "Buy Rod", Content = "Invoke failed: " .. tostring(result) })
                 return
             end
             if result and result.IsGamepass and result.GamepassId then
                 pcall(function()
                     MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, result.GamepassId)
                 end)
-                WindUI:Notify({ Title = "Buy Rod", Content = "Game pass purchase prompted", Icon = "check" })
+                mountNotify({ Title = "Buy Rod", Content = "Game pass purchase prompted" })
             elseif result and result.Success then
-                WindUI:Notify({ Title = "Buy Rod", Content = "Purchase successful", Icon = "check" })
+                mountNotify({ Title = "Buy Rod", Content = "Purchase successful" })
             else
-                WindUI:Notify({
+                mountNotify({
                     Title = "Buy Rod",
                     Content = (result and result.Message) or "Purchase failed",
-                    Icon = "x",
                 })
             end
             task.defer(updateBuyRodDetailParagraph)
         end,
     })
-
-    BuyRodSection:Space()
-
-    BuyRodSection:Button({
-        Title = "Refresh rod list",
-        Justify = "Center",
-        Icon = "",
+    ShopTab:CreateButton({
+        Name = "Refresh rod list",
         Callback = function()
             refreshRodList(true)
         end,
     })
-
-    ShopTab:Space()
-
-    local BuyBoatSection = ShopTab:Section({
-        Title = "Buy Boat",
-        Desc = "Boats are read from BoatUI (Body.ScrollingFrame). Use Refresh if the list is empty.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ShopTab:CreateSection("Buy Boat")
     local boatDisplayList = {}
     local boatIdList = {}
     local selectedBoatId = nil
@@ -5507,8 +5210,17 @@ do
     end
 
     local function updateBuyBoatDetailParagraph()
-        if BuyBoatDetailParagraph and BuyBoatDetailParagraph.SetDesc then
-            BuyBoatDetailParagraph:SetDesc(buildBoatDetailText(selectedBoatId))
+        if BuyBoatDetailParagraph and BuyBoatDetailParagraph.Set then
+            local ok, detail = pcall(function()
+                return buildBoatDetailText(selectedBoatId)
+            end)
+            if not ok then
+                detail = "Failed to build boat details: " .. tostring(detail)
+            end
+            BuyBoatDetailParagraph:Set({
+                Title = "Boat details",
+                Content = detail,
+            })
         end
     end
 
@@ -5554,12 +5266,12 @@ do
                 BuyBoatDropdown:Select(nil)
             end
             if BuyBoatDropdown and BuyBoatDropdown.Set then
-                BuyBoatDropdown:Set(nil)
+                BuyBoatDropdown:Set({})
             end
         end
         updateBuyBoatDetailParagraph()
         if showNotify then
-            WindUI:Notify({
+            mountNotify({
                 Title = "Buy Boat",
                 Content = (#boatIdList == 0) and "No boats found (open the in-game boat shop once or wait for UI to load)" or ("Found " .. #boatIdList .. " boat(s)"),
                 Icon = (#boatIdList == 0) and "x" or "check",
@@ -5567,18 +5279,16 @@ do
         end
     end
 
-    BuyBoatDropdown = BuyBoatSection:Dropdown({
-        Title = "Boat",
-        Desc = "Display name, id, and price from the boat shop row (BoatName / Price labels)",
+    BuyBoatDropdown = ShopTab:CreateDropdown({
+        Name = "Boat",
         Flag = "mancing_shop_boatPick",
-        Values = boatDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+        Options = boatDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(value)
+            local selected = rayfieldDropdownFirst(value)
             selectedBoatId = nil
-            if value then
-                local idx = table.find(boatDisplayList, value)
+            if selected then
+                local idx = table.find(boatDisplayList, selected)
                 if idx and boatIdList[idx] then
                     selectedBoatId = boatIdList[idx]
                 end
@@ -5587,84 +5297,73 @@ do
         end,
     })
 
-    BuyBoatDetailParagraph = BuyBoatSection:Paragraph({
+    BuyBoatDetailParagraph = ShopTab:CreateParagraph({
         Title = "Boat details",
-        Desc = "Select a boat from the dropdown to see name, price, and statistics.",
+        Content = "Select a boat from the dropdown to see name, price, and statistics.",
     })
 
-    BuyBoatSection:Button({
-        Title = "Buy",
-        Justify = "Center",
-        Icon = "",
+    ShopTab:CreateButton({
+        Name = "Buy",
         Callback = function()
             if not selectedBoatId or selectedBoatId == "" then
-                WindUI:Notify({ Title = "Buy Boat", Content = "Select a boat from the dropdown first", Icon = "x" })
+                mountNotify({ Title = "Buy Boat", Content = "Select a boat from the dropdown first" })
                 return
             end
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             local purchaseBoat = remotes and remotes:FindFirstChild("PurchaseBoat")
             if not (purchaseBoat and purchaseBoat:IsA("RemoteFunction")) then
-                WindUI:Notify({ Title = "Buy Boat", Content = "Remotes.PurchaseBoat not found", Icon = "x" })
+                mountNotify({ Title = "Buy Boat", Content = "Remotes.PurchaseBoat not found" })
                 return
             end
             local ok, result = pcall(function()
                 return purchaseBoat:InvokeServer(selectedBoatId)
             end)
             if not ok then
-                WindUI:Notify({ Title = "Buy Boat", Content = "Invoke failed: " .. tostring(result), Icon = "x" })
+                mountNotify({ Title = "Buy Boat", Content = "Invoke failed: " .. tostring(result) })
                 return
             end
             if result and result.IsGamepass and result.GamepassId then
                 pcall(function()
                     MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, result.GamepassId)
                 end)
-                WindUI:Notify({ Title = "Buy Boat", Content = "Game pass purchase prompted", Icon = "check" })
+                mountNotify({ Title = "Buy Boat", Content = "Game pass purchase prompted" })
             elseif result and result.Success then
-                WindUI:Notify({ Title = "Buy Boat", Content = "Purchase successful", Icon = "check" })
+                mountNotify({ Title = "Buy Boat", Content = "Purchase successful" })
             else
-                WindUI:Notify({
+                mountNotify({
                     Title = "Buy Boat",
                     Content = (result and result.Message) or "Purchase failed",
-                    Icon = "x",
                 })
             end
             task.defer(updateBuyBoatDetailParagraph)
         end,
     })
-
-    BuyBoatSection:Space()
-
-    BuyBoatSection:Button({
-        Title = "Refresh boat list",
-        Justify = "Center",
-        Icon = "",
+    ShopTab:CreateButton({
+        Name = "Refresh boat list",
         Callback = function()
             refreshBoatList(true)
         end,
     })
 
-    refreshRodList(false)
-    refreshBoatList(false)
+    local okRod = pcall(function()
+        refreshRodList(false)
+    end)
+    local okBoat, errBoat = pcall(function()
+        refreshBoatList(false)
+    end)
+    if not okRod then
+        mountNotify({ Title = "Buy Rod", Content = "Failed to initialize rod list", Icon = "x" })
+    end
+    if not okBoat then
+        mountNotify({ Title = "Buy Boat", Content = "Failed to initialize boat list: " .. tostring(errBoat), Icon = "x" })
+    end
 end
 
 -- */  Teleport Tab  /* --
 do
-    local TeleportTab = ElementsSection:Tab({
-        Title = "Teleport",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
 
-    local TeleportSection = TeleportTab:Section({
-        Title = "Teleport",
-        Desc = "Location = X, Y, Z. Look direction = root LookVector (X, Y, Z); leave blank or 0,0,0 to ignore facing. Get fills both.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    TeleportTab:CreateSection("Teleport")
     local teleportInputValue = ""
     local teleportLookInputValue = ""
 
@@ -5694,36 +5393,33 @@ do
         return CFrame.lookAt(pos, pos + dir.Unit)
     end
 
-    local TeleportInput = TeleportSection:Input({
-        Title = "Location",
-        Placeholder = "e.g. 100, 5, 200 or 100 5 200",
+    local TeleportInput = TeleportTab:CreateInput({
+        Name = "Location",
+        PlaceholderText = "e.g. 100, 5, 200 or 100 5 200",
         Flag = "mancing_tp_location",
-        Value = teleportInputValue,
+        CurrentValue = teleportInputValue,
         Callback = function(value)
             teleportInputValue = value
         end
     })
 
-    local TeleportLookInput = TeleportSection:Input({
-        Title = "Look direction",
-        Desc = "HumanoidRootPart look vector (X, Y, Z). Used with Teleport / Tween / Get.",
-        Placeholder = "e.g. 0, 0, -1 or leave empty for position only",
+    local TeleportLookInput = TeleportTab:CreateInput({
+        Name = "Look direction",
+        PlaceholderText = "e.g. 0, 0, -1 or leave empty for position only",
         Flag = "mancing_tp_lookDirection",
-        Value = teleportLookInputValue,
+        CurrentValue = teleportLookInputValue,
         Callback = function(value)
             teleportLookInputValue = value
         end,
     })
 
-    TeleportSection:Button({
-        Title = "Get Current Location",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Get Current Location",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
                 return
             end
             local pos = rootPart.Position
@@ -5742,76 +5438,62 @@ do
             elseif TeleportLookInput and TeleportLookInput.SetValue then
                 TeleportLookInput:SetValue(lookText)
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Location",
                 Content = "Position: " .. text .. " · Look: " .. lookText,
-                Icon = "check",
             })
         end
     })
-
-    TeleportSection:Space()
-
-    TeleportSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Teleport",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
                 return
             end
             local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
             if not cf then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                    Icon = "x",
                 })
                 return
             end
             rootPart.CFrame = cf
             local p = cf.Position
-            WindUI:Notify({
+            mountNotify({
                 Title = "Teleport",
                 Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
-                Icon = "check",
             })
         end
     })
-
-    TeleportSection:Space()
-
     local tweenDurationValue = "5"
-    TeleportSection:Input({
-        Title = "Tween Duration",
-        Placeholder = "e.g. 5",
+    TeleportTab:CreateInput({
+        Name = "Tween Duration",
+        PlaceholderText = "e.g. 5",
         Flag = "mancing_tp_tweenDurationSec",
-        Value = tweenDurationValue,
+        CurrentValue = tweenDurationValue,
         Callback = function(value)
             tweenDurationValue = value
         end
     })
 
-    TeleportSection:Button({
-        Title = "Tween to Location",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Tween to Location",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
                 return
             end
             local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
             if not targetCf then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                    Icon = "x",
                 })
                 return
             end
@@ -5821,25 +5503,15 @@ do
             local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
             tween:Play()
             local p = targetCf.Position
-            WindUI:Notify({
+            mountNotify({
                 Title = "Teleport",
                 Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
-                Icon = "check",
             })
         end
     })
 
     -- */  Teleport to Players  /* --
-    TeleportTab:Space()
-
-    local TeleportToPlayersSection = TeleportTab:Section({
-        Title = "Teleport to Players",
-        Desc = "Select a player and teleport to their character",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    TeleportTab:CreateSection("Teleport to Players")
     local playerDisplayNames = {}
     local playerList = {}
     local selectedTeleportPlayer = nil
@@ -5862,21 +5534,19 @@ do
             if not table.find(playerList, selectedTeleportPlayer) then
                 selectedTeleportPlayer = nil
                 if PlayerTeleportDropdown and PlayerTeleportDropdown.Select then PlayerTeleportDropdown:Select(nil) end
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set(nil) end
+                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set({}) end
             end
         end
         if showNotify then
-            WindUI:Notify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)", Icon = "check" })
+            mountNotify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)" })
         end
     end
 
-    PlayerTeleportDropdown = TeleportToPlayersSection:Dropdown({
-        Title = "Player",
-        Desc = "Select player to teleport to",
+    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
+        Name = "Player",
         Flag = "mancing_tp_playerPick",
-        Values = playerDisplayNames,
-        Value = nil,
-        AllowNone = true,
+        Options = playerDisplayNames,
+        CurrentOption = {},
         Callback = function(value)
             selectedTeleportPlayer = nil
             if value then
@@ -5888,53 +5558,40 @@ do
         end
     })
 
-    TeleportToPlayersSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshPlayerList(true)
         end
     })
-
-    TeleportToPlayersSection:Space()
-
-    TeleportToPlayersSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Teleport",
         Callback = function()
             if not selectedTeleportPlayer then
-                WindUI:Notify({ Title = "Teleport", Content = "Select a player first", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Select a player first" })
                 return
             end
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
                 return
             end
             local targetChar = selectedTeleportPlayer.Character
             local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
             if not targetRoot then
-                WindUI:Notify({ Title = "Teleport", Content = "Target player has no character", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Target player has no character" })
                 return
             end
             rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
+            mountNotify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name) })
         end
     })
 end
 
 -- */  Objects Tab  /* --
 do
-    local ObjectsTab = ElementsSection:Tab({
-        Title = "Objects",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local ObjectsTab = Window:CreateTab("Objects", 4483362458)
 
     -- Nested tree: only under Instance types selected in Show Children (see section at top of this tab).
     local OBJECTS_TREE_MAX_DEPTH = 14
@@ -6072,16 +5729,16 @@ do
         emptyPlaceholder: string
     )
         clearObjectsTabOverflowParagraphs(overflowParagraphRefs)
-        if not (primaryParagraph and primaryParagraph.SetDesc) then
+        if not (primaryParagraph and primaryParagraph.Set) then
             return
         end
         local body = (text and text ~= "") and text or emptyPlaceholder
         local chunks = splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
-        primaryParagraph:SetDesc(chunks[1] or body)
+        primaryParagraph:Set({ Content = chunks[1] or body })
         for ci = 2, #chunks do
-            local newP = section:Paragraph({
+            local newP = section:CreateParagraph({
                 Title = continuationTitleBase .. " (part " .. tostring(ci) .. ")",
-                Desc = chunks[ci],
+                Content = chunks[ci],
             })
             table.insert(overflowParagraphRefs, newP)
         end
@@ -6162,29 +5819,19 @@ do
         return nil
     end
 
-    local ShowChildrenSection = ObjectsTab:Section({
-        Title = "Show Children",
-        Desc = "Multi-select Instance class names. The nested children list expands one level under any child that matches any selected type (Roblox IsA). Default: Backpack, Folder, PlayerGui, ScreenGui, BillboardGui.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Show Children")
     local ObjectsNestClassesDropdown
     do
         local nestDefaultCopy: { string } = {}
         for _, v in ipairs(OBJECTS_NEST_EXPAND_DEFAULT) do
             table.insert(nestDefaultCopy, v)
         end
-        ObjectsNestClassesDropdown = ShowChildrenSection:Dropdown({
-            Title = "Types to expand in nested tree",
-            Desc = "Applies to all Children (nested) views in this tab.",
+        ObjectsNestClassesDropdown = ObjectsTab:CreateDropdown({
+            Name = "Types to expand in nested tree",
             Flag = "mancing_objects_showChildrenTypes",
-            Values = OBJECTS_NEST_CLASS_OPTIONS,
-            Value = nestDefaultCopy,
-            Multi = true,
-            AllowNone = true,
-            SearchBarEnabled = true,
+            Options = OBJECTS_NEST_CLASS_OPTIONS,
+            CurrentOption = nestDefaultCopy,
+            Multi = true, Search = true,
             Callback = function(value)
                 syncObjectsNestExpandClassSetFromDropdownValue(value)
             end,
@@ -6193,17 +5840,7 @@ do
     if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
         syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
     end
-
-    ObjectsTab:Space()
-
-    local ReplicatedStorageSection = ObjectsTab:Section({
-        Title = "ReplicatedStorage",
-        Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("ReplicatedStorage")
     local rsDisplayList = {}
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
@@ -6214,20 +5851,17 @@ do
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
             ReplicatedStorageDropdown:Refresh(rsDisplayList)
         end
-        WindUI:Notify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects" })
     end
 
-    ReplicatedStorageDropdown = ReplicatedStorageSection:Dropdown({
-        Title = "ReplicatedStorage (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = rsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    ReplicatedStorageDropdown = ObjectsTab:CreateDropdown({
+        Name = "ReplicatedStorage (key = value)",
+        Options = rsDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    ReplicatedStorageSection,
+                    ObjectsTab,
                     ReplicatedStorageChildrenParagraph,
                     rsChildrenOverflowParagraphs,
                     nil,
@@ -6242,7 +5876,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                ReplicatedStorageSection,
+                ObjectsTab,
                 ReplicatedStorageChildrenParagraph,
                 rsChildrenOverflowParagraphs,
                 text,
@@ -6252,30 +5886,18 @@ do
         end
     })
 
-    ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
+    ReplicatedStorageChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    ReplicatedStorageSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshReplicatedStorageList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local PlayersServiceSection = ObjectsTab:Section({
-        Title = "Players",
-        Desc = "Players service: all Player instances (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Players")
     local plrsDisplayList = {}
     local PlayersServiceDropdown
     local PlayersServiceChildrenParagraph
@@ -6286,20 +5908,17 @@ do
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
             PlayersServiceDropdown:Refresh(plrsDisplayList)
         end
-        WindUI:Notify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players", Icon = "check" })
+        mountNotify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players" })
     end
 
-    PlayersServiceDropdown = PlayersServiceSection:Dropdown({
-        Title = "Players (key = value)",
-        Desc = "Select a player to see their top-level children listed below",
-        Values = plrsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    PlayersServiceDropdown = ObjectsTab:CreateDropdown({
+        Name = "Players (key = value)",
+        Options = plrsDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    PlayersServiceSection,
+                    ObjectsTab,
                     PlayersServiceChildrenParagraph,
                     plrsChildrenOverflowParagraphs,
                     nil,
@@ -6314,7 +5933,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                PlayersServiceSection,
+                ObjectsTab,
                 PlayersServiceChildrenParagraph,
                 plrsChildrenOverflowParagraphs,
                 text,
@@ -6324,30 +5943,18 @@ do
         end
     })
 
-    PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
+    PlayersServiceChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    PlayersServiceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshPlayersServiceList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local LocalPlayerSection = ObjectsTab:Section({
-        Title = "Local Player",
-        Desc = "All direct children of Players.LocalPlayer (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Local Player")
     local lpDisplayList = {}
     local LocalPlayerDropdown
     local LocalPlayerChildrenParagraph
@@ -6359,20 +5966,17 @@ do
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
             LocalPlayerDropdown:Refresh(lpDisplayList)
         end
-        WindUI:Notify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects" })
     end
 
-    LocalPlayerDropdown = LocalPlayerSection:Dropdown({
-        Title = "Local Player (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = lpDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    LocalPlayerDropdown = ObjectsTab:CreateDropdown({
+        Name = "Local Player (key = value)",
+        Options = lpDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    LocalPlayerSection,
+                    ObjectsTab,
                     LocalPlayerChildrenParagraph,
                     lpChildrenOverflowParagraphs,
                     nil,
@@ -6387,7 +5991,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                LocalPlayerSection,
+                ObjectsTab,
                 LocalPlayerChildrenParagraph,
                 lpChildrenOverflowParagraphs,
                 text,
@@ -6397,30 +6001,18 @@ do
         end
     })
 
-    LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
+    LocalPlayerChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    LocalPlayerSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshLocalPlayerList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local WorkspaceSection = ObjectsTab:Section({
-        Title = "Workspace",
-        Desc = "All direct children of Workspace (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Workspace")
     local wsDisplayList = {}
     local WorkspaceDropdown
     local WorkspaceChildrenParagraph
@@ -6431,20 +6023,17 @@ do
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
             WorkspaceDropdown:Refresh(wsDisplayList)
         end
-        WindUI:Notify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects" })
     end
 
-    WorkspaceDropdown = WorkspaceSection:Dropdown({
-        Title = "Workspace (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = wsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    WorkspaceDropdown = ObjectsTab:CreateDropdown({
+        Name = "Workspace (key = value)",
+        Options = wsDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    WorkspaceSection,
+                    ObjectsTab,
                     WorkspaceChildrenParagraph,
                     wsChildrenOverflowParagraphs,
                     nil,
@@ -6459,7 +6048,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                WorkspaceSection,
+                ObjectsTab,
                 WorkspaceChildrenParagraph,
                 wsChildrenOverflowParagraphs,
                 text,
@@ -6469,30 +6058,18 @@ do
         end
     })
 
-    WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
+    WorkspaceChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    WorkspaceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshWorkspaceList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local RunServiceSection = ObjectsTab:Section({
-        Title = "RunService",
-        Desc = "All direct children of RunService (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("RunService")
     local runServiceDisplayList = {}
     local RunServiceDropdown
     local RunServiceChildrenParagraph
@@ -6528,20 +6105,17 @@ do
         if RunServiceDropdown and RunServiceDropdown.Refresh then
             RunServiceDropdown:Refresh(runServiceDisplayList)
         end
-        WindUI:Notify({ Title = "RunService", Content = "Listed " .. #runServiceDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "RunService", Content = "Listed " .. #runServiceDisplayList .. " objects" })
     end
 
-    RunServiceDropdown = RunServiceSection:Dropdown({
-        Title = "RunService (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = runServiceDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    RunServiceDropdown = ObjectsTab:CreateDropdown({
+        Name = "RunService (key = value)",
+        Options = runServiceDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    RunServiceSection,
+                    ObjectsTab,
                     RunServiceChildrenParagraph,
                     runServiceChildrenOverflowParagraphs,
                     nil,
@@ -6556,7 +6130,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                RunServiceSection,
+                ObjectsTab,
                 RunServiceChildrenParagraph,
                 runServiceChildrenOverflowParagraphs,
                 text,
@@ -6566,40 +6140,28 @@ do
         end
     })
 
-    RunServiceChildrenParagraph = RunServiceSection:Paragraph({
+    RunServiceChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    RunServiceSection:Paragraph({
+    ObjectsTab:CreateParagraph({
         Title = "Signals (events, not children)",
-        Desc = table.concat(RUNSERVICE_SIGNAL_NAMES, "\n"),
+        Content = table.concat(RUNSERVICE_SIGNAL_NAMES, "\n"),
     })
 
-    RunServiceSection:Paragraph({
+    ObjectsTab:CreateParagraph({
         Title = "Useful API methods",
-        Desc = table.concat(RUNSERVICE_METHOD_NAMES, "\n"),
+        Content = table.concat(RUNSERVICE_METHOD_NAMES, "\n"),
     })
 
-    RunServiceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshRunServiceList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local MarketplaceServiceSection = ObjectsTab:Section({
-        Title = "MarketplaceService",
-        Desc = "All direct children of MarketplaceService (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("MarketplaceService")
     local marketplaceServiceDisplayList = {}
     local MarketplaceServiceDropdown
     local MarketplaceServiceChildrenParagraph
@@ -6631,24 +6193,20 @@ do
         if MarketplaceServiceDropdown and MarketplaceServiceDropdown.Refresh then
             MarketplaceServiceDropdown:Refresh(marketplaceServiceDisplayList)
         end
-        WindUI:Notify({
+        mountNotify({
             Title = "MarketplaceService",
             Content = "Listed " .. #marketplaceServiceDisplayList .. " objects",
-            Icon = "check",
         })
     end
 
-    MarketplaceServiceDropdown = MarketplaceServiceSection:Dropdown({
-        Title = "MarketplaceService (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = marketplaceServiceDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
+    MarketplaceServiceDropdown = ObjectsTab:CreateDropdown({
+        Name = "MarketplaceService (key = value)",
+        Options = marketplaceServiceDisplayList,
+        CurrentOption = {}, Search = true,
         Callback = function(selected)
             if not selected then
                 setNestedChildrenParagraphsWithOverflow(
-                    MarketplaceServiceSection,
+                    ObjectsTab,
                     MarketplaceServiceChildrenParagraph,
                     marketplaceChildrenOverflowParagraphs,
                     nil,
@@ -6663,7 +6221,7 @@ do
             end
             local text = buildNestedObjectChildrenListText(inst)
             setNestedChildrenParagraphsWithOverflow(
-                MarketplaceServiceSection,
+                ObjectsTab,
                 MarketplaceServiceChildrenParagraph,
                 marketplaceChildrenOverflowParagraphs,
                 text,
@@ -6673,25 +6231,23 @@ do
         end
     })
 
-    MarketplaceServiceChildrenParagraph = MarketplaceServiceSection:Paragraph({
+    MarketplaceServiceChildrenParagraph = ObjectsTab:CreateParagraph({
         Title = "Children (nested)",
-        Desc = OBJECTS_CHILDREN_PARAGRAPH_DESC,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
-    MarketplaceServiceSection:Paragraph({
+    ObjectsTab:CreateParagraph({
         Title = "Signals (events, not children)",
-        Desc = table.concat(MARKETPLACE_SIGNAL_NAMES, "\n"),
+        Content = table.concat(MARKETPLACE_SIGNAL_NAMES, "\n"),
     })
 
-    MarketplaceServiceSection:Paragraph({
+    ObjectsTab:CreateParagraph({
         Title = "Useful API methods",
-        Desc = table.concat(MARKETPLACE_METHOD_NAMES, "\n"),
+        Content = table.concat(MARKETPLACE_METHOD_NAMES, "\n"),
     })
 
-    MarketplaceServiceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
         Callback = function()
             refreshMarketplaceServiceList()
         end
@@ -6701,22 +6257,10 @@ end
 
 -- */  Config Tab  /* --
 do
-    local ConfigTab = ElementsSection:Tab({
-        Title = "Config",
-        Icon = "solar:file-text-bold",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local ConfigTab = Window:CreateTab("Config", 4483362458)
 
-    local ConfigManagementSection = ConfigTab:Section({
-        Title = "Config management",
-        Desc = "Named profiles in WindUI/" .. tostring(Window.Folder or "sempatpanick") .. "/config (executor file APIs). Main, Shop, and Teleport options use Flags. Event tab: Limited Event Auto Teleport uses a Flag; Galatama actions are not saved.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ConfigTab:CreateSection("Config management")
+    local CONFIG_DIR = "sempatpanick/mancing_indo"
     local configMgmtName = ""
     local savedConfigList = {}
     local selectedSavedConfigName = nil
@@ -6724,6 +6268,9 @@ do
     local ConfigNameInput
     local autoLoadPickerSelection = nil
     local AutoLoadSavedDropdown
+    local CONFIG_SEQ_FLAG_AUTO_SELL = "mancing_main_autoSell"
+    local CONFIG_SEQ_FLAG_TELEPORT = "mancing_main_teleportToLocation"
+    local CONFIG_SEQ_FLAG_LIMITED = "mancing_event_limitedAutoTeleport"
 
     local function sanitizeConfigName(raw)
         local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -6731,12 +6278,189 @@ do
         return s
     end
 
+    local function ensureConfigFolder()
+        if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(CONFIG_DIR) then
+            pcall(function()
+                makefolder("sempatpanick")
+            end)
+            pcall(function()
+                makefolder(CONFIG_DIR)
+            end)
+        end
+    end
+
+    local function profilePath(name)
+        return CONFIG_DIR .. "/" .. sanitizeConfigName(name) .. ".json"
+    end
+
+    local function encodeColor3(c)
+        return {
+            __type = "Color3",
+            R = math.floor(c.R * 255 + 0.5),
+            G = math.floor(c.G * 255 + 0.5),
+            B = math.floor(c.B * 255 + 0.5),
+        }
+    end
+
+    local function decodeColor3(v)
+        if type(v) == "table" and v.__type == "Color3" then
+            return Color3.fromRGB(tonumber(v.R) or 255, tonumber(v.G) or 255, tonumber(v.B) or 255)
+        end
+        return nil
+    end
+
+    local function collectCurrentConfigData()
+        local data = {}
+        for flagName, flagObj in pairs(RayfieldLibrary.Flags or {}) do
+            local value
+            if flagObj.Type == "ColorPicker" and flagObj.Color then
+                value = encodeColor3(flagObj.Color)
+            else
+                value = flagObj.CurrentValue
+                if value == nil then value = flagObj.CurrentKeybind end
+                if value == nil then value = flagObj.CurrentOption end
+                if value == nil then value = flagObj.Color end
+                if typeof(value) == "Color3" then
+                    value = encodeColor3(value)
+                end
+            end
+            data[flagName] = value
+        end
+        return data
+    end
+
+    local function applyConfigData(data)
+        if type(data) ~= "table" then
+            return false
+        end
+        local seqOrder = {
+            "mancing_main_autoSell",
+            "mancing_main_teleportToLocation",
+            "mancing_event_limitedAutoTeleport",
+        }
+        local seqSet = {}
+        for _, f in ipairs(seqOrder) do
+            seqSet[f] = true
+        end
+
+        local function applyFlag(flagName)
+            local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags[flagName]
+            if not flagObj or type(flagObj.Set) ~= "function" then
+                return
+            end
+            local saved = data[flagName]
+            if saved == nil then
+                return
+            end
+            local c = decodeColor3(saved)
+            pcall(function()
+                flagObj:Set(c or saved)
+            end)
+        end
+
+        for flagName, _ in pairs(data) do
+            if not seqSet[flagName] then
+                applyFlag(flagName)
+            end
+        end
+        for _, flagName in ipairs(seqOrder) do
+            applyFlag(flagName)
+        end
+        return true
+    end
+
+    local function listProfiles()
+        local names = {}
+        if type(listfiles) ~= "function" then
+            return names
+        end
+        ensureConfigFolder()
+        local ok, files = pcall(function()
+            return listfiles(CONFIG_DIR)
+        end)
+        if not ok or type(files) ~= "table" then
+            return names
+        end
+        for _, filePath in ipairs(files) do
+            local normalized = tostring(filePath):gsub("\\", "/")
+            local base = normalized:match("([^/]+)$")
+            if base and base:sub(-5) == ".json" and base ~= "mancing_indo_autoload.json" then
+                table.insert(names, base:sub(1, -6))
+            end
+        end
+        table.sort(names)
+        return names
+    end
+
+    local function createConfigObject(name)
+        local trimmed = sanitizeConfigName(name)
+        return {
+            Save = function()
+                ensureConfigFolder()
+                if type(writefile) ~= "function" then
+                    error("writefile is not available")
+                end
+                writefile(profilePath(trimmed), HttpService:JSONEncode(collectCurrentConfigData()))
+            end,
+            Load = function()
+                if type(isfile) ~= "function" or type(readfile) ~= "function" then
+                    return false, "Config system unavailable (missing file APIs)"
+                end
+                local path = profilePath(trimmed)
+                if not isfile(path) then
+                    return false, "Config file not found or invalid"
+                end
+                local okRead, rawOrErr = pcall(function()
+                    return readfile(path)
+                end)
+                if not okRead then
+                    return false, tostring(rawOrErr)
+                end
+                local okDecode, decoded = pcall(function()
+                    return HttpService:JSONDecode(rawOrErr)
+                end)
+                if not okDecode then
+                    return false, "Config file not found or invalid"
+                end
+                applyConfigData(decoded)
+                return true
+            end,
+        }
+    end
+
     local function getConfigManager()
-        local cm = Window.ConfigManager
-        if cm == false or cm == nil then
+        if type(writefile) ~= "function" and type(readfile) ~= "function" then
             return nil
         end
-        return cm
+        ensureConfigFolder()
+        return {
+            Path = CONFIG_DIR .. "/",
+            AllConfigs = function()
+                return listProfiles()
+            end,
+            GetConfig = function(_, _)
+                return nil
+            end,
+            Config = function(_, name, _)
+                return createConfigObject(name)
+            end,
+            DeleteConfig = function(_, name)
+                if type(delfile) ~= "function" or type(isfile) ~= "function" then
+                    return false, "Delete is unavailable (missing file APIs)"
+                end
+                local path = profilePath(name)
+                if not isfile(path) then
+                    return false, "Config file not found"
+                end
+                local ok, err = pcall(function()
+                    delfile(path)
+                end)
+                if not ok then
+                    return false, tostring(err)
+                end
+                return true, "Deleted \"" .. sanitizeConfigName(name) .. "\""
+            end,
+        }
     end
 
     local function autoLoadMetaPath(cm)
@@ -6786,10 +6510,9 @@ do
         local cm = getConfigManager()
         if not cm then
             if showNotify then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Config system unavailable (Studio or missing file APIs).",
-                    Icon = "x",
                 })
             end
             return
@@ -6808,7 +6531,7 @@ do
                 AutoLoadSavedDropdown:Select(nil)
             end
             if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set(nil)
+                AutoLoadSavedDropdown:Set({})
             end
         end
         if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
@@ -6817,36 +6540,32 @@ do
                 SavedConfigsDropdown:Select(nil)
             end
             if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                SavedConfigsDropdown:Set(nil)
+                SavedConfigsDropdown:Set({})
             end
         end
         if showNotify then
-            WindUI:Notify({
+            mountNotify({
                 Title = "Config",
                 Content = "Found " .. tostring(#savedConfigList) .. " saved profile(s).",
-                Icon = "check",
             })
         end
     end
 
-    ConfigNameInput = ConfigManagementSection:Input({
-        Title = "Config name",
-        Desc = "File name without .json",
-        Placeholder = "e.g. main or pvp",
-        Value = configMgmtName,
+    ConfigNameInput = ConfigTab:CreateInput({
+        Name = "Config name",
+        PlaceholderText = "e.g. main or pvp",
+        CurrentValue = configMgmtName,
         Callback = function(value)
             configMgmtName = sanitizeConfigName(value)
         end,
     })
 
-    SavedConfigsDropdown = ConfigManagementSection:Dropdown({
-        Title = "Config Saved",
-        Desc = "Profiles on disk; choosing one fills Config name. Delete Config removes the selected entry.",
-        Values = savedConfigList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(value)
+    SavedConfigsDropdown = ConfigTab:CreateDropdown({
+        Name = "Config Saved",
+        Options = savedConfigList,
+        CurrentOption = {}, Search = true,
+        Callback = function(opts)
+            local value = rayfieldDropdownFirst(opts)
             selectedSavedConfigName = (value and value ~= "") and value or nil
             if value and value ~= "" then
                 configMgmtName = sanitizeConfigName(value)
@@ -6877,10 +6596,6 @@ do
     -- (1) Auto Sell toggle + one coordinated sell trip if on, then background sell loop;
     -- (2) Teleport to Location;
     -- (3) Limited Event Auto Teleport.
-    local CONFIG_SEQ_FLAG_AUTO_SELL = "mancing_main_autoSell"
-    local CONFIG_SEQ_FLAG_TELEPORT = "mancing_main_teleportToLocation"
-    local CONFIG_SEQ_FLAG_LIMITED = "mancing_event_limitedAutoTeleport"
-
     local function readProfileElementsTable(cm, profileName)
         local trimmed = sanitizeConfigName(profileName)
         if trimmed == "" or type(isfile) ~= "function" or type(readfile) ~= "function" then
@@ -6994,7 +6709,7 @@ do
         end
         autoLoadPickerSelection = persisted
         if AutoLoadSavedDropdown.Set then
-            AutoLoadSavedDropdown:Set(persisted)
+            AutoLoadSavedDropdown:Set({ persisted })
         elseif AutoLoadSavedDropdown.Select then
             AutoLoadSavedDropdown:Select(persisted)
         end
@@ -7013,7 +6728,9 @@ do
             return
         end
         local cfg = getConfigObject(cm, name)
-        Window:SetCurrentConfig(cfg)
+        if Window.SetCurrentConfig then
+            Window:SetCurrentConfig(cfg)
+        end
         local pok, loadResult, loadErr = pcall(function()
             return cfg:Load()
         end)
@@ -7026,46 +6743,37 @@ do
             return
         end
         scheduleSequentialConfigLoadAfterProfile(cm, cfg, name)
-        WindUI:Notify({
+        mountNotify({
             Title = "Config",
             Content = "Auto-loaded \"" .. name .. "\"",
-            Icon = "check",
         })
     end
-
-    ConfigManagementSection:Space()
-
-    local ConfigSaveRefreshGroup = ConfigManagementSection:Group({})
-    ConfigSaveRefreshGroup:Button({
-        Title = "Refresh Config",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Refresh Config",
         Callback = function()
             refreshSavedConfigDropdowns(true)
         end,
     })
-    ConfigSaveRefreshGroup:Space()
-    ConfigSaveRefreshGroup:Button({
-        Title = "Save Config",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Save Config",
         Callback = function()
             local cm = getConfigManager()
             if not cm then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Config system unavailable (Studio or missing file APIs).",
-                    Icon = "x",
                 })
                 return
             end
             local name = sanitizeConfigName(configMgmtName)
             if name == "" then
-                WindUI:Notify({ Title = "Config", Content = "Enter a config name first", Icon = "x" })
+                mountNotify({ Title = "Config", Content = "Enter a config name first" })
                 return
             end
             local cfg = getConfigObject(cm, name)
-            Window:SetCurrentConfig(cfg)
+            if Window.SetCurrentConfig then
+                Window:SetCurrentConfig(cfg)
+            end
             local cfgPath = cm.Path .. name .. ".json"
             if type(isfile) == "function" and isfile(cfgPath) and type(delfile) == "function" then
                 pcall(function()
@@ -7076,84 +6784,75 @@ do
                 cfg:Save()
             end)
             if not ok then
-                WindUI:Notify({ Title = "Config", Content = "Save failed: " .. tostring(err), Icon = "x" })
+                mountNotify({ Title = "Config", Content = "Save failed: " .. tostring(err) })
                 return
             end
             refreshSavedConfigDropdowns(false)
-            WindUI:Notify({ Title = "Config", Content = "Saved \"" .. name .. "\"", Icon = "check" })
+            mountNotify({ Title = "Config", Content = "Saved \"" .. name .. "\"" })
         end,
     })
 
-    local ConfigLoadDeleteGroup = ConfigManagementSection:Group({})
-    ConfigLoadDeleteGroup:Button({
-        Title = "Load Config",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Load Config",
         Callback = function()
             local cm = getConfigManager()
             if not cm then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Config system unavailable (Studio or missing file APIs).",
-                    Icon = "x",
                 })
                 return
             end
             local name = sanitizeConfigName(configMgmtName)
             if name == "" then
-                WindUI:Notify({ Title = "Config", Content = "Enter or select a config name first", Icon = "x" })
+                mountNotify({ Title = "Config", Content = "Enter or select a config name first" })
                 return
             end
             local cfg = getConfigObject(cm, name)
-            Window:SetCurrentConfig(cfg)
+            if Window.SetCurrentConfig then
+                Window:SetCurrentConfig(cfg)
+            end
             local pok, loadResult, loadErr = pcall(function()
                 return cfg:Load()
             end)
             if not pok then
-                WindUI:Notify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult), Icon = "x" })
+                mountNotify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult) })
                 return
             end
             if loadResult == false then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = type(loadErr) == "string" and loadErr or "Config file not found or invalid",
-                    Icon = "x",
                 })
                 return
             end
             scheduleSequentialConfigLoadAfterProfile(cm, cfg, name)
-            WindUI:Notify({ Title = "Config", Content = "Loaded \"" .. name .. "\"", Icon = "check" })
+            mountNotify({ Title = "Config", Content = "Loaded \"" .. name .. "\"" })
         end,
     })
-    ConfigLoadDeleteGroup:Space()
-    ConfigLoadDeleteGroup:Button({
-        Title = "Delete Config",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Delete Config",
         Callback = function()
             local cm = getConfigManager()
             if not cm then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Config system unavailable (Studio or missing file APIs).",
-                    Icon = "x",
                 })
                 return
             end
             if not selectedSavedConfigName or selectedSavedConfigName == "" then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Select a config to delete",
-                    Icon = "x",
                 })
                 return
             end
             local name = sanitizeConfigName(selectedSavedConfigName)
             if name == "" then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = "Select a config to delete",
-                    Icon = "x",
                 })
                 return
             end
@@ -7167,7 +6866,7 @@ do
                         AutoLoadSavedDropdown:Select(nil)
                     end
                     if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                        AutoLoadSavedDropdown:Set(nil)
+                        AutoLoadSavedDropdown:Set({})
                     end
                 end
                 selectedSavedConfigName = nil
@@ -7175,7 +6874,7 @@ do
                     SavedConfigsDropdown:Select(nil)
                 end
                 if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                    SavedConfigsDropdown:Set(nil)
+                    SavedConfigsDropdown:Set({})
                 end
                 if sanitizeConfigName(configMgmtName) == name then
                     configMgmtName = ""
@@ -7185,101 +6884,73 @@ do
                         ConfigNameInput:SetValue("")
                     end
                 end
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = type(msg) == "string" and msg or ("Deleted \"" .. name .. "\""),
-                    Icon = "check",
                 })
             else
-                WindUI:Notify({
+                mountNotify({
                     Title = "Config",
                     Content = type(msg) == "string" and msg or "Delete failed",
-                    Icon = "x",
                 })
             end
         end,
     })
-
-    ConfigTab:Space()
-
-    local AutoLoadSection = ConfigTab:Section({
-        Title = "Auto Load",
-        Desc = "Set stores which profile loads automatically on the next script run (mancing_indo_autoload.json next to your WindUI configs).",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    AutoLoadSavedDropdown = AutoLoadSection:Dropdown({
-        Title = "Config Saved",
-        Desc = "Choose a profile, then Set. Refresh lists from Config management if empty.",
-        Values = savedConfigList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(value)
+    ConfigTab:CreateSection("Auto Load")
+    AutoLoadSavedDropdown = ConfigTab:CreateDropdown({
+        Name = "Config Saved",
+        Options = savedConfigList,
+        CurrentOption = {}, Search = true,
+        Callback = function(opts)
+            local value = rayfieldDropdownFirst(opts)
             autoLoadPickerSelection = (value and value ~= "") and value or nil
         end,
     })
-
-    AutoLoadSection:Space()
-
-    local AutoLoadSetResetGroup = AutoLoadSection:Group({})
-    AutoLoadSetResetGroup:Button({
-        Title = "Set",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Set",
         Callback = function()
             if not autoLoadPickerSelection or autoLoadPickerSelection == "" then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Auto Load",
                     Content = "Select a config in Config Saved first",
-                    Icon = "x",
                 })
                 return
             end
             local cm = getConfigManager()
             if not cm then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Auto Load",
                     Content = "Config system unavailable (Studio or missing file APIs).",
-                    Icon = "x",
                 })
                 return
             end
             local pick = sanitizeConfigName(autoLoadPickerSelection)
             if pick == "" or not table.find(savedConfigList, pick) then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Auto Load",
                     Content = "Selected profile is not in the list (try Refresh Config)",
-                    Icon = "x",
                 })
                 return
             end
             if not isfile or not isfile(cm.Path .. pick .. ".json") then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Auto Load",
                     Content = "That config file is not on disk yet (Save Config first)",
-                    Icon = "x",
                 })
                 return
             end
             if not writeAutoLoadPersistedName(pick) then
-                WindUI:Notify({ Title = "Auto Load", Content = "Failed to write autoload file", Icon = "x" })
+                mountNotify({ Title = "Auto Load", Content = "Failed to write autoload file" })
                 return
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Auto Load",
                 Content = "Next run will load \"" .. pick .. "\"",
-                Icon = "check",
             })
         end,
     })
-    AutoLoadSetResetGroup:Space()
-    AutoLoadSetResetGroup:Button({
-        Title = "Reset",
-        Justify = "Center",
-        Icon = "",
+    ConfigTab:CreateButton({
+        Name = "Reset",
         Callback = function()
             writeAutoLoadPersistedName("")
             autoLoadPickerSelection = nil
@@ -7287,12 +6958,11 @@ do
                 AutoLoadSavedDropdown:Select(nil)
             end
             if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set(nil)
+                AutoLoadSavedDropdown:Set({})
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Auto Load",
                 Content = "Auto-load on startup disabled",
-                Icon = "check",
             })
         end,
     })
