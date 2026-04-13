@@ -12,53 +12,54 @@ local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local TweenService = game:GetService("TweenService")
 
-local WindUI
+local RayfieldLibrary
 
 do
     local ok, result = pcall(function()
-        return require("./src/Init")
+        return require("./rayfield_library")
     end)
-    
+
     if ok then
-        WindUI = result
-    else 
+        RayfieldLibrary = result
+    else
         if cloneref(RunService):IsStudio() then
-            WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+            RayfieldLibrary = require(cloneref(ReplicatedStorage):WaitForChild("rayfield_library"))
         else
-            WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+            RayfieldLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/rayfield_library.lua"))()
         end
     end
 end
 
+local function mountNotify(opts)
+    local img
+    local ic = opts.Icon
+    if ic == "check" then
+        img = 4483362748
+    elseif ic == "x" or ic == "close" then
+        img = 4384402990
+    end
+    RayfieldLibrary:Notify({
+        Title = opts.Title,
+        Content = opts.Content,
+        Image = img,
+        Duration = opts.Duration or 4,
+    })
+end
+
 -- */  Window  /* --
-local Window = WindUI:CreateWindow({
-    Title = "Speed Bike Escape",
-    Folder = "sempatpanick",
-    Icon = "solar:folder-2-bold-duotone",
-    NewElements = true,
-    HideSearchBar = false,
-    OpenButton = {
-        Title = "Open Speed Bike Escape UI",
-        CornerRadius = UDim.new(1,0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Scale = 0.5,
-        Color = ColorSequence.new(
-            Color3.fromHex("#30FF6A"), 
-            Color3.fromHex("#e7ff2f")
-        )
+local Window = RayfieldLibrary:CreateWindow({
+    Name = "sempatpanick | Speed Bike Escape",
+    LoadingTitle = "sempatpanick",
+    LoadingSubtitle = "Speed Bike Escape",
+    Icon = 4483362458,
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = "sempatpanick",
+        FileName = "speed_bike_escape",
     },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Mac",
-    },
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings = true,
 })
-
--- */  Colors  /* --
-local Green = Color3.fromHex("#10C550")
-
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
 function formatValueForDisplay(val)
     if val == nil then
@@ -128,28 +129,11 @@ function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     return base
 end
 
--- */  Elements Section  /* --
-local ElementsSection = Window:Section({
-    Title = "Elements",
-    Opened = true,
-})
-
 -- */  Local Player Tab  /* --
 do
-    local LocalPlayerTab = ElementsSection:Tab({
-        Title = "Local Player",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local LocalPlayerTab = Window:CreateTab("Local Player", 4483362458)
 
-    local MiscSection = LocalPlayerTab:Section({
-        Title = "Misc",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    LocalPlayerTab:CreateSection("Misc")
 
     local infiniteJumpConnection = nil
     local antiAfkConnection = nil
@@ -254,10 +238,9 @@ do
 
     startAntiAfk()
 
-    MiscSection:Toggle({
-        Title = "Anti AFK",
-        Desc = "Prevent kick for inactivity (resets idle when Roblox detects AFK)",
-        Value = true,
+    LocalPlayerTab:CreateToggle({
+        Name = "Anti AFK",
+        CurrentValue = true,
         Callback = function(enabled)
             if enabled then
                 startAntiAfk()
@@ -267,8 +250,9 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Infinite Jump",
+    LocalPlayerTab:CreateToggle({
+        Name = "Infinite Jump",
+        CurrentValue = false,
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -288,9 +272,9 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "No Clip",
-        Desc = "Pass through walls (disables character collision)",
+    LocalPlayerTab:CreateToggle({
+        Name = "No Clip",
+        CurrentValue = false,
         Callback = function(enabled)
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
@@ -311,9 +295,9 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Fly",
-        Desc = "WASD + Space (up) / Ctrl (down), camera direction",
+    LocalPlayerTab:CreateToggle({
+        Name = "Fly",
+        CurrentValue = false,
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -424,9 +408,9 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Free Camera",
-        Desc = "Detach camera. Hold LMB/RMB + drag to look; WASD + Space/Ctrl to move. Character stays in place; cursor visible when not dragging.",
+    LocalPlayerTab:CreateToggle({
+        Name = "Free Camera",
+        CurrentValue = false,
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -437,9 +421,9 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Camera Penetrate",
-        Desc = "Allow camera zoom to pass objects",
+    LocalPlayerTab:CreateToggle({
+        Name = "Camera Penetrate",
+        CurrentValue = false,
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
             local lp = Players.LocalPlayer
@@ -470,14 +454,7 @@ do
         end
     end
 
-    LocalPlayerTab:Space()
-
-    local WalkSpeedSection = LocalPlayerTab:Section({
-        Title = "Walk Speed",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    LocalPlayerTab:CreateSection("Walk Speed")
 
     local defaultWalkSpeed = 16
 
@@ -496,20 +473,21 @@ do
     local currentWalkSpeed = getCurrentCharacterWalkSpeed()
     local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
 
-    local WalkSpeedInput = WalkSpeedSection:Input({
-        Title = "Speed",
-        Placeholder = "e.g. 16 or 100",
-        Value = walkSpeedValue,
+    local WalkSpeedInput = LocalPlayerTab:CreateInput({
+        Name = "Speed",
+        PlaceholderText = "e.g. 16 or 100",
+        CurrentValue = walkSpeedValue,
+        Ext = true,
         Callback = function(value)
             walkSpeedValue = value
-        end
+        end,
     })
 
     local function syncWalkSpeedInputFromCharacter(showNotify)
         local speed, errMessage = getCurrentCharacterWalkSpeed()
         if not speed then
             if showNotify then
-                WindUI:Notify({ Title = "Walk Speed", Content = errMessage, Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = errMessage, Icon = "x" })
             end
             return false
         end
@@ -523,79 +501,63 @@ do
         end
 
         if showNotify then
-            WindUI:Notify({ Title = "Walk Speed", Content = "Current speed: " .. speedText, Icon = "check" })
+            mountNotify({ Title = "Walk Speed", Content = "Current speed: " .. speedText, Icon = "check" })
         end
         return true
     end
 
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Get Current Walk Speed",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Walk Speed",
+        Ext = true,
         Callback = function()
             syncWalkSpeedInputFromCharacter(true)
-        end
+        end,
     })
 
     -- Keep the input defaulted to current character speed when available.
     syncWalkSpeedInputFromCharacter(false)
 
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
                 return
             end
             local speed = tonumber(walkSpeedValue) or defaultWalkSpeed
             humanoid.WalkSpeed = math.max(0, speed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Set to " .. tostring(humanoid.WalkSpeed), Icon = "check" })
+            mountNotify({ Title = "Walk Speed", Content = "Set to " .. tostring(humanoid.WalkSpeed), Icon = "check" })
         end
     })
 
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Reset",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Reset",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Walk Speed", Content = "Humanoid not found", Icon = "x" })
                 return
             end
             humanoid.WalkSpeed = defaultWalkSpeed
             walkSpeedValue = tostring(defaultWalkSpeed)
-            WindUI:Notify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed), Icon = "check" })
-        end
+            mountNotify({ Title = "Walk Speed", Content = "Reset to " .. tostring(defaultWalkSpeed), Icon = "check" })
+        end,
     })
 
-    LocalPlayerTab:Space()
-
-    local JumpHeightSection = LocalPlayerTab:Section({
-        Title = "Jump Height",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    LocalPlayerTab:CreateSection("Jump Height")
 
     local defaultJumpHeight = 7.2
 
@@ -614,20 +576,21 @@ do
     local currentJumpHeight = getCurrentCharacterJumpHeight()
     local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
 
-    local JumpHeightInput = JumpHeightSection:Input({
-        Title = "Height",
-        Placeholder = "e.g. 7.2 or 50",
-        Value = jumpHeightValue,
+    local JumpHeightInput = LocalPlayerTab:CreateInput({
+        Name = "Height",
+        PlaceholderText = "e.g. 7.2 or 50",
+        CurrentValue = jumpHeightValue,
+        Ext = true,
         Callback = function(value)
             jumpHeightValue = value
-        end
+        end,
     })
 
     local function syncJumpHeightInputFromCharacter(showNotify)
         local jumpHeight, errMessage = getCurrentCharacterJumpHeight()
         if not jumpHeight then
             if showNotify then
-                WindUI:Notify({ Title = "Jump Height", Content = errMessage, Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = errMessage, Icon = "x" })
             end
             return false
         end
@@ -641,56 +604,43 @@ do
         end
 
         if showNotify then
-            WindUI:Notify({ Title = "Jump Height", Content = "Current jump height: " .. jumpHeightText, Icon = "check" })
+            mountNotify({ Title = "Jump Height", Content = "Current jump height: " .. jumpHeightText, Icon = "check" })
         end
         return true
     end
 
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Get Current Jump Height",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Jump Height",
+        Ext = true,
         Callback = function()
             syncJumpHeightInputFromCharacter(true)
-        end
+        end,
     })
 
     -- Keep the input defaulted to current character jump height when available.
     syncJumpHeightInputFromCharacter(false)
 
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
-                WindUI:Notify({ Title = "Jump Height", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid then
-                WindUI:Notify({ Title = "Jump Height", Content = "Humanoid not found", Icon = "x" })
+                mountNotify({ Title = "Jump Height", Content = "Humanoid not found", Icon = "x" })
                 return
             end
             local jumpHeight = tonumber(jumpHeightValue) or defaultJumpHeight
             humanoid.JumpHeight = math.max(0, jumpHeight)
-            WindUI:Notify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
-        end
+            mountNotify({ Title = "Jump Height", Content = "Set to " .. tostring(humanoid.JumpHeight), Icon = "check" })
+        end,
     })
 
-    LocalPlayerTab:Space()
-
-    local ESPSection = LocalPlayerTab:Section({
-        Title = "ESP",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    LocalPlayerTab:CreateSection("ESP")
 
     local espNamesEnabled = false
     local espDistanceEnabled = false
@@ -853,19 +803,18 @@ do
         return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled
     end
 
-    ESPSection:Input({
-        Title = "ESP Max Distance",
-        Placeholder = "0 = unlimited, e.g. 10000",
-        Value = tostring(espMaxDistance),
+    LocalPlayerTab:CreateInput({
+        Name = "ESP Max Distance",
+        PlaceholderText = "0 = unlimited, e.g. 10000",
+        CurrentValue = tostring(espMaxDistance),
+        Ext = true,
         Callback = function(value)
             local n = tonumber(value)
             if not n then return end
             espMaxDistance = math.max(0, n)
             if espAnyEnabled() then espApplyForAllPlayers() end
-        end
+        end,
     })
-
-    ESPSection:Space()
 
     local function espOnRenderStep()
         if not espAnyEnabled() then return end
@@ -907,55 +856,41 @@ do
         for player in pairs(espPlayerState) do espClearVisualsForPlayer(player) espPlayerState[player] = nil end
     end
 
-    ESPSection:Toggle({
-        Title = "ESP Player Names",
-        Desc = "Show player name above character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Names",
+        CurrentValue = false,
         Callback = function(enabled)
             espNamesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
     })
-    ESPSection:Toggle({
-        Title = "ESP Player Distance",
-        Desc = "Show player distance in meters (below name)",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Distance",
+        CurrentValue = false,
         Callback = function(enabled)
             espDistanceEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
     })
-    ESPSection:Toggle({
-        Title = "ESP Player Character",
-        Desc = "Highlight player character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Character",
+        CurrentValue = false,
         Callback = function(enabled)
             espCharacterEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
     })
-    ESPSection:Toggle({
-        Title = "ESP Player Lines",
-        Desc = "Draw line from your character to players",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP Player Lines",
+        CurrentValue = false,
         Callback = function(enabled)
             espLinesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
-
-    LocalPlayerTab:Space()
-
-    local PlayersInfoSection = LocalPlayerTab:Section({
-        Title = "Players Info",
-        Desc = "Pick a player to view username, display name, speed, location, Humanoid properties, and Humanoid children",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
     })
 
     local infoPlayerList = {}
@@ -1150,10 +1085,10 @@ do
         local character = player.Character
         if not character then
             table.insert(lines, "Character: not loaded")
-            table.insert(lines, "Location: —")
+            table.insert(lines, "Location: â€”")
             table.insert(lines, "")
-            table.insert(lines, "Humanoid properties: —")
-            table.insert(lines, "Inside Humanoid (children): —")
+            table.insert(lines, "Humanoid properties: â€”")
+            table.insert(lines, "Inside Humanoid (children): â€”")
             return table.concat(lines, "\n")
         end
         local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -1241,9 +1176,23 @@ do
         return table.concat(lines, "\n")
     end
 
+    local PLAYERS_INFO_PAR_TITLE = "Details"
+    local INFO_PLAYER_NONE = "(None)"
+
+    local function playersInfoDropdownOptions()
+        local opts = { INFO_PLAYER_NONE }
+        for _, n in ipairs(infoPlayerDisplayNames) do
+            table.insert(opts, n)
+        end
+        return opts
+    end
+
     local function updatePlayersInfoParagraph()
-        if PlayersInfoParagraph and PlayersInfoParagraph.SetDesc then
-            PlayersInfoParagraph:SetDesc(buildPlayersInfoText(selectedInfoPlayer))
+        if PlayersInfoParagraph and PlayersInfoParagraph.Set then
+            PlayersInfoParagraph:Set({
+                Title = PLAYERS_INFO_PAR_TITLE,
+                Content = buildPlayersInfoText(selectedInfoPlayer),
+            })
         end
     end
 
@@ -1257,31 +1206,34 @@ do
             end
         end
         if PlayersInfoDropdown and PlayersInfoDropdown.Refresh then
-            PlayersInfoDropdown:Refresh(infoPlayerDisplayNames)
+            PlayersInfoDropdown:Refresh(playersInfoDropdownOptions())
         end
         if selectedInfoPlayer then
             if not table.find(infoPlayerList, selectedInfoPlayer) then
                 selectedInfoPlayer = nil
-                if PlayersInfoDropdown and PlayersInfoDropdown.Select then PlayersInfoDropdown:Select(nil) end
-                if PlayersInfoDropdown and PlayersInfoDropdown.Set then PlayersInfoDropdown:Set(nil) end
+                if PlayersInfoDropdown and PlayersInfoDropdown.Set then
+                    PlayersInfoDropdown:Set(INFO_PLAYER_NONE)
+                end
             end
         end
         updatePlayersInfoParagraph()
         if showNotify then
-            WindUI:Notify({ Title = "Players Info", Content = "Player list refreshed (" .. #infoPlayerList .. ")", Icon = "check" })
+            mountNotify({ Title = "Players Info", Content = "Player list refreshed (" .. #infoPlayerList .. ")", Icon = "check" })
         end
     end
 
-    PlayersInfoDropdown = PlayersInfoSection:Dropdown({
-        Title = "Player",
-        Desc = "All players in this server",
-        Values = infoPlayerDisplayNames,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(value)
+    LocalPlayerTab:CreateSection("Players Info")
+
+    PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
+        Name = "Player",
+        Search = true,
+        Options = playersInfoDropdownOptions(),
+        CurrentOption = { INFO_PLAYER_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
             selectedInfoPlayer = nil
-            if value then
+            if value and value ~= INFO_PLAYER_NONE then
                 local idx = table.find(infoPlayerDisplayNames, value)
                 if idx and infoPlayerList[idx] then
                     selectedInfoPlayer = infoPlayerList[idx]
@@ -1291,33 +1243,29 @@ do
         end,
     })
 
-    PlayersInfoParagraph = PlayersInfoSection:Paragraph({
-        Title = "Details",
-        Desc = "Select a player from the list.",
+    PlayersInfoParagraph = LocalPlayerTab:CreateParagraph({
+        Title = PLAYERS_INFO_PAR_TITLE,
+        Content = "Select a player from the list.",
     })
 
-    PlayersInfoSection:Button({
-        Title = "Refresh list",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh list",
+        Ext = true,
         Callback = function()
             refreshPlayersInfoList(true)
         end,
     })
 
-    PlayersInfoSection:Space()
-
-    PlayersInfoSection:Button({
-        Title = "Refresh details",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh details",
+        Ext = true,
         Callback = function()
             if not selectedInfoPlayer then
-                WindUI:Notify({ Title = "Players Info", Content = "Select a player first", Icon = "x" })
+                mountNotify({ Title = "Players Info", Content = "Select a player first", Icon = "x" })
                 return
             end
             updatePlayersInfoParagraph()
-            WindUI:Notify({ Title = "Players Info", Content = "Details updated", Icon = "check" })
+            mountNotify({ Title = "Players Info", Content = "Details updated", Icon = "check" })
         end,
     })
 
@@ -1332,19 +1280,11 @@ do
         end)
     end)
 
-    LocalPlayerTab:Space()
+    LocalPlayerTab:CreateSection("Server")
 
-    local ServerSection = LocalPlayerTab:Section({
-        Title = "Server",
-        Desc = "Server-related actions",
-        Box = true,
-        BoxBorder = true,
-    })
-
-    ServerSection:Button({
-        Title = "Rejoin server",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Rejoin server",
+        Ext = true,
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
             local placeId = game.PlaceId
@@ -1354,14 +1294,14 @@ do
                     TeleportService:TeleportToPlaceInstance(placeId, jobId)
                 end)
                 if not ok then
-                    WindUI:Notify({
+                    mountNotify({
                         Title = "Rejoin",
                         Content = "Failed: " .. tostring(err),
                         Icon = "close",
                     })
                 end
             else
-                WindUI:Notify({
+                mountNotify({
                     Title = "Rejoin",
                     Content = "Cannot rejoin (missing PlaceId or JobId)",
                     Icon = "close",
@@ -1370,14 +1310,13 @@ do
         end,
     })
 
-    ServerSection:Button({
-        Title = "Copy game ID",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Copy game ID",
+        Ext = true,
         Callback = function()
             local paste = setclipboard or toclipboard
             if not paste then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Server",
                     Content = "Clipboard not supported in this environment",
                     Icon = "x",
@@ -1386,15 +1325,13 @@ do
             end
             local id = tostring(game.PlaceId)
             paste(id)
-            WindUI:Notify({
+            mountNotify({
                 Title = "Server",
                 Content = "Copied PlaceId " .. id,
                 Icon = "check",
             })
         end,
     })
-
-    LocalPlayerTab:Space()
 
     local animationOptions = { "Hair Grab (R6)" }
     local selectedAnimationName = animationOptions[1]
@@ -1429,20 +1366,20 @@ do
         local head = character and character:FindFirstChild("Head")
         if not character or not humanoid or humanoid.RigType ~= Enum.HumanoidRigType.R6 or not torso or not rightArm or not head then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "R6 character parts not ready", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "R6 character parts not ready", Icon = "x" })
             return
         end
         local rightShoulder = torso:FindFirstChild("Right Shoulder")
         local neck = torso:FindFirstChild("Neck")
         if not (rightShoulder and rightShoulder:IsA("Motor6D") and neck and neck:IsA("Motor6D")) then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "R6 joints not found", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "R6 joints not found", Icon = "x" })
             return
         end
         local _, hairHandle = findHairAccessory(character)
         if not hairHandle then
             animationRunning = false
-            WindUI:Notify({ Title = "Animation", Content = "No hair accessory found", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "No hair accessory found", Icon = "x" })
             return
         end
         local originalShoulderC0, originalNeckC0 = rightShoulder.C0, neck.C0
@@ -1484,42 +1421,35 @@ do
             restoreAll()
         end)
     end
-    local AnimationSection = LocalPlayerTab:Section({
-        Title = "Animation",
-        Desc = "R6 local animations with accessory interaction",
-        Box = true,
-        BoxBorder = true,
-    })
-    AnimationSection:Dropdown({
-        Title = "Animation list",
-        Desc = "Select one animation",
-        Values = animationOptions,
-        Value = selectedAnimationName,
-        AllowNone = false,
-        SearchBarEnabled = false,
-        Callback = function(value)
-            if value then selectedAnimationName = value end
+    LocalPlayerTab:CreateSection("Animation")
+
+    LocalPlayerTab:CreateDropdown({
+        Name = "Animation list",
+        Options = animationOptions,
+        CurrentOption = { selectedAnimationName },
+        Ext = true,
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            if value then
+                selectedAnimationName = value
+            end
         end,
     })
-    AnimationSection:Button({
-        Title = "Animate",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Animate",
+        Ext = true,
         Callback = function()
             if selectedAnimationName == "Hair Grab (R6)" then
                 playHairGrabAnimationR6()
                 return
             end
-            WindUI:Notify({ Title = "Animation", Content = "Unknown animation selected", Icon = "x" })
+            mountNotify({ Title = "Animation", Content = "Unknown animation selected", Icon = "x" })
         end,
     })
 
-    LocalPlayerTab:Space()
-
-    LocalPlayerTab:Button({
-        Title = "Clear Console",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Clear Console",
+        Ext = true,
         Callback = function()
             local cleared = false
             local clearFn = rawget(_G, "clearconsole") or rawget(_G, "rconsoleclear")
@@ -1527,7 +1457,7 @@ do
                 clearFn()
                 cleared = true
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Console",
                 Content = cleared and "Console cleared" or "Clear not available (try clearconsole)",
                 Icon = cleared and "check" or "x",
@@ -1536,23 +1466,13 @@ do
     })
 end
 
+local AutoBikeTabShared = Window:CreateTab("Auto Bike", 4483362458)
+
 -- */  Teleport Tab  /* --
 do
-    local TeleportTab = ElementsSection:Tab({
-        Title = "Teleport",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
 
-    local TeleportSection = TeleportTab:Section({
-        Title = "Teleport",
-        Desc = "Location = X, Y, Z. Look direction = root LookVector (X, Y, Z); leave blank or 0,0,0 to ignore facing. Get fills both.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    TeleportTab:CreateSection("Teleport")
 
     local teleportInputValue = ""
     local teleportLookInputValue = ""
@@ -1583,36 +1503,34 @@ do
         return CFrame.lookAt(pos, pos + dir.Unit)
     end
 
-    local TeleportInput = TeleportSection:Input({
-        Title = "Location",
-        Placeholder = "e.g. 100, 5, 200 or 100 5 200",
-        Flag = "speed_bike_tp_location",
-        Value = teleportInputValue,
+    local TeleportInput = TeleportTab:CreateInput({
+        Name = "Location",
+        PlaceholderText = "e.g. 100, 5, 200 or 100 5 200",
+        CurrentValue = teleportInputValue,
+        Ext = true,
         Callback = function(value)
             teleportInputValue = value
         end,
     })
 
-    local TeleportLookInput = TeleportSection:Input({
-        Title = "Look direction",
-        Desc = "HumanoidRootPart look vector (X, Y, Z). Used with Teleport / Tween / Get.",
-        Placeholder = "e.g. 0, 0, -1 or leave empty for position only",
-        Flag = "speed_bike_tp_lookDirection",
-        Value = teleportLookInputValue,
+    local TeleportLookInput = TeleportTab:CreateInput({
+        Name = "Look direction",
+        PlaceholderText = "e.g. 0, 0, -1 or leave empty for position only",
+        CurrentValue = teleportLookInputValue,
+        Ext = true,
         Callback = function(value)
             teleportLookInputValue = value
         end,
     })
 
-    TeleportSection:Button({
-        Title = "Get current location",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Get Current Location",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local pos = rootPart.Position
@@ -1631,7 +1549,7 @@ do
             elseif TeleportLookInput and TeleportLookInput.SetValue then
                 TeleportLookInput:SetValue(lookText)
             end
-            WindUI:Notify({
+            mountNotify({
                 Title = "Location",
                 Content = "Position: " .. text .. " · Look: " .. lookText,
                 Icon = "check",
@@ -1639,22 +1557,19 @@ do
         end,
     })
 
-    TeleportSection:Space()
-
-    TeleportSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
             if not cf then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
                     Icon = "x",
@@ -1663,7 +1578,7 @@ do
             end
             rootPart.CFrame = cf
             local p = cf.Position
-            WindUI:Notify({
+            mountNotify({
                 Title = "Teleport",
                 Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
                 Icon = "check",
@@ -1671,32 +1586,30 @@ do
         end,
     })
 
-    TeleportSection:Space()
-
     local tweenDurationValue = "5"
-    TeleportSection:Input({
-        Title = "Tween Duration",
-        Placeholder = "e.g. 5",
-        Value = tweenDurationValue,
+    TeleportTab:CreateInput({
+        Name = "Tween Duration",
+        PlaceholderText = "e.g. 5",
+        CurrentValue = tweenDurationValue,
+        Ext = true,
         Callback = function(value)
             tweenDurationValue = value
         end,
     })
 
-    TeleportSection:Button({
-        Title = "Tween to Location",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Tween to Location",
+        Ext = true,
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
             if not targetCf then
-                WindUI:Notify({
+                mountNotify({
                     Title = "Teleport",
                     Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
                     Icon = "x",
@@ -1709,118 +1622,29 @@ do
             local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
             tween:Play()
             local p = targetCf.Position
-            WindUI:Notify({
+            mountNotify({
                 Title = "Teleport",
                 Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
                 Icon = "check",
             })
         end,
     })
-
-    -- */  Teleport to location  /* --
-    local TeleportToLocationSection = TeleportTab:Section({
-        Title = "Teleport to location",
-        Desc = "Select a location and teleport",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local locationList = {
-        { name = "Stage 12", value = "-3319.66, 1642.48, 1383.95", stage = "12" },
-        { name = "Stage 17", value = "7081.83, 1472.93, 186.29", stage = "17" },
-    }
-
-    local locationNames = {}
-    local locationByName = {}
-    for _, loc in ipairs(locationList) do
-        table.insert(locationNames, loc.name)
-        locationByName[loc.name] = loc
-    end
-
-    local selectedLocationName = (#locationNames > 0) and locationNames[1] or nil
-
-    TeleportToLocationSection:Dropdown({
-        Title = "Location",
-        Desc = "Choose a location",
-        Values = locationNames,
-        Value = selectedLocationName,
-        AllowNone = true,
-        Callback = function(value)
-            selectedLocationName = value
-        end
-    })
-
-    local runningSystemTeleport = false
-
-    TeleportToLocationSection:Toggle({
-        Title = "Running system teleport",
-        Value = runningSystemTeleport,
-        Callback = function(enabled)
-            runningSystemTeleport = enabled
-        end
-    })
-
-    TeleportToLocationSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            if not selectedLocationName or selectedLocationName == "" then
-                WindUI:Notify({ Title = "Teleport", Content = "Select a location first", Icon = "x" })
-                return
-            end
-            local item = locationByName[selectedLocationName]
-            if not item then
-                WindUI:Notify({ Title = "Teleport", Content = "Unknown location", Icon = "x" })
-                return
-            end
-            if runningSystemTeleport then
-                local Event = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/StageTeleportRE"]
-                Event:FireServer(item.stage)
-            end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
-                return
-            end
-            task.wait(1)
-            local posStr = item.value
-            local s = posStr:gsub(",", " "):gsub("%s+", " ")
-            local parts = {}
-            for part in string.gmatch(s, "[%d%.%-]+") do
-                table.insert(parts, tonumber(part))
-            end
-            if #parts < 3 then
-                WindUI:Notify({ Title = "Teleport", Content = "Invalid position for " .. selectedLocationName, Icon = "x" })
-                return
-            end
-            local x, y, z = parts[1], parts[2], parts[3]
-            rootPart.CFrame = CFrame.new(x, y, z)
-            WindUI:Notify({
-                Title = "Teleport",
-                Content = "Teleported to " .. selectedLocationName,
-                Icon = "check",
-            })
-        end
-    })
-
     -- */  Teleport to Players  /* --
-    TeleportTab:Space()
+    TeleportTab:CreateSection("Teleport to Players")
 
-    local TeleportToPlayersSection = TeleportTab:Section({
-        Title = "Teleport to Players",
-        Desc = "Select a player and teleport to their character",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    local TELEPORT_PLAYER_NONE = "(None)"
     local playerDisplayNames = {}
     local playerList = {}
     local selectedTeleportPlayer = nil
     local PlayerTeleportDropdown
+
+    local function teleportPlayerDropdownOptions()
+        local opts = { TELEPORT_PLAYER_NONE }
+        for _, n in ipairs(playerDisplayNames) do
+            table.insert(opts, n)
+        end
+        return opts
+    end
 
     local function refreshPlayerList(showNotify)
         playerList = {}
@@ -1833,92 +1657,77 @@ do
             end
         end
         if PlayerTeleportDropdown and PlayerTeleportDropdown.Refresh then
-            PlayerTeleportDropdown:Refresh(playerDisplayNames)
+            PlayerTeleportDropdown:Refresh(teleportPlayerDropdownOptions())
         end
         if selectedTeleportPlayer then
             if not table.find(playerList, selectedTeleportPlayer) then
                 selectedTeleportPlayer = nil
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Select then PlayerTeleportDropdown:Select(nil) end
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set(nil) end
+                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then
+                    PlayerTeleportDropdown:Set(TELEPORT_PLAYER_NONE)
+                end
             end
         end
         if showNotify then
-            WindUI:Notify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)", Icon = "check" })
+            mountNotify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)", Icon = "check" })
         end
     end
 
-    PlayerTeleportDropdown = TeleportToPlayersSection:Dropdown({
-        Title = "Player",
-        Desc = "Select player to teleport to",
-        Values = playerDisplayNames,
-        Value = nil,
-        AllowNone = true,
-        Callback = function(value)
+    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
+        Name = "Player",
+        Search = true,
+        Options = teleportPlayerDropdownOptions(),
+        CurrentOption = { TELEPORT_PLAYER_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
             selectedTeleportPlayer = nil
-            if value then
+            if value and value ~= TELEPORT_PLAYER_NONE then
                 local idx = table.find(playerDisplayNames, value)
                 if idx and playerList[idx] then
                     selectedTeleportPlayer = playerList[idx]
                 end
             end
-        end
+        end,
     })
 
-    TeleportToPlayersSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshPlayerList(true)
-        end
+        end,
     })
 
-    TeleportToPlayersSection:Space()
-
-    TeleportToPlayersSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
+    TeleportTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
         Callback = function()
             if not selectedTeleportPlayer then
-                WindUI:Notify({ Title = "Teleport", Content = "Select a player first", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Select a player first", Icon = "x" })
                 return
             end
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local targetChar = selectedTeleportPlayer.Character
             local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
             if not targetRoot then
-                WindUI:Notify({ Title = "Teleport", Content = "Target player has no character", Icon = "x" })
+                mountNotify({ Title = "Teleport", Content = "Target player has no character", Icon = "x" })
                 return
             end
             rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
+            mountNotify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name), Icon = "check" })
         end
     })
 end
-
 -- */  Auto Bike Tab  /* --
 do
-    local AutoBikeTab = ElementsSection:Tab({
-        Title = "Auto Bike",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local AutoBikeTab = AutoBikeTabShared
 
-    local AutoBikeSection = AutoBikeTab:Section({
-        Title = "Auto Bike",
-        Desc = "Select route, set delay, then run Auto Ride",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    AutoBikeTab:CreateSection("Auto Bike")
 
     local bikeRouteList = {
         {
@@ -1944,28 +1753,42 @@ do
         routeByName[route.name] = route
     end
 
-    local selectedRouteName = (#routeNames > 0) and routeNames[1] or nil
+    local ROUTE_NONE = "(None)"
+    local function routeDropdownOptions()
+        local o = { ROUTE_NONE }
+        for _, n in ipairs(routeNames) do
+            table.insert(o, n)
+        end
+        return o
+    end
+
+    local selectedRouteName = nil
     local teleportDelaySeconds = "5"
     local autoRideRunning = false
 
-    AutoBikeSection:Dropdown({
-        Title = "Route",
-        Desc = "Choose a route",
-        Values = routeNames,
-        Value = selectedRouteName,
-        AllowNone = true,
-        Callback = function(value)
-            selectedRouteName = value
-        end
+    local RouteDropdown = AutoBikeTab:CreateDropdown({
+        Name = "Route",
+        Options = routeDropdownOptions(),
+        CurrentOption = { ROUTE_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            selectedRouteName = nil
+            if value and value ~= ROUTE_NONE then
+                selectedRouteName = value
+            end
+        end,
     })
 
-    AutoBikeSection:Input({
-        Title = "Delay (seconds)",
-        Placeholder = "Seconds before each teleport",
-        Value = teleportDelaySeconds,
+    AutoBikeTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds before each teleport",
+        CurrentValue = teleportDelaySeconds,
+        Ext = true,
         Callback = function(value)
             teleportDelaySeconds = value
-        end
+        end,
     })
 
     local function parsePositionStr(posStr)
@@ -1978,24 +1801,26 @@ do
         return Vector3.new(parts[1], parts[2], parts[3])
     end
 
-    AutoBikeSection:Toggle({
-        Title = "Auto Ride",
+    AutoBikeTab:CreateToggle({
+        Name = "Auto Ride",
+        CurrentValue = false,
+        Ext = true,
         Callback = function(enabled)
             autoRideRunning = enabled
             if not enabled then return end
             if not selectedRouteName or selectedRouteName == "" then
-                WindUI:Notify({ Title = "Auto Bike", Content = "Select a route first", Icon = "x" })
+                mountNotify({ Title = "Auto Bike", Content = "Select a route first", Icon = "x" })
                 return
             end
             local route = routeByName[selectedRouteName]
             if not route or not route.stages or #route.stages == 0 then
-                WindUI:Notify({ Title = "Auto Bike", Content = "Invalid route", Icon = "x" })
+                mountNotify({ Title = "Auto Bike", Content = "Invalid route", Icon = "x" })
                 return
             end
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                WindUI:Notify({ Title = "Auto Bike", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Auto Bike", Content = "Character not loaded", Icon = "x" })
                 return
             end
             local delaySec = tonumber(teleportDelaySeconds) or 5
@@ -2006,21 +1831,17 @@ do
                 while autoRideRunning do
                     for i, stageData in ipairs(route.stages) do
                         if not autoRideRunning then break end
-                        -- From index 1 onward: wait delay before teleporting to next stage's position
                         if i > 1 then
                             task.wait(delaySec)
                             if not autoRideRunning then break end
                         end
-                        -- Teleport to this stage's position
                         local loc = parsePositionStr(stageData.location)
                         if not loc then
-                            WindUI:Notify({ Title = "Auto Bike", Content = "Invalid location at stage " .. tostring(stageData.stage), Icon = "x" })
+                            mountNotify({ Title = "Auto Bike", Content = "Invalid location at stage " .. tostring(stageData.stage), Icon = "x" })
                         else
-                            -- Teleport to loc first
                             rootPart.CFrame = CFrame.new(loc)
                             task.wait(0.3)
                             if not autoRideRunning then break end
-                            -- Then tween to tweenEnd
                             local tweenEnd = parsePositionStr(stageData.tweenToLocation)
                             if tweenEnd then
                                 local tweenInfo = TweenInfo.new(tweenDuration)
@@ -2030,32 +1851,43 @@ do
                             end
                         end
                     end
-                    -- Delay from last index to first index (5 seconds)
                     if autoRideRunning then
                         task.wait(delayLastToFirst)
                     end
                 end
             end)
             if autoRideRunning then
-                WindUI:Notify({ Title = "Auto Bike", Content = "Auto Ride started", Icon = "check" })
+                mountNotify({ Title = "Auto Bike", Content = "Auto Ride started", Icon = "check" })
             end
-        end
+        end,
     })
 end
 
 -- */  Objects Tab  /* --
 do
-    local ObjectsTab = ElementsSection:Tab({
-        Title = "Objects",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local ObjectsTab = Window:CreateTab("Objects", 4483362458)
 
     -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
     local OBJECTS_TREE_MAX_DEPTH = 14
     local OBJECTS_TREE_MAX_LINES = 600
+
+    local OBJECTS_NONE = "(None)"
+    local NESTED_CHILDREN_TITLE = "Children (nested)"
+    local function nestedChildrenHintText(): string
+        return "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth "
+            .. OBJECTS_TREE_MAX_DEPTH
+            .. ", max "
+            .. OBJECTS_TREE_MAX_LINES
+            .. " lines)"
+    end
+
+    local function objectDropdownOptions(items: { string }): { string }
+        local o = { OBJECTS_NONE }
+        for _, x in ipairs(items) do
+            table.insert(o, x)
+        end
+        return o
+    end
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
         return inst:IsA("Folder")
@@ -2101,13 +1933,7 @@ do
         return table.concat(lines, "\n")
     end
 
-    local ReplicatedStorageSection = ObjectsTab:Section({
-        Title = "ReplicatedStorage",
-        Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    ObjectsTab:CreateSection("ReplicatedStorage")
 
     local rsDisplayList = {}
     local rsKeyValueList = {}
@@ -2123,57 +1949,54 @@ do
             rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
-            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+            ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsDisplayList))
         end
-        WindUI:Notify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
     end
 
-    ReplicatedStorageDropdown = ReplicatedStorageSection:Dropdown({
-        Title = "ReplicatedStorage (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = rsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                    ReplicatedStorageChildrenParagraph:SetDesc("Select an object above to list its children")
+    ReplicatedStorageDropdown = ObjectsTab:CreateDropdown({
+        Name = "ReplicatedStorage (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(rsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
+                    ReplicatedStorageChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = rsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                ReplicatedStorageChildrenParagraph:SetDesc(text)
+            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
+                ReplicatedStorageChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    ReplicatedStorageChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = nestedChildrenHintText(),
     })
 
-    ReplicatedStorageSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshReplicatedStorageList()
-        end
+        end,
     })
 
-    ObjectsTab:Space()
-
-    local PlayersServiceSection = ObjectsTab:Section({
-        Title = "Players",
-        Desc = "Players service: all Player instances (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    ObjectsTab:CreateSection("Players")
 
     local plrsDisplayList = {}
     local plrsKeyValueList = {}
@@ -2189,57 +2012,54 @@ do
             plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
-            PlayersServiceDropdown:Refresh(plrsDisplayList)
+            PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsDisplayList))
         end
-        WindUI:Notify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players", Icon = "check" })
+        mountNotify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players", Icon = "check" })
     end
 
-    PlayersServiceDropdown = PlayersServiceSection:Dropdown({
-        Title = "Players (key = value)",
-        Desc = "Select a player to see their top-level children listed below",
-        Values = plrsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                    PlayersServiceChildrenParagraph:SetDesc("Select a player above to list their children")
+    PlayersServiceDropdown = ObjectsTab:CreateDropdown({
+        Name = "Players (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(plrsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
+                    PlayersServiceChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select a player above to list their children",
+                    })
                 end
                 return
             end
             local entry = plrsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                PlayersServiceChildrenParagraph:SetDesc(text)
+            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
+                PlayersServiceChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    PlayersServiceChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = nestedChildrenHintText(),
     })
 
-    PlayersServiceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshPlayersServiceList()
-        end
+        end,
     })
 
-    ObjectsTab:Space()
-
-    local LocalPlayerSection = ObjectsTab:Section({
-        Title = "Local Player",
-        Desc = "All direct children of Players.LocalPlayer (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    ObjectsTab:CreateSection("Local Player")
 
     local lpDisplayList = {}
     local lpKeyValueList = {}
@@ -2256,57 +2076,54 @@ do
             lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
-            LocalPlayerDropdown:Refresh(lpDisplayList)
+            LocalPlayerDropdown:Refresh(objectDropdownOptions(lpDisplayList))
         end
-        WindUI:Notify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
     end
 
-    LocalPlayerDropdown = LocalPlayerSection:Dropdown({
-        Title = "Local Player (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = lpDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                    LocalPlayerChildrenParagraph:SetDesc("Select an object above to list its children")
+    LocalPlayerDropdown = ObjectsTab:CreateDropdown({
+        Name = "Local Player (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(lpDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
+                    LocalPlayerChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = lpKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                LocalPlayerChildrenParagraph:SetDesc(text)
+            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
+                LocalPlayerChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    LocalPlayerChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = nestedChildrenHintText(),
     })
 
-    LocalPlayerSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshLocalPlayerList()
-        end
+        end,
     })
 
-    ObjectsTab:Space()
-
-    local WorkspaceSection = ObjectsTab:Section({
-        Title = "Workspace",
-        Desc = "All direct children of Workspace (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    ObjectsTab:CreateSection("Workspace")
 
     local wsDisplayList = {}
     local wsKeyValueList = {}
@@ -2322,46 +2139,51 @@ do
             wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
-            WorkspaceDropdown:Refresh(wsDisplayList)
+            WorkspaceDropdown:Refresh(objectDropdownOptions(wsDisplayList))
         end
-        WindUI:Notify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
+        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
     end
 
-    WorkspaceDropdown = WorkspaceSection:Dropdown({
-        Title = "Workspace (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = wsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                    WorkspaceChildrenParagraph:SetDesc("Select an object above to list its children")
+    WorkspaceDropdown = ObjectsTab:CreateDropdown({
+        Name = "Workspace (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(wsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
+                    WorkspaceChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = wsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                WorkspaceChildrenParagraph:SetDesc(text)
+            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
+                WorkspaceChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    WorkspaceChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = nestedChildrenHintText(),
     })
 
-    WorkspaceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshWorkspaceList()
-        end
+        end,
     })
 
 end
