@@ -2724,6 +2724,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 		-- Dropdown
 		function Tab:CreateDropdown(DropdownSettings)
+			local dropdownExpandedHeight = (DropdownSettings.Search and 206) or 180
+
 			local Dropdown = Elements.Template.Dropdown:Clone()
 			if string.find(DropdownSettings.Name,"closed") then
 				Dropdown.Name = "Dropdown"
@@ -2782,6 +2784,58 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
+			local function applyDropdownSearchFilter()
+				if not DropdownSettings.Search then
+					return
+				end
+				local sb = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
+				if not (sb and sb:IsA("TextBox")) then
+					return
+				end
+				local q = string.lower(sb.Text)
+				for _, ch in ipairs(Dropdown.List:GetChildren()) do
+					if ch.ClassName == "Frame" and ch.Name ~= "Placeholder" then
+						local nm = string.lower(tostring(ch.Name))
+						ch.Visible = (q == "") or (string.find(nm, q, 1, true) ~= nil)
+					end
+				end
+			end
+
+			if DropdownSettings.Search then
+				local sb = Instance.new("TextBox")
+				sb.Name = "RayfieldDropdownSearch"
+				sb.Size = UDim2.new(1, -12, 0, 24)
+				sb.LayoutOrder = -1000
+				sb.ZIndex = 55
+				sb.Font = Enum.Font.Gotham
+				sb.TextSize = 14
+				sb.TextXAlignment = Enum.TextXAlignment.Left
+				sb.ClearTextOnFocus = false
+				sb.Text = ""
+				sb.PlaceholderText = "Search..."
+				sb.TextColor3 = SelectedTheme.TextColor
+				sb.PlaceholderColor3 = SelectedTheme.TextColor
+				sb.TextTransparency = 0.2
+				sb.BackgroundColor3 = SelectedTheme.InputBackground
+				sb.BackgroundTransparency = 0
+				sb.BorderSizePixel = 0
+				local sbStroke = Instance.new("UIStroke")
+				sbStroke.Color = SelectedTheme.InputStroke
+				sbStroke.Parent = sb
+				sb.Parent = Dropdown.List
+				sb.Visible = false
+				local pad = Instance.new("UIPadding")
+				pad.PaddingLeft = UDim.new(0, 8)
+				pad.Parent = sb
+				sb:GetPropertyChangedSignal("Text"):Connect(applyDropdownSearchFilter)
+				Rayfield.Main:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+					sb.BackgroundColor3 = SelectedTheme.InputBackground
+					sbStroke.Color = SelectedTheme.InputStroke
+					sb.TextColor3 = SelectedTheme.TextColor
+					sb.PlaceholderColor3 = SelectedTheme.TextColor
+				end)
+			end
+
 			Dropdown.Toggle.Rotation = 180
 
 			Dropdown.Interact.MouseButton1Click:Connect(function()
@@ -2805,12 +2859,24 @@ function RayfieldLibrary:CreateWindow(Settings)
 					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
 					task.wait(0.35)
 					Dropdown.List.Visible = false
+					local sbClose = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
+					if sbClose and sbClose:IsA("TextBox") then
+						sbClose.Visible = false
+						sbClose.Text = ""
+					end
+					applyDropdownSearchFilter()
 					Debounce = false
 				else
-					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 180)}):Play()
+					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, dropdownExpandedHeight)}):Play()
 					Dropdown.List.Visible = true
 					TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 0.7}):Play()
 					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 0}):Play()	
+					local sbOpen = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
+					if sbOpen and sbOpen:IsA("TextBox") then
+						sbOpen.Visible = true
+						sbOpen.Text = ""
+					end
+					applyDropdownSearchFilter()
 					for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
 						if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
 							if DropdownOpt.Name ~= Dropdown.Selected.Text then
@@ -2933,6 +2999,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 							TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
 							task.wait(0.35)
 							Dropdown.List.Visible = false
+							local sbPick = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
+							if sbPick and sbPick:IsA("TextBox") then
+								sbPick.Visible = false
+								sbPick.Text = ""
+							end
+							applyDropdownSearchFilter()
 						end
 						Debounce = false
 						if not DropdownSettings.Ext then
@@ -2946,6 +3018,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 			SetDropdownOptions()
+			applyDropdownSearchFilter()
 
 			for _, droption in ipairs(Dropdown.List:GetChildren()) do
 				if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
@@ -2964,6 +3037,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 					end)
 				end
 			end
+			applyDropdownSearchFilter()
 
 			function DropdownSettings:Set(NewOption)
 				DropdownSettings.CurrentOption = NewOption
@@ -3014,6 +3088,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 						end
 					end
 				end
+				applyDropdownSearchFilter()
 				--SaveConfiguration()
 			end
 
@@ -3025,6 +3100,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 					end
 				end
 				SetDropdownOptions()
+				applyDropdownSearchFilter()
 
 				-- Apply selected/unselected background colors to new options
 				for _, droption in ipairs(Dropdown.List:GetChildren()) do
@@ -3049,6 +3125,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 						end
 					end
 				end
+				applyDropdownSearchFilter()
 			end
 
 			if Settings.ConfigurationSaving then
