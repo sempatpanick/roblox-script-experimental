@@ -1243,6 +1243,113 @@ do
             refreshPlayersInfoList(false)
         end)
     end)
+
+    LocalPlayerTab:CreateSection("Carry")
+    local CARRY_NONE = "(None)"
+    local carryPlayerNames = {}
+    local selectedCarryPlayerName = nil
+    local CarryPlayerDropdown
+    local carryEnabled = false
+    local carryLoopToken = 0
+    local CARRY_NEARBY_DISTANCE = 20
+
+    local function carryDropdownOptions()
+        local opts = { CARRY_NONE }
+        for _, n in ipairs(carryPlayerNames) do
+            table.insert(opts, n)
+        end
+        return opts
+    end
+
+    local function refreshCarryPlayers()
+        carryPlayerNames = {}
+        local localPlayer = Players.LocalPlayer
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= localPlayer and player.ClassName == "Player" then
+                table.insert(carryPlayerNames, player.Name)
+            end
+        end
+        table.sort(carryPlayerNames, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        if CarryPlayerDropdown and CarryPlayerDropdown.Refresh then
+            CarryPlayerDropdown:Refresh(carryDropdownOptions())
+        end
+        if selectedCarryPlayerName and not table.find(carryPlayerNames, selectedCarryPlayerName) then
+            selectedCarryPlayerName = nil
+            if CarryPlayerDropdown and CarryPlayerDropdown.Set then
+                CarryPlayerDropdown:Set({ CARRY_NONE })
+            end
+        end
+    end
+
+    CarryPlayerDropdown = LocalPlayerTab:CreateDropdown({
+        Name = "Player",
+        Options = carryDropdownOptions(),
+        CurrentOption = { CARRY_NONE },
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if picked and picked ~= CARRY_NONE then
+                selectedCarryPlayerName = picked
+            else
+                selectedCarryPlayerName = nil
+            end
+        end,
+    })
+
+    LocalPlayerTab:CreateToggle({
+        Name = "Carry nearby selected player",
+        CurrentValue = false,
+        Callback = function(enabled)
+            carryEnabled = enabled == true
+            carryLoopToken = carryLoopToken + 1
+            local myToken = carryLoopToken
+
+            if not carryEnabled then
+                mountNotify({
+                    Title = "Carry",
+                    Content = "Carry disabled",
+                })
+                return
+            end
+
+            mountNotify({
+                Title = "Carry",
+                Content = "Carry enabled",
+            })
+
+            task.spawn(function()
+                while carryEnabled and myToken == carryLoopToken do
+                    if selectedCarryPlayerName and selectedCarryPlayerName ~= "" then
+                        local localCharacter = Players.LocalPlayer.Character
+                        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+                        local targetPlayer = Players:FindFirstChild(selectedCarryPlayerName)
+                        local targetCharacter = targetPlayer and targetPlayer.Character
+                        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+                        if localRoot and targetRoot then
+                            local dist = (localRoot.Position - targetRoot.Position).Magnitude
+                            if dist <= CARRY_NEARBY_DISTANCE then
+                                pcall(function()
+                                    -- Keep target close to the local player's side while toggle is enabled.
+                                    targetRoot.CFrame = localRoot.CFrame * CFrame.new(1.8, 0, 0)
+                                end)
+                            end
+                        end
+                    end
+                    task.wait(0.12)
+                end
+            end)
+        end,
+    })
+
+    refreshCarryPlayers()
+    Players.PlayerAdded:Connect(refreshCarryPlayers)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(refreshCarryPlayers)
+    end)
+
     LocalPlayerTab:CreateSection("Server")
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
@@ -1724,7 +1831,10 @@ do
             local picked = rayfieldDropdownFirst(selectedDisplay)
             if not picked then
                 if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                    ReplicatedStorageChildrenParagraph:Set({ Content = "Select an object above to list its children" })
+                    ReplicatedStorageChildrenParagraph:Set({
+                        Title = "Children (nested)",
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
@@ -1732,7 +1842,10 @@ do
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
             if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                ReplicatedStorageChildrenParagraph:Set({ Content = text })
+                ReplicatedStorageChildrenParagraph:Set({
+                    Title = "Children (nested)",
+                    Content = text,
+                })
             end
         end
     })
@@ -1776,7 +1889,10 @@ do
             local picked = rayfieldDropdownFirst(selectedDisplay)
             if not picked then
                 if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                    PlayersServiceChildrenParagraph:Set({ Content = "Select a player above to list their children" })
+                    PlayersServiceChildrenParagraph:Set({
+                        Title = "Children (nested)",
+                        Content = "Select a player above to list their children",
+                    })
                 end
                 return
             end
@@ -1784,7 +1900,10 @@ do
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
             if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                PlayersServiceChildrenParagraph:Set({ Content = text })
+                PlayersServiceChildrenParagraph:Set({
+                    Title = "Children (nested)",
+                    Content = text,
+                })
             end
         end
     })
@@ -1829,7 +1948,10 @@ do
             local picked = rayfieldDropdownFirst(selectedDisplay)
             if not picked then
                 if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                    LocalPlayerChildrenParagraph:Set({ Content = "Select an object above to list its children" })
+                    LocalPlayerChildrenParagraph:Set({
+                        Title = "Children (nested)",
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
@@ -1837,7 +1959,10 @@ do
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
             if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                LocalPlayerChildrenParagraph:Set({ Content = text })
+                LocalPlayerChildrenParagraph:Set({
+                    Title = "Children (nested)",
+                    Content = text,
+                })
             end
         end
     })
@@ -1881,7 +2006,10 @@ do
             local picked = rayfieldDropdownFirst(selectedDisplay)
             if not picked then
                 if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                    WorkspaceChildrenParagraph:Set({ Content = "Select an object above to list its children" })
+                    WorkspaceChildrenParagraph:Set({
+                        Title = "Children (nested)",
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
@@ -1889,7 +2017,10 @@ do
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
             if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                WorkspaceChildrenParagraph:Set({ Content = text })
+                WorkspaceChildrenParagraph:Set({
+                    Title = "Children (nested)",
+                    Content = text,
+                })
             end
         end
     })
