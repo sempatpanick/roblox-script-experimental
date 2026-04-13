@@ -12,52 +12,54 @@ local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local TweenService = game:GetService("TweenService")
 
-local WindUI
+local RayfieldLibrary
 
 do
     local ok, result = pcall(function()
-        return require("./src/Init")
+        return require("./rayfield_library")
     end)
-    
+
     if ok then
-        WindUI = result
-    else 
+        RayfieldLibrary = result
+    else
         if cloneref(RunService):IsStudio() then
-            WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+            RayfieldLibrary = require(cloneref(ReplicatedStorage):WaitForChild("rayfield_library"))
         else
-            WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+            RayfieldLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/rayfield_library.lua"))()
         end
     end
 end
 
--- */  Window  /* --
-local Window = WindUI:CreateWindow({
-    Title = "sempatpanick | Expedition Antartica",
-    Folder = "sempatpanick",
-    Icon = "solar:folder-2-bold-duotone",
-    NewElements = true,
-    HideSearchBar = false,
-    OpenButton = {
-        Title = "Open Others UI",
-        CornerRadius = UDim.new(1,0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Scale = 0.5,
-        Color = ColorSequence.new(
-            Color3.fromHex("#30FF6A"), 
-            Color3.fromHex("#e7ff2f")
-        )
-    },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Mac",
-    },
-})
+local function mountNotify(opts)
+    local img
+    local ic = opts.Icon
+    if ic == "check" then
+        img = 4483362748
+    elseif ic == "x" or ic == "close" then
+        img = 4384402990
+    end
+    RayfieldLibrary:Notify({
+        Title = opts.Title,
+        Content = opts.Content or "",
+        Image = img,
+        Duration = opts.Duration or 4,
+    })
+end
 
--- */  Colors  /* --
-local Green = Color3.fromHex("#10C550")
+-- */  Window  /* --
+local Window = RayfieldLibrary:CreateWindow({
+    Name = "sempatpanick | Expedition Antartica",
+    LoadingTitle = "sempatpanick",
+    LoadingSubtitle = "Expedition Antartica",
+    Icon = 4483362458,
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = "sempatpanick",
+        FileName = "expedition_antartica",
+    },
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings = true,
+})
 
 -- */  Shared helpers (reusable)  /* --
 local function parsePositionString(posStr)
@@ -79,9 +81,7 @@ local function getLocalCharacterParts()
 end
 
 local function notify(title, content, icon)
-    if WindUI and WindUI.Notify then
-        WindUI:Notify({ Title = title, Content = content, Icon = icon or "check" })
-    end
+    mountNotify({ Title = title, Content = content or "", Icon = icon or "check" })
 end
 
 -- */  Global: format any Luau value for inspector text (Instance uses Name, same as ValueBase lines in formatInstanceDisplay)  /* --
@@ -153,28 +153,11 @@ function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     return base
 end
 
--- */  Elements Section  /* --
-local ElementsSection = Window:Section({
-    Title = "Elements",
-    Opened = true,
-})
-
 -- */  Local Player Tab  /* --
 do
-    local LocalPlayerTab = ElementsSection:Tab({
-        Title = "Local Player",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local LocalPlayerTab = Window:CreateTab("Local Player", 4483362458)
 
-    local MiscSection = LocalPlayerTab:Section({
-        Title = "Misc",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
+    LocalPlayerTab:CreateSection("Misc")
 
     local infiniteJumpConnection = nil
     local antiAfkConnection = nil
@@ -279,10 +262,10 @@ do
 
     startAntiAfk()
 
-    MiscSection:Toggle({
-        Title = "Anti AFK",
-        Desc = "Prevent kick for inactivity (resets idle when Roblox detects AFK)",
-        Value = true,
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "Anti AFK",
+        CurrentValue = true,
         Callback = function(enabled)
             if enabled then
                 startAntiAfk()
@@ -292,8 +275,10 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Infinite Jump",
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "Infinite Jump",
+        CurrentValue = false,
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -313,9 +298,10 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "No Clip",
-        Desc = "Pass through walls (disables character collision)",
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "No Clip",
+        CurrentValue = false,
         Callback = function(enabled)
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
@@ -336,9 +322,10 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Fly",
-        Desc = "WASD + Space (up) / Ctrl (down), camera direction",
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "Fly",
+        CurrentValue = false,
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -449,9 +436,10 @@ do
         end)
     end
 
-    MiscSection:Toggle({
-        Title = "Free Camera",
-        Desc = "Detach camera. Hold LMB/RMB + drag to look; WASD + Space/Ctrl to move. Character stays in place; cursor visible when not dragging.",
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "Free Camera",
+        CurrentValue = false,
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -462,9 +450,10 @@ do
         end
     })
 
-    MiscSection:Toggle({
-        Title = "Camera Penetrate",
-        Desc = "Allow camera zoom to pass objects",
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "Camera Penetrate",
+        CurrentValue = false,
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
             local lp = Players.LocalPlayer
@@ -494,16 +483,7 @@ do
             applyNoClip(Players.LocalPlayer.Character, true)
         end
     end
-
-    LocalPlayerTab:Space()
-
-    local WalkSpeedSection = LocalPlayerTab:Section({
-        Title = "Walk Speed",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Walk Speed")
     local defaultWalkSpeed = 16
 
     local function getCurrentCharacterWalkSpeed()
@@ -520,10 +500,11 @@ do
     local currentWalkSpeed = getCurrentCharacterWalkSpeed()
     local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
 
-    local WalkSpeedInput = WalkSpeedSection:Input({
-        Title = "Speed",
-        Placeholder = "e.g. 16 or 100",
-        Value = walkSpeedValue,
+    local WalkSpeedInput = LocalPlayerTab:CreateInput({
+        Ext = true,
+        Name = "Speed",
+        PlaceholderText = "e.g. 16 or 100",
+        CurrentValue = walkSpeedValue,
         Callback = function(value)
             walkSpeedValue = value
         end
@@ -551,13 +532,9 @@ do
         end
         return true
     end
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Get Current Walk Speed",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Walk Speed",
+        Ext = true,
         Callback = function()
             syncWalkSpeedInputFromCharacter(true)
         end
@@ -565,13 +542,9 @@ do
 
     -- Keep the input defaulted to current character speed when available.
     syncWalkSpeedInputFromCharacter(false)
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
+        Ext = true,
         Callback = function()
             local character, _, humanoid = getLocalCharacterParts()
             if not character then
@@ -587,13 +560,9 @@ do
             notify("Walk Speed", "Set to " .. tostring(humanoid.WalkSpeed))
         end
     })
-
-    WalkSpeedSection:Space()
-
-    WalkSpeedSection:Button({
-        Title = "Reset",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Reset",
+        Ext = true,
         Callback = function()
             local character, _, humanoid = getLocalCharacterParts()
             if not character then
@@ -609,16 +578,7 @@ do
             notify("Walk Speed", "Reset to " .. tostring(defaultWalkSpeed))
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local JumpHeightSection = LocalPlayerTab:Section({
-        Title = "Jump Height",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Jump Height")
     local defaultJumpHeight = 7.2
 
     local function getCurrentCharacterJumpHeight()
@@ -635,10 +595,11 @@ do
     local currentJumpHeight = getCurrentCharacterJumpHeight()
     local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
 
-    local JumpHeightInput = JumpHeightSection:Input({
-        Title = "Height",
-        Placeholder = "e.g. 7.2 or 50",
-        Value = jumpHeightValue,
+    local JumpHeightInput = LocalPlayerTab:CreateInput({
+        Ext = true,
+        Name = "Height",
+        PlaceholderText = "e.g. 7.2 or 50",
+        CurrentValue = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
         end
@@ -666,13 +627,9 @@ do
         end
         return true
     end
-
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Get Current Jump Height",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Get Current Jump Height",
+        Ext = true,
         Callback = function()
             syncJumpHeightInputFromCharacter(true)
         end
@@ -680,13 +637,9 @@ do
 
     -- Keep the input defaulted to current character jump height when available.
     syncJumpHeightInputFromCharacter(false)
-
-    JumpHeightSection:Space()
-
-    JumpHeightSection:Button({
-        Title = "Apply",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Apply",
+        Ext = true,
         Callback = function()
             local character, _, humanoid = getLocalCharacterParts()
             if not character then
@@ -702,16 +655,7 @@ do
             notify("Jump Height", "Set to " .. tostring(humanoid.JumpHeight))
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local ESPSection = LocalPlayerTab:Section({
-        Title = "ESP",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("ESP")
     local espNamesEnabled = false
     local espDistanceEnabled = false
     local espCharacterEnabled = false
@@ -888,10 +832,11 @@ do
         return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled
     end
 
-    ESPSection:Input({
-        Title = "ESP Max Distance",
-        Placeholder = "0 = unlimited, e.g. 10000",
-        Value = tostring(espMaxDistance),
+    LocalPlayerTab:CreateInput({
+        Ext = true,
+        Name = "ESP Max Distance",
+        PlaceholderText = "0 = unlimited, e.g. 10000",
+        CurrentValue = tostring(espMaxDistance),
         Callback = function(value)
             local n = tonumber(value)
             if not n then return end
@@ -901,9 +846,6 @@ do
             end
         end
     })
-
-    ESPSection:Space()
-
     local function espOnRenderStep()
         if not espAnyEnabled() then
             return
@@ -954,10 +896,10 @@ do
         end
     end
 
-    ESPSection:Toggle({
-        Title = "ESP Player Names",
-        Desc = "Show player name above character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "ESP Player Names",
+        CurrentValue = false,
         Callback = function(enabled)
             espNamesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -965,10 +907,10 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Distance",
-        Desc = "Show player distance in meters (below name)",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "ESP Player Distance",
+        CurrentValue = false,
         Callback = function(enabled)
             espDistanceEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -976,10 +918,10 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Character",
-        Desc = "Highlight player character",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "ESP Player Character",
+        CurrentValue = false,
         Callback = function(enabled)
             espCharacterEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
@@ -987,32 +929,33 @@ do
         end
     })
 
-    ESPSection:Toggle({
-        Title = "ESP Player Lines",
-        Desc = "Draw line from your character to players",
-        Value = false,
+    LocalPlayerTab:CreateToggle({
+        Ext = true,
+        Name = "ESP Player Lines",
+        CurrentValue = false,
         Callback = function(enabled)
             espLinesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
     })
-
-    LocalPlayerTab:Space()
-
-    local PlayersInfoSection = LocalPlayerTab:Section({
-        Title = "Players Info",
-        Desc = "Pick a player to view username, display name, speed, location, Humanoid properties, and Humanoid children",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    LocalPlayerTab:CreateSection("Players Info")
     local infoPlayerList = {}
     local infoPlayerDisplayNames = {}
     local selectedInfoPlayer = nil
     local PlayersInfoDropdown
     local PlayersInfoParagraph
+
+    local INFO_PLAYER_NONE = "(None)"
+    local PLAYERS_INFO_PAR_TITLE = "Details"
+
+    local function playersInfoDropdownOptions()
+        local opts = { INFO_PLAYER_NONE }
+        for _, n in ipairs(infoPlayerDisplayNames) do
+            table.insert(opts, n)
+        end
+        return opts
+    end
 
     local function playerInfoLabel(player)
         if not player then return "" end
@@ -1292,8 +1235,11 @@ do
     end
 
     local function updatePlayersInfoParagraph()
-        if PlayersInfoParagraph and PlayersInfoParagraph.SetDesc then
-            PlayersInfoParagraph:SetDesc(buildPlayersInfoText(selectedInfoPlayer))
+        if PlayersInfoParagraph and PlayersInfoParagraph.Set then
+            PlayersInfoParagraph:Set({
+                Title = PLAYERS_INFO_PAR_TITLE,
+                Content = buildPlayersInfoText(selectedInfoPlayer),
+            })
         end
     end
 
@@ -1307,13 +1253,14 @@ do
             end
         end
         if PlayersInfoDropdown and PlayersInfoDropdown.Refresh then
-            PlayersInfoDropdown:Refresh(infoPlayerDisplayNames)
+            PlayersInfoDropdown:Refresh(playersInfoDropdownOptions())
         end
         if selectedInfoPlayer then
             if not table.find(infoPlayerList, selectedInfoPlayer) then
                 selectedInfoPlayer = nil
-                if PlayersInfoDropdown and PlayersInfoDropdown.Select then PlayersInfoDropdown:Select(nil) end
-                if PlayersInfoDropdown and PlayersInfoDropdown.Set then PlayersInfoDropdown:Set(nil) end
+                if PlayersInfoDropdown and PlayersInfoDropdown.Set then
+                    PlayersInfoDropdown:Set(INFO_PLAYER_NONE)
+                end
             end
         end
         updatePlayersInfoParagraph()
@@ -1322,16 +1269,16 @@ do
         end
     end
 
-    PlayersInfoDropdown = PlayersInfoSection:Dropdown({
-        Title = "Player",
-        Desc = "All players in this server",
-        Values = infoPlayerDisplayNames,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(value)
+    PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
+        Ext = true,
+        Name = "Player",
+        Search = true,
+        Options = playersInfoDropdownOptions(),
+        CurrentOption = { INFO_PLAYER_NONE },
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
             selectedInfoPlayer = nil
-            if value then
+            if value and value ~= INFO_PLAYER_NONE then
                 local idx = table.find(infoPlayerDisplayNames, value)
                 if idx and infoPlayerList[idx] then
                     selectedInfoPlayer = infoPlayerList[idx]
@@ -1341,26 +1288,21 @@ do
         end,
     })
 
-    PlayersInfoParagraph = PlayersInfoSection:Paragraph({
-        Title = "Details",
-        Desc = "Select a player from the list.",
+    PlayersInfoParagraph = LocalPlayerTab:CreateParagraph({
+        Title = PLAYERS_INFO_PAR_TITLE,
+        Content = "Select a player from the list.",
     })
 
-    PlayersInfoSection:Button({
-        Title = "Refresh list",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh list",
+        Ext = true,
         Callback = function()
             refreshPlayersInfoList(true)
         end,
     })
-
-    PlayersInfoSection:Space()
-
-    PlayersInfoSection:Button({
-        Title = "Refresh details",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Refresh details",
+        Ext = true,
         Callback = function()
             if not selectedInfoPlayer then
                 notify("Players Info", "Select a player first", "x")
@@ -1381,20 +1323,10 @@ do
             refreshPlayersInfoList(false)
         end)
     end)
-
-    LocalPlayerTab:Space()
-
-    local ServerSection = LocalPlayerTab:Section({
-        Title = "Server",
-        Desc = "Server-related actions",
-        Box = true,
-        BoxBorder = true,
-    })
-
-    ServerSection:Button({
-        Title = "Rejoin server",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateSection("Server")
+    LocalPlayerTab:CreateButton({
+        Name = "Rejoin server",
+        Ext = true,
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
             local placeId = game.PlaceId
@@ -1412,10 +1344,9 @@ do
         end,
     })
 
-    ServerSection:Button({
-        Title = "Copy game ID",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Copy game ID",
+        Ext = true,
         Callback = function()
             local paste = setclipboard or toclipboard
             if not paste then
@@ -1427,9 +1358,6 @@ do
             notify("Server", "Copied PlaceId " .. id, "check")
         end,
     })
-
-    LocalPlayerTab:Space()
-
     local animationOptions = { "Hair Grab (R6)" }
     local selectedAnimationName = animationOptions[1]
     local animationRunning = false
@@ -1518,27 +1446,23 @@ do
             restoreAll()
         end)
     end
-    local AnimationSection = LocalPlayerTab:Section({
-        Title = "Animation",
-        Desc = "R6 local animations with accessory interaction",
-        Box = true,
-        BoxBorder = true,
-    })
-    AnimationSection:Dropdown({
-        Title = "Animation list",
-        Desc = "Select one animation",
-        Values = animationOptions,
-        Value = selectedAnimationName,
-        AllowNone = false,
-        SearchBarEnabled = false,
-        Callback = function(value)
-            if value then selectedAnimationName = value end
+    LocalPlayerTab:CreateSection("Animation")
+    LocalPlayerTab:CreateDropdown({
+        Ext = true,
+        Name = "Animation list",
+        Options = animationOptions,
+        CurrentOption = { selectedAnimationName },
+        Search = false,
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            if value then
+                selectedAnimationName = value
+            end
         end,
     })
-    AnimationSection:Button({
-        Title = "Animate",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Animate",
+        Ext = true,
         Callback = function()
             if selectedAnimationName == "Hair Grab (R6)" then
                 playHairGrabAnimationR6()
@@ -1547,13 +1471,9 @@ do
             notify("Animation", "Unknown animation selected", "x")
         end,
     })
-
-    LocalPlayerTab:Space()
-
-    LocalPlayerTab:Button({
-        Title = "Clear Console",
-        Justify = "Center",
-        Icon = "",
+    LocalPlayerTab:CreateButton({
+        Name = "Clear Console",
+        Ext = true,
         Callback = function()
             local cleared = false
             local clearFn = rawget(_G, "clearconsole") or rawget(_G, "rconsoleclear")
@@ -1566,365 +1486,11 @@ do
     })
 end
 
--- */  Teleport Tab  /* --
-do
-    local TeleportTab = ElementsSection:Tab({
-        Title = "Teleport",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
-
-    local TeleportSection = TeleportTab:Section({
-        Title = "Teleport",
-        Desc = "Location = X, Y, Z. Look direction = root LookVector; blank or 0,0,0 = position only. Get fills both. Walk uses position only.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local teleportInputValue = ""
-    local teleportLookInputValue = ""
-
-    local function teleportCFrameFromInputs(posStr, lookStr)
-        local pos = parsePositionString(posStr)
-        if not pos then
-            return nil
-        end
-        local s = (lookStr or ""):gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        if #parts < 3 then
-            return CFrame.new(pos)
-        end
-        local dir = Vector3.new(parts[1], parts[2], parts[3])
-        if dir.Magnitude < 1e-5 then
-            return CFrame.new(pos)
-        end
-        return CFrame.lookAt(pos, pos + dir.Unit)
-    end
-
-    local TeleportInput = TeleportSection:Input({
-        Title = "Location",
-        Placeholder = "e.g. 100, 5, 200 or 100 5 200",
-        Value = teleportInputValue,
-        Callback = function(value)
-            teleportInputValue = value
-        end
-    })
-
-    local TeleportLookInput = TeleportSection:Input({
-        Title = "Look direction",
-        Desc = "HumanoidRootPart look vector (X, Y, Z)",
-        Placeholder = "e.g. 0, 0, -1 or leave empty",
-        Value = teleportLookInputValue,
-        Callback = function(value)
-            teleportLookInputValue = value
-        end,
-    })
-
-    TeleportSection:Button({
-        Title = "Get Current Location",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local pos = rootPart.Position
-            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
-            teleportInputValue = text
-            if TeleportInput and TeleportInput.Set then
-                TeleportInput:Set(text)
-            elseif TeleportInput and TeleportInput.SetValue then
-                TeleportInput:SetValue(text)
-            end
-            local look = rootPart.CFrame.LookVector
-            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
-            teleportLookInputValue = lookText
-            if TeleportLookInput and TeleportLookInput.Set then
-                TeleportLookInput:Set(lookText)
-            elseif TeleportLookInput and TeleportLookInput.SetValue then
-                TeleportLookInput:SetValue(lookText)
-            end
-            notify("Location", "Position: " .. text .. " · Look: " .. lookText)
-        end
-    })
-
-    TeleportSection:Space()
-
-    TeleportSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not cf then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            rootPart.CFrame = cf
-            local p = cf.Position
-            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
-        end
-    })
-
-    TeleportSection:Space()
-
-    local tweenDurationValue = "5"
-    TeleportSection:Input({
-        Title = "Tween Duration",
-        Placeholder = "e.g. 5",
-        Value = tweenDurationValue,
-        Callback = function(value)
-            tweenDurationValue = value
-        end
-    })
-
-    TeleportSection:Button({
-        Title = "Tween to Location",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not targetCf then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            local duration = tonumber(tweenDurationValue) or 5
-            if duration < 0.1 then duration = 0.1 end
-            local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
-            tween:Play()
-            local p = targetCf.Position
-            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration))
-        end
-    })
-
-    TeleportSection:Space()
-
-    TeleportSection:Button({
-        Title = "Walk to Location",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local _, rootPart, humanoid = getLocalCharacterParts()
-            if not rootPart or not humanoid then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetPos = parsePositionString(teleportInputValue)
-            if not targetPos then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            humanoid:MoveTo(targetPos)
-            notify("Teleport", string.format("Walking to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
-        end
-    })
-
-    TeleportSection:Space()
-
-    -- */  Teleport to Camp  /* --
-    TeleportTab:Space()
-
-    local campTeleportList = {
-        { name = "Camp 1", position = "-3718.86, 240.00, 235.13" },
-        { name = "Camp 2", position = "1789.92, 110.44, -137.28" },
-        { name = "Camp 3", position = "5892.31, 320.00, -19.92" },
-        { name = "Camp 4", position = "8991.70, 600.60, 103.15" },
-        { name = "South Pole", position = "10989.81, 569.12, 106.85" },
-    }
-
-    local campTeleportNames = {}
-    for _, camp in ipairs(campTeleportList) do
-        table.insert(campTeleportNames, camp.name)
-    end
-
-    local selectedCampTeleport = (#campTeleportNames > 0) and campTeleportNames[1] or nil
-
-    local TeleportToCampSection = TeleportTab:Section({
-        Title = "Teleport to Camp",
-        Desc = "Select a camp and teleport instantly",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    TeleportToCampSection:Dropdown({
-        Title = "Camp",
-        Desc = "Select camp to teleport to",
-        Values = campTeleportNames,
-        Value = selectedCampTeleport,
-        AllowNone = false,
-        Callback = function(value)
-            selectedCampTeleport = value
-        end
-    })
-
-    TeleportToCampSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport to Camp", "Character not loaded", "x")
-                return
-            end
-            if not selectedCampTeleport then
-                notify("Teleport to Camp", "Select a camp first", "x")
-                return
-            end
-            local posStr = nil
-            for _, camp in ipairs(campTeleportList) do
-                if camp.name == selectedCampTeleport then
-                    posStr = camp.position
-                    break
-                end
-            end
-            if not posStr then
-                notify("Teleport to Camp", "Camp not found", "x")
-                return
-            end
-            local targetPos = parsePositionString(posStr)
-            if not targetPos then
-                notify("Teleport to Camp", "Invalid position", "x")
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetPos)
-            notify("Teleport to Camp", "Teleported to " .. selectedCampTeleport)
-        end
-    })
-
-    -- */  Teleport to Players  /* --
-    TeleportTab:Space()
-
-    local TeleportToPlayersSection = TeleportTab:Section({
-        Title = "Teleport to Players",
-        Desc = "Select a player and teleport to their character",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    local playerDisplayNames = {}
-    local playerList = {}
-    local selectedTeleportPlayer = nil
-    local PlayerTeleportDropdown
-
-    local function refreshPlayerList(showNotify)
-        playerList = {}
-        playerDisplayNames = {}
-        local localPlayer = Players.LocalPlayer
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= localPlayer and player.ClassName == "Player" then
-                table.insert(playerList, player)
-                table.insert(playerDisplayNames, player.DisplayName or player.Name)
-            end
-        end
-        if PlayerTeleportDropdown and PlayerTeleportDropdown.Refresh then
-            PlayerTeleportDropdown:Refresh(playerDisplayNames)
-        end
-        if selectedTeleportPlayer then
-            if not table.find(playerList, selectedTeleportPlayer) then
-                selectedTeleportPlayer = nil
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Select then PlayerTeleportDropdown:Select(nil) end
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set(nil) end
-            end
-        end
-        if showNotify then
-            notify("Teleport", "Player list refreshed (" .. #playerList .. " players)")
-        end
-    end
-
-    PlayerTeleportDropdown = TeleportToPlayersSection:Dropdown({
-        Title = "Player",
-        Desc = "Select player to teleport to",
-        Values = playerDisplayNames,
-        Value = nil,
-        AllowNone = true,
-        Callback = function(value)
-            selectedTeleportPlayer = nil
-            if value then
-                local idx = table.find(playerDisplayNames, value)
-                if idx and playerList[idx] then
-                    selectedTeleportPlayer = playerList[idx]
-                end
-            end
-        end
-    })
-
-    TeleportToPlayersSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            refreshPlayerList(true)
-        end
-    })
-
-    TeleportToPlayersSection:Space()
-
-    TeleportToPlayersSection:Button({
-        Title = "Teleport",
-        Justify = "Center",
-        Icon = "",
-        Callback = function()
-            if not selectedTeleportPlayer then
-                notify("Teleport", "Select a player first", "x")
-                return
-            end
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetChar = selectedTeleportPlayer.Character
-            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then
-                notify("Teleport", "Target player has no character", "x")
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            notify("Teleport", "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name))
-        end
-    })
-end
-
 -- */  Automation Tab  /* --
 do
-    local AutomationTab = ElementsSection:Tab({
-        Title = "Automation",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local AutomationTab = Window:CreateTab("Automation", 4483362458)
 
-    local AutoCampSection = AutomationTab:Section({
-        Title = "Auto Camp",
-        Desc = "Select a camp and tween to it",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    AutomationTab:CreateSection("Auto Camp")
     -- mode per position: "tween" | "teleport" | "walk"
     local campList = {
         {
@@ -2153,22 +1719,23 @@ do
         end
     end
 
-    local DurationInput = AutoCampSection:Input({
-        Title = "Tween Duration (seconds)",
-        Placeholder = "e.g. 5",
-        Value = tweenDurationSeconds,
+    local DurationInput = AutomationTab:CreateInput({
+        Ext = true,
+        Name = "Tween Duration (seconds)",
+        PlaceholderText = "e.g. 5",
+        CurrentValue = tweenDurationSeconds,
         Callback = function(value)
             tweenDurationSeconds = value
         end
     })
 
-    AutoCampSection:Dropdown({
-        Title = "Camp",
-        Desc = "Select camp to tween to",
-        Values = campNames,
-        Value = selectedCampName,
-        AllowNone = false,
-        Callback = function(value)
+    AutomationTab:CreateDropdown({
+        Ext = true,
+        Name = "Camp",
+        Options = campNames,
+        CurrentOption = { selectedCampName },
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
             selectedCampName = value
             local defaultDur = getDefaultDurationForCamp(value)
             tweenDurationSeconds = defaultDur
@@ -2176,18 +1743,14 @@ do
                 if DurationInput.Set then DurationInput:Set(defaultDur) end
                 if DurationInput.SetValue then DurationInput:SetValue(defaultDur) end
             end
-        end
+        end,
     })
-
-    AutoCampSection:Space()
-
     local autoCampTweenRef = { tween = nil }
     local autoCampCancelRequested = false
 
-    AutoCampSection:Button({
-        Title = "Auto Teleport",
-        Justify = "Center",
-        Icon = "",
+    AutomationTab:CreateButton({
+        Name = "Auto Teleport",
+        Ext = true,
         Callback = function()
             local _, rootPart = getLocalCharacterParts()
             if not rootPart then
@@ -2216,13 +1779,9 @@ do
             end)
         end
     })
-    
-    AutoCampSection:Space()
-
-    AutoCampSection:Button({
-        Title = "Stop Auto Camp",
-        Justify = "Center",
-        Icon = "",
+    AutomationTab:CreateButton({
+        Name = "Stop Auto Camp",
+        Ext = true,
         Callback = function()
             autoCampCancelRequested = true
             if autoCampTweenRef.tween then
@@ -2232,11 +1791,6 @@ do
             notify("Auto Camp", "Stopped", "x")
         end
     })
-
-    AutoCampSection:Space()
-
-    AutomationTab:Space()
-
     -- */  Auto Summit: checkpoint / camp detection (Expedition Antarctica)  /* --
     -- Place file refs:
     --   PlayerScripts.Modules.Game_Modes.playerGameModesInfo.PreviousSessionSpawnLocation (synced from server;
@@ -2525,8 +2079,11 @@ do
         local idx = getCheckpointProgressFromPlayer(lpAutoSummit)
         local nextName = routeLabelForProgress(idx)
         local desc = string.format("CHECKPOINT: %s\nProgress #%d · Next leg: %s", string.upper(label), idx, nextName)
-        if AutoSummitCpParagraph.SetDesc then
-            AutoSummitCpParagraph:SetDesc(desc)
+        if AutoSummitCpParagraph and AutoSummitCpParagraph.Set then
+            AutoSummitCpParagraph:Set({
+                Title = "Current camp / checkpoint",
+                Content = desc,
+            })
         end
     end
 
@@ -2612,24 +2169,18 @@ do
     local summitQty = ""
     local SUMMIT_DELAY_SECONDS = 15
     local autoSummitRestartFromDeath = false  -- set by death listener; loop re-reads checkpoint after respawn
-    local AutoSummitSection = AutomationTab:Section({
-        Title = "Auto Summit",
-        Desc = "Uses your saved checkpoint when available: skips legs you already passed, then continues to South Pole.",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
-    AutoSummitCpParagraph = AutoSummitSection:Paragraph({
+    AutomationTab:CreateSection("Auto Summit")
+    AutoSummitCpParagraph = AutomationTab:CreateParagraph({
         Title = "Current camp / checkpoint",
-        Desc = "CHECKPOINT: —\nProgress #0 · Next leg: Camp 1",
+        Content = "CHECKPOINT: —\nProgress #0 · Next leg: Camp 1",
     })
     task.defer(updateAutoSummitCpParagraph)
 
-    local SummitQtyInput = AutoSummitSection:Input({
-        Title = "Qty of summit",
-        Placeholder = "Empty = unlimited",
-        Value = "",
+    local SummitQtyInput = AutomationTab:CreateInput({
+        Ext = true,
+        Name = "Qty of summit",
+        PlaceholderText = "Empty = unlimited",
+        CurrentValue = "",
         Callback = function(value)
             summitQty = value
         end
@@ -2654,10 +2205,10 @@ do
     if lp.Character then connectCharacterDied(lp.Character) end
     lp.CharacterAdded:Connect(connectCharacterDied)
 
-    AutoSummitSection:Toggle({
-        Title = "Auto Summit",
-        Desc = "Each run reads your checkpoint and runs only remaining legs (Camp 1 → South Pole). After death, waits for respawn and re-reads checkpoint. Empty qty = unlimited.",
-        Value = false,
+    AutomationTab:CreateToggle({
+        Ext = true,
+        Name = "Auto Summit",
+        CurrentValue = false,
         Callback = function(enabled)
             autoSummitEnabled = enabled
             if not enabled then
@@ -2844,21 +2395,9 @@ do
             end)
         end
     })
-
-    AutoSummitSection:Space()
-
-    AutomationTab:Space()
-
     -- */  Auto Drink Section  /* --
     local HYDRATION_MAX = 100
-    local AutoDrinkSection = AutomationTab:Section({
-        Title = "Auto Drink",
-        Desc = "Drink from Water Bottle when hydration is at or below minimum until nearly full",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    AutomationTab:CreateSection("Auto Drink")
     local minHydration = 50
     local autoDrinkEnabled = false
     local autoDrinkConnection = nil
@@ -2920,19 +2459,20 @@ do
         end)
     end
 
-    AutoDrinkSection:Input({
-        Title = "Minimum Hydration",
-        Placeholder = "50",
-        Value = "50",
+    AutomationTab:CreateInput({
+        Ext = true,
+        Name = "Minimum Hydration",
+        PlaceholderText = "50",
+        CurrentValue = "50",
         Callback = function(value)
             minHydration = value
         end
     })
 
-    AutoDrinkSection:Toggle({
-        Title = "Auto Drink",
-        Desc = "When hydration <= minimum, drink until hydration >= " .. tostring(HYDRATION_MAX - 10),
-        Value = false,
+    AutomationTab:CreateToggle({
+        Ext = true,
+        Name = "Auto Drink",
+        CurrentValue = false,
         Callback = function(enabled)
             autoDrinkEnabled = enabled
             if enabled then
@@ -2942,23 +2482,329 @@ do
             end
         end
     })
-    
-    AutoDrinkSection:Space()
+end
+
+
+-- */  Teleport Tab  /* --
+do
+    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
+
+    TeleportTab:CreateSection("Teleport")
+    local teleportInputValue = ""
+    local teleportLookInputValue = ""
+
+    local function teleportCFrameFromInputs(posStr, lookStr)
+        local pos = parsePositionString(posStr)
+        if not pos then
+            return nil
+        end
+        local s = (lookStr or ""):gsub(",", " "):gsub("%s+", " ")
+        local parts = {}
+        for part in string.gmatch(s, "[%d%.%-]+") do
+            table.insert(parts, tonumber(part))
+        end
+        if #parts < 3 then
+            return CFrame.new(pos)
+        end
+        local dir = Vector3.new(parts[1], parts[2], parts[3])
+        if dir.Magnitude < 1e-5 then
+            return CFrame.new(pos)
+        end
+        return CFrame.lookAt(pos, pos + dir.Unit)
+    end
+
+    local TeleportInput = TeleportTab:CreateInput({
+        Ext = true,
+        Name = "Location",
+        PlaceholderText = "e.g. 100, 5, 200 or 100 5 200",
+        CurrentValue = teleportInputValue,
+        Callback = function(value)
+            teleportInputValue = value
+        end
+    })
+
+    local TeleportLookInput = TeleportTab:CreateInput({
+        Ext = true,
+        Name = "Look direction",
+        PlaceholderText = "e.g. 0, 0, -1 or leave empty",
+        CurrentValue = teleportLookInputValue,
+        Callback = function(value)
+            teleportLookInputValue = value
+        end,
+    })
+
+    TeleportTab:CreateButton({
+        Name = "Get Current Location",
+        Ext = true,
+        Callback = function()
+            local _, rootPart = getLocalCharacterParts()
+            if not rootPart then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local pos = rootPart.Position
+            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
+            teleportInputValue = text
+            if TeleportInput and TeleportInput.Set then
+                TeleportInput:Set(text)
+            elseif TeleportInput and TeleportInput.SetValue then
+                TeleportInput:SetValue(text)
+            end
+            local look = rootPart.CFrame.LookVector
+            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
+            teleportLookInputValue = lookText
+            if TeleportLookInput and TeleportLookInput.Set then
+                TeleportLookInput:Set(lookText)
+            elseif TeleportLookInput and TeleportLookInput.SetValue then
+                TeleportLookInput:SetValue(lookText)
+            end
+            notify("Location", "Position: " .. text .. " · Look: " .. lookText)
+        end
+    })
+    TeleportTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
+        Callback = function()
+            local _, rootPart = getLocalCharacterParts()
+            if not rootPart then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not cf then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
+                return
+            end
+            rootPart.CFrame = cf
+            local p = cf.Position
+            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
+        end
+    })
+    local tweenDurationValue = "5"
+    TeleportTab:CreateInput({
+        Ext = true,
+        Name = "Tween Duration",
+        PlaceholderText = "e.g. 5",
+        CurrentValue = tweenDurationValue,
+        Callback = function(value)
+            tweenDurationValue = value
+        end
+    })
+
+    TeleportTab:CreateButton({
+        Name = "Tween to Location",
+        Ext = true,
+        Callback = function()
+            local _, rootPart = getLocalCharacterParts()
+            if not rootPart then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
+            if not targetCf then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
+                return
+            end
+            local duration = tonumber(tweenDurationValue) or 5
+            if duration < 0.1 then duration = 0.1 end
+            local tweenInfo = TweenInfo.new(duration)
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
+            tween:Play()
+            local p = targetCf.Position
+            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration))
+        end
+    })
+    TeleportTab:CreateButton({
+        Name = "Walk to Location",
+        Ext = true,
+        Callback = function()
+            local _, rootPart, humanoid = getLocalCharacterParts()
+            if not rootPart or not humanoid then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local targetPos = parsePositionString(teleportInputValue)
+            if not targetPos then
+                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
+                return
+            end
+            humanoid:MoveTo(targetPos)
+            notify("Teleport", string.format("Walking to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
+        end
+    })
+    -- */  Teleport to Camp  /* --
+    local campTeleportList = {
+        { name = "Camp 1", position = "-3718.86, 240.00, 235.13" },
+        { name = "Camp 2", position = "1789.92, 110.44, -137.28" },
+        { name = "Camp 3", position = "5892.31, 320.00, -19.92" },
+        { name = "Camp 4", position = "8991.70, 600.60, 103.15" },
+        { name = "South Pole", position = "10989.81, 569.12, 106.85" },
+    }
+
+    local campTeleportNames = {}
+    for _, camp in ipairs(campTeleportList) do
+        table.insert(campTeleportNames, camp.name)
+    end
+
+    local selectedCampTeleport = (#campTeleportNames > 0) and campTeleportNames[1] or nil
+
+    TeleportTab:CreateSection("Teleport to Camp")
+    TeleportTab:CreateDropdown({
+        Ext = true,
+        Name = "Camp",
+        Options = campTeleportNames,
+        CurrentOption = { selectedCampTeleport or campTeleportNames[1] },
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            selectedCampTeleport = value
+        end,
+    })
+
+    TeleportTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
+        Callback = function()
+            local _, rootPart = getLocalCharacterParts()
+            if not rootPart then
+                notify("Teleport to Camp", "Character not loaded", "x")
+                return
+            end
+            if not selectedCampTeleport then
+                notify("Teleport to Camp", "Select a camp first", "x")
+                return
+            end
+            local posStr = nil
+            for _, camp in ipairs(campTeleportList) do
+                if camp.name == selectedCampTeleport then
+                    posStr = camp.position
+                    break
+                end
+            end
+            if not posStr then
+                notify("Teleport to Camp", "Camp not found", "x")
+                return
+            end
+            local targetPos = parsePositionString(posStr)
+            if not targetPos then
+                notify("Teleport to Camp", "Invalid position", "x")
+                return
+            end
+            rootPart.CFrame = CFrame.new(targetPos)
+            notify("Teleport to Camp", "Teleported to " .. selectedCampTeleport)
+        end
+    })
+
+    -- */  Teleport to Players  /* --
+    TeleportTab:CreateSection("Teleport to Players")
+    local playerDisplayNames = {}
+    local playerList = {}
+    local selectedTeleportPlayer = nil
+    local PlayerTeleportDropdown
+
+    local TELEPORT_PLAYER_NONE = "(None)"
+
+    local function teleportPlayerDropdownOptions()
+        local opts = { TELEPORT_PLAYER_NONE }
+        for _, n in ipairs(playerDisplayNames) do
+            table.insert(opts, n)
+        end
+        return opts
+    end
+
+    local function refreshPlayerList(showNotify)
+        playerList = {}
+        playerDisplayNames = {}
+        local localPlayer = Players.LocalPlayer
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= localPlayer and player.ClassName == "Player" then
+                table.insert(playerList, player)
+                table.insert(playerDisplayNames, player.DisplayName or player.Name)
+            end
+        end
+        if PlayerTeleportDropdown and PlayerTeleportDropdown.Refresh then
+            PlayerTeleportDropdown:Refresh(teleportPlayerDropdownOptions())
+        end
+        if selectedTeleportPlayer then
+            if not table.find(playerList, selectedTeleportPlayer) then
+                selectedTeleportPlayer = nil
+                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then
+                    PlayerTeleportDropdown:Set(TELEPORT_PLAYER_NONE)
+                end
+            end
+        end
+        if showNotify then
+            notify("Teleport", "Player list refreshed (" .. #playerList .. " players)")
+        end
+    end
+
+    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
+        Ext = true,
+        Name = "Player",
+        Search = true,
+        Options = teleportPlayerDropdownOptions(),
+        CurrentOption = { TELEPORT_PLAYER_NONE },
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            selectedTeleportPlayer = nil
+            if value and value ~= TELEPORT_PLAYER_NONE then
+                local idx = table.find(playerDisplayNames, value)
+                if idx and playerList[idx] then
+                    selectedTeleportPlayer = playerList[idx]
+                end
+            end
+        end,
+    })
+
+    TeleportTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
+        Callback = function()
+            refreshPlayerList(true)
+        end
+    })
+    TeleportTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
+        Callback = function()
+            if not selectedTeleportPlayer then
+                notify("Teleport", "Select a player first", "x")
+                return
+            end
+            local _, rootPart = getLocalCharacterParts()
+            if not rootPart then
+                notify("Teleport", "Character not loaded", "x")
+                return
+            end
+            local targetChar = selectedTeleportPlayer.Character
+            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+            if not targetRoot then
+                notify("Teleport", "Target player has no character", "x")
+                return
+            end
+            rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
+            notify("Teleport", "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name))
+        end
+    })
 end
 
 -- */  Objects Tab  /* --
 do
-    local ObjectsTab = ElementsSection:Tab({
-        Title = "Objects",
-        Icon = "solar:folder-2-bold-duotone",
-        IconColor = Green,
-        IconShape = "Square",
-        Border = true,
-    })
+    local ObjectsTab = Window:CreateTab("Objects", 4483362458)
 
     -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
     local OBJECTS_TREE_MAX_DEPTH = 14
     local OBJECTS_TREE_MAX_LINES = 600
+
+    local OBJECTS_NONE = "(None)"
+    local NESTED_CHILDREN_TITLE = "Children (nested)"
+
+    local function objectDropdownOptions(items: { string }): { string }
+        local o = { OBJECTS_NONE }
+        for _, x in ipairs(items) do
+            table.insert(o, x)
+        end
+        return o
+    end
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
         return inst:IsA("Folder")
@@ -3004,14 +2850,7 @@ do
         return table.concat(lines, "\n")
     end
 
-    local ReplicatedStorageSection = ObjectsTab:Section({
-        Title = "ReplicatedStorage",
-        Desc = "All direct children of ReplicatedStorage (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("ReplicatedStorage")
     local rsDisplayList = {}
     local rsKeyValueList = {}
     local ReplicatedStorageDropdown
@@ -3026,58 +2865,53 @@ do
             rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
-            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+            ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsDisplayList))
         end
-        WindUI:Notify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects", Icon = "check" })
+        notify("ReplicatedStorage", "Listed " .. #rsDisplayList .. " objects", "check")
     end
 
-    ReplicatedStorageDropdown = ReplicatedStorageSection:Dropdown({
-        Title = "ReplicatedStorage (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = rsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                    ReplicatedStorageChildrenParagraph:SetDesc("Select an object above to list its children")
+    ReplicatedStorageDropdown = ObjectsTab:CreateDropdown({
+        Ext = true,
+        Name = "ReplicatedStorage (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(rsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
+                    ReplicatedStorageChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = rsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.SetDesc then
-                ReplicatedStorageChildrenParagraph:SetDesc(text)
+            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
+                ReplicatedStorageChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    ReplicatedStorageChildrenParagraph = ReplicatedStorageSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    ReplicatedStorageChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
-    ReplicatedStorageSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshReplicatedStorageList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local PlayersServiceSection = ObjectsTab:Section({
-        Title = "Players",
-        Desc = "Players service: all Player instances (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Players")
     local plrsDisplayList = {}
     local plrsKeyValueList = {}
     local PlayersServiceDropdown
@@ -3092,58 +2926,53 @@ do
             plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
-            PlayersServiceDropdown:Refresh(plrsDisplayList)
+            PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsDisplayList))
         end
-        WindUI:Notify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players", Icon = "check" })
+        notify("Players", "Listed " .. #plrsDisplayList .. " players", "check")
     end
 
-    PlayersServiceDropdown = PlayersServiceSection:Dropdown({
-        Title = "Players (key = value)",
-        Desc = "Select a player to see their top-level children listed below",
-        Values = plrsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                    PlayersServiceChildrenParagraph:SetDesc("Select a player above to list their children")
+    PlayersServiceDropdown = ObjectsTab:CreateDropdown({
+        Ext = true,
+        Name = "Players (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(plrsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
+                    PlayersServiceChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select a player above to list their children",
+                    })
                 end
                 return
             end
             local entry = plrsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.SetDesc then
-                PlayersServiceChildrenParagraph:SetDesc(text)
+            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
+                PlayersServiceChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    PlayersServiceChildrenParagraph = PlayersServiceSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    PlayersServiceChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
-    PlayersServiceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshPlayersServiceList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local LocalPlayerSection = ObjectsTab:Section({
-        Title = "Local Player",
-        Desc = "All direct children of Players.LocalPlayer (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Local Player")
     local lpDisplayList = {}
     local lpKeyValueList = {}
     local LocalPlayerDropdown
@@ -3159,58 +2988,53 @@ do
             lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
-            LocalPlayerDropdown:Refresh(lpDisplayList)
+            LocalPlayerDropdown:Refresh(objectDropdownOptions(lpDisplayList))
         end
-        WindUI:Notify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects", Icon = "check" })
+        notify("Local Player", "Listed " .. #lpDisplayList .. " objects", "check")
     end
 
-    LocalPlayerDropdown = LocalPlayerSection:Dropdown({
-        Title = "Local Player (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = lpDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                    LocalPlayerChildrenParagraph:SetDesc("Select an object above to list its children")
+    LocalPlayerDropdown = ObjectsTab:CreateDropdown({
+        Ext = true,
+        Name = "Local Player (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(lpDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
+                    LocalPlayerChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = lpKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.SetDesc then
-                LocalPlayerChildrenParagraph:SetDesc(text)
+            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
+                LocalPlayerChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    LocalPlayerChildrenParagraph = LocalPlayerSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    LocalPlayerChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
-    LocalPlayerSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshLocalPlayerList()
         end
     })
-
-    ObjectsTab:Space()
-
-    local WorkspaceSection = ObjectsTab:Section({
-        Title = "Workspace",
-        Desc = "All direct children of Workspace (key = Name, value = ClassName)",
-        Box = true,
-        BoxBorder = true,
-        Opened = true,
-    })
-
+    ObjectsTab:CreateSection("Workspace")
     local wsDisplayList = {}
     local wsKeyValueList = {}
     local WorkspaceDropdown
@@ -3225,46 +3049,52 @@ do
             wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
         end
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
-            WorkspaceDropdown:Refresh(wsDisplayList)
+            WorkspaceDropdown:Refresh(objectDropdownOptions(wsDisplayList))
         end
-        WindUI:Notify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects", Icon = "check" })
+        notify("Workspace", "Listed " .. #wsDisplayList .. " objects", "check")
     end
 
-    WorkspaceDropdown = WorkspaceSection:Dropdown({
-        Title = "Workspace (key = value)",
-        Desc = "Select an object to see its children listed below",
-        Values = wsDisplayList,
-        Value = nil,
-        AllowNone = true,
-        SearchBarEnabled = true,
-        Callback = function(selectedDisplay)
-            if not selectedDisplay then
-                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                    WorkspaceChildrenParagraph:SetDesc("Select an object above to list its children")
+    WorkspaceDropdown = ObjectsTab:CreateDropdown({
+        Ext = true,
+        Name = "Workspace (key = value)",
+        Search = true,
+        Options = objectDropdownOptions(wsDisplayList),
+        CurrentOption = { OBJECTS_NONE },
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
+                    WorkspaceChildrenParagraph:Set({
+                        Title = NESTED_CHILDREN_TITLE,
+                        Content = "Select an object above to list its children",
+                    })
                 end
                 return
             end
             local entry = wsKeyValueList[selectedDisplay]
             if not entry or not entry.instance then return end
             local text = buildNestedObjectChildrenListText(entry.instance)
-            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.SetDesc then
-                WorkspaceChildrenParagraph:SetDesc(text)
+            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
+                WorkspaceChildrenParagraph:Set({
+                    Title = NESTED_CHILDREN_TITLE,
+                    Content = text,
+                })
             end
-        end
+        end,
     })
 
-    WorkspaceChildrenParagraph = WorkspaceSection:Paragraph({
-        Title = "Children (nested)",
-        Desc = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+    WorkspaceChildrenParagraph = ObjectsTab:CreateParagraph({
+        Title = NESTED_CHILDREN_TITLE,
+        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
     })
 
-    WorkspaceSection:Button({
-        Title = "Refresh",
-        Justify = "Center",
-        Icon = "",
+    ObjectsTab:CreateButton({
+        Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshWorkspaceList()
         end
     })
 
 end
+
