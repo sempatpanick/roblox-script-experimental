@@ -1748,14 +1748,26 @@ do
     local BETWEEN_RUN_DELAY = 10
 
     local summitTeleportRoute = {
-        { name = "Start", x = -922.94, y = 169.22, z = 856.29, delay = 20 },
-        { name = "Camp 1", x = -407.77, y = 248.20, z = 794.09, delay = 20 },
-        { name = "Camp 2", x = -337.77, y = 388.27, z = 522.16, delay = 25 },
-        { name = "Camp 3", x = 294.19, y = 430.33, z = 494.17, delay = 30 },
-        { name = "Camp 4", x = 323.46, y = 490.24, z = 348.33, delay = 40 },
-        { name = "Camp 5", x = 226.70, y = 314.21, z = -143.64, delay = 70 },
-        { name = "Summit", x = -613.51, y = 905.28, z = -533.45, delay = 1 },
+        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 20 },
+        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 20 },
+        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 25 },
+        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 30 },
+        { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 40 },
+        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 70 },
+        { name = "Summit", position = "-613.51, 905.28, -533.45", delay = 1 },
     }
+
+    local function parsePositionString(positionText)
+        if typeof(positionText) ~= "string" then
+            return nil
+        end
+        local xStr, yStr, zStr = string.match(positionText, "^%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*$")
+        local x, y, z = tonumber(xStr), tonumber(yStr), tonumber(zStr)
+        if not x or not y or not z then
+            return nil
+        end
+        return Vector3.new(x, y, z)
+    end
 
     local function notifyAutoSummit(content, icon)
         mountNotify({ Title = "Auto Summit", Content = content, Icon = icon or "check" })
@@ -2084,7 +2096,13 @@ do
                                 routeCompleted = false
                                 break
                             end
-                            rootPart.CFrame = CFrame.new(wp.x, wp.y, wp.z)
+                            local targetPosition = parsePositionString(wp.position)
+                            if not targetPosition then
+                                routeCompleted = false
+                                notifyAutoSummit("Invalid position for " .. wp.name, "x")
+                                break
+                            end
+                            rootPart.CFrame = CFrame.new(targetPosition)
                             notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
                             if not waitWithCancel(wp.delay, shouldAbort) then
                                 routeCompleted = false
