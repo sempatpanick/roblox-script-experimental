@@ -1586,6 +1586,8 @@ do
     local autoSummitEnabled = false
     local summitQty = ""
     local autoSummitRestartFromDeath = false
+    local autoSummitMode = "Teleport"
+    local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport" }
     local BETWEEN_RUN_DELAY = 10
 
     local summitTeleportRoute = {
@@ -1616,6 +1618,19 @@ do
     end
 
     MainTab:CreateSection("Auto Summit")
+
+    MainTab:CreateDropdown({
+        Name = "Mode",
+        Options = AUTO_SUMMIT_MODE_OPTIONS,
+        CurrentOption = { autoSummitMode },
+        Ext = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if picked and table.find(AUTO_SUMMIT_MODE_OPTIONS, picked) then
+                autoSummitMode = picked
+            end
+        end,
+    })
 
     local lpAutoSummit = Players.LocalPlayer
 
@@ -2010,6 +2025,187 @@ do
             end)
         end,
     })
+
+    MainTab:CreateSection("Accept Incoming Carry")
+
+    MainTab:CreateParagraph({
+        Title = "How it works",
+        Content = "If you select specific players below, only carry requests from those players are accepted. If nothing is selected, requests from everyone are accepted.\n\nUse the toggle to listen on ReplicatedStorage.CarryRemote for the \"Prompt\" action and reply with \"Response\" (accept = true).",
+    })
+
+    local acceptIncomingCarrySelected = {}
+    local AcceptIncomingCarryPlayersDropdown
+    local acceptIncomingCarryRemoteConn = nil
+
+    local function acceptIncomingCarryOtherPlayerLabel(player)
+        if not player then
+            return ""
+        end
+        local dn = player.DisplayName
+        if dn and dn ~= "" then
+            return dn
+        end
+        return player.Name
+    end
+
+    local function acceptIncomingCarryDropdownOptions()
+        local opts = {}
+        local lp = lpAutoSummit
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lp and plr.ClassName == "Player" then
+                table.insert(opts, acceptIncomingCarryOtherPlayerLabel(plr))
+            end
+        end
+        table.sort(opts, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        return opts
+    end
+
+    local function acceptIncomingCarryFindPlayerByLabel(label)
+        local lp = lpAutoSummit
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lp and acceptIncomingCarryOtherPlayerLabel(plr) == label then
+                return plr
+            end
+        end
+        return nil
+    end
+
+    local function acceptIncomingCarryFromNameMatchesOption(fromName, optionLabel)
+        if fromName == optionLabel then
+            return true
+        end
+        local plr = acceptIncomingCarryFindPlayerByLabel(optionLabel)
+        if plr then
+            if fromName == plr.Name or (plr.DisplayName and fromName == plr.DisplayName) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function acceptIncomingCarryShouldAccept(fromName)
+        if not acceptIncomingCarrySelected or #acceptIncomingCarrySelected == 0 then
+            return true
+        end
+        for _, opt in ipairs(acceptIncomingCarrySelected) do
+            if acceptIncomingCarryFromNameMatchesOption(fromName, opt) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function acceptIncomingCarryPurgeStaleSelections()
+        local opts = acceptIncomingCarryDropdownOptions()
+        local valid = {}
+        for _, sel in ipairs(acceptIncomingCarrySelected) do
+            if table.find(opts, sel) then
+                table.insert(valid, sel)
+            end
+        end
+        local removed = #valid ~= #acceptIncomingCarrySelected
+        acceptIncomingCarrySelected = valid
+        if removed and AcceptIncomingCarryPlayersDropdown and AcceptIncomingCarryPlayersDropdown.Set then
+            AcceptIncomingCarryPlayersDropdown:Set(valid)
+        end
+    end
+
+    local function acceptIncomingCarryRefreshList()
+        local opts = acceptIncomingCarryDropdownOptions()
+        if AcceptIncomingCarryPlayersDropdown and AcceptIncomingCarryPlayersDropdown.Refresh then
+            AcceptIncomingCarryPlayersDropdown:Refresh(opts)
+        end
+        acceptIncomingCarryPurgeStaleSelections()
+    end
+
+    AcceptIncomingCarryPlayersDropdown = MainTab:CreateDropdown({
+        Name = "Other players (display name)",
+        Options = acceptIncomingCarryDropdownOptions(),
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
+        Ext = true,
+        Callback = function(selected)
+            if type(selected) == "table" then
+                acceptIncomingCarrySelected = selected
+            elseif selected then
+                acceptIncomingCarrySelected = { selected }
+            else
+                acceptIncomingCarrySelected = {}
+            end
+        end,
+    })
+
+    local AcceptIncomingCarryListenToggle
+    AcceptIncomingCarryListenToggle = MainTab:CreateToggle({
+        Name = "Listen for \"Prompt\" (auto-accept incoming carry)",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(enabled)
+            if acceptIncomingCarryRemoteConn then
+                acceptIncomingCarryRemoteConn:Disconnect()
+                acceptIncomingCarryRemoteConn = nil
+            end
+            if not enabled then
+                return
+            end
+            local ok, carryRemote = pcall(function()
+                return ReplicatedStorage:WaitForChild("CarryRemote", 10)
+            end)
+            if not ok or not carryRemote then
+                mountNotify({
+                    Title = "Accept Incoming Carry",
+                    Content = "CarryRemote not found in ReplicatedStorage",
+                    Icon = "x",
+                })
+                if AcceptIncomingCarryListenToggle and AcceptIncomingCarryListenToggle.Set then
+                    AcceptIncomingCarryListenToggle:Set(false)
+                end
+                return
+            end
+            acceptIncomingCarryRemoteConn = carryRemote.OnClientEvent:Connect(function(kind, data)
+                if kind ~= "Prompt" or type(data) ~= "table" then
+                    return
+                end
+                local fromName = data.fromName
+                local fromId = data.fromId
+                if fromName == nil or fromId == nil then
+                    return
+                end
+                fromName = tostring(fromName)
+                if typeof(fromId) ~= "number" then
+                    fromId = tonumber(tostring(fromId))
+                end
+                if not fromId then
+                    return
+                end
+                if not acceptIncomingCarryShouldAccept(fromName) then
+                    return
+                end
+                pcall(function()
+                    carryRemote:FireServer("Response", {
+                        requesterId = fromId,
+                        accept = true,
+                    })
+                end)
+            end)
+            mountNotify({
+                Title = "Accept Incoming Carry",
+                Content = "Listening for carry prompts",
+                Icon = "check",
+            })
+        end,
+    })
+
+    Players.PlayerAdded:Connect(function()
+        task.defer(acceptIncomingCarryRefreshList)
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(acceptIncomingCarryRefreshList)
+    end)
+    task.defer(acceptIncomingCarryRefreshList)
 end
 -- */  Teleport Tab  /* --
 do
