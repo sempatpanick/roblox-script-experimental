@@ -636,8 +636,10 @@ do
     local espDistanceEnabled = false
     local espCharacterEnabled = false
     local espLinesEnabled = false
+    local espAllObjectsEnabled = false
     local espMaxDistance = 10000
     local espPlayerState: { [Player]: { highlight: Highlight?, nameGui: BillboardGui?, lineBeam: Beam?, lineFrom: Attachment?, lineTo: Attachment? } } = {}
+    local espObjectState: { [Instance]: BillboardGui } = {}
     local espPlayerAddedConn: RBXScriptConnection? = nil
     local espPlayerRemovingConn: RBXScriptConnection? = nil
     local espLocalCharacterConn: RBXScriptConnection? = nil
@@ -789,8 +791,126 @@ do
         for _, p in ipairs(Players:GetPlayers()) do espApplyForPlayer(p) end
     end
 
+    local function espObjectDebugId(inst: Instance): string
+        local ok, id = pcall(function()
+            return inst:GetDebugId(0)
+        end)
+        if ok and type(id) == "string" and id ~= "" then
+            return id
+        end
+        return tostring(inst)
+    end
+
+    local function espObjectIsPlayerCharacterDescendant(inst: Instance): boolean
+        local current = inst
+        while current and current ~= Workspace do
+            if current:IsA("Model") then
+                local plr = Players:GetPlayerFromCharacter(current)
+                if plr then
+                    return true
+                end
+            end
+            current = current.Parent
+        end
+        return false
+    end
+
+    local function espObjectGetAdornee(inst: Instance): BasePart?
+        if inst:IsA("BasePart") then
+            return inst
+        end
+        if inst:IsA("Model") then
+            local root = inst.PrimaryPart
+            if root then
+                return root
+            end
+            return inst:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return nil
+    end
+
+    local function espClearVisualForObject(inst: Instance)
+        local gui = espObjectState[inst]
+        if gui then
+            gui:Destroy()
+            espObjectState[inst] = nil
+        end
+    end
+
+    local function espApplyForObject(inst: Instance)
+        if not espAllObjectsEnabled then
+            espClearVisualForObject(inst)
+            return
+        end
+        if not inst.Parent then
+            espClearVisualForObject(inst)
+            return
+        end
+        if not (inst:IsA("BasePart") or inst:IsA("Model")) then
+            espClearVisualForObject(inst)
+            return
+        end
+        if espObjectIsPlayerCharacterDescendant(inst) then
+            espClearVisualForObject(inst)
+            return
+        end
+
+        local adornee = espObjectGetAdornee(inst)
+        if not adornee then
+            espClearVisualForObject(inst)
+            return
+        end
+
+        local gui = espObjectState[inst]
+        if not gui then
+            gui = Instance.new("BillboardGui")
+            gui.Name = "SempatPanickESPObject"
+            gui.Size = UDim2.fromOffset(320, 58)
+            gui.StudsOffset = Vector3.new(0, 3, 0)
+            gui.AlwaysOnTop = true
+            local label = Instance.new("TextLabel")
+            label.Name = "Label"
+            label.BackgroundTransparency = 1
+            label.Size = UDim2.fromScale(1, 1)
+            label.Font = Enum.Font.GothamBold
+            label.TextColor3 = Color3.fromRGB(255, 230, 120)
+            label.TextStrokeTransparency = 0
+            label.TextScaled = true
+            label.TextWrapped = true
+            label.Parent = gui
+            espObjectState[inst] = gui
+        end
+
+        gui.Adornee = adornee
+        gui.MaxDistance = espMaxDistance
+        gui.Parent = adornee
+        gui.Enabled = true
+
+        local label = gui:FindFirstChild("Label")
+        if label and label:IsA("TextLabel") then
+            label.Text = string.format("%s\n%s", espObjectDebugId(inst), inst.Name)
+        end
+    end
+
+    local function espApplyForAllObjects()
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            if inst:IsA("BasePart") or inst:IsA("Model") then
+                espApplyForObject(inst)
+            end
+        end
+    end
+
+    local function espClearAllObjects()
+        for inst, gui in pairs(espObjectState) do
+            if gui then
+                gui:Destroy()
+            end
+            espObjectState[inst] = nil
+        end
+    end
+
     local function espAnyEnabled(): boolean
-        return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled
+        return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled or espAllObjectsEnabled
     end
 
     LocalPlayerTab:CreateInput({
@@ -835,6 +955,11 @@ do
                 espRenderStepConn = RunService.RenderStepped:Connect(espOnRenderStep)
             end
             espApplyForAllPlayers()
+            if espAllObjectsEnabled then
+                espApplyForAllObjects()
+            else
+                espClearAllObjects()
+            end
             return
         end
         if espPlayerAddedConn then espPlayerAddedConn:Disconnect() espPlayerAddedConn = nil end
@@ -842,6 +967,7 @@ do
         if espLocalCharacterConn then espLocalCharacterConn:Disconnect() espLocalCharacterConn = nil end
         if espRenderStepConn then espRenderStepConn:Disconnect() espRenderStepConn = nil end
         for player in pairs(espPlayerState) do espClearVisualsForPlayer(player) espPlayerState[player] = nil end
+        espClearAllObjects()
     end
 
     LocalPlayerTab:CreateToggle({
@@ -878,6 +1004,19 @@ do
             espLinesEnabled = enabled
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
+        end
+    })
+    LocalPlayerTab:CreateToggle({
+        Name = "ESP All Object",
+        CurrentValue = false,
+        Callback = function(enabled)
+            espAllObjectsEnabled = enabled
+            espSetRuntimeEnabled(espAnyEnabled())
+            if espAllObjectsEnabled then
+                espApplyForAllObjects()
+            else
+                espClearAllObjects()
+            end
         end
     })
     LocalPlayerTab:CreateSection("Players Info")
