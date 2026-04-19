@@ -1894,17 +1894,181 @@ end
 do
     local ObjectsTab = Window:CreateTab("Objects", 4483362458)
 
-    -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
+    -- Nested tree: only under Instance types selected in Show Children (see section at top of this tab).
     local OBJECTS_TREE_MAX_DEPTH = 14
-    local OBJECTS_TREE_MAX_LINES = 600
+    local OBJECTS_TREE_MAX_LINES = 3000
+    -- WindUI / Roblox TextLabel can clip very long descriptions; split across extra Paragraphs.
+    local OBJECTS_CHILDREN_DESC_MAX_CHARS = 4000
+    local OBJECTS_CHILDREN_PARAGRAPH_DESC = "Nested under the types you enable in Show Children (name sort; max depth "
+        .. OBJECTS_TREE_MAX_DEPTH
+        .. ", max "
+        .. OBJECTS_TREE_MAX_LINES
+        .. " lines). Long output splits into extra paragraphs (~"
+        .. OBJECTS_CHILDREN_DESC_MAX_CHARS
+        .. " chars each)."
+
+    -- Multi-select: which ClassNames recurse when listing children (IsA match).
+    local OBJECTS_NEST_CLASS_OPTIONS: { string } = {
+        "Accessory",
+        "Actor",
+        "Attachment",
+        "Backpack",
+        "BillboardGui",
+        "BodyColors",
+        "Camera",
+        "CanvasGroup",
+        "Configuration",
+        "CornerWedgePart",
+        "Folder",
+        "Frame",
+        "Humanoid",
+        "ImageButton",
+        "ImageLabel",
+        "MeshPart",
+        "Model",
+        "ModuleScript",
+        "Part",
+        "PlayerGui",
+        "ProximityPrompt",
+        "ScreenGui",
+        "ScrollingFrame",
+        "StarterGear",
+        "StarterPack",
+        "SurfaceGui",
+        "Terrain",
+        "TextBox",
+        "TextButton",
+        "TextLabel",
+        "Tool",
+        "TrussPart",
+        "UnionOperation",
+        "VehicleSeat",
+        "WedgePart",
+    }
+    local OBJECTS_NEST_EXPAND_DEFAULT: { string } = {
+        "Backpack",
+        "BillboardGui",
+        "Frame",
+        "Folder",
+        "PlayerGui",
+        "ScreenGui",
+    }
+    local objectsNestExpandClassSet: { [string]: boolean } = {}
+
+    local function syncObjectsNestExpandClassSetFromDropdownValue(value: any)
+        local s: { [string]: boolean } = {}
+        if type(value) == "table" then
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" then
+                    s[name] = true
+                end
+            end
+        elseif type(value) == "string" and value ~= "" then
+            s[value] = true
+        end
+        objectsNestExpandClassSet = s
+    end
+
+    syncObjectsNestExpandClassSetFromDropdownValue(OBJECTS_NEST_EXPAND_DEFAULT)
+    local OBJECTS_NONE = "(None)"
+    local NESTED_CHILDREN_TITLE = "Children (nested)"
+
+    local function objectDropdownOptions(items)
+        local o = { OBJECTS_NONE }
+        for _, x in ipairs(items) do
+            table.insert(o, x)
+        end
+        return o
+    end
+
+
+    local function splitStringForParagraphChunks(s: string, maxChunk: number): { string }
+        if maxChunk < 256 then
+            maxChunk = 256
+        end
+        if s == nil or s == "" then
+            return { "" }
+        end
+        if #s <= maxChunk then
+            return { s }
+        end
+        local chunks: { string } = {}
+        local pos = 1
+        local n = #s
+        while pos <= n do
+            local endPos = math.min(pos + maxChunk - 1, n)
+            if endPos < n then
+                local searchStart = math.max(pos, endPos - 500)
+                local cut = 0
+                for i = endPos, searchStart, -1 do
+                    if string.byte(s, i) == 10 then
+                        cut = i
+                        break
+                    end
+                end
+                if cut > pos then
+                    endPos = cut
+                end
+            end
+            table.insert(chunks, string.sub(s, pos, endPos))
+            pos = endPos + 1
+        end
+        if #chunks == 0 then
+            return { s }
+        end
+        return chunks
+    end
+
+    local function clearObjectsTabOverflowParagraphs(refs: { any })
+        for i = #refs, 1, -1 do
+            local p = refs[i]
+            if p and p.Destroy then
+                pcall(function()
+                    p:Destroy()
+                end)
+            end
+            refs[i] = nil
+        end
+    end
+
+    local function setNestedChildrenParagraphsWithOverflow(
+        section,
+        primaryParagraph,
+        overflowParagraphRefs: { any },
+        text: string?,
+        continuationTitleBase: string,
+        emptyPlaceholder: string
+    )
+        clearObjectsTabOverflowParagraphs(overflowParagraphRefs)
+        if not (primaryParagraph and primaryParagraph.Set) then
+            return
+        end
+        local body = (text and text ~= "") and text or emptyPlaceholder
+        local chunks = splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
+        primaryParagraph:Set({
+            Title = continuationTitleBase,
+            Content = chunks[1] or body,
+        })
+        for ci = 2, #chunks do
+            local newP = section:CreateParagraph({
+                Title = continuationTitleBase .. " (part " .. tostring(ci) .. ")",
+                Content = chunks[ci],
+            })
+            table.insert(overflowParagraphRefs, newP)
+        end
+    end
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
-        return inst:IsA("Folder")
-            or inst:IsA("Backpack")
-            or inst:IsA("StarterGear")
-            or inst:IsA("PlayerGui")
-            or inst:IsA("ScreenGui")
-            or inst:IsA("Frame")
+        if next(objectsNestExpandClassSet) == nil then
+            return false
+        end
+        for className, _ in pairs(objectsNestExpandClassSet) do
+            if inst:IsA(className) then
+                return true
+            end
+        end
+        return false
     end
 
     local function buildNestedObjectChildrenListText(root: Instance): string
@@ -1942,238 +2106,323 @@ do
         return table.concat(lines, "\n")
     end
 
+    -- WindUI passes the selected entry from Values as-is. Duplicate display strings
+    -- would collide on a string-keyed map and break selection; use { Title, Instance }.
+    local function buildObjectsServiceDropdownValues(children: { Instance }): { any }
+        local displayCounts: { [string]: number } = {}
+        local values: { any } = {}
+        for _, child in ipairs(children) do
+            local display = formatInstanceDisplay(child, nil, true)
+            local c = (displayCounts[display] or 0) + 1
+            displayCounts[display] = c
+            local title = display
+            if c > 1 then
+                title = display .. "  [" .. child:GetDebugId() .. "]"
+            end
+            table.insert(values, { Title = title, Instance = child })
+        end
+        return values
+    end
+
+    ObjectsTab:CreateSection("Show Children")
+    local ObjectsNestClassesDropdown
+    do
+        local nestDefaultCopy: { string } = {}
+        for _, v in ipairs(OBJECTS_NEST_EXPAND_DEFAULT) do
+            table.insert(nestDefaultCopy, v)
+        end
+        ObjectsNestClassesDropdown = ObjectsTab:CreateDropdown({
+            Name = "Types to expand in nested tree",
+            Options = OBJECTS_NEST_CLASS_OPTIONS,
+            CurrentOption = nestDefaultCopy,
+            MultipleOptions = true, Search = true, Ext = true,
+            Callback = function(value)
+                syncObjectsNestExpandClassSetFromDropdownValue(value)
+            end,
+        })
+    end
+    if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
+        syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
+    end
     ObjectsTab:CreateSection("ReplicatedStorage")
-    local rsDisplayList = {}
-    local rsKeyValueList = {}
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
+    local rsChildrenOverflowParagraphs = {}
+
+    local rsTitleList = {}
+    local rsTitleToInstance = {}
 
     local function refreshReplicatedStorageList()
-        rsDisplayList = {}
-        rsKeyValueList = {}
-        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(rsDisplayList, display)
-            rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(ReplicatedStorage:GetChildren())
+        rsTitleList = {}
+        rsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(rsTitleList, row.Title)
+            rsTitleToInstance[row.Title] = row.Instance
         end
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
-            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+            ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsTitleList))
         end
-        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects" })
+        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsTitleList .. " objects", Icon = "check" })
     end
 
     ReplicatedStorageDropdown = ObjectsTab:CreateDropdown({
         Name = "ReplicatedStorage (key = value)",
-        Options = rsDisplayList,
-        CurrentOption = {}, Search = true,
-        Callback = function(selectedDisplay)
-            local picked = rayfieldDropdownFirst(selectedDisplay)
-            if not picked then
-                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                    ReplicatedStorageChildrenParagraph:Set({
-                        Title = "Children (nested)",
-                        Content = "Select an object above to list its children",
-                    })
-                end
+        Options = objectDropdownOptions(rsTitleList),
+        CurrentOption = { OBJECTS_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    ReplicatedStorageChildrenParagraph,
+                    rsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = rsKeyValueList[picked]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                ReplicatedStorageChildrenParagraph:Set({
-                    Title = "Children (nested)",
-                    Content = text,
-                })
+            local inst = rsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                ReplicatedStorageChildrenParagraph,
+                rsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     ReplicatedStorageChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshReplicatedStorageList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Players")
-    local plrsDisplayList = {}
-    local plrsKeyValueList = {}
     local PlayersServiceDropdown
     local PlayersServiceChildrenParagraph
+    local plrsChildrenOverflowParagraphs = {}
+
+    local plrsTitleList = {}
+    local plrsTitleToInstance = {}
 
     local function refreshPlayersServiceList()
-        plrsDisplayList = {}
-        plrsKeyValueList = {}
-        for _, child in ipairs(Players:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(plrsDisplayList, display)
-            plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(Players:GetChildren())
+        plrsTitleList = {}
+        plrsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(plrsTitleList, row.Title)
+            plrsTitleToInstance[row.Title] = row.Instance
         end
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
-            PlayersServiceDropdown:Refresh(plrsDisplayList)
+            PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsTitleList))
         end
-        mountNotify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players" })
+        mountNotify({ Title = "Players", Content = "Listed " .. #plrsTitleList .. " players", Icon = "check" })
     end
 
     PlayersServiceDropdown = ObjectsTab:CreateDropdown({
         Name = "Players (key = value)",
-        Options = plrsDisplayList,
-        CurrentOption = {}, Search = true,
-        Callback = function(selectedDisplay)
-            local picked = rayfieldDropdownFirst(selectedDisplay)
-            if not picked then
-                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                    PlayersServiceChildrenParagraph:Set({
-                        Title = "Children (nested)",
-                        Content = "Select a player above to list their children",
-                    })
-                end
+        Options = objectDropdownOptions(plrsTitleList),
+        CurrentOption = { OBJECTS_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    PlayersServiceChildrenParagraph,
+                    plrsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select a player above to list their children"
+                )
                 return
             end
-            local entry = plrsKeyValueList[picked]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                PlayersServiceChildrenParagraph:Set({
-                    Title = "Children (nested)",
-                    Content = text,
-                })
+            local inst = plrsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                PlayersServiceChildrenParagraph,
+                plrsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select a player above to list their children"
+            )
+        end,
     })
 
     PlayersServiceChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshPlayersServiceList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Local Player")
-    local lpDisplayList = {}
-    local lpKeyValueList = {}
     local LocalPlayerDropdown
     local LocalPlayerChildrenParagraph
+    local lpChildrenOverflowParagraphs = {}
+
+    local lpTitleList = {}
+    local lpTitleToInstance = {}
 
     local function refreshLocalPlayerList()
-        lpDisplayList = {}
-        lpKeyValueList = {}
         local localPlayer = Players.LocalPlayer
-        for _, child in ipairs(localPlayer:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(lpDisplayList, display)
-            lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(localPlayer:GetChildren())
+        lpTitleList = {}
+        lpTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(lpTitleList, row.Title)
+            lpTitleToInstance[row.Title] = row.Instance
         end
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
-            LocalPlayerDropdown:Refresh(lpDisplayList)
+            LocalPlayerDropdown:Refresh(objectDropdownOptions(lpTitleList))
         end
-        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects" })
+        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpTitleList .. " objects", Icon = "check" })
     end
 
     LocalPlayerDropdown = ObjectsTab:CreateDropdown({
         Name = "Local Player (key = value)",
-        Options = lpDisplayList,
-        CurrentOption = {}, Search = true,
-        Callback = function(selectedDisplay)
-            local picked = rayfieldDropdownFirst(selectedDisplay)
-            if not picked then
-                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                    LocalPlayerChildrenParagraph:Set({
-                        Title = "Children (nested)",
-                        Content = "Select an object above to list its children",
-                    })
-                end
+        Options = objectDropdownOptions(lpTitleList),
+        CurrentOption = { OBJECTS_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    LocalPlayerChildrenParagraph,
+                    lpChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = lpKeyValueList[picked]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                LocalPlayerChildrenParagraph:Set({
-                    Title = "Children (nested)",
-                    Content = text,
-                })
+            local inst = lpTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                LocalPlayerChildrenParagraph,
+                lpChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     LocalPlayerChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshLocalPlayerList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Workspace")
-    local wsDisplayList = {}
-    local wsKeyValueList = {}
     local WorkspaceDropdown
     local WorkspaceChildrenParagraph
+    local wsChildrenOverflowParagraphs = {}
+
+    local wsTitleList = {}
+    local wsTitleToInstance = {}
 
     local function refreshWorkspaceList()
-        wsDisplayList = {}
-        wsKeyValueList = {}
-        for _, child in ipairs(Workspace:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(wsDisplayList, display)
-            wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(Workspace:GetChildren())
+        wsTitleList = {}
+        wsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(wsTitleList, row.Title)
+            wsTitleToInstance[row.Title] = row.Instance
         end
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
-            WorkspaceDropdown:Refresh(wsDisplayList)
+            WorkspaceDropdown:Refresh(objectDropdownOptions(wsTitleList))
         end
-        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects" })
+        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsTitleList .. " objects", Icon = "check" })
     end
 
     WorkspaceDropdown = ObjectsTab:CreateDropdown({
         Name = "Workspace (key = value)",
-        Options = wsDisplayList,
-        CurrentOption = {}, Search = true,
-        Callback = function(selectedDisplay)
-            local picked = rayfieldDropdownFirst(selectedDisplay)
-            if not picked then
-                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                    WorkspaceChildrenParagraph:Set({
-                        Title = "Children (nested)",
-                        Content = "Select an object above to list its children",
-                    })
-                end
+        Options = objectDropdownOptions(wsTitleList),
+        CurrentOption = { OBJECTS_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    WorkspaceChildrenParagraph,
+                    wsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = wsKeyValueList[picked]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                WorkspaceChildrenParagraph:Set({
-                    Title = "Children (nested)",
-                    Content = text,
-                })
+            local inst = wsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                WorkspaceChildrenParagraph,
+                wsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     WorkspaceChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshWorkspaceList()
-        end
+        end,
     })
 
 end

@@ -3100,17 +3100,181 @@ end
 do
     local ObjectsTab = Window:CreateTab("Objects", 4483362458)
 
-    -- Nested tree only under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (recursive); other instances are one line.
+    -- Nested tree: only under Instance types selected in Show Children (see section at top of this tab).
     local OBJECTS_TREE_MAX_DEPTH = 14
-    local OBJECTS_TREE_MAX_LINES = 600
+    local OBJECTS_TREE_MAX_LINES = 3000
+    -- WindUI / Roblox TextLabel can clip very long descriptions; split across extra Paragraphs.
+    local OBJECTS_CHILDREN_DESC_MAX_CHARS = 4000
+    local OBJECTS_CHILDREN_PARAGRAPH_DESC = "Nested under the types you enable in Show Children (name sort; max depth "
+        .. OBJECTS_TREE_MAX_DEPTH
+        .. ", max "
+        .. OBJECTS_TREE_MAX_LINES
+        .. " lines). Long output splits into extra paragraphs (~"
+        .. OBJECTS_CHILDREN_DESC_MAX_CHARS
+        .. " chars each)."
+
+    -- Multi-select: which ClassNames recurse when listing children (IsA match).
+    local OBJECTS_NEST_CLASS_OPTIONS: { string } = {
+        "Accessory",
+        "Actor",
+        "Attachment",
+        "Backpack",
+        "BillboardGui",
+        "BodyColors",
+        "Camera",
+        "CanvasGroup",
+        "Configuration",
+        "CornerWedgePart",
+        "Folder",
+        "Frame",
+        "Humanoid",
+        "ImageButton",
+        "ImageLabel",
+        "MeshPart",
+        "Model",
+        "ModuleScript",
+        "Part",
+        "PlayerGui",
+        "ProximityPrompt",
+        "ScreenGui",
+        "ScrollingFrame",
+        "StarterGear",
+        "StarterPack",
+        "SurfaceGui",
+        "Terrain",
+        "TextBox",
+        "TextButton",
+        "TextLabel",
+        "Tool",
+        "TrussPart",
+        "UnionOperation",
+        "VehicleSeat",
+        "WedgePart",
+    }
+    local OBJECTS_NEST_EXPAND_DEFAULT: { string } = {
+        "Backpack",
+        "BillboardGui",
+        "Frame",
+        "Folder",
+        "PlayerGui",
+        "ScreenGui",
+    }
+    local objectsNestExpandClassSet: { [string]: boolean } = {}
+
+    local function syncObjectsNestExpandClassSetFromDropdownValue(value: any)
+        local s: { [string]: boolean } = {}
+        if type(value) == "table" then
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" then
+                    s[name] = true
+                end
+            end
+        elseif type(value) == "string" and value ~= "" then
+            s[value] = true
+        end
+        objectsNestExpandClassSet = s
+    end
+
+    syncObjectsNestExpandClassSetFromDropdownValue(OBJECTS_NEST_EXPAND_DEFAULT)
+    local OBJECTS_NONE = "(None)"
+    local NESTED_CHILDREN_TITLE = "Children (nested)"
+
+    local function objectDropdownOptions(items)
+        local o = { OBJECTS_NONE }
+        for _, x in ipairs(items) do
+            table.insert(o, x)
+        end
+        return o
+    end
+
+
+    local function splitStringForParagraphChunks(s: string, maxChunk: number): { string }
+        if maxChunk < 256 then
+            maxChunk = 256
+        end
+        if s == nil or s == "" then
+            return { "" }
+        end
+        if #s <= maxChunk then
+            return { s }
+        end
+        local chunks: { string } = {}
+        local pos = 1
+        local n = #s
+        while pos <= n do
+            local endPos = math.min(pos + maxChunk - 1, n)
+            if endPos < n then
+                local searchStart = math.max(pos, endPos - 500)
+                local cut = 0
+                for i = endPos, searchStart, -1 do
+                    if string.byte(s, i) == 10 then
+                        cut = i
+                        break
+                    end
+                end
+                if cut > pos then
+                    endPos = cut
+                end
+            end
+            table.insert(chunks, string.sub(s, pos, endPos))
+            pos = endPos + 1
+        end
+        if #chunks == 0 then
+            return { s }
+        end
+        return chunks
+    end
+
+    local function clearObjectsTabOverflowParagraphs(refs: { any })
+        for i = #refs, 1, -1 do
+            local p = refs[i]
+            if p and p.Destroy then
+                pcall(function()
+                    p:Destroy()
+                end)
+            end
+            refs[i] = nil
+        end
+    end
+
+    local function setNestedChildrenParagraphsWithOverflow(
+        section,
+        primaryParagraph,
+        overflowParagraphRefs: { any },
+        text: string?,
+        continuationTitleBase: string,
+        emptyPlaceholder: string
+    )
+        clearObjectsTabOverflowParagraphs(overflowParagraphRefs)
+        if not (primaryParagraph and primaryParagraph.Set) then
+            return
+        end
+        local body = (text and text ~= "") and text or emptyPlaceholder
+        local chunks = splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
+        primaryParagraph:Set({
+            Title = continuationTitleBase,
+            Content = chunks[1] or body,
+        })
+        for ci = 2, #chunks do
+            local newP = section:CreateParagraph({
+                Title = continuationTitleBase .. " (part " .. tostring(ci) .. ")",
+                Content = chunks[ci],
+            })
+            table.insert(overflowParagraphRefs, newP)
+        end
+    end
 
     local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
-        return inst:IsA("Folder")
-            or inst:IsA("Backpack")
-            or inst:IsA("StarterGear")
-            or inst:IsA("PlayerGui")
-            or inst:IsA("ScreenGui")
-            or inst:IsA("Frame")
+        if next(objectsNestExpandClassSet) == nil then
+            return false
+        end
+        for className, _ in pairs(objectsNestExpandClassSet) do
+            if inst:IsA(className) then
+                return true
+            end
+        end
+        return false
     end
 
     local function buildNestedObjectChildrenListText(root: Instance): string
@@ -3148,808 +3312,323 @@ do
         return table.concat(lines, "\n")
     end
 
+    -- WindUI passes the selected entry from Values as-is. Duplicate display strings
+    -- would collide on a string-keyed map and break selection; use { Title, Instance }.
+    local function buildObjectsServiceDropdownValues(children: { Instance }): { any }
+        local displayCounts: { [string]: number } = {}
+        local values: { any } = {}
+        for _, child in ipairs(children) do
+            local display = formatInstanceDisplay(child, nil, true)
+            local c = (displayCounts[display] or 0) + 1
+            displayCounts[display] = c
+            local title = display
+            if c > 1 then
+                title = display .. "  [" .. child:GetDebugId() .. "]"
+            end
+            table.insert(values, { Title = title, Instance = child })
+        end
+        return values
+    end
+
+    ObjectsTab:CreateSection("Show Children")
+    local ObjectsNestClassesDropdown
+    do
+        local nestDefaultCopy: { string } = {}
+        for _, v in ipairs(OBJECTS_NEST_EXPAND_DEFAULT) do
+            table.insert(nestDefaultCopy, v)
+        end
+        ObjectsNestClassesDropdown = ObjectsTab:CreateDropdown({
+            Name = "Types to expand in nested tree",
+            Options = OBJECTS_NEST_CLASS_OPTIONS,
+            CurrentOption = nestDefaultCopy,
+            MultipleOptions = true, Search = true, Ext = true,
+            Callback = function(value)
+                syncObjectsNestExpandClassSetFromDropdownValue(value)
+            end,
+        })
+    end
+    if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
+        syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
+    end
     ObjectsTab:CreateSection("ReplicatedStorage")
-    local rsDisplayList = {}
-    local rsKeyValueList = {}
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
+    local rsChildrenOverflowParagraphs = {}
+
+    local rsTitleList = {}
+    local rsTitleToInstance = {}
 
     local function refreshReplicatedStorageList()
-        rsDisplayList = {}
-        rsKeyValueList = {}
-        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(rsDisplayList, display)
-            rsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(ReplicatedStorage:GetChildren())
+        rsTitleList = {}
+        rsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(rsTitleList, row.Title)
+            rsTitleToInstance[row.Title] = row.Instance
         end
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
-            ReplicatedStorageDropdown:Refresh(rsDisplayList)
+            ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsTitleList))
         end
-        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsDisplayList .. " objects" })
+        mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsTitleList .. " objects", Icon = "check" })
     end
 
     ReplicatedStorageDropdown = ObjectsTab:CreateDropdown({
         Name = "ReplicatedStorage (key = value)",
-        Options = rsDisplayList,
-        CurrentOption = {},
+        Options = objectDropdownOptions(rsTitleList),
+        CurrentOption = { OBJECTS_NONE },
         Search = true,
-        Callback = function(selectedDisplay)
-            selectedDisplay = rayfieldDropdownFirst(selectedDisplay)
-            if not selectedDisplay then
-                if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                    ReplicatedStorageChildrenParagraph:Set({ Title = "Children (nested)", Content = "Select an object above to list its children" })
-                end
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    ReplicatedStorageChildrenParagraph,
+                    rsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = rsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if ReplicatedStorageChildrenParagraph and ReplicatedStorageChildrenParagraph.Set then
-                ReplicatedStorageChildrenParagraph:Set({ Title = "Children (nested)", Content = text })
+            local inst = rsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                ReplicatedStorageChildrenParagraph,
+                rsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     ReplicatedStorageChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshReplicatedStorageList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Players")
-    local plrsDisplayList = {}
-    local plrsKeyValueList = {}
     local PlayersServiceDropdown
     local PlayersServiceChildrenParagraph
+    local plrsChildrenOverflowParagraphs = {}
+
+    local plrsTitleList = {}
+    local plrsTitleToInstance = {}
 
     local function refreshPlayersServiceList()
-        plrsDisplayList = {}
-        plrsKeyValueList = {}
-        for _, child in ipairs(Players:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(plrsDisplayList, display)
-            plrsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(Players:GetChildren())
+        plrsTitleList = {}
+        plrsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(plrsTitleList, row.Title)
+            plrsTitleToInstance[row.Title] = row.Instance
         end
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
-            PlayersServiceDropdown:Refresh(plrsDisplayList)
+            PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsTitleList))
         end
-        mountNotify({ Title = "Players", Content = "Listed " .. #plrsDisplayList .. " players" })
+        mountNotify({ Title = "Players", Content = "Listed " .. #plrsTitleList .. " players", Icon = "check" })
     end
 
     PlayersServiceDropdown = ObjectsTab:CreateDropdown({
         Name = "Players (key = value)",
-        Options = plrsDisplayList,
-        CurrentOption = {},
+        Options = objectDropdownOptions(plrsTitleList),
+        CurrentOption = { OBJECTS_NONE },
         Search = true,
-        Callback = function(selectedDisplay)
-            selectedDisplay = rayfieldDropdownFirst(selectedDisplay)
-            if not selectedDisplay then
-                if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                    PlayersServiceChildrenParagraph:Set({ Title = "Children (nested)", Content = "Select a player above to list their children" })
-                end
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    PlayersServiceChildrenParagraph,
+                    plrsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select a player above to list their children"
+                )
                 return
             end
-            local entry = plrsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if PlayersServiceChildrenParagraph and PlayersServiceChildrenParagraph.Set then
-                PlayersServiceChildrenParagraph:Set({ Title = "Children (nested)", Content = text })
+            local inst = plrsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                PlayersServiceChildrenParagraph,
+                plrsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select a player above to list their children"
+            )
+        end,
     })
 
     PlayersServiceChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshPlayersServiceList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Local Player")
-    local lpDisplayList = {}
-    local lpKeyValueList = {}
     local LocalPlayerDropdown
     local LocalPlayerChildrenParagraph
+    local lpChildrenOverflowParagraphs = {}
+
+    local lpTitleList = {}
+    local lpTitleToInstance = {}
 
     local function refreshLocalPlayerList()
-        lpDisplayList = {}
-        lpKeyValueList = {}
         local localPlayer = Players.LocalPlayer
-        for _, child in ipairs(localPlayer:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(lpDisplayList, display)
-            lpKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(localPlayer:GetChildren())
+        lpTitleList = {}
+        lpTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(lpTitleList, row.Title)
+            lpTitleToInstance[row.Title] = row.Instance
         end
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
-            LocalPlayerDropdown:Refresh(lpDisplayList)
+            LocalPlayerDropdown:Refresh(objectDropdownOptions(lpTitleList))
         end
-        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpDisplayList .. " objects" })
+        mountNotify({ Title = "Local Player", Content = "Listed " .. #lpTitleList .. " objects", Icon = "check" })
     end
 
     LocalPlayerDropdown = ObjectsTab:CreateDropdown({
         Name = "Local Player (key = value)",
-        Options = lpDisplayList,
-        CurrentOption = {},
+        Options = objectDropdownOptions(lpTitleList),
+        CurrentOption = { OBJECTS_NONE },
         Search = true,
-        Callback = function(selectedDisplay)
-            selectedDisplay = rayfieldDropdownFirst(selectedDisplay)
-            if not selectedDisplay then
-                if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                    LocalPlayerChildrenParagraph:Set({ Title = "Children (nested)", Content = "Select an object above to list its children" })
-                end
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    LocalPlayerChildrenParagraph,
+                    lpChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = lpKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if LocalPlayerChildrenParagraph and LocalPlayerChildrenParagraph.Set then
-                LocalPlayerChildrenParagraph:Set({ Title = "Children (nested)", Content = text })
+            local inst = lpTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                LocalPlayerChildrenParagraph,
+                lpChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     LocalPlayerChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshLocalPlayerList()
-        end
+        end,
     })
+
     ObjectsTab:CreateSection("Workspace")
-    local wsDisplayList = {}
-    local wsKeyValueList = {}
     local WorkspaceDropdown
     local WorkspaceChildrenParagraph
+    local wsChildrenOverflowParagraphs = {}
+
+    local wsTitleList = {}
+    local wsTitleToInstance = {}
 
     local function refreshWorkspaceList()
-        wsDisplayList = {}
-        wsKeyValueList = {}
-        for _, child in ipairs(Workspace:GetChildren()) do
-            local display = formatInstanceDisplay(child, nil, true)
-            table.insert(wsDisplayList, display)
-            wsKeyValueList[display] = { key = child.Name, value = child.ClassName, instance = child }
+        local rows = buildObjectsServiceDropdownValues(Workspace:GetChildren())
+        wsTitleList = {}
+        wsTitleToInstance = {}
+        for _, row in ipairs(rows) do
+            table.insert(wsTitleList, row.Title)
+            wsTitleToInstance[row.Title] = row.Instance
         end
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
-            WorkspaceDropdown:Refresh(wsDisplayList)
+            WorkspaceDropdown:Refresh(objectDropdownOptions(wsTitleList))
         end
-        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsDisplayList .. " objects" })
+        mountNotify({ Title = "Workspace", Content = "Listed " .. #wsTitleList .. " objects", Icon = "check" })
     end
 
     WorkspaceDropdown = ObjectsTab:CreateDropdown({
         Name = "Workspace (key = value)",
-        Options = wsDisplayList,
-        CurrentOption = {},
+        Options = objectDropdownOptions(wsTitleList),
+        CurrentOption = { OBJECTS_NONE },
         Search = true,
-        Callback = function(selectedDisplay)
-            selectedDisplay = rayfieldDropdownFirst(selectedDisplay)
-            if not selectedDisplay then
-                if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                    WorkspaceChildrenParagraph:Set({ Title = "Children (nested)", Content = "Select an object above to list its children" })
-                end
+        Ext = true,
+        Callback = function(opts)
+            local selectedDisplay = type(opts) == "table" and opts[1] or opts
+            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+                setNestedChildrenParagraphsWithOverflow(
+                    ObjectsTab,
+                    WorkspaceChildrenParagraph,
+                    wsChildrenOverflowParagraphs,
+                    nil,
+                    NESTED_CHILDREN_TITLE,
+                    "Select an object above to list its children"
+                )
                 return
             end
-            local entry = wsKeyValueList[selectedDisplay]
-            if not entry or not entry.instance then return end
-            local text = buildNestedObjectChildrenListText(entry.instance)
-            if WorkspaceChildrenParagraph and WorkspaceChildrenParagraph.Set then
-                WorkspaceChildrenParagraph:Set({ Title = "Children (nested)", Content = text })
+            local inst = wsTitleToInstance[selectedDisplay]
+            if not inst then
+                return
             end
-        end
+            local text = buildNestedObjectChildrenListText(inst)
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                WorkspaceChildrenParagraph,
+                wsChildrenOverflowParagraphs,
+                text,
+                NESTED_CHILDREN_TITLE,
+                "Select an object above to list its children"
+            )
+        end,
     })
 
     WorkspaceChildrenParagraph = ObjectsTab:CreateParagraph({
-        Title = "Children (nested)",
-        Content = "Nested under Folder, Backpack, StarterGear, PlayerGui, ScreenGui, Frame (name sort; max depth " .. OBJECTS_TREE_MAX_DEPTH .. ", max " .. OBJECTS_TREE_MAX_LINES .. " lines)",
+        Title = NESTED_CHILDREN_TITLE,
+        Content = OBJECTS_CHILDREN_PARAGRAPH_DESC,
     })
 
     ObjectsTab:CreateButton({
         Name = "Refresh",
+        Ext = true,
         Callback = function()
             refreshWorkspaceList()
-        end
-    })
-
-end
-
--- */  Config Tab  /* --
-do
-    local ConfigTab = Window:CreateTab("Config", 4483362458)
-
-    ConfigTab:CreateSection("Config management")
-    local CONFIG_DIR = "sempatpanick/mancing_indo_galatama"
-    local configMgmtName = ""
-    local savedConfigList = {}
-    local selectedSavedConfigName = nil
-    local SavedConfigsDropdown
-    local ConfigNameInput
-    local autoLoadPickerSelection = nil
-    local AutoLoadSavedDropdown
-    local CONFIG_SEQ_FLAG_AUTO_FISH = "galatama_main_autoFishing"
-    local CONFIG_SEQ_FLAG_INSTANT_FISH = "galatama_main_instantFishing"
-
-    local function sanitizeConfigName(raw)
-        local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        s = s:gsub("[/\\]", "")
-        return s
-    end
-
-    local function ensureConfigFolder()
-        if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(CONFIG_DIR) then
-            pcall(function()
-                makefolder("sempatpanick")
-            end)
-            pcall(function()
-                makefolder(CONFIG_DIR)
-            end)
-        end
-    end
-
-    local function profilePath(name)
-        return CONFIG_DIR .. "/" .. sanitizeConfigName(name) .. ".json"
-    end
-
-    local function encodeColor3(c)
-        return {
-            __type = "Color3",
-            R = math.floor(c.R * 255 + 0.5),
-            G = math.floor(c.G * 255 + 0.5),
-            B = math.floor(c.B * 255 + 0.5),
-        }
-    end
-
-    local function decodeColor3(v)
-        if type(v) == "table" and v.__type == "Color3" then
-            return Color3.fromRGB(tonumber(v.R) or 255, tonumber(v.G) or 255, tonumber(v.B) or 255)
-        end
-        return nil
-    end
-
-    local function collectCurrentConfigData()
-        local data = {}
-        for flagName, flagObj in pairs(RayfieldLibrary.Flags or {}) do
-            local value
-            if flagObj.Type == "ColorPicker" and flagObj.Color then
-                value = encodeColor3(flagObj.Color)
-            else
-                value = flagObj.CurrentValue
-                if value == nil then value = flagObj.CurrentKeybind end
-                if value == nil then value = flagObj.CurrentOption end
-                if value == nil then value = flagObj.Color end
-                if typeof(value) == "Color3" then
-                    value = encodeColor3(value)
-                end
-            end
-            data[flagName] = value
-        end
-        return data
-    end
-
-    local function applyConfigData(data)
-        if type(data) ~= "table" then
-            return false
-        end
-        local seqOrder = {
-            CONFIG_SEQ_FLAG_AUTO_FISH,
-            CONFIG_SEQ_FLAG_INSTANT_FISH,
-        }
-        local seqSet = {}
-        for _, f in ipairs(seqOrder) do
-            seqSet[f] = true
-        end
-
-        local function applyFlag(flagName)
-            local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags[flagName]
-            if not flagObj or type(flagObj.Set) ~= "function" then
-                return
-            end
-            local saved = data[flagName]
-            if saved == nil then
-                return
-            end
-            local c = decodeColor3(saved)
-            pcall(function()
-                flagObj:Set(c or saved)
-            end)
-        end
-
-        for flagName, _ in pairs(data) do
-            if not seqSet[flagName] then
-                applyFlag(flagName)
-            end
-        end
-        for _, flagName in ipairs(seqOrder) do
-            applyFlag(flagName)
-        end
-        return true
-    end
-
-    local function listProfiles()
-        local names = {}
-        if type(listfiles) ~= "function" then
-            return names
-        end
-        ensureConfigFolder()
-        local ok, files = pcall(function()
-            return listfiles(CONFIG_DIR)
-        end)
-        if not ok or type(files) ~= "table" then
-            return names
-        end
-        for _, filePath in ipairs(files) do
-            local normalized = tostring(filePath):gsub("\\", "/")
-            local base = normalized:match("([^/]+)$")
-            if base and base:sub(-5) == ".json" and base ~= "mancing_indo_galatama_autoload.json" then
-                table.insert(names, base:sub(1, -6))
-            end
-        end
-        table.sort(names)
-        return names
-    end
-
-    local function createConfigObject(name)
-        local trimmed = sanitizeConfigName(name)
-        return {
-            Save = function()
-                ensureConfigFolder()
-                if type(writefile) ~= "function" then
-                    error("writefile is not available")
-                end
-                writefile(profilePath(trimmed), HttpService:JSONEncode(collectCurrentConfigData()))
-            end,
-            Load = function()
-                if type(isfile) ~= "function" or type(readfile) ~= "function" then
-                    return false, "Config system unavailable (missing file APIs)"
-                end
-                local path = profilePath(trimmed)
-                if not isfile(path) then
-                    return false, "Config file not found or invalid"
-                end
-                local okRead, rawOrErr = pcall(function()
-                    return readfile(path)
-                end)
-                if not okRead then
-                    return false, tostring(rawOrErr)
-                end
-                local okDecode, decoded = pcall(function()
-                    return HttpService:JSONDecode(rawOrErr)
-                end)
-                if not okDecode then
-                    return false, "Config file not found or invalid"
-                end
-                applyConfigData(decoded)
-                return true
-            end,
-        }
-    end
-
-    local function getConfigManager()
-        if type(writefile) ~= "function" and type(readfile) ~= "function" then
-            return nil
-        end
-        ensureConfigFolder()
-        return {
-            Path = CONFIG_DIR .. "/",
-            AllConfigs = function()
-                return listProfiles()
-            end,
-            GetConfig = function(_, _)
-                return nil
-            end,
-            Config = function(_, name, _)
-                return createConfigObject(name)
-            end,
-            DeleteConfig = function(_, name)
-                if type(delfile) ~= "function" or type(isfile) ~= "function" then
-                    return false, "Delete is unavailable (missing file APIs)"
-                end
-                local path = profilePath(name)
-                if not isfile(path) then
-                    return false, "Config file not found"
-                end
-                local ok, err = pcall(function()
-                    delfile(path)
-                end)
-                if not ok then
-                    return false, tostring(err)
-                end
-                return true, "Deleted \"" .. sanitizeConfigName(name) .. "\""
-            end,
-        }
-    end
-
-    local function autoLoadMetaPath(cm)
-        return (cm.Path or "") .. "mancing_indo_galatama_autoload.json"
-    end
-
-    local function readAutoLoadPersistedName()
-        local cm = getConfigManager()
-        if not cm or type(isfile) ~= "function" or type(readfile) ~= "function" then
-            return ""
-        end
-        local path = autoLoadMetaPath(cm)
-        if not isfile(path) then
-            return ""
-        end
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(readfile(path))
-        end)
-        if ok and type(data) == "table" then
-            return sanitizeConfigName(tostring(data.name or data.profile or ""))
-        end
-        return ""
-    end
-
-    local function writeAutoLoadPersistedName(name)
-        local cm = getConfigManager()
-        if not cm or type(writefile) ~= "function" then
-            return false
-        end
-        local path = autoLoadMetaPath(cm)
-        local trimmed = sanitizeConfigName(name)
-        if trimmed == "" then
-            if type(delfile) == "function" and type(isfile) == "function" and isfile(path) then
-                pcall(function()
-                    delfile(path)
-                end)
-            end
-            return true
-        end
-        local ok = pcall(function()
-            writefile(path, HttpService:JSONEncode({ name = trimmed }))
-        end)
-        return ok
-    end
-
-    local function refreshSavedConfigDropdowns(showNotify)
-        local cm = getConfigManager()
-        if not cm then
-            if showNotify then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Config system unavailable (Studio or missing file APIs).",
-                })
-            end
-            return
-        end
-        savedConfigList = cm:AllConfigs() or {}
-        table.sort(savedConfigList)
-        if SavedConfigsDropdown and SavedConfigsDropdown.Refresh then
-            SavedConfigsDropdown:Refresh(savedConfigList)
-        end
-        if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Refresh then
-            AutoLoadSavedDropdown:Refresh(savedConfigList)
-        end
-        if autoLoadPickerSelection and not table.find(savedConfigList, autoLoadPickerSelection) then
-            autoLoadPickerSelection = nil
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                AutoLoadSavedDropdown:Select(nil)
-            end
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set({})
-            end
-        end
-        if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
-            selectedSavedConfigName = nil
-            if SavedConfigsDropdown and SavedConfigsDropdown.Select then
-                SavedConfigsDropdown:Select(nil)
-            end
-            if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                SavedConfigsDropdown:Set({})
-            end
-        end
-        if showNotify then
-            mountNotify({
-                Title = "Config",
-                Content = "Found " .. tostring(#savedConfigList) .. " saved profile(s).",
-            })
-        end
-    end
-
-    local function syncPersistedAutoLoadToUi()
-        if not AutoLoadSavedDropdown then
-            return
-        end
-        local persisted = readAutoLoadPersistedName()
-        if persisted == "" or not table.find(savedConfigList, persisted) then
-            return
-        end
-        autoLoadPickerSelection = persisted
-        if AutoLoadSavedDropdown.Set then
-            AutoLoadSavedDropdown:Set({ persisted })
-        elseif AutoLoadSavedDropdown.Select then
-            AutoLoadSavedDropdown:Select(persisted)
-        end
-    end
-
-    local function runStartupAutoLoadProfile()
-        local cm = getConfigManager()
-        if not cm or type(isfile) ~= "function" then
-            return
-        end
-        local name = readAutoLoadPersistedName()
-        if name == "" then
-            return
-        end
-        if not isfile(cm.Path .. name .. ".json") then
-            return
-        end
-        local cfg = createConfigObject(name)
-        local pok, loadResult, loadErr = pcall(function()
-            return cfg:Load()
-        end)
-        if not pok then
-            warn("[Mancing Indo Galatama] Auto-load failed: ", loadResult)
-            return
-        end
-        if loadResult == false then
-            warn("[Mancing Indo Galatama] Auto-load: ", loadErr)
-            return
-        end
-        mountNotify({
-            Title = "Config",
-            Content = "Auto-loaded \"" .. name .. "\"",
-        })
-    end
-
-    ConfigNameInput = ConfigTab:CreateInput({
-        Name = "Config name",
-        PlaceholderText = "e.g. main or pvp",
-        CurrentValue = configMgmtName,
-        Callback = function(value)
-            configMgmtName = sanitizeConfigName(value)
         end,
     })
 
-    SavedConfigsDropdown = ConfigTab:CreateDropdown({
-        Name = "Config Saved",
-        Options = savedConfigList,
-        CurrentOption = {},
-        Search = true,
-        Callback = function(opts)
-            local value = rayfieldDropdownFirst(opts)
-            selectedSavedConfigName = (value and value ~= "") and value or nil
-            if value and value ~= "" then
-                configMgmtName = sanitizeConfigName(value)
-                if ConfigNameInput and ConfigNameInput.Set then
-                    ConfigNameInput:Set(configMgmtName)
-                elseif ConfigNameInput and ConfigNameInput.SetValue then
-                    ConfigNameInput:SetValue(configMgmtName)
-                end
-            end
-        end,
-    })
-
-    ConfigTab:CreateButton({
-        Name = "Refresh Config",
-        Callback = function()
-            refreshSavedConfigDropdowns(true)
-        end,
-    })
-    ConfigTab:CreateButton({
-        Name = "Save Config",
-        Callback = function()
-            local cm = getConfigManager()
-            if not cm then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Config system unavailable (Studio or missing file APIs).",
-                })
-                return
-            end
-            local name = sanitizeConfigName(configMgmtName)
-            if name == "" then
-                mountNotify({ Title = "Config", Content = "Enter a config name first" })
-                return
-            end
-            local cfg = createConfigObject(name)
-            local cfgPath = cm.Path .. name .. ".json"
-            if type(isfile) == "function" and isfile(cfgPath) and type(delfile) == "function" then
-                pcall(function()
-                    delfile(cfgPath)
-                end)
-            end
-            local ok, err = pcall(function()
-                cfg:Save()
-            end)
-            if not ok then
-                mountNotify({ Title = "Config", Content = "Save failed: " .. tostring(err) })
-                return
-            end
-            refreshSavedConfigDropdowns(false)
-            mountNotify({ Title = "Config", Content = "Saved \"" .. name .. "\"" })
-        end,
-    })
-
-    ConfigTab:CreateButton({
-        Name = "Load Config",
-        Callback = function()
-            local cm = getConfigManager()
-            if not cm then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Config system unavailable (Studio or missing file APIs).",
-                })
-                return
-            end
-            local name = sanitizeConfigName(configMgmtName)
-            if name == "" then
-                mountNotify({ Title = "Config", Content = "Enter or select a config name first" })
-                return
-            end
-            local cfg = createConfigObject(name)
-            local pok, loadResult, loadErr = pcall(function()
-                return cfg:Load()
-            end)
-            if not pok then
-                mountNotify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult) })
-                return
-            end
-            if loadResult == false then
-                mountNotify({
-                    Title = "Config",
-                    Content = type(loadErr) == "string" and loadErr or "Config file not found or invalid",
-                })
-                return
-            end
-            mountNotify({ Title = "Config", Content = "Loaded \"" .. name .. "\"" })
-        end,
-    })
-    ConfigTab:CreateButton({
-        Name = "Delete Config",
-        Callback = function()
-            local cm = getConfigManager()
-            if not cm then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Config system unavailable (Studio or missing file APIs).",
-                })
-                return
-            end
-            if not selectedSavedConfigName or selectedSavedConfigName == "" then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Select a config to delete",
-                })
-                return
-            end
-            local name = sanitizeConfigName(selectedSavedConfigName)
-            if name == "" then
-                mountNotify({
-                    Title = "Config",
-                    Content = "Select a config to delete",
-                })
-                return
-            end
-            local okDel, msg = cm:DeleteConfig(name)
-            refreshSavedConfigDropdowns(false)
-            if okDel then
-                if readAutoLoadPersistedName() == name then
-                    writeAutoLoadPersistedName("")
-                    autoLoadPickerSelection = nil
-                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                        AutoLoadSavedDropdown:Select(nil)
-                    end
-                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                        AutoLoadSavedDropdown:Set({})
-                    end
-                end
-                selectedSavedConfigName = nil
-                if SavedConfigsDropdown and SavedConfigsDropdown.Select then
-                    SavedConfigsDropdown:Select(nil)
-                end
-                if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                    SavedConfigsDropdown:Set({})
-                end
-                if sanitizeConfigName(configMgmtName) == name then
-                    configMgmtName = ""
-                    if ConfigNameInput and ConfigNameInput.Set then
-                        ConfigNameInput:Set("")
-                    elseif ConfigNameInput and ConfigNameInput.SetValue then
-                        ConfigNameInput:SetValue("")
-                    end
-                end
-                mountNotify({
-                    Title = "Config",
-                    Content = type(msg) == "string" and msg or ("Deleted \"" .. name .. "\""),
-                })
-            else
-                mountNotify({
-                    Title = "Config",
-                    Content = type(msg) == "string" and msg or "Delete failed",
-                })
-            end
-        end,
-    })
-    ConfigTab:CreateSection("Auto Load")
-    AutoLoadSavedDropdown = ConfigTab:CreateDropdown({
-        Name = "Config Saved",
-        Options = savedConfigList,
-        CurrentOption = {},
-        Search = true,
-        Callback = function(opts)
-            local value = rayfieldDropdownFirst(opts)
-            autoLoadPickerSelection = (value and value ~= "") and value or nil
-        end,
-    })
-    ConfigTab:CreateButton({
-        Name = "Set",
-        Callback = function()
-            if not autoLoadPickerSelection or autoLoadPickerSelection == "" then
-                mountNotify({
-                    Title = "Auto Load",
-                    Content = "Select a config in Config Saved first",
-                })
-                return
-            end
-            local cm = getConfigManager()
-            if not cm then
-                mountNotify({
-                    Title = "Auto Load",
-                    Content = "Config system unavailable (Studio or missing file APIs).",
-                })
-                return
-            end
-            local pick = sanitizeConfigName(autoLoadPickerSelection)
-            if pick == "" or not table.find(savedConfigList, pick) then
-                mountNotify({
-                    Title = "Auto Load",
-                    Content = "Selected profile is not in the list (try Refresh Config)",
-                })
-                return
-            end
-            if not isfile or not isfile(cm.Path .. pick .. ".json") then
-                mountNotify({
-                    Title = "Auto Load",
-                    Content = "That config file is not on disk yet (Save Config first)",
-                })
-                return
-            end
-            if not writeAutoLoadPersistedName(pick) then
-                mountNotify({ Title = "Auto Load", Content = "Failed to write autoload file" })
-                return
-            end
-            mountNotify({
-                Title = "Auto Load",
-                Content = "Next run will load \"" .. pick .. "\"",
-            })
-        end,
-    })
-    ConfigTab:CreateButton({
-        Name = "Reset",
-        Callback = function()
-            writeAutoLoadPersistedName("")
-            autoLoadPickerSelection = nil
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                AutoLoadSavedDropdown:Select(nil)
-            end
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set({})
-            end
-            mountNotify({
-                Title = "Auto Load",
-                Content = "Auto-load on startup disabled",
-            })
-        end,
-    })
-
-    refreshSavedConfigDropdowns(false)
-    syncPersistedAutoLoadToUi()
-
-    task.defer(function()
-        task.wait(0.45)
-        runStartupAutoLoadProfile()
-    end)
 end
