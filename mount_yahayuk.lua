@@ -2913,6 +2913,186 @@ do
         task.defer(acceptIncomingCarryRefreshList)
     end)
     task.defer(acceptIncomingCarryRefreshList)
+
+    MainTab:CreateSection("Transfer Cash")
+
+    local transferCashAmountText = ""
+    local transferCashSelectedPlayer: Player? = nil
+    local TransferCashPlayersDropdown
+
+    local function transferCashPlayerLabel(player: Player)
+        local lp = Players.LocalPlayer
+        local dn = player.DisplayName
+        local base: string
+        if dn and dn ~= "" and dn ~= player.Name then
+            base = string.format("%s (@%s)", dn, player.Name)
+        else
+            base = player.Name
+        end
+        if player == lp then
+            return base .. " (you)"
+        end
+        return base
+    end
+
+    local function transferCashDropdownOptions()
+        local opts = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.ClassName == "Player" then
+                table.insert(opts, transferCashPlayerLabel(plr))
+            end
+        end
+        table.sort(opts, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        return opts
+    end
+
+    local function transferCashFindPlayerByLabel(label: string)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.ClassName == "Player" and transferCashPlayerLabel(plr) == label then
+                return plr
+            end
+        end
+        return nil
+    end
+
+    local function transferCashRefreshList()
+        local opts = transferCashDropdownOptions()
+        if transferCashSelectedPlayer then
+            if Players:GetPlayerByUserId(transferCashSelectedPlayer.UserId) ~= transferCashSelectedPlayer then
+                transferCashSelectedPlayer = nil
+            end
+        end
+        if TransferCashPlayersDropdown and TransferCashPlayersDropdown.Refresh then
+            TransferCashPlayersDropdown:Refresh(opts)
+        end
+        if transferCashSelectedPlayer then
+            local lbl = transferCashPlayerLabel(transferCashSelectedPlayer)
+            if table.find(opts, lbl) and TransferCashPlayersDropdown and TransferCashPlayersDropdown.Set then
+                TransferCashPlayersDropdown:Set({ lbl })
+            end
+        end
+    end
+
+    local transferCashInitialOpts = transferCashDropdownOptions()
+    local transferCashInitialCurrent = {}
+    if #transferCashInitialOpts > 0 then
+        transferCashInitialCurrent = { transferCashInitialOpts[1] }
+        transferCashSelectedPlayer = transferCashFindPlayerByLabel(transferCashInitialOpts[1])
+    end
+
+    TransferCashPlayersDropdown = MainTab:CreateDropdown({
+        Name = "Player",
+        Options = transferCashInitialOpts,
+        CurrentOption = transferCashInitialCurrent,
+        Search = true,
+        Ext = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            transferCashSelectedPlayer = picked and transferCashFindPlayerByLabel(picked) or nil
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Amount",
+        PlaceholderText = "e.g. 100",
+        CurrentValue = "",
+        Ext = true,
+        Callback = function(value)
+            transferCashAmountText = value or ""
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "Give Cash",
+        Ext = true,
+        Callback = function()
+            if not transferCashSelectedPlayer then
+                mountNotify({ Title = "Transfer Cash", Content = "Select a player first", Icon = "x" })
+                return
+            end
+            local amtStr = (transferCashAmountText or ""):gsub(",", ""):gsub("%s+", "")
+            local amountNum = tonumber(amtStr)
+            local amountPayload
+            if amountNum ~= nil then
+                amountPayload = amountNum
+            else
+                amountPayload = amtStr
+            end
+            local targetId = transferCashSelectedPlayer.UserId
+            local okFire, errFire = pcall(function()
+                local tax = ReplicatedStorage:FindFirstChild("CashTransferTax")
+                if not tax then
+                    tax = ReplicatedStorage:WaitForChild("CashTransferTax", 5)
+                end
+                if tax then
+                    if tax:IsA("IntValue") or tax:IsA("NumberValue") then
+                        tax.Value = 0
+                    elseif tax:IsA("StringValue") then
+                        tax.Value = "0"
+                    end
+                end
+                local ev = ReplicatedStorage:FindFirstChild("CashTransferRemote")
+                if not ev then
+                    ev = ReplicatedStorage:WaitForChild("CashTransferRemote", 10)
+                end
+                if not ev then
+                    error("CashTransferRemote not found in ReplicatedStorage")
+                end
+                ev:FireServer("RequestTransfer", {
+                    targetId = targetId,
+                    amount = amountPayload,
+                })
+            end)
+            if not okFire then
+                mountNotify({
+                    Title = "Transfer Cash",
+                    Content = tostring(errFire),
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    task.defer(function()
+        local ok, ackRemote = pcall(function()
+            return ReplicatedStorage:WaitForChild("CashTransferAck", 60)
+        end)
+        if not ok or not ackRemote or not ackRemote:IsA("RemoteEvent") then
+            return
+        end
+        ackRemote.OnClientEvent:Connect(function(data)
+            local msg: string?
+            local okFlag: boolean?
+            if type(data) == "table" then
+                local m = data.message
+                msg = typeof(m) == "string" and m or nil
+                okFlag = data.ok
+            elseif type(data) == "string" then
+                msg = data
+                okFlag = true
+            else
+                return
+            end
+            if not msg or msg == "" then
+                msg = okFlag == false and "Transfer failed." or "Transfer acknowledged."
+            end
+            mountNotify({
+                Title = "Transfer Cash",
+                Content = msg,
+                Icon = okFlag == false and "x" or "check",
+            })
+        end)
+    end)
+
+    Players.PlayerAdded:Connect(function()
+        task.defer(transferCashRefreshList)
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(transferCashRefreshList)
+    end)
+    task.defer(transferCashRefreshList)
 end
 -- */  Teleport Tab  /* --
 do
