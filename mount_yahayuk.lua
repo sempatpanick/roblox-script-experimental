@@ -1892,6 +1892,49 @@ do
         return first, cp
     end
 
+    local autoSummitRunTimes = {}
+
+    local function formatAutoSummitDuration(sec)
+        if typeof(sec) ~= "number" or sec ~= sec or sec < 0 then
+            return "—"
+        end
+        if sec < 60 then
+            return string.format("%.1fs", sec)
+        end
+        local m = math.floor(sec / 60)
+        local s = sec - m * 60
+        return string.format("%dm %.1fs", m, s)
+    end
+
+    local AUTO_SUMMIT_TIMES_TITLE = "Time per summit (this session)"
+    local AutoSummitTimesParagraph
+    local function updateAutoSummitTimesParagraph()
+        if not AutoSummitTimesParagraph then
+            return
+        end
+        local lines = {}
+        local n = #autoSummitRunTimes
+        local startIdx = 1
+        local maxLines = 20
+        if n > maxLines then
+            startIdx = n - maxLines + 1
+            table.insert(lines, "(Showing last " .. maxLines .. " runs)")
+        end
+        for i = startIdx, n do
+            table.insert(
+                lines,
+                string.format("Run %d: %s", i, formatAutoSummitDuration(autoSummitRunTimes[i]))
+            )
+        end
+        local desc = #lines > 0 and table.concat(lines, "\n") or "No completed runs yet."
+        if AutoSummitTimesParagraph.Set then
+            AutoSummitTimesParagraph:Set({
+                Title = AUTO_SUMMIT_TIMES_TITLE,
+                Content = desc,
+            })
+        end
+    end
+
     local AUTO_SUMMIT_CP_TITLE = "Current camp / CP"
     local AutoSummitCpParagraph
     local function updateAutoSummitCpParagraph()
@@ -1916,6 +1959,11 @@ do
     AutoSummitCpParagraph = MainTab:CreateParagraph({
         Title = AUTO_SUMMIT_CP_TITLE,
         Content = "POSISI: â€”\nCP #0 Â· Start",
+    })
+
+    AutoSummitTimesParagraph = MainTab:CreateParagraph({
+        Title = AUTO_SUMMIT_TIMES_TITLE,
+        Content = "No completed runs yet.",
     })
 
     local function attachLeaderstatsForCp(ls)
@@ -2015,6 +2063,8 @@ do
             end
 
             autoSummitRestartFromDeath = false
+            autoSummitRunTimes = {}
+            updateAutoSummitTimesParagraph()
             updateAutoSummitCpParagraph()
 
             if autoSummitDeathCheckConn then
@@ -2061,6 +2111,7 @@ do
                     if not autoSummitEnabled then
                         break
                     end
+                    local runStartTime = os.clock()
                     rootPart = getRootPart()
                     if not rootPart then
                         local char = lpAutoSummit.Character
@@ -2181,6 +2232,9 @@ do
                         else
                             notifyAutoSummit("Reached Summit! (Run " .. (runCount + 1) .. ")")
                         end
+                        local elapsedRun = os.clock() - runStartTime
+                        table.insert(autoSummitRunTimes, elapsedRun)
+                        task.defer(updateAutoSummitTimesParagraph)
                         runCount = runCount + 1
                         if remaining then
                             remaining = remaining - 1
