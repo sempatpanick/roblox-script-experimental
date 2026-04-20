@@ -14,6 +14,8 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local RayfieldLibrary
 
+local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
+
 do
     local ok, result = pcall(function()
         return require("./rayfield_library")
@@ -25,7 +27,7 @@ do
         if cloneref(RunService):IsStudio() then
             RayfieldLibrary = require(cloneref(ReplicatedStorage):WaitForChild("rayfield_library"))
         else
-            RayfieldLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/rayfield_library.lua"))()
+            RayfieldLibrary = loadstring(game:HttpGet(baseURL .. "/rayfield_library.lua"))()
         end
     end
 end
@@ -902,17 +904,47 @@ local function createRecordingTab(windowRef, notifyFn)
 
     local RECORDINGS_DIR = "sempatpanick/mount_yahayuk/recordings"
     local RECORDING_SAMPLE_INTERVAL = 0.1
-    local makeFolderFn = rawget(_G, "makefolder")
-    local isFolderFn = rawget(_G, "isfolder")
-    local writeFileFn = rawget(_G, "writefile")
-    local listFilesFn = rawget(_G, "listfiles")
-    local readFileFn = rawget(_G, "readfile")
-    local delFileFn = rawget(_G, "delfile")
-    local isFileFn = rawget(_G, "isfile")
-    local setClipboardFn = rawget(_G, "setclipboard") or rawget(_G, "toclipboard")
+    local function resolveExecutorFn(name: string)
+        local v = rawget(_G, name)
+        if type(v) == "function" then
+            return v
+        end
+        local getGenvFn = rawget(_G, "getgenv")
+        local okGenv, genv = pcall(function()
+            return type(getGenvFn) == "function" and getGenvFn() or nil
+        end)
+        if okGenv and type(genv) == "table" then
+            local gv = rawget(genv, name) or genv[name]
+            if type(gv) == "function" then
+                return gv
+            end
+        end
+        local okFenv, fenv = pcall(function()
+            return getfenv and getfenv()
+        end)
+        if okFenv and type(fenv) == "table" then
+            local fv = rawget(fenv, name) or fenv[name]
+            if type(fv) == "function" then
+                return fv
+            end
+        end
+        return nil
+    end
+
+    local makeFolderFn = resolveExecutorFn("makefolder")
+    local isFolderFn = resolveExecutorFn("isfolder")
+    local writeFileFn = resolveExecutorFn("writefile")
+    local listFilesFn = resolveExecutorFn("listfiles")
+    local readFileFn = resolveExecutorFn("readfile")
+    local delFileFn = resolveExecutorFn("delfile")
+    local isFileFn = resolveExecutorFn("isfile")
+    local setClipboardFn = resolveExecutorFn("setclipboard") or resolveExecutorFn("toclipboard")
 
     local recordingStatusParagraph
     local recordingInProgress = false
+    local recordingToggleControl
+    local recordingHotkeyConnection = nil
+    local recordingToggleHotkey = Enum.KeyCode.Q
     local recordingStartedAt = 0
     local recordingEvents = {}
     local recordingConnections = {}
@@ -925,6 +957,9 @@ local function createRecordingTab(windowRef, notifyFn)
     local playbackToken = 0
     local playbackInProgress = false
     local playbackStartedAt = 0
+    local playbackHumanoid = nil
+    local playbackAutoRotateRestore = nil
+    local playbackKeysDown: { [Enum.KeyCode]: boolean } = {}
     local SAVED_RECORDING_NONE = "(None)"
     local refreshSavedRecordingsDropdown = function(_showNotify: boolean?) end
 
@@ -1015,6 +1050,41 @@ local function createRecordingTab(windowRef, notifyFn)
     end
 
     local function stopSavedRecordingPlayback(reason: string?, shouldNotify: boolean?)
+        if VirtualInputManager then
+            for keyCode, isDown in pairs(playbackKeysDown) do
+                if isDown then
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+                    end)
+                end
+                playbackKeysDown[keyCode] = nil
+            end
+        else
+            playbackKeysDown = {}
+        end
+
+        if playbackHumanoid then
+            pcall(function()
+                playbackHumanoid:Move(Vector3.new(0, 0, 0))
+            end)
+        end
+
+        local localChar = Players.LocalPlayer and Players.LocalPlayer.Character
+        local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+        if localRoot then
+            pcall(function()
+                localRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                localRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+        end
+
+        if playbackHumanoid and playbackAutoRotateRestore ~= nil then
+            pcall(function()
+                playbackHumanoid.AutoRotate = playbackAutoRotateRestore
+            end)
+        end
+        playbackHumanoid = nil
+        playbackAutoRotateRestore = nil
         playbackToken = playbackToken + 1
         if playbackInProgress then
             playbackInProgress = false
@@ -1040,6 +1110,8 @@ local function createRecordingTab(windowRef, notifyFn)
     end
 
     local function ensureRecordingsDirectory()
+        makeFolderFn = makeFolderFn or resolveExecutorFn("makefolder")
+        isFolderFn = isFolderFn or resolveExecutorFn("isfolder")
         if type(makeFolderFn) ~= "function" then
             return false, "makefolder() is not available in this executor"
         end
@@ -1078,6 +1150,7 @@ local function createRecordingTab(windowRef, notifyFn)
     end
 
     local function saveRecordingAsJson()
+        writeFileFn = writeFileFn or resolveExecutorFn("writefile")
         if type(writeFileFn) ~= "function" then
             return nil, "writefile() is not available in this executor"
         end
@@ -1138,12 +1211,14 @@ local function createRecordingTab(windowRef, notifyFn)
         local moveDir = humanoid.MoveDirection
         local pos = rootPart.Position
         local vel = rootPart.AssemblyLinearVelocity
+        local look = rootPart.CFrame.LookVector
         local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
         local signature = string.format(
-            "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%s",
+            "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%s",
             moveDir.X, moveDir.Y, moveDir.Z,
             pos.X, pos.Y, pos.Z,
             vel.X, vel.Y, vel.Z,
+            look.X, look.Y, look.Z,
             grounded and "1" or "0"
         )
         if signature == lastMovementSignature then
@@ -1165,6 +1240,11 @@ local function createRecordingTab(windowRef, notifyFn)
                 x = tonumber(string.format("%.3f", vel.X)),
                 y = tonumber(string.format("%.3f", vel.Y)),
                 z = tonumber(string.format("%.3f", vel.Z)),
+            },
+            lookDirection = {
+                x = tonumber(string.format("%.3f", look.X)),
+                y = tonumber(string.format("%.3f", look.Y)),
+                z = tonumber(string.format("%.3f", look.Z)),
             },
             isGrounded = grounded,
             walkSpeed = tonumber(string.format("%.3f", humanoid.WalkSpeed)),
@@ -1220,6 +1300,9 @@ local function createRecordingTab(windowRef, notifyFn)
                 return
             end
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+                if input.KeyCode == recordingToggleHotkey then
+                    return
+                end
                 appendRecordingEvent("key_down", {
                     keyCode = tostring(input.KeyCode),
                     gameProcessed = gameProcessed == true,
@@ -1232,6 +1315,9 @@ local function createRecordingTab(windowRef, notifyFn)
                 return
             end
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+                if input.KeyCode == recordingToggleHotkey then
+                    return
+                end
                 appendRecordingEvent("key_up", {
                     keyCode = tostring(input.KeyCode),
                     gameProcessed = gameProcessed == true,
@@ -1306,21 +1392,67 @@ local function createRecordingTab(windowRef, notifyFn)
         Content = "Recording: OFF\nEvents: 0\nLast file: (none)",
     })
 
-    RecordingTab:CreateButton({
-        Name = "Start Recording",
-        Ext = true,
-        Callback = function()
-            startRecording()
+    local function setRecordingEnabled(enabled: boolean)
+        if enabled then
+            if not recordingInProgress then
+                startRecording()
+            end
+        else
+            if recordingInProgress then
+                stopRecording()
+            end
+        end
+    end
+
+    local function syncRecordingToggleUi(enabled: boolean)
+        if not recordingToggleControl then
+            return
+        end
+        if recordingToggleControl.Set then
+            pcall(function()
+                recordingToggleControl:Set(enabled)
+            end)
+            return
+        end
+        if recordingToggleControl.SetValue then
+            pcall(function()
+                recordingToggleControl:SetValue(enabled)
+            end)
+        end
+    end
+
+    RecordingTab:CreateParagraph({
+        Title = "Keybind",
+        Content = "Press Q to toggle recording ON/OFF",
+    })
+
+    recordingToggleControl = RecordingTab:CreateToggle({
+        Name = "Recording (toggle ON/OFF)",
+        CurrentValue = false,
+        Callback = function(enabled)
+            setRecordingEnabled(enabled == true)
         end,
     })
 
-    RecordingTab:CreateButton({
-        Name = "Stop Recording + Save JSON",
-        Ext = true,
-        Callback = function()
-            stopRecording()
-        end,
-    })
+    if recordingHotkeyConnection then
+        pcall(function()
+            recordingHotkeyConnection:Disconnect()
+        end)
+    end
+    recordingHotkeyConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then
+            return
+        end
+        if UserInputService:GetFocusedTextBox() then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard or input.KeyCode ~= recordingToggleHotkey then
+            return
+        end
+        local nextEnabled = not recordingInProgress
+        setRecordingEnabled(nextEnabled)
+        syncRecordingToggleUi(nextEnabled)
+    end)
 
     RecordingTab:CreateSection("Saved Recording")
 
@@ -1332,6 +1464,9 @@ local function createRecordingTab(windowRef, notifyFn)
         savedDisplayToPath = {}
         savedDisplayOptions = { SAVED_RECORDING_NONE }
 
+        if type(listFilesFn) ~= "function" then
+            listFilesFn = listFilesFn or resolveExecutorFn("listfiles")
+        end
         if type(listFilesFn) ~= "function" then
             updateSavedRecordingStatus("listfiles() is not available in this executor")
             if showNotify then
@@ -1430,6 +1565,8 @@ local function createRecordingTab(windowRef, notifyFn)
                 notifyFn({ Title = "Recording Playback", Content = "Select a saved recording first", Icon = "x" })
                 return
             end
+            readFileFn = readFileFn or resolveExecutorFn("readfile")
+            isFileFn = isFileFn or resolveExecutorFn("isfile")
             if type(readFileFn) ~= "function" then
                 notifyFn({ Title = "Recording Playback", Content = "readfile() is not available", Icon = "x" })
                 return
@@ -1470,6 +1607,22 @@ local function createRecordingTab(windowRef, notifyFn)
             local token = playbackToken
             playbackInProgress = true
             playbackStartedAt = os.clock()
+            playbackHumanoid = nil
+            playbackAutoRotateRestore = nil
+            playbackKeysDown = {}
+
+            local nextMovementDeltaByIndex = {}
+            local nextMovementTime = nil
+            for i = #events, 1, -1 do
+                local ev = events[i]
+                local evTime = tonumber(ev.t) or 0
+                if ev.kind == "movement" then
+                    nextMovementDeltaByIndex[i] = nextMovementTime and math.max(0, nextMovementTime - evTime) or nil
+                    nextMovementTime = evTime
+                else
+                    nextMovementDeltaByIndex[i] = nil
+                end
+            end
 
             local selectedName = baseNameFromPath(selectedSavedRecordingPath)
             updateSavedRecordingStatus("Playing: " .. selectedName)
@@ -1480,8 +1633,66 @@ local function createRecordingTab(windowRef, notifyFn)
             })
 
             task.spawn(function()
+                local function buildMovementTargetCFrame(rootPart, dataTable)
+                    local pos = dataTable.position
+                    if not rootPart or type(pos) ~= "table" then
+                        return nil
+                    end
+                    local x = tonumber(pos.x)
+                    local y = tonumber(pos.y)
+                    local z = tonumber(pos.z)
+                    if not (x and y and z) then
+                        return nil
+                    end
+
+                    local basePos = Vector3.new(x, y, z)
+                    local lookData = dataTable.lookDirection
+                    local lx, ly, lz = nil, nil, nil
+                    if type(lookData) == "table" then
+                        lx = tonumber(lookData.x)
+                        ly = tonumber(lookData.y)
+                        lz = tonumber(lookData.z)
+                    end
+                    if lx and ly and lz then
+                        local lookVec = Vector3.new(lx, ly, lz)
+                        if lookVec.Magnitude > 1e-4 then
+                            local planar = Vector3.new(lookVec.X, 0, lookVec.Z)
+                            if planar.Magnitude > 1e-4 then
+                                return CFrame.lookAt(basePos, basePos + planar.Unit)
+                            end
+                        end
+                    end
+
+                    local fallback = rootPart.CFrame.LookVector
+                    local fallbackPlanar = Vector3.new(fallback.X, 0, fallback.Z)
+                    if fallbackPlanar.Magnitude > 1e-4 then
+                        return CFrame.lookAt(basePos, basePos + fallbackPlanar.Unit)
+                    end
+                    return CFrame.new(basePos)
+                end
+
+                local function applySmoothRootCFrame(rootPart, targetCf, durationSec)
+                    if durationSec <= 0.015 then
+                        rootPart.CFrame = targetCf
+                        return
+                    end
+                    local startCf = rootPart.CFrame
+                    local t0 = os.clock()
+                    while token == playbackToken do
+                        local alpha = (os.clock() - t0) / durationSec
+                        if alpha >= 1 then
+                            break
+                        end
+                        rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
+                        task.wait()
+                    end
+                    if token == playbackToken then
+                        rootPart.CFrame = targetCf
+                    end
+                end
+
                 local started = os.clock()
-                for _, event in ipairs(events) do
+                for i, event in ipairs(events) do
                     if token ~= playbackToken then
                         return
                     end
@@ -1499,17 +1710,27 @@ local function createRecordingTab(windowRef, notifyFn)
                     local character = Players.LocalPlayer and Players.LocalPlayer.Character
                     local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
 
+                    if humanoid and playbackHumanoid ~= humanoid then
+                        if playbackHumanoid and playbackAutoRotateRestore ~= nil then
+                            pcall(function()
+                                playbackHumanoid.AutoRotate = playbackAutoRotateRestore
+                            end)
+                        end
+                        playbackHumanoid = humanoid
+                        playbackAutoRotateRestore = humanoid.AutoRotate
+                        pcall(function()
+                            humanoid.AutoRotate = false
+                        end)
+                    end
+
                     if kind == "movement" then
-                        local pos = data.position
-                        if rootPart and type(pos) == "table" then
-                            local x = tonumber(pos.x)
-                            local y = tonumber(pos.y)
-                            local z = tonumber(pos.z)
-                            if x and y and z then
-                                pcall(function()
-                                    rootPart.CFrame = CFrame.new(x, y, z)
-                                end)
-                            end
+                        local targetCf = buildMovementTargetCFrame(rootPart, data)
+                        if rootPart and targetCf then
+                            local nextDelta = nextMovementDeltaByIndex[i]
+                            local smoothDuration = nextDelta and math.clamp(nextDelta * 0.8, 0.03, 0.14) or 0.07
+                            pcall(function()
+                                applySmoothRootCFrame(rootPart, targetCf, smoothDuration)
+                            end)
                         end
                     elseif kind == "jump_request" then
                         if humanoid then
@@ -1522,14 +1743,23 @@ local function createRecordingTab(windowRef, notifyFn)
                         local enumName = string.match(keyCodeName, "Enum%.KeyCode%.(.+)")
                         local keyCode = enumName and Enum.KeyCode[enumName]
                         if keyCode then
+                            local isDown = kind == "key_down"
                             pcall(function()
-                                VirtualInputManager:SendKeyEvent(kind == "key_down", keyCode, false, game)
+                                VirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
                             end)
+                            playbackKeysDown[keyCode] = isDown or nil
                         end
                     end
                 end
 
                 if token == playbackToken then
+                    if playbackHumanoid and playbackAutoRotateRestore ~= nil then
+                        pcall(function()
+                            playbackHumanoid.AutoRotate = playbackAutoRotateRestore
+                        end)
+                    end
+                    playbackHumanoid = nil
+                    playbackAutoRotateRestore = nil
                     playbackInProgress = false
                     updateSavedRecordingStatus("Playback finished: " .. selectedName)
                     notifyFn({
@@ -1558,6 +1788,8 @@ local function createRecordingTab(windowRef, notifyFn)
                 notifyFn({ Title = "Saved Recording", Content = "Select a saved recording first", Icon = "x" })
                 return
             end
+            readFileFn = readFileFn or resolveExecutorFn("readfile")
+            setClipboardFn = setClipboardFn or resolveExecutorFn("setclipboard") or resolveExecutorFn("toclipboard")
             if type(readFileFn) ~= "function" then
                 notifyFn({ Title = "Saved Recording", Content = "readfile() is not available", Icon = "x" })
                 return
@@ -1604,6 +1836,7 @@ local function createRecordingTab(windowRef, notifyFn)
                 notifyFn({ Title = "Saved Recording", Content = "Select a saved recording first", Icon = "x" })
                 return
             end
+            delFileFn = delFileFn or resolveExecutorFn("delfile")
             if type(delFileFn) ~= "function" then
                 notifyFn({ Title = "Saved Recording", Content = "delfile() is not available", Icon = "x" })
                 return
