@@ -894,6 +894,756 @@ local function mountNotify(opts)
     })
 end
 
+-- */  Recording Tab  /* --
+local function createRecordingTab(windowRef, notifyFn)
+    local RecordingTab = windowRef:CreateTab("Recording", 4483362458)
+
+    RecordingTab:CreateSection("Record Roblox Activities")
+
+    local RECORDINGS_DIR = "sempatpanick/mount_yahayuk/recordings"
+    local RECORDING_SAMPLE_INTERVAL = 0.1
+    local makeFolderFn = rawget(_G, "makefolder")
+    local isFolderFn = rawget(_G, "isfolder")
+    local writeFileFn = rawget(_G, "writefile")
+    local listFilesFn = rawget(_G, "listfiles")
+    local readFileFn = rawget(_G, "readfile")
+    local delFileFn = rawget(_G, "delfile")
+    local isFileFn = rawget(_G, "isfile")
+    local setClipboardFn = rawget(_G, "setclipboard") or rawget(_G, "toclipboard")
+
+    local recordingStatusParagraph
+    local recordingInProgress = false
+    local recordingStartedAt = 0
+    local recordingEvents = {}
+    local recordingConnections = {}
+    local lastMovementSignature = nil
+    local lastMovementCaptureAt = 0
+    local lastSavedRecordingPath = ""
+    local savedRecordingsDropdown
+    local savedRecordingStatusParagraph
+    local selectedSavedRecordingPath = nil
+    local playbackToken = 0
+    local playbackInProgress = false
+    local playbackStartedAt = 0
+    local SAVED_RECORDING_NONE = "(None)"
+    local refreshSavedRecordingsDropdown = function(_showNotify: boolean?) end
+
+    local VirtualInputManager = nil
+    pcall(function()
+        VirtualInputManager = game:GetService("VirtualInputManager")
+    end)
+
+    local function disconnectRecordingConnections()
+        for i = #recordingConnections, 1, -1 do
+            local conn = recordingConnections[i]
+            if conn then
+                pcall(function()
+                    conn:Disconnect()
+                end)
+            end
+            recordingConnections[i] = nil
+        end
+    end
+
+    local function recordingNow()
+        return math.max(0, os.clock() - recordingStartedAt)
+    end
+
+    local function updateRecordingParagraph(extraLine: string?)
+        if not (recordingStatusParagraph and recordingStatusParagraph.Set) then
+            return
+        end
+        local stateText = recordingInProgress and "Recording: ON" or "Recording: OFF"
+        local content = stateText
+            .. "\nEvents: " .. tostring(#recordingEvents)
+            .. "\nLast file: " .. (lastSavedRecordingPath ~= "" and lastSavedRecordingPath or "(none)")
+        if extraLine and extraLine ~= "" then
+            content = content .. "\n" .. extraLine
+        end
+        recordingStatusParagraph:Set({
+            Title = "Status",
+            Content = content,
+        })
+    end
+
+    local function appendRecordingEvent(kind: string, data: { [string]: any }?)
+        if not recordingInProgress then
+            return
+        end
+        table.insert(recordingEvents, {
+            t = tonumber(string.format("%.3f", recordingNow())),
+            kind = kind,
+            data = data or {},
+        })
+    end
+
+    local function splitPathSegments(path: string): { string }
+        local segments = {}
+        for piece in string.gmatch(path, "[^/]+") do
+            if piece ~= "" and piece ~= "." then
+                table.insert(segments, piece)
+            end
+        end
+        return segments
+    end
+
+    local function normalizePath(path: string): string
+        return string.gsub(path or "", "\\", "/")
+    end
+
+    local function baseNameFromPath(path: string): string
+        local normalized = normalizePath(path)
+        local idx = string.match(normalized, "^.*()/")
+        if idx then
+            return string.sub(normalized, idx + 1)
+        end
+        return normalized
+    end
+
+    local function isJsonPath(path: string): boolean
+        return string.sub(string.lower(path), -5) == ".json"
+    end
+
+    local function updateSavedRecordingStatus(text: string)
+        if not (savedRecordingStatusParagraph and savedRecordingStatusParagraph.Set) then
+            return
+        end
+        savedRecordingStatusParagraph:Set({
+            Title = "Saved Recording Status",
+            Content = text,
+        })
+    end
+
+    local function stopSavedRecordingPlayback(reason: string?, shouldNotify: boolean?)
+        playbackToken = playbackToken + 1
+        if playbackInProgress then
+            playbackInProgress = false
+            local elapsed = math.max(0, os.clock() - playbackStartedAt)
+            local elapsedText = string.format("%.2fs", elapsed)
+            local note = reason or ("Stopped after " .. elapsedText)
+            updateSavedRecordingStatus(note)
+            if shouldNotify then
+                notifyFn({ Title = "Recording Playback", Content = note, Icon = "info" })
+            end
+        elseif shouldNotify then
+            notifyFn({ Title = "Recording Playback", Content = "No playback is running", Icon = "info" })
+        end
+    end
+
+    local function refreshSelectionFromDropdownValue(value: any, pathMap: { [string]: string })
+        local picked = (type(value) == "table" and value[1]) or value
+        if type(picked) ~= "string" or picked == "" or picked == SAVED_RECORDING_NONE then
+            selectedSavedRecordingPath = nil
+            return
+        end
+        selectedSavedRecordingPath = pathMap[picked]
+    end
+
+    local function ensureRecordingsDirectory()
+        if type(makeFolderFn) ~= "function" then
+            return false, "makefolder() is not available in this executor"
+        end
+        local segments = splitPathSegments(RECORDINGS_DIR)
+        local current = ""
+        for _, seg in ipairs(segments) do
+            current = (current == "") and seg or (current .. "/" .. seg)
+            local exists = false
+            if type(isFolderFn) == "function" then
+                local okExists, result = pcall(function()
+                    return isFolderFn(current)
+                end)
+                exists = okExists and result or false
+            end
+            if not exists then
+                local okMake, errMake = pcall(function()
+                    makeFolderFn(current)
+                end)
+                if not okMake then
+                    if type(isFolderFn) == "function" then
+                        local okRetry, retryExists = pcall(function()
+                            return isFolderFn(current)
+                        end)
+                        if okRetry and retryExists then
+                            exists = true
+                        else
+                            return false, tostring(errMake)
+                        end
+                    else
+                        return false, tostring(errMake)
+                    end
+                end
+            end
+        end
+        return true, nil
+    end
+
+    local function saveRecordingAsJson()
+        if type(writeFileFn) ~= "function" then
+            return nil, "writefile() is not available in this executor"
+        end
+        local okDir, dirErr = ensureRecordingsDirectory()
+        if not okDir then
+            return nil, dirErr or "Unable to create recordings folder"
+        end
+
+        local fileName = string.format(
+            "recording_%s_%s.json",
+            tostring(game.PlaceId or 0),
+            os.date("!%Y%m%d_%H%M%S")
+        )
+        local path = RECORDINGS_DIR .. "/" .. fileName
+        local payload = {
+            meta = {
+                placeId = game.PlaceId,
+                gameId = game.GameId,
+                jobId = game.JobId,
+                playerName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
+                startedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                durationSeconds = tonumber(string.format("%.3f", math.max(0, recordingNow()))),
+                totalEvents = #recordingEvents,
+            },
+            events = recordingEvents,
+        }
+        local okEncode, jsonText = pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+        if not okEncode then
+            return nil, "JSON encode failed"
+        end
+        local okWrite, writeErr = pcall(function()
+            writeFileFn(path, jsonText)
+        end)
+        if not okWrite then
+            return nil, tostring(writeErr)
+        end
+        return path, nil
+    end
+
+    local function getCharacterHumanoidAndRoot(character: Model?)
+        if not character then
+            return nil, nil
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        return humanoid, rootPart
+    end
+
+    local function recordMovementSample()
+        local localPlayer = Players.LocalPlayer
+        local character = localPlayer and localPlayer.Character
+        local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
+        if not humanoid or not rootPart then
+            return
+        end
+        local moveDir = humanoid.MoveDirection
+        local pos = rootPart.Position
+        local vel = rootPart.AssemblyLinearVelocity
+        local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+        local signature = string.format(
+            "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%s",
+            moveDir.X, moveDir.Y, moveDir.Z,
+            pos.X, pos.Y, pos.Z,
+            vel.X, vel.Y, vel.Z,
+            grounded and "1" or "0"
+        )
+        if signature == lastMovementSignature then
+            return
+        end
+        lastMovementSignature = signature
+        appendRecordingEvent("movement", {
+            moveDirection = {
+                x = tonumber(string.format("%.3f", moveDir.X)),
+                y = tonumber(string.format("%.3f", moveDir.Y)),
+                z = tonumber(string.format("%.3f", moveDir.Z)),
+            },
+            position = {
+                x = tonumber(string.format("%.3f", pos.X)),
+                y = tonumber(string.format("%.3f", pos.Y)),
+                z = tonumber(string.format("%.3f", pos.Z)),
+            },
+            velocity = {
+                x = tonumber(string.format("%.3f", vel.X)),
+                y = tonumber(string.format("%.3f", vel.Y)),
+                z = tonumber(string.format("%.3f", vel.Z)),
+            },
+            isGrounded = grounded,
+            walkSpeed = tonumber(string.format("%.3f", humanoid.WalkSpeed)),
+            jumpPower = tonumber(string.format("%.3f", humanoid.JumpPower)),
+            jumpHeight = tonumber(string.format("%.3f", humanoid.JumpHeight)),
+        })
+    end
+
+    local function attachCharacterRecordingHooks(character: Model?)
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            appendRecordingEvent("character_missing_humanoid", {})
+            return
+        end
+        appendRecordingEvent("character_hooked", {
+            characterName = (character and character.Name) or "unknown",
+        })
+        table.insert(recordingConnections, humanoid.StateChanged:Connect(function(_, newState)
+            if not recordingInProgress then
+                return
+            end
+            if newState == Enum.HumanoidStateType.Jumping
+                or newState == Enum.HumanoidStateType.Freefall
+                or newState == Enum.HumanoidStateType.Landed
+            then
+                appendRecordingEvent("humanoid_state", {
+                    state = tostring(newState),
+                })
+            end
+        end))
+    end
+
+    local function startRecording()
+        if recordingInProgress then
+            notifyFn({ Title = "Recording", Content = "Already recording", Icon = "info" })
+            return
+        end
+
+        disconnectRecordingConnections()
+        recordingEvents = {}
+        recordingStartedAt = os.clock()
+        lastMovementSignature = nil
+        lastMovementCaptureAt = 0
+        recordingInProgress = true
+
+        appendRecordingEvent("recording_started", {
+            placeId = game.PlaceId,
+            playerName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
+        })
+
+        table.insert(recordingConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if not recordingInProgress then
+                return
+            end
+            if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+                appendRecordingEvent("key_down", {
+                    keyCode = tostring(input.KeyCode),
+                    gameProcessed = gameProcessed == true,
+                })
+            end
+        end))
+
+        table.insert(recordingConnections, UserInputService.InputEnded:Connect(function(input, gameProcessed)
+            if not recordingInProgress then
+                return
+            end
+            if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+                appendRecordingEvent("key_up", {
+                    keyCode = tostring(input.KeyCode),
+                    gameProcessed = gameProcessed == true,
+                })
+            end
+        end))
+
+        table.insert(recordingConnections, UserInputService.JumpRequest:Connect(function()
+            appendRecordingEvent("jump_request", {})
+        end))
+
+        table.insert(recordingConnections, Players.LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+            appendRecordingEvent("character_added", {
+                characterName = newCharacter and newCharacter.Name or "unknown",
+            })
+            attachCharacterRecordingHooks(newCharacter)
+        end))
+
+        attachCharacterRecordingHooks(Players.LocalPlayer.Character)
+
+        table.insert(recordingConnections, RunService.Heartbeat:Connect(function()
+            if not recordingInProgress then
+                return
+            end
+            local now = recordingNow()
+            if (now - lastMovementCaptureAt) < RECORDING_SAMPLE_INTERVAL then
+                return
+            end
+            lastMovementCaptureAt = now
+            recordMovementSample()
+        end))
+
+        updateRecordingParagraph("Capture started")
+        notifyFn({ Title = "Recording", Content = "Recording started", Icon = "check" })
+    end
+
+    local function stopRecording()
+        if not recordingInProgress then
+            notifyFn({ Title = "Recording", Content = "No active recording", Icon = "info" })
+            return
+        end
+
+        appendRecordingEvent("recording_stopped", {
+            totalEvents = #recordingEvents,
+        })
+
+        recordingInProgress = false
+        disconnectRecordingConnections()
+
+        local savedPath, saveErr = saveRecordingAsJson()
+        if savedPath then
+            lastSavedRecordingPath = savedPath
+            notifyFn({
+                Title = "Recording",
+                Content = "Saved " .. tostring(#recordingEvents) .. " events to " .. savedPath,
+                Icon = "check",
+            })
+            updateRecordingParagraph("Saved to " .. savedPath)
+            refreshSavedRecordingsDropdown(false)
+        else
+            notifyFn({
+                Title = "Recording",
+                Content = "Failed to save: " .. tostring(saveErr),
+                Icon = "x",
+            })
+            updateRecordingParagraph("Save failed: " .. tostring(saveErr))
+        end
+    end
+
+    recordingStatusParagraph = RecordingTab:CreateParagraph({
+        Title = "Status",
+        Content = "Recording: OFF\nEvents: 0\nLast file: (none)",
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Start Recording",
+        Ext = true,
+        Callback = function()
+            startRecording()
+        end,
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Stop Recording + Save JSON",
+        Ext = true,
+        Callback = function()
+            stopRecording()
+        end,
+    })
+
+    RecordingTab:CreateSection("Saved Recording")
+
+    local savedDisplayToPath = {}
+    local savedDisplayOptions = { SAVED_RECORDING_NONE }
+
+    refreshSavedRecordingsDropdown = function(showNotify: boolean?)
+        selectedSavedRecordingPath = nil
+        savedDisplayToPath = {}
+        savedDisplayOptions = { SAVED_RECORDING_NONE }
+
+        if type(listFilesFn) ~= "function" then
+            updateSavedRecordingStatus("listfiles() is not available in this executor")
+            if showNotify then
+                notifyFn({ Title = "Saved Recording", Content = "listfiles() is not available", Icon = "x" })
+            end
+            if savedRecordingsDropdown and savedRecordingsDropdown.Refresh then
+                savedRecordingsDropdown:Refresh(savedDisplayOptions)
+            end
+            return
+        end
+
+        ensureRecordingsDirectory()
+        local okList, filesOrErr = pcall(function()
+            return listFilesFn(RECORDINGS_DIR)
+        end)
+        if not okList or type(filesOrErr) ~= "table" then
+            updateSavedRecordingStatus("Failed to list recordings")
+            if showNotify then
+                notifyFn({
+                    Title = "Saved Recording",
+                    Content = "Failed to list recordings: " .. tostring(filesOrErr),
+                    Icon = "x",
+                })
+            end
+            if savedRecordingsDropdown and savedRecordingsDropdown.Refresh then
+                savedRecordingsDropdown:Refresh(savedDisplayOptions)
+            end
+            return
+        end
+
+        local candidates = {}
+        for _, item in ipairs(filesOrErr) do
+            if type(item) == "string" then
+                local normalized = normalizePath(item)
+                if isJsonPath(normalized) then
+                    table.insert(candidates, item)
+                end
+            end
+        end
+        table.sort(candidates, function(a, b)
+            return string.lower(normalizePath(a)) > string.lower(normalizePath(b))
+        end)
+
+        local displayCount = {}
+        for _, path in ipairs(candidates) do
+            local display = baseNameFromPath(path)
+            local count = (displayCount[display] or 0) + 1
+            displayCount[display] = count
+            if count > 1 then
+                display = display .. " [" .. tostring(count) .. "]"
+            end
+            table.insert(savedDisplayOptions, display)
+            savedDisplayToPath[display] = path
+        end
+
+        if savedRecordingsDropdown and savedRecordingsDropdown.Refresh then
+            savedRecordingsDropdown:Refresh(savedDisplayOptions)
+        end
+
+        updateSavedRecordingStatus("Loaded " .. tostring(#candidates) .. " recording file(s)")
+        if showNotify then
+            notifyFn({
+                Title = "Saved Recording",
+                Content = "Loaded " .. tostring(#candidates) .. " recording file(s)",
+                Icon = "check",
+            })
+        end
+    end
+
+    savedRecordingsDropdown = RecordingTab:CreateDropdown({
+        Name = "Saved recordings",
+        Options = savedDisplayOptions,
+        CurrentOption = { SAVED_RECORDING_NONE },
+        Search = true,
+        Ext = true,
+        Callback = function(value)
+            refreshSelectionFromDropdownValue(value, savedDisplayToPath)
+            if selectedSavedRecordingPath then
+                updateSavedRecordingStatus("Selected: " .. baseNameFromPath(selectedSavedRecordingPath))
+            else
+                updateSavedRecordingStatus("Select a recording file")
+            end
+        end,
+    })
+
+    savedRecordingStatusParagraph = RecordingTab:CreateParagraph({
+        Title = "Saved Recording Status",
+        Content = "Select a recording file",
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Play",
+        Ext = true,
+        Callback = function()
+            if not selectedSavedRecordingPath then
+                notifyFn({ Title = "Recording Playback", Content = "Select a saved recording first", Icon = "x" })
+                return
+            end
+            if type(readFileFn) ~= "function" then
+                notifyFn({ Title = "Recording Playback", Content = "readfile() is not available", Icon = "x" })
+                return
+            end
+            if type(isFileFn) == "function" then
+                local okFile, exists = pcall(function()
+                    return isFileFn(selectedSavedRecordingPath)
+                end)
+                if okFile and not exists then
+                    notifyFn({ Title = "Recording Playback", Content = "Selected file no longer exists", Icon = "x" })
+                    refreshSavedRecordingsDropdown(false)
+                    return
+                end
+            end
+
+            local okRead, jsonText = pcall(function()
+                return readFileFn(selectedSavedRecordingPath)
+            end)
+            if not okRead then
+                notifyFn({ Title = "Recording Playback", Content = "Failed to read file", Icon = "x" })
+                return
+            end
+            local okDecode, payload = pcall(function()
+                return HttpService:JSONDecode(jsonText)
+            end)
+            if not okDecode or type(payload) ~= "table" then
+                notifyFn({ Title = "Recording Playback", Content = "Invalid recording JSON", Icon = "x" })
+                return
+            end
+            local events = payload.events
+            if type(events) ~= "table" or #events == 0 then
+                notifyFn({ Title = "Recording Playback", Content = "Recording has no events", Icon = "x" })
+                return
+            end
+
+            stopSavedRecordingPlayback(nil, false)
+            playbackToken = playbackToken + 1
+            local token = playbackToken
+            playbackInProgress = true
+            playbackStartedAt = os.clock()
+
+            local selectedName = baseNameFromPath(selectedSavedRecordingPath)
+            updateSavedRecordingStatus("Playing: " .. selectedName)
+            notifyFn({
+                Title = "Recording Playback",
+                Content = "Playing " .. selectedName .. " (" .. tostring(#events) .. " events)",
+                Icon = "check",
+            })
+
+            task.spawn(function()
+                local started = os.clock()
+                for _, event in ipairs(events) do
+                    if token ~= playbackToken then
+                        return
+                    end
+
+                    local targetT = tonumber(event.t) or 0
+                    while token == playbackToken and (os.clock() - started) < targetT do
+                        task.wait(0.01)
+                    end
+                    if token ~= playbackToken then
+                        return
+                    end
+
+                    local kind = event.kind
+                    local data = type(event.data) == "table" and event.data or {}
+                    local character = Players.LocalPlayer and Players.LocalPlayer.Character
+                    local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
+
+                    if kind == "movement" then
+                        local pos = data.position
+                        if rootPart and type(pos) == "table" then
+                            local x = tonumber(pos.x)
+                            local y = tonumber(pos.y)
+                            local z = tonumber(pos.z)
+                            if x and y and z then
+                                pcall(function()
+                                    rootPart.CFrame = CFrame.new(x, y, z)
+                                end)
+                            end
+                        end
+                    elseif kind == "jump_request" then
+                        if humanoid then
+                            pcall(function()
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            end)
+                        end
+                    elseif (kind == "key_down" or kind == "key_up") and VirtualInputManager then
+                        local keyCodeName = type(data.keyCode) == "string" and data.keyCode or ""
+                        local enumName = string.match(keyCodeName, "Enum%.KeyCode%.(.+)")
+                        local keyCode = enumName and Enum.KeyCode[enumName]
+                        if keyCode then
+                            pcall(function()
+                                VirtualInputManager:SendKeyEvent(kind == "key_down", keyCode, false, game)
+                            end)
+                        end
+                    end
+                end
+
+                if token == playbackToken then
+                    playbackInProgress = false
+                    updateSavedRecordingStatus("Playback finished: " .. selectedName)
+                    notifyFn({
+                        Title = "Recording Playback",
+                        Content = "Finished " .. selectedName,
+                        Icon = "check",
+                    })
+                end
+            end)
+        end,
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Stop",
+        Ext = true,
+        Callback = function()
+            stopSavedRecordingPlayback("Playback stopped", true)
+        end,
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Export",
+        Ext = true,
+        Callback = function()
+            if not selectedSavedRecordingPath then
+                notifyFn({ Title = "Saved Recording", Content = "Select a saved recording first", Icon = "x" })
+                return
+            end
+            if type(readFileFn) ~= "function" then
+                notifyFn({ Title = "Saved Recording", Content = "readfile() is not available", Icon = "x" })
+                return
+            end
+            if type(setClipboardFn) ~= "function" then
+                notifyFn({ Title = "Saved Recording", Content = "Clipboard is not available", Icon = "x" })
+                return
+            end
+
+            local okRead, jsonText = pcall(function()
+                return readFileFn(selectedSavedRecordingPath)
+            end)
+            if not okRead then
+                notifyFn({ Title = "Saved Recording", Content = "Failed to read selected file", Icon = "x" })
+                return
+            end
+
+            local okCopy, copyErr = pcall(function()
+                setClipboardFn(jsonText)
+            end)
+            if not okCopy then
+                notifyFn({
+                    Title = "Saved Recording",
+                    Content = "Failed to copy JSON: " .. tostring(copyErr),
+                    Icon = "x",
+                })
+                return
+            end
+
+            notifyFn({
+                Title = "Saved Recording",
+                Content = "JSON copied from " .. baseNameFromPath(selectedSavedRecordingPath),
+                Icon = "check",
+            })
+            updateSavedRecordingStatus("Exported JSON to clipboard")
+        end,
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Remove",
+        Ext = true,
+        Callback = function()
+            if not selectedSavedRecordingPath then
+                notifyFn({ Title = "Saved Recording", Content = "Select a saved recording first", Icon = "x" })
+                return
+            end
+            if type(delFileFn) ~= "function" then
+                notifyFn({ Title = "Saved Recording", Content = "delfile() is not available", Icon = "x" })
+                return
+            end
+
+            stopSavedRecordingPlayback(nil, false)
+            local removedName = baseNameFromPath(selectedSavedRecordingPath)
+            local okDelete, deleteErr = pcall(function()
+                delFileFn(selectedSavedRecordingPath)
+            end)
+            if not okDelete then
+                notifyFn({
+                    Title = "Saved Recording",
+                    Content = "Failed to remove file: " .. tostring(deleteErr),
+                    Icon = "x",
+                })
+                return
+            end
+
+            notifyFn({
+                Title = "Saved Recording",
+                Content = "Removed " .. removedName,
+                Icon = "check",
+            })
+            refreshSavedRecordingsDropdown(false)
+            updateSavedRecordingStatus("Removed " .. removedName)
+        end,
+    })
+
+    RecordingTab:CreateButton({
+        Name = "Refresh Saved List",
+        Ext = true,
+        Callback = function()
+            refreshSavedRecordingsDropdown(true)
+        end,
+    })
+
+    refreshSavedRecordingsDropdown(false)
+end
+
 local function rayfieldDropdownFirst(valueOrTable)
     if type(valueOrTable) == "table" then
         return valueOrTable[1]
@@ -5033,3 +5783,5 @@ do
     })
 
 end
+
+createRecordingTab(Window, mountNotify)
