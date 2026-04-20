@@ -30,6 +30,854 @@ do
     end
 end
 
+-- HehAdmin panel (PlayerGui.HehAdminUI): inlined from place decompile; runs when game's LocalScript is absent.
+if not _G.__HehAdminUIMountYahayukClient then
+    _G.__HehAdminUIMountYahayukClient = true
+    local v1 = game:GetService("Players")
+    local v2 = game:GetService("ReplicatedStorage")
+    local u3 = game:GetService("UserInputService")
+    local u4 = game:GetService("RunService")
+    game:GetService("TweenService")
+    local u5 = v1.LocalPlayer
+    local v6 = v2:WaitForChild("HehAdmin_Open")
+    local u7 = v2:WaitForChild("HehAdmin_Do")
+    local u8 = Color3.fromRGB(16, 16, 20)
+    local u9 = Color3.fromRGB(36, 36, 42)
+    local u10 = Color3.fromRGB(38, 90, 64)
+    local u11 = Color3.fromRGB(255, 255, 255)
+    local u12 = Color3.fromRGB(28, 114, 62)
+    local function u15(p13) --[[ Line: 36 ]]
+        --[[
+        Upvalues:
+            [1] = u11
+        --]]
+        local v14 = Instance.new("TextLabel")
+        v14.BackgroundTransparency = 1
+        v14.Size = UDim2.new(1, 0, 0, 22)
+        v14.Font = Enum.Font.GothamBold
+        v14.TextSize = 15
+        v14.TextXAlignment = Enum.TextXAlignment.Left
+        v14.TextColor3 = u11
+        v14.Text = p13
+        return v14
+    end
+    local function u21(p16, u17, p18) --[[ Line: 46 ]]
+        --[[
+        Upvalues:
+            [1] = u9
+            [2] = u11
+        --]]
+        local v19 = Instance.new("TextButton")
+        v19.Text = p16
+        v19.Font = Enum.Font.GothamBold
+        v19.TextSize = 13
+        v19.BackgroundColor3 = u9
+        v19.TextColor3 = u11
+        v19.Size = UDim2.new(1, 0, 0, p18 or 28)
+        local v20 = Instance.new("UICorner")
+        v20.CornerRadius = UDim.new(0, 10)
+        v20.Parent = v19
+        if typeof(u17) == "function" then
+            v19.MouseButton1Click:Connect(function() --[[ Line: 53 ]]
+                --[[
+                Upvalues:
+                    [1] = u17
+                --]]
+                u17()
+            end)
+        end
+        return v19
+    end
+    local function u27(p22) --[[ Line: 63 ]]
+        --[[
+        Upvalues:
+            [1] = u11
+        --]]
+        local v23 = Instance.new("Frame")
+        v23.Size = UDim2.new(1, 0, 0, 30)
+        v23.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
+        local v24 = Instance.new("UICorner")
+        v24.CornerRadius = UDim.new(0, 10)
+        v24.Parent = v23
+        local v25 = Instance.new("UIPadding")
+        v25.PaddingLeft = UDim.new(0, 10)
+        v25.PaddingRight = UDim.new(0, 10)
+        v25.Parent = v23
+        local v26 = Instance.new("TextBox")
+        v26.BackgroundTransparency = 1
+        v26.Size = UDim2.new(1, 0, 1, 0)
+        v26.Font = Enum.Font.Gotham
+        v26.TextSize = 14
+        v26.TextColor3 = u11
+        v26.PlaceholderText = p22 or ""
+        v26.Parent = v23
+        return v23, v26
+    end
+    local function u53(p28, p29) --[[ Line: 71 ]]
+        --[[
+        Upvalues:
+            [1] = u5
+            [2] = u3
+            [3] = u15
+            [4] = u21
+            [5] = u12
+        --]]
+        local v30 = u5:WaitForChild("PlayerGui")
+        local v31 = v30:FindFirstChild("HehAdminUI")
+        if not v31 then
+            v31 = Instance.new("ScreenGui")
+            v31.Name = "HehAdminUI"
+            v31.IgnoreGuiInset = true
+            v31.DisplayOrder = 9999
+            v31.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            v31.ResetOnSpawn = false
+            v31.Parent = v30
+        end
+        local u32 = Instance.new("TextButton")
+        u32.AutoButtonColor = false
+        u32.Text = ""
+        u32.Size = UDim2.fromScale(1, 1)
+        u32.BackgroundColor3 = Color3.new(0, 0, 0)
+        u32.BackgroundTransparency = 0.45
+        u32.Parent = v31
+        local v33 = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+        local v34 = v33.X * 0.88
+        local v35 = math.floor(v34)
+        local v36 = math.min(300, v35)
+        local v37 = v33.Y * (u3.TouchEnabled and 0.5 or 0.42)
+        local v38 = math.floor(v37)
+        local v39 = math.min(220, v38)
+        local v40 = Instance.new("Frame")
+        v40.AnchorPoint = Vector2.new(0.5, 0.5)
+        v40.Position = UDim2.fromScale(0.5, 0.5)
+        v40.Size = UDim2.new(0, v36, 0, v39)
+        v40.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+        local v41 = Instance.new("UICorner")
+        v41.CornerRadius = UDim.new(0, 10)
+        v41.Parent = v40
+        v40.Parent = u32
+        local v42 = Instance.new("UIPadding")
+        v42.PaddingTop = UDim.new(0, 10)
+        v42.PaddingLeft = UDim.new(0, 10)
+        v42.PaddingRight = UDim.new(0, 10)
+        v42.Parent = v40
+        local v43 = Instance.new("Frame")
+        v43.BackgroundTransparency = 1
+        v43.Size = UDim2.new(1, 0, 1, 0)
+        local v44 = Instance.new("UIListLayout")
+        v44.Padding = UDim.new(0, 6)
+        v44.SortOrder = Enum.SortOrder.LayoutOrder
+        v44.Parent = v43
+        v43.Parent = v40
+        u15(p28).Parent = v43
+        local v45 = Instance.new("Frame")
+        v45.BackgroundTransparency = 1
+        v45.Size = UDim2.new(1, 0, 1, -72)
+        local v46 = Instance.new("UIListLayout")
+        v46.Padding = UDim.new(0, 6)
+        v46.SortOrder = Enum.SortOrder.LayoutOrder
+        v46.Parent = v45
+        v45.Parent = v43
+        local v47 = Instance.new("Frame")
+        v47.BackgroundTransparency = 1
+        v47.Size = UDim2.new(1, 0, 0, 28)
+        local v48 = Instance.new("UIListLayout")
+        v48.FillDirection = Enum.FillDirection.Horizontal
+        v48.Padding = UDim.new(0, 6)
+        v48.SortOrder = Enum.SortOrder.LayoutOrder
+        v48.Parent = v47
+        v47.Parent = v43
+        local v49 = u21("Cancel", function() --[[ Line: 89 ]]
+            --[[
+            Upvalues:
+                [1] = u32
+            --]]
+            u32:Destroy()
+        end, 28)
+        v49.Size = UDim2.new(0.5, -3, 1, 0)
+        v49.Parent = v47
+        local u50 = u21("Confirm", function() --[[ Line: 90 ]] end, 28)
+        u50.BackgroundColor3 = u12
+        u50.Size = UDim2.new(0.5, -3, 1, 0)
+        u50.Parent = v47
+        if typeof(p29) == "function" then
+            p29(v45, function(u51) --[[ Line: 93 ]]
+                --[[
+                Upvalues:
+                    [1] = u50
+                    [2] = u32
+                --]]
+                u50.MouseButton1Click:Connect(function() --[[ Line: 94 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u51
+                        [2] = u32
+                    --]]
+                    local v52 = u51
+                    if typeof(v52) == "function" then
+                        u51()
+                    end
+                    u32:Destroy()
+                end)
+            end)
+        end
+        u32.MouseButton1Click:Connect(function() --[[ Line: 97 ]]
+            --[[
+            Upvalues:
+                [1] = u32
+            --]]
+            u32:Destroy()
+        end)
+        return u32
+    end
+    local function u147() --[[ Line: 102 ]]
+        --[[
+        Upvalues:
+            [1] = u5
+            [2] = u8
+            [3] = u3
+            [4] = u4
+            [5] = u15
+            [6] = u21
+            [7] = u10
+            [8] = u9
+            [9] = u53
+            [10] = u27
+            [11] = u7
+        --]]
+        local v54 = u5:WaitForChild("PlayerGui")
+        local v55 = v54:FindFirstChild("HehAdminUI")
+        if not v55 then
+            v55 = Instance.new("ScreenGui")
+            v55.Name = "HehAdminUI"
+            v55.IgnoreGuiInset = true
+            v55.DisplayOrder = 9999
+            v55.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            v55.ResetOnSpawn = false
+            v55.Parent = v54
+        end
+        local v56 = v55:FindFirstChild("Root")
+        if v56 then
+            return v56
+        end
+        local u57 = Instance.new("Frame")
+        u57.Name = "Root"
+        u57.AnchorPoint = Vector2.new(0.5, 0.5)
+        u57.Position = UDim2.fromScale(0.5, 0.5)
+        u57.BackgroundColor3 = u8
+        local v58 = u57
+        local v59 = Instance.new("UICorner")
+        v59.CornerRadius = UDim.new(0, 10)
+        v59.Parent = v58
+        local function v67() --[[ Line: 112 ]]
+            --[[
+            Upvalues:
+                [1] = u3
+                [2] = u57
+            --]]
+            local v60 = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+            local v61 = v60.X * 0.9
+            local v62 = math.floor(v61)
+            local v63 = math.min(340, v62)
+            local v64 = v60.Y * (u3.TouchEnabled and 0.58 or 0.46)
+            local v65 = math.floor(v64)
+            local v66 = math.min(260, v65)
+            u57.Size = UDim2.new(0, v63, 0, v66)
+        end
+        v67()
+        u4.RenderStepped:Connect(v67)
+        local v68 = Instance.new("UIPadding")
+        v68.PaddingTop = UDim.new(0, 8)
+        v68.PaddingLeft = UDim.new(0, 8)
+        v68.PaddingRight = UDim.new(0, 8)
+        v68.Parent = u57
+        local v69 = Instance.new("Frame")
+        v69.BackgroundTransparency = 1
+        v69.Size = UDim2.new(1, 0, 1, 0)
+        local v70 = Instance.new("UIListLayout")
+        v70.Padding = UDim.new(0, 6)
+        v70.SortOrder = Enum.SortOrder.LayoutOrder
+        v70.Parent = v69
+        v69.Parent = u57
+        local v71 = Instance.new("Frame")
+        v71.BackgroundTransparency = 1
+        v71.Size = UDim2.new(1, 0, 0, 22)
+        v71.Parent = v69
+        local v72 = u15("Admin Panel")
+        v72.Size = UDim2.new(1, -28, 1, 0)
+        v72.Parent = v71
+        local v73 = u21("X", function() --[[ Line: 126 ]]
+            --[[
+            Upvalues:
+                [1] = u57
+            --]]
+            u57.Visible = false
+        end, 22)
+        v73.Size = UDim2.new(0, 22, 1, 0)
+        v73.Position = UDim2.new(1, -22, 0, 0)
+        v73.TextSize = 12
+        v73.Parent = v71
+        local v74 = Instance.new("Frame")
+        v74.BackgroundTransparency = 1
+        v74.Size = UDim2.new(1, 0, 0, 28)
+        local v75 = Instance.new("UIListLayout")
+        v75.FillDirection = Enum.FillDirection.Horizontal
+        v75.Padding = UDim.new(0, 6)
+        v75.SortOrder = Enum.SortOrder.LayoutOrder
+        v75.Parent = v74
+        v74.Parent = v69
+        local v76 = Instance.new("Frame")
+        v76.BackgroundTransparency = 1
+        v76.Size = UDim2.new(1, 0, 1, -62)
+        v76.Parent = v69
+        local u77 = Instance.new("Frame")
+        u77.BackgroundTransparency = 1
+        u77.Size = UDim2.new(1, 0, 1, 0)
+        local v78 = Instance.new("UIListLayout")
+        v78.Padding = UDim.new(0, 6)
+        v78.SortOrder = Enum.SortOrder.LayoutOrder
+        v78.Parent = u77
+        u77.Visible = false
+        u77.Parent = v76
+        local u79 = Instance.new("Frame")
+        u79.BackgroundTransparency = 1
+        u79.Size = UDim2.new(1, 0, 1, 0)
+        local v80 = Instance.new("UIListLayout")
+        v80.Padding = UDim.new(0, 6)
+        v80.SortOrder = Enum.SortOrder.LayoutOrder
+        v80.Parent = u79
+        u79.Visible = false
+        u79.Parent = v76
+        local u81 = u21("LINTAS SERVER", function() --[[ Line: 138 ]] end, 28)
+        local u82 = u21("BUKAN LINTAS SERVER", function() --[[ Line: 139 ]] end, 28)
+        u81.Size = UDim2.new(0.5, -3, 1, 0)
+        u82.Size = UDim2.new(0.5, -3, 1, 0)
+        u81.Parent = v74
+        u82.Parent = v74
+        u81.MouseButton1Click:Connect(function() --[[ Line: 147 ]]
+            --[[
+            Upvalues:
+                [1] = u77
+                [2] = u79
+                [3] = u81
+                [4] = u10
+                [5] = u9
+                [6] = u82
+            --]]
+            local v83 = u77
+            u77.Visible = v83 == u77
+            u79.Visible = v83 == u79
+            u81.BackgroundColor3 = v83 == u77 and u10 or u9
+            u82.BackgroundColor3 = v83 == u79 and u10 or u9
+        end)
+        u82.MouseButton1Click:Connect(function() --[[ Line: 148 ]]
+            --[[
+            Upvalues:
+                [1] = u79
+                [2] = u77
+                [3] = u81
+                [4] = u10
+                [5] = u9
+                [6] = u82
+            --]]
+            local v84 = u79
+            u77.Visible = v84 == u77
+            u79.Visible = v84 == u79
+            u81.BackgroundColor3 = v84 == u77 and u10 or u9
+            u82.BackgroundColor3 = v84 == u79 and u10 or u9
+        end)
+        u77.Visible = u77 == u77
+        u79.Visible = u77 == u79
+        u81.BackgroundColor3 = u77 == u77 and u10 or u9
+        u82.BackgroundColor3 = u77 == u79 and u10 or u9
+        local v85 = Instance.new("Frame")
+        v85.BackgroundTransparency = 1
+        v85.Size = UDim2.new(1, 0, 0, 28)
+        local v86 = Instance.new("UIListLayout")
+        v86.FillDirection = Enum.FillDirection.Horizontal
+        v86.Padding = UDim.new(0, 6)
+        v86.SortOrder = Enum.SortOrder.LayoutOrder
+        v86.Parent = v85
+        v85.Parent = u77
+        local v98 = u21("RESET", function() --[[ Line: 155 ]]
+            --[[
+            Upvalues:
+                [1] = u53
+                [2] = u21
+                [3] = u10
+                [4] = u9
+                [5] = u27
+                [6] = u7
+            --]]
+            u53("Reset (Global)", function(p87, p88) --[[ Line: 156 ]]
+                --[[
+                Upvalues:
+                    [1] = u21
+                    [2] = u10
+                    [3] = u9
+                    [4] = u27
+                    [5] = u7
+                --]]
+                local u89 = {
+                    ["field"] = nil
+                }
+                local v90 = Instance.new("Frame")
+                v90.BackgroundTransparency = 1
+                v90.Size = UDim2.new(1, 0, 0, 28)
+                local v91 = Instance.new("UIListLayout")
+                v91.FillDirection = Enum.FillDirection.Horizontal
+                v91.Padding = UDim.new(0, 6)
+                v91.SortOrder = Enum.SortOrder.LayoutOrder
+                v91.Parent = v90
+                v90.Parent = p87
+                local u92 = nil
+                local u93 = nil
+                local u94 = nil
+                u92 = u21("Summit", function() --[[ Line: 162 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u89
+                        [2] = u92
+                        [3] = u10
+                        [4] = u9
+                        [5] = u93
+                        [6] = u94
+                    --]]
+                    u89.field = "summit"
+                    u92.BackgroundColor3 = u10 or u9
+                    u93.BackgroundColor3 = u9
+                    u94.BackgroundColor3 = u9
+                end, 28)
+                u93 = u21("BestTime", function() --[[ Line: 163 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u89
+                        [2] = u92
+                        [3] = u9
+                        [4] = u93
+                        [5] = u10
+                        [6] = u94
+                    --]]
+                    u89.field = "besttime"
+                    u92.BackgroundColor3 = u9
+                    u93.BackgroundColor3 = u10 or u9
+                    u94.BackgroundColor3 = u9
+                end, 28)
+                u94 = u21("Cash", function() --[[ Line: 164 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u89
+                        [2] = u92
+                        [3] = u9
+                        [4] = u93
+                        [5] = u94
+                        [6] = u10
+                    --]]
+                    u89.field = "cash"
+                    u92.BackgroundColor3 = u9
+                    u93.BackgroundColor3 = u9
+                    u94.BackgroundColor3 = u10 or u9
+                end, 28)
+                u92.Size = UDim2.new(0.3333333333333333, -4, 1, 0)
+                u93.Size = u92.Size
+                u94.Size = u92.Size
+                u92.Parent = v90
+                u93.Parent = v90
+                u94.Parent = v90
+                local v95, u96 = u27("Username")
+                v95.Parent = p87
+                p88(function() --[[ Line: 171 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u89
+                        [2] = u96
+                        [3] = u7
+                    --]]
+                    if u89.field == nil then
+                        return
+                    else
+                        local v97 = u96.Text
+                        if v97 ~= "" then
+                            u7:FireServer({
+                                ["scope"] = "global",
+                                ["action"] = "reset",
+                                ["field"] = u89.field,
+                                ["username"] = v97
+                            })
+                        end
+                    end
+                end)
+            end)
+        end, 28)
+        v98.Size = UDim2.new(0.5, -3, 1, 0)
+        v98.Parent = v85
+        local v113 = u21("SET", function() --[[ Line: 180 ]]
+            --[[
+            Upvalues:
+                [1] = u53
+                [2] = u27
+                [3] = u21
+                [4] = u10
+                [5] = u9
+                [6] = u7
+            --]]
+            u53("Set (Global)", function(p99, p100) --[[ Line: 181 ]]
+                --[[
+                Upvalues:
+                    [1] = u27
+                    [2] = u21
+                    [3] = u10
+                    [4] = u9
+                    [5] = u7
+                --]]
+                local u101 = {
+                    ["field"] = nil
+                }
+                local v102 = Instance.new("Frame")
+                v102.BackgroundTransparency = 1
+                v102.Size = UDim2.new(1, 0, 0, 28)
+                local v103 = Instance.new("UIListLayout")
+                v103.FillDirection = Enum.FillDirection.Horizontal
+                v103.Padding = UDim.new(0, 6)
+                v103.SortOrder = Enum.SortOrder.LayoutOrder
+                v103.Parent = v102
+                v102.Parent = p99
+                local u104 = nil
+                local u105 = nil
+                local u106 = nil
+                local v107, u108 = u27("Username")
+                v107.Parent = p99
+                local v109, u110 = u27("Pilih jenis di atas terlebih dulu")
+                v109.Parent = p99
+                u104 = u21("Summit", function() --[[ Line: 201 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u101
+                        [2] = u104
+                        [3] = u10
+                        [4] = u9
+                        [5] = u105
+                        [6] = u106
+                        [7] = u110
+                    --]]
+                    u101.field = "summit"
+                    u104.BackgroundColor3 = u10 or u9
+                    u105.BackgroundColor3 = u9
+                    u106.BackgroundColor3 = u9
+                    if u101.field == "summit" then
+                        u110.PlaceholderText = "Value Summit (angka total, mis. 25)"
+                        return
+                    elseif u101.field == "besttime" then
+                        u110.PlaceholderText = "BestTime (detik atau mm:ss, mis. 95 atau 01:35)"
+                        return
+                    elseif u101.field == "cash" then
+                        u110.PlaceholderText = "Value Cash (angka total, mis. 5000)"
+                    else
+                        u110.PlaceholderText = "Pilih jenis di atas terlebih dulu"
+                    end
+                end, 28)
+                u105 = u21("BestTime", function() --[[ Line: 204 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u101
+                        [2] = u104
+                        [3] = u9
+                        [4] = u105
+                        [5] = u10
+                        [6] = u106
+                        [7] = u110
+                    --]]
+                    u101.field = "besttime"
+                    u104.BackgroundColor3 = u9
+                    u105.BackgroundColor3 = u10 or u9
+                    u106.BackgroundColor3 = u9
+                    if u101.field == "summit" then
+                        u110.PlaceholderText = "Value Summit (angka total, mis. 25)"
+                        return
+                    elseif u101.field == "besttime" then
+                        u110.PlaceholderText = "BestTime (detik atau mm:ss, mis. 95 atau 01:35)"
+                        return
+                    elseif u101.field == "cash" then
+                        u110.PlaceholderText = "Value Cash (angka total, mis. 5000)"
+                    else
+                        u110.PlaceholderText = "Pilih jenis di atas terlebih dulu"
+                    end
+                end, 28)
+                u106 = u21("Cash", function() --[[ Line: 207 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u101
+                        [2] = u104
+                        [3] = u9
+                        [4] = u105
+                        [5] = u106
+                        [6] = u10
+                        [7] = u110
+                    --]]
+                    u101.field = "cash"
+                    u104.BackgroundColor3 = u9
+                    u105.BackgroundColor3 = u9
+                    u106.BackgroundColor3 = u10 or u9
+                    if u101.field == "summit" then
+                        u110.PlaceholderText = "Value Summit (angka total, mis. 25)"
+                        return
+                    elseif u101.field == "besttime" then
+                        u110.PlaceholderText = "BestTime (detik atau mm:ss, mis. 95 atau 01:35)"
+                        return
+                    elseif u101.field == "cash" then
+                        u110.PlaceholderText = "Value Cash (angka total, mis. 5000)"
+                    else
+                        u110.PlaceholderText = "Pilih jenis di atas terlebih dulu"
+                    end
+                end, 28)
+                u104.Size = UDim2.new(0.3333333333333333, -4, 1, 0)
+                u105.Size = u104.Size
+                u106.Size = u104.Size
+                u104.Parent = v102
+                u105.Parent = v102
+                u106.Parent = v102
+                if u101.field == "summit" then
+                    u110.PlaceholderText = "Value Summit (angka total, mis. 25)"
+                elseif u101.field == "besttime" then
+                    u110.PlaceholderText = "BestTime (detik atau mm:ss, mis. 95 atau 01:35)"
+                elseif u101.field == "cash" then
+                    u110.PlaceholderText = "Value Cash (angka total, mis. 5000)"
+                else
+                    u110.PlaceholderText = "Pilih jenis di atas terlebih dulu"
+                end
+                p100(function() --[[ Line: 215 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u101
+                        [2] = u108
+                        [3] = u110
+                        [4] = u7
+                    --]]
+                    if u101.field == nil then
+                        return
+                    else
+                        local v111 = u108.Text
+                        local v112 = u110.Text
+                        if v111 ~= "" and v112 ~= "" then
+                            u7:FireServer({
+                                ["scope"] = "global",
+                                ["action"] = "set",
+                                ["field"] = u101.field,
+                                ["username"] = v111,
+                                ["value"] = v112
+                            })
+                        end
+                    end
+                end)
+            end)
+        end, 28)
+        v113.Size = UDim2.new(0.5, -3, 1, 0)
+        v113.Parent = v85
+        v113.Size = UDim2.new(0.5, -3, 1, 0)
+        v113.Parent = v85
+        local v114 = u15("Custom hanya server ini (username bisa \'all\').")
+        v114.TextSize = 12
+        v114.Parent = u79
+        local v115 = Instance.new("Frame")
+        v115.BackgroundTransparency = 1
+        v115.Size = UDim2.new(1, 0, 0, 28)
+        local v116 = Instance.new("UIListLayout")
+        v116.FillDirection = Enum.FillDirection.Horizontal
+        v116.Padding = UDim.new(0, 6)
+        v116.SortOrder = Enum.SortOrder.LayoutOrder
+        v116.Parent = v115
+        v115.Parent = u79
+        local v126 = u21("Custom Summit", function() --[[ Line: 251 ]]
+            --[[
+            Upvalues:
+                [1] = u53
+                [2] = u27
+                [3] = u7
+            --]]
+            local u117 = "summit"
+            u53("Custom (summit)", function(p118, p119) --[[ Line: 232 ]]
+                --[[
+                Upvalues:
+                    [1] = u27
+                    [2] = u117
+                    [3] = u7
+                --]]
+                local v120, u121 = u27("Username / \'all\'")
+                v120.Parent = p118
+                local v122, u123 = u27("Value")
+                v122.Parent = p118
+                if u117 == "summit" then
+                    u123.PlaceholderText = "Value Summit (+/\226\136\146 angka, mis. 10 atau \226\136\1465)"
+                elseif u117 == "besttime" then
+                    u123.PlaceholderText = "BestTime (+/\226\136\146 detik, mis. 30 atau \226\136\14615)"
+                elseif u117 == "cash" then
+                    u123.PlaceholderText = "Value Cash (+/\226\136\146 angka, mis. 500 atau \226\136\146100)"
+                end
+                p119(function() --[[ Line: 245 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u121
+                        [2] = u123
+                        [3] = u7
+                        [4] = u117
+                    --]]
+                    local v124 = u121.Text
+                    local v125 = u123.Text
+                    if v124 ~= "" and v125 ~= "" then
+                        u7:FireServer({
+                            ["scope"] = "local",
+                            ["action"] = "custom",
+                            ["field"] = u117,
+                            ["username"] = v124,
+                            ["value"] = v125
+                        })
+                    end
+                end)
+            end)
+        end, 28)
+        local v136 = u21("Custom BestTime", function() --[[ Line: 252 ]]
+            --[[
+            Upvalues:
+                [1] = u53
+                [2] = u27
+                [3] = u7
+            --]]
+            local u127 = "besttime"
+            u53("Custom (besttime)", function(p128, p129) --[[ Line: 232 ]]
+                --[[
+                Upvalues:
+                    [1] = u27
+                    [2] = u127
+                    [3] = u7
+                --]]
+                local v130, u131 = u27("Username / \'all\'")
+                v130.Parent = p128
+                local v132, u133 = u27("Value")
+                v132.Parent = p128
+                if u127 == "summit" then
+                    u133.PlaceholderText = "Value Summit (+/\226\136\146 angka, mis. 10 atau \226\136\1465)"
+                elseif u127 == "besttime" then
+                    u133.PlaceholderText = "BestTime (+/\226\136\146 detik, mis. 30 atau \226\136\14615)"
+                elseif u127 == "cash" then
+                    u133.PlaceholderText = "Value Cash (+/\226\136\146 angka, mis. 500 atau \226\136\146100)"
+                end
+                p129(function() --[[ Line: 245 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u131
+                        [2] = u133
+                        [3] = u7
+                        [4] = u127
+                    --]]
+                    local v134 = u131.Text
+                    local v135 = u133.Text
+                    if v134 ~= "" and v135 ~= "" then
+                        u7:FireServer({
+                            ["scope"] = "local",
+                            ["action"] = "custom",
+                            ["field"] = u127,
+                            ["username"] = v134,
+                            ["value"] = v135
+                        })
+                    end
+                end)
+            end)
+        end, 28)
+        local v146 = u21("Custom Cash", function() --[[ Line: 253 ]]
+            --[[
+            Upvalues:
+                [1] = u53
+                [2] = u27
+                [3] = u7
+            --]]
+            local u137 = "cash"
+            u53("Custom (cash)", function(p138, p139) --[[ Line: 232 ]]
+                --[[
+                Upvalues:
+                    [1] = u27
+                    [2] = u137
+                    [3] = u7
+                --]]
+                local v140, u141 = u27("Username / \'all\'")
+                v140.Parent = p138
+                local v142, u143 = u27("Value")
+                v142.Parent = p138
+                if u137 == "summit" then
+                    u143.PlaceholderText = "Value Summit (+/\226\136\146 angka, mis. 10 atau \226\136\1465)"
+                elseif u137 == "besttime" then
+                    u143.PlaceholderText = "BestTime (+/\226\136\146 detik, mis. 30 atau \226\136\14615)"
+                elseif u137 == "cash" then
+                    u143.PlaceholderText = "Value Cash (+/\226\136\146 angka, mis. 500 atau \226\136\146100)"
+                end
+                p139(function() --[[ Line: 245 ]]
+                    --[[
+                    Upvalues:
+                        [1] = u141
+                        [2] = u143
+                        [3] = u7
+                        [4] = u137
+                    --]]
+                    local v144 = u141.Text
+                    local v145 = u143.Text
+                    if v144 ~= "" and v145 ~= "" then
+                        u7:FireServer({
+                            ["scope"] = "local",
+                            ["action"] = "custom",
+                            ["field"] = u137,
+                            ["username"] = v144,
+                            ["value"] = v145
+                        })
+                    end
+                end)
+            end)
+        end, 28)
+        v126.Size = UDim2.new(0.3333333333333333, -4, 1, 0)
+        v136.Size = v126.Size
+        v146.Size = v126.Size
+        v126.Parent = v115
+        v136.Parent = v115
+        v146.Parent = v115
+        u57.Visible = false
+        u57.Parent = v55
+        return u57
+    end
+    v6.OnClientEvent:Connect(function() --[[ Name: show, Line 262 ]]
+        --[[
+        Upvalues:
+            [1] = u147
+        --]]
+        u147().Visible = true
+    end)
+    u3.InputBegan:Connect(function(p148, p149) --[[ Line: 270 ]]
+        --[[
+        Upvalues:
+            [1] = u5
+        --]]
+        if not p149 then
+            if p148.KeyCode == Enum.KeyCode.Escape then
+                local v150 = u5:FindFirstChildOfClass("PlayerGui")
+                if not v150 then
+                    return
+                end
+                local v151 = v150:FindFirstChild("HehAdminUI")
+                if not v151 then
+                    return
+                end
+                local v152 = v151:FindFirstChild("Root")
+                if v152 then
+                    v152.Visible = false
+                end
+            end
+        end
+    end)
+    
+    -- Ensure hierarchy exists even if server never fires HehAdmin_Open (executor / no server signal).
+    do
+        local root = u147()
+        root.Visible = false
+    end
+end
+
 local function mountNotify(opts)
     local img
     local ic = opts.Icon
@@ -3093,6 +3941,267 @@ do
         task.defer(transferCashRefreshList)
     end)
     task.defer(transferCashRefreshList)
+
+    -- AdminMiniBtn (PlayerGui): game's LocalScript only sets Container.Visible for whitelisted UserIds;
+    -- HehAdmin_RequestOpen fires from Btn click when allowed. This toggle forces Container visibility.
+    -- HehAdminUI (PlayerGui): game's client sets Root.Visible = true when ReplicatedStorage.HehAdmin_Open
+    -- fires; same Root is hidden with Escape. This toggle mirrors that visibility.
+    MainTab:CreateSection("Admin mini (HehAdmin)")
+
+    local adminMiniBtnShow = false
+    local function applyAdminMiniBtnVisibility()
+        local lp = Players.LocalPlayer
+        local pg = lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return
+        end
+        local miniGui = pg:FindFirstChild("AdminMiniBtn")
+        if miniGui then
+            local container = miniGui:FindFirstChild("Container")
+            if container then
+                container.Visible = adminMiniBtnShow
+            end
+        end
+        local hehGui = pg:FindFirstChild("HehAdminUI")
+        if hehGui then
+            local root = hehGui:FindFirstChild("Root")
+            if root then
+                root.Visible = adminMiniBtnShow
+            end
+        end
+    end
+
+    MainTab:CreateToggle({
+        Name = "Show AdminMiniBtn + HehAdmin UI",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(enabled)
+            adminMiniBtnShow = enabled
+            applyAdminMiniBtnVisibility()
+            if enabled then
+                for _ = 1, 30 do
+                    task.wait(0.2)
+                    applyAdminMiniBtnVisibility()
+                    local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+                    local g = pg and pg:FindFirstChild("AdminMiniBtn")
+                    local c = g and g:FindFirstChild("Container")
+                    if c then
+                        break
+                    end
+                end
+            end
+        end,
+    })
+
+    MainTab:CreateSection("HehAdmin remotes")
+
+    local HehAdminRemotesParagraph = MainTab:CreateParagraph({
+        Title = "Discovered",
+        Content = "Scanning ReplicatedStorage for HehAdmin_* RemoteEvents…",
+    })
+
+    local function hehAdminCollectRemoteEvents()
+        local list = {}
+        for _, ch in ipairs(ReplicatedStorage:GetChildren()) do
+            if ch:IsA("RemoteEvent") and string.sub(ch.Name, 1, 9) == "HehAdmin_" then
+                table.insert(list, ch)
+            end
+        end
+        table.sort(list, function(a, b)
+            return a.Name < b.Name
+        end)
+        return list
+    end
+
+    local function hehAdminNotifyFireResult(remoteName, ok, err)
+        if ok then
+            mountNotify({
+                Title = "HehAdmin",
+                Content = remoteName .. ":FireServer() sent",
+                Icon = "check",
+            })
+        else
+            mountNotify({ Title = "HehAdmin", Content = remoteName .. ": " .. tostring(err), Icon = "x" })
+        end
+    end
+
+    task.defer(function()
+        local deadline = tick() + 12
+        local remotes = {}
+        repeat
+            remotes = hehAdminCollectRemoteEvents()
+            if #remotes > 0 then
+                break
+            end
+            task.wait(0.25)
+        until tick() >= deadline
+
+        local lines = {}
+        for _, ev in ipairs(remotes) do
+            table.insert(lines, ev.Name .. " (" .. ev.ClassName .. ")")
+        end
+        if #lines == 0 then
+            HehAdminRemotesParagraph:Set({
+                Title = "Discovered",
+                Content = "No HehAdmin_* RemoteEvents found under ReplicatedStorage (try rejoin or wait for replication).",
+            })
+            return
+        end
+        HehAdminRemotesParagraph:Set({
+            Title = "Discovered",
+            Content = table.concat(lines, "\n")
+                .. "\n\nHehAdmin_Open is normally fired by the server to your client (show UI). "
+                .. "FireServer below is experimental and may be ignored.",
+        })
+
+        for _, ev in ipairs(remotes) do
+            if ev.Name ~= "HehAdmin_Do" then
+                MainTab:CreateButton({
+                    Name = "FireServer: " .. ev.Name,
+                    Ext = true,
+                    Callback = function()
+                        local ok, err = pcall(function()
+                            ev:FireServer()
+                        end)
+                        hehAdminNotifyFireResult(ev.Name, ok, err)
+                    end,
+                })
+            end
+        end
+    end)
+
+    MainTab:CreateSection("HehAdmin_Do (payload)")
+
+    local hehDoAction = "reset"
+    local hehDoField = "summit"
+    local hehDoUsername = ""
+    local hehDoValue = ""
+
+    MainTab:CreateDropdown({
+        Name = "Action",
+        Options = { "reset", "set", "custom" },
+        CurrentOption = hehDoAction,
+        Ext = true,
+        Callback = function(value)
+            hehDoAction = rayfieldDropdownFirst(value) or "reset"
+        end,
+    })
+
+    MainTab:CreateDropdown({
+        Name = "Field",
+        Options = { "summit", "besttime", "cash" },
+        CurrentOption = hehDoField,
+        Ext = true,
+        Callback = function(value)
+            hehDoField = rayfieldDropdownFirst(value) or "summit"
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Username",
+        PlaceholderText = "Roblox username, or all (custom)",
+        CurrentValue = "",
+        Ext = true,
+        Callback = function(value)
+            hehDoUsername = value or ""
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Value",
+        PlaceholderText = "set/custom only (summit / besttime / cash text)",
+        CurrentValue = "",
+        Ext = true,
+        Callback = function(value)
+            hehDoValue = value or ""
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "HehAdmin_Do: FireServer (payload)",
+        Ext = true,
+        Callback = function()
+            local user = (hehDoUsername or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            local val = (hehDoValue or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if user == "" then
+                mountNotify({ Title = "HehAdmin_Do", Content = "Enter a username", Icon = "x" })
+                return
+            end
+            local payload
+            if hehDoAction == "reset" then
+                payload = {
+                    scope = "global",
+                    action = "reset",
+                    field = hehDoField,
+                    username = user,
+                }
+            elseif hehDoAction == "set" then
+                if val == "" then
+                    mountNotify({ Title = "HehAdmin_Do", Content = "set requires a value", Icon = "x" })
+                    return
+                end
+                payload = {
+                    scope = "global",
+                    action = "set",
+                    field = hehDoField,
+                    username = user,
+                    value = val,
+                }
+            elseif hehDoAction == "custom" then
+                if val == "" then
+                    mountNotify({ Title = "HehAdmin_Do", Content = "custom requires a value", Icon = "x" })
+                    return
+                end
+                payload = {
+                    scope = "local",
+                    action = "custom",
+                    field = hehDoField,
+                    username = user,
+                    value = val,
+                }
+            else
+                mountNotify({ Title = "HehAdmin_Do", Content = "Unknown action", Icon = "x" })
+                return
+            end
+            local ok, err = pcall(function()
+                local ev = ReplicatedStorage:FindFirstChild("HehAdmin_Do")
+                if not ev then
+                    ev = ReplicatedStorage:WaitForChild("HehAdmin_Do", 10)
+                end
+                if not ev then
+                    error("HehAdmin_Do not found")
+                end
+                ev:FireServer(payload)
+            end)
+            if ok then
+                local enc
+                local okEnc, jsonStr = pcall(function()
+                    return HttpService:JSONEncode(payload)
+                end)
+                enc = okEnc and jsonStr or "(encode failed)"
+                mountNotify({
+                    Title = "HehAdmin_Do",
+                    Content = "Sent: " .. enc,
+                    Icon = "check",
+                })
+            else
+                mountNotify({ Title = "HehAdmin_Do", Content = tostring(err), Icon = "x" })
+            end
+        end,
+    })
+
+    do
+        local lpGui = Players.LocalPlayer
+        local pg = lpGui:FindFirstChild("PlayerGui") or lpGui:WaitForChild("PlayerGui", 30)
+        if pg then
+            pg.ChildAdded:Connect(function(ch)
+                if ch.Name == "AdminMiniBtn" or ch.Name == "HehAdminUI" then
+                    task.defer(applyAdminMiniBtnVisibility)
+                end
+            end)
+        end
+        task.defer(applyAdminMiniBtnVisibility)
+    end
 end
 -- */  Teleport Tab  /* --
 do
