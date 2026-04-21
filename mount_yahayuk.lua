@@ -3606,6 +3606,7 @@ do
         [3] = "cp3-4",
         [4] = "cp4-5",
         [5] = "cp5-summit",
+        [6] = "summit-start",
     }
 
     local function resolveExecutorFnForMain(name: string): any
@@ -4246,11 +4247,15 @@ do
 
         while autoSummitEnabled and not shouldCancel() do
             local cpLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
-            if cpLeg >= summitCpIndex then
+            if cpLeg > summitCpIndex then
                 return true
             end
             local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
+            local runSingleLegOnly = cpLeg >= summitCpIndex
             if not prefix then
+                if cpLeg >= summitCpIndex then
+                    return true
+                end
                 disableAutoSummitDueToWalkFailure("No walk route mapping for CP #" .. tostring(cpLeg))
                 return false
             end
@@ -4324,17 +4329,27 @@ do
                     end
                     task.wait(0.25)
                     local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
-                    if cpNow > cpBeforeLeg then
+                    if cpNow ~= cpBeforeLeg then
                         advanced = true
                         break
                     end
                 end
                 if advanced then
+                    local cpAfterLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
+                    if cpAfterLeg < summitCpIndex then
+                        local nextPrefix = WALK_LEG_PREFIX_BY_CP[cpAfterLeg] or "unknown"
+                        notifyAutoSummit(
+                            ("Leg done at CP #%d -> next route %s_*"):format(
+                                cpAfterLeg,
+                                tostring(nextPrefix)
+                            )
+                        )
+                    end
                     legAdvanced = true
                     break
                 end
                 notifyAutoSummit(
-                    ("CP did not advance after %s — trying next route (%s/%s)"):format(
+                    ("CP did not change after %s — trying next route (%s/%s)"):format(
                         baseName,
                         tostring(tryIdx),
                         tostring(#pathsToTry)
@@ -4353,6 +4368,9 @@ do
                         .. " — Auto Summit off"
                 )
                 return false
+            end
+            if runSingleLegOnly then
+                return true
             end
         end
 
@@ -4633,6 +4651,8 @@ do
 
                     local routeCompleted = true
                     local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                    local cpAtRunStart = cpNow
+                    local summitCpIndexNow = #summitTeleportRoute - 1
                     local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
                     local skippedSummitTeleports = firstWpIndex == nil
                     if autoSummitMode == "Walk" then
@@ -4751,37 +4771,55 @@ do
                             )
                         end
                     elseif routeCompleted and autoSummitEnabled then
-                        if skippedSummitTeleports then
-                            notifyAutoSummit(
-                                ("Already at Summit (CP #%d) â€” run %d."):format(cpClamped, runCount + 1)
-                            )
-                        else
+                        local cpAfterRun = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        local atSummitNow = cpAfterRun >= summitCpIndexNow
+                        local reachedSummitThisRun = cpAtRunStart < summitCpIndexNow and atSummitNow
+
+                        if reachedSummitThisRun then
                             notifyAutoSummit("Reached Summit! (Run " .. (runCount + 1) .. ")")
-                        end
-                        local elapsedRun = os.clock() - runStartTime
-                        table.insert(autoSummitRunTimes, elapsedRun)
-                        task.defer(updateAutoSummitTimesParagraph)
-                        runCount = runCount + 1
-                        if remaining then
-                            remaining = remaining - 1
-                            summitQty = tostring(remaining)
-                            task.defer(function()
-                                if SummitQtyInput then
-                                    if SummitQtyInput.Set then
-                                        SummitQtyInput:Set(summitQty)
+                            local elapsedRun = os.clock() - runStartTime
+                            table.insert(autoSummitRunTimes, elapsedRun)
+                            task.defer(updateAutoSummitTimesParagraph)
+                            runCount = runCount + 1
+                            if remaining then
+                                remaining = remaining - 1
+                                summitQty = tostring(remaining)
+                                task.defer(function()
+                                    if SummitQtyInput then
+                                        if SummitQtyInput.Set then
+                                            SummitQtyInput:Set(summitQty)
+                                        end
+                                        if SummitQtyInput.SetValue then
+                                            SummitQtyInput:SetValue(summitQty)
+                                        end
                                     end
-                                    if SummitQtyInput.SetValue then
-                                        SummitQtyInput:SetValue(summitQty)
-                                    end
+                                end)
+                            end
+                            if autoSummitEnabled and (not qtyNum or remaining > 0) then
+                                if not waitWithCancel(BETWEEN_RUN_DELAY, function()
+                                    return not autoSummitEnabled
+                                end) then
+                                    break
                                 end
-                            end)
-                        end
-                        if autoSummitEnabled and (not qtyNum or remaining > 0) then
-                            if not waitWithCancel(BETWEEN_RUN_DELAY, function()
+                            end
+                        elseif atSummitNow then
+                            notifyAutoSummit(
+                                ("At Summit (CP #%d), waiting for camp change before counting next run."):format(
+                                    cpAfterRun
+                                )
+                            )
+                            if not waitWithCancel(1, function()
                                 return not autoSummitEnabled
                             end) then
                                 break
                             end
+                        else
+                            notifyAutoSummit(
+                                ("Route ended at CP #%d (%s) — continuing from current camp."):format(
+                                    cpAfterRun,
+                                    routeLabelForCpIndex(cpAfterRun)
+                                )
+                            )
                         end
                     end
                 until not autoSummitEnabled or (qtyNum and remaining and remaining <= 0)
