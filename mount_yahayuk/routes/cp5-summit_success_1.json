@@ -11896,14 +11896,6 @@
 			"kind": "movement"
 		},
 		{
-			"t": 31.952,
-			"data": {
-				"gameProcessed": true,
-				"keyCode": "Enum.KeyCode.LeftShift"
-			},
-			"kind": "key_down"
-		},
-		{
 			"t": 32.001,
 			"data": {
 				"jumpHeight": 7.2,
@@ -11932,14 +11924,6 @@
 				"isGrounded": false
 			},
 			"kind": "movement"
-		},
-		{
-			"t": 32.084,
-			"data": {
-				"gameProcessed": false,
-				"keyCode": "Enum.KeyCode.LeftShift"
-			},
-			"kind": "key_up"
 		},
 		{
 			"t": 32.101,
