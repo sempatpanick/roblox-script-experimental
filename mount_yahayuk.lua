@@ -3680,6 +3680,16 @@ do
         if #fileNames == 0 then
             fileNames = DEFAULT_MOUNT_ROUTE_INDEX_FILES
         end
+        local hasIndexJson = false
+        for _, fname in ipairs(fileNames) do
+            if type(fname) == "string" and string.lower(fname) == "index.json" then
+                hasIndexJson = true
+                break
+            end
+        end
+        if not hasIndexJson then
+            table.insert(fileNames, 1, "index.json")
+        end
         for _, fname in ipairs(fileNames) do
             if type(fname) == "string" and isJsonPathMain(fname) then
                 local fullPath = MOUNT_ROUTES_DIR .. "/" .. fname
@@ -3865,6 +3875,22 @@ do
     end
 
     MainTab:CreateSection("Auto Summit")
+
+    MainTab:CreateButton({
+        Name = "Refresh Routes (mode Walk)",
+        Ext = true,
+        Callback = function()
+            task.spawn(function()
+                notifyAutoSummit("Refreshing walk routes from remote...")
+                local okSync, syncErr = syncMountYahayukRoutesFromRemote()
+                if okSync then
+                    notifyAutoSummit("Routes refreshed (including index.json)")
+                else
+                    notifyAutoSummit("Failed to refresh routes: " .. tostring(syncErr), "x")
+                end
+            end)
+        end,
+    })
 
     MainTab:CreateDropdown({
         Name = "Mode",
