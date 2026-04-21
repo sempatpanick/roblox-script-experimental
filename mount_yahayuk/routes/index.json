@@ -1,12 +1,20 @@
 {
-	"files": [
-		"start-cp1_success_1.json",
-		"cp1-2_success_1.json",
-		"cp1-2_success_2.json",
-		"cp2-3_success_1.json",
-		"cp3-4_success_1.json",
-		"cp4-5_success_1.json",
-		"cp5-summit_success_1.json",
-		"summit-start_success_1.json"
-	]
+  "files": [
+    "cp1-2_success_1.json",
+    "cp1-2_success_2.json",
+    "cp1-2_success_3.json",
+    "cp1-2_success_4.json",
+    "cp2-3_success_1.json",
+    "cp3-4_success_1.json",
+    "cp3-4_success_2.json",
+    "cp4-5_success_1.json",
+    "cp4-5_success_2.json",
+    "cp5-summit_success_1.json",
+    "cp5-summit_success_2.json",
+    "cp5-summit_success_3.json",
+    "start-cp1_success_1.json",
+    "start-cp1_success_2.json",
+    "start-cp1_success_3.json",
+    "summit-start_success_1.json"
+  ]
 }
