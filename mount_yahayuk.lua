@@ -4109,6 +4109,15 @@ do
                     pcall(function()
                         applySmoothRootCFrame(rootPart, targetCf, smoothDuration)
                     end)
+                    local vel = data.velocity
+                    if type(vel) == "table" then
+                        local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
+                        if vx and vy and vz then
+                            pcall(function()
+                                rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
+                            end)
+                        end
+                    end
                 end
             elseif kind == "jump_request" then
                 if humanoid then
