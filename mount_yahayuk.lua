@@ -3575,9 +3575,264 @@ do
     local summitQty = ""
     local autoSummitRandomizeTeleportDuration = false
     local autoSummitRestartFromDeath = false
-    local autoSummitMode = "Teleport"
-    local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport" }
+    local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
+    local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
+    local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
+    local autoSummitMode = "Walk"
+    local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
     local BETWEEN_RUN_DELAY = 10
+
+    local autoSummitDeathCheckConn = nil
+    local autoSummitLastDeathHeartbeatCheck = 0
+    local autoSummitToggleControl = nil
+    local autoSummitSuppressStoppedNotify = false
+
+    local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
+    local MOUNT_ROUTES_REMOTE = baseURL .. "/mount_yahayuk/routes/"
+
+    local DEFAULT_MOUNT_ROUTE_INDEX_FILES = {
+        "index.json",
+        "start-cp1_success_1.json",
+        "cp1-2_success_1.json",
+        "cp1-2_success_2.json",
+        "cp2-3_success_1.json",
+        "cp3-4_success_1.json",
+        "cp4-5_success_1.json",
+        "cp5-summit_success_1.json",
+    }
+
+    -- Large route JSONs: optional movement thinning + max lerp steps per segment avoid freezes while keeping motion smooth.
+    local AUTO_WALK_THIN_EVENTS_THRESHOLD = 720
+    local AUTO_WALK_MOVEMENT_MIN_INTERVAL = 0.055
+    local AUTO_WALK_LERP_MAX_STEPS = 24
+    local AUTO_WALK_TIMING_SLICE = 0.18
+    local AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD = 65536
+
+    -- Next leg toward summit: route JSON basename prefix (matches files like cp1-2_success_1.json).
+    local WALK_LEG_PREFIX_BY_CP: { [number]: string } = {
+        [0] = "start-cp1",
+        [1] = "cp1-2",
+        [2] = "cp2-3",
+        [3] = "cp3-4",
+        [4] = "cp4-5",
+        [5] = "cp5-summit",
+    }
+
+    local function resolveExecutorFnForMain(name: string): any
+        local v = rawget(_G, name)
+        if type(v) == "function" then
+            return v
+        end
+        local getGenvFn = rawget(_G, "getgenv")
+        local okGenv, genv = pcall(function()
+            return type(getGenvFn) == "function" and getGenvFn() or nil
+        end)
+        if okGenv and type(genv) == "table" then
+            local gv = rawget(genv, name) or genv[name]
+            if type(gv) == "function" then
+                return gv
+            end
+        end
+        local okFenv, fenv = pcall(function()
+            return getfenv and getfenv()
+        end)
+        if okFenv and type(fenv) == "table" then
+            local fv = rawget(fenv, name) or fenv[name]
+            if type(fv) == "function" then
+                return fv
+            end
+        end
+        return nil
+    end
+
+    local function normalizePathMain(path: string): string
+        return string.gsub(path or "", "\\", "/")
+    end
+
+    local function baseNameFromPathMain(path: string): string
+        local normalized = normalizePathMain(path)
+        local base = string.match(normalized, "([^/]+)$")
+        return base or normalized
+    end
+
+    local function isJsonPathMain(path: string): boolean
+        return string.sub(string.lower(path), -5) == ".json"
+    end
+
+    local function syncMountYahayukRoutesFromRemote()
+        local writeFn = resolveExecutorFnForMain("writefile")
+        local makeFolderFn = resolveExecutorFnForMain("makefolder")
+        if type(writeFn) ~= "function" then
+            return false, "writefile() not available"
+        end
+        if type(makeFolderFn) == "function" then
+            pcall(function()
+                makeFolderFn("sempatpanick")
+                makeFolderFn("sempatpanick/mount_yahayuk")
+                makeFolderFn(MOUNT_ROUTES_DIR)
+            end)
+        end
+        local indexUrl = MOUNT_ROUTES_REMOTE .. "index.json"
+        local okIndex, indexBody = pcall(function()
+            return game:HttpGet(indexUrl, true)
+        end)
+        local fileNames: { string } = {}
+        if okIndex and type(indexBody) == "string" and #indexBody > 2 then
+            local okDecode, decoded = pcall(function()
+                return HttpService:JSONDecode(indexBody)
+            end)
+            if okDecode and type(decoded) == "table" and type(decoded.files) == "table" then
+                fileNames = decoded.files
+            end
+        end
+        if #fileNames == 0 then
+            fileNames = DEFAULT_MOUNT_ROUTE_INDEX_FILES
+        end
+        for _, fname in ipairs(fileNames) do
+            if type(fname) == "string" and isJsonPathMain(fname) then
+                local url = MOUNT_ROUTES_REMOTE .. fname
+                local okGet, content = pcall(function()
+                    return game:HttpGet(url, true)
+                end)
+                if okGet and type(content) == "string" and #content > 2 then
+                    pcall(function()
+                        writeFn(MOUNT_ROUTES_DIR .. "/" .. fname, content)
+                    end)
+                end
+                task.wait(0.04)
+            end
+        end
+        return true, nil
+    end
+
+    task.defer(function()
+        task.spawn(function()
+            pcall(syncMountYahayukRoutesFromRemote)
+        end)
+    end)
+
+    local WalkVirtualInputManager = nil
+    pcall(function()
+        WalkVirtualInputManager = game:GetService("VirtualInputManager")
+    end)
+
+    local function listRouteJsonPathsInDir(): { string }
+        local listFilesFn = resolveExecutorFnForMain("listfiles")
+        if type(listFilesFn) ~= "function" then
+            return {}
+        end
+        local ok, filesOrErr = pcall(function()
+            return listFilesFn(MOUNT_ROUTES_DIR)
+        end)
+        if not ok or type(filesOrErr) ~= "table" then
+            return {}
+        end
+        local out: { string } = {}
+        for _, item in ipairs(filesOrErr) do
+            if type(item) == "string" and isJsonPathMain(item) then
+                table.insert(out, item)
+            end
+        end
+        return out
+    end
+
+    local function pickRandomRouteJsonForLegPrefix(prefix: string): string?
+        local all = listRouteJsonPathsInDir()
+        local matches: { string } = {}
+        local prefLower = string.lower(prefix .. "_")
+        for _, p in ipairs(all) do
+            local bn = string.lower(baseNameFromPathMain(p))
+            if string.sub(bn, 1, #prefLower) == prefLower then
+                table.insert(matches, p)
+            end
+        end
+        if #matches == 0 then
+            return nil
+        end
+        return matches[math.random(1, #matches)]
+    end
+
+    local function thinWalkRouteEvents(events: { any }): { any }
+        if #events <= AUTO_WALK_THIN_EVENTS_THRESHOLD then
+            return events
+        end
+        local out: { any } = {}
+        local lastMoveT = -math.huge
+        for _, ev in ipairs(events) do
+            if type(ev) == "table" and ev.kind == "movement" then
+                local t = tonumber(ev.t) or 0
+                if #out == 0 or (t - lastMoveT) >= AUTO_WALK_MOVEMENT_MIN_INTERVAL then
+                    table.insert(out, ev)
+                    lastMoveT = t
+                end
+            elseif type(ev) == "table" then
+                table.insert(out, ev)
+            end
+        end
+        return out
+    end
+
+    local function findFirstMovementWorldPosition(events: { any }): Vector3?
+        for _, ev in ipairs(events) do
+            if type(ev) == "table" and ev.kind == "movement" and type(ev.data) == "table" then
+                local pos = ev.data.position
+                if type(pos) == "table" then
+                    local x, y, z = tonumber(pos.x), tonumber(pos.y), tonumber(pos.z)
+                    if x and y and z then
+                        return Vector3.new(x, y, z)
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function getCharacterHumanoidAndRootWalk(character: Model?): (Humanoid?, BasePart?)
+        if not character then
+            return nil, nil
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        return humanoid, rootPart
+    end
+
+    local function humanoidWalkToWorldPosition(
+        humanoid: Humanoid,
+        rootPart: BasePart,
+        targetPos: Vector3,
+        shouldCancel: () -> boolean,
+        arrivalDist: number?
+    ): boolean
+        local thresh = arrivalDist or 8
+        humanoid:MoveTo(targetPos)
+        local dist0 = (rootPart.Position - targetPos).Magnitude
+        local timeout = math.clamp(dist0 / math.max(4, humanoid.WalkSpeed) * 2.8, 15, 200)
+        local start = os.clock()
+        local moveDone = false
+        local conn = humanoid.MoveToFinished:Connect(function()
+            moveDone = true
+        end)
+        while not shouldCancel() do
+            if (rootPart.Position - targetPos).Magnitude <= thresh then
+                conn:Disconnect()
+                return true
+            end
+            if moveDone then
+                conn:Disconnect()
+                return (rootPart.Position - targetPos).Magnitude <= thresh + 10
+            end
+            if os.clock() - start >= timeout then
+                conn:Disconnect()
+                return (rootPart.Position - targetPos).Magnitude <= thresh + 12
+            end
+            task.wait(0.1)
+        end
+        conn:Disconnect()
+        pcall(function()
+            humanoid:Move(Vector3.new(0, 0, 0))
+        end)
+        return false
+    end
 
     local summitTeleportRoute = {
         { name = "Start", position = "-922.94, 169.22, 856.29", delay = 20 },
@@ -3635,6 +3890,54 @@ do
 
     local lpAutoSummit = Players.LocalPlayer
 
+    local function releaseAutoSummitWalkVirtualKeys()
+        if WalkVirtualInputManager then
+            for keyCode, isDown in pairs(autoSummitWalkKeysDown) do
+                if isDown then
+                    pcall(function()
+                        WalkVirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+                    end)
+                end
+                autoSummitWalkKeysDown[keyCode] = nil
+            end
+        else
+            for k in pairs(autoSummitWalkKeysDown) do
+                autoSummitWalkKeysDown[k] = nil
+            end
+        end
+    end
+
+    local function stopAutoSummitWalkCharacter()
+        releaseAutoSummitWalkVirtualKeys()
+
+        local char = lpAutoSummit.Character
+        local humToStop = autoSummitWalkPlaybackHumanoid
+        if not humToStop and char then
+            humToStop = char:FindFirstChildOfClass("Humanoid")
+        end
+        if humToStop then
+            pcall(function()
+                humToStop:Move(Vector3.new(0, 0, 0))
+            end)
+        end
+
+        local localRoot = char and char:FindFirstChild("HumanoidRootPart")
+        if localRoot then
+            pcall(function()
+                localRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                localRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+        end
+
+        if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+            pcall(function()
+                autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+            end)
+        end
+        autoSummitWalkPlaybackHumanoid = nil
+        autoSummitWalkPlaybackAutoRotateRestore = nil
+    end
+
     local function getCheckpointIndexFromPlayer(player)
         local ls = player:FindFirstChild("leaderstats")
         if ls then
@@ -3688,6 +3991,318 @@ do
             end
         end
         return "Start"
+    end
+
+    local function playRouteRecordingEvents(events: { any }, shouldCancel: () -> boolean): boolean
+        events = thinWalkRouteEvents(events)
+        if #events == 0 then
+            return false
+        end
+
+        local nextMovementDeltaByIndex: { [number]: number? } = {}
+        local nextMovementTime: number? = nil
+        for i = #events, 1, -1 do
+            local ev = events[i]
+            local evTime = tonumber(ev.t) or 0
+            if ev.kind == "movement" then
+                nextMovementDeltaByIndex[i] = nextMovementTime and math.max(0, nextMovementTime - evTime) or nil
+                nextMovementTime = evTime
+            else
+                nextMovementDeltaByIndex[i] = nil
+            end
+        end
+
+        local function buildMovementTargetCFrame(rootPart: BasePart?, dataTable: { [string]: any }): CFrame?
+            local pos = dataTable.position
+            if not rootPart or type(pos) ~= "table" then
+                return nil
+            end
+            local x = tonumber(pos.x)
+            local y = tonumber(pos.y)
+            local z = tonumber(pos.z)
+            if not (x and y and z) then
+                return nil
+            end
+            local basePos = Vector3.new(x, y, z)
+            local lookData = dataTable.lookDirection
+            local lx, ly, lz = nil, nil, nil
+            if type(lookData) == "table" then
+                lx = tonumber(lookData.x)
+                ly = tonumber(lookData.y)
+                lz = tonumber(lookData.z)
+            end
+            if lx and ly and lz then
+                local lookVec = Vector3.new(lx, ly, lz)
+                if lookVec.Magnitude > 1e-4 then
+                    local planar = Vector3.new(lookVec.X, 0, lookVec.Z)
+                    if planar.Magnitude > 1e-4 then
+                        return CFrame.lookAt(basePos, basePos + planar.Unit)
+                    end
+                end
+            end
+            local fallback = rootPart.CFrame.LookVector
+            local fallbackPlanar = Vector3.new(fallback.X, 0, fallback.Z)
+            if fallbackPlanar.Magnitude > 1e-4 then
+                return CFrame.lookAt(basePos, basePos + fallbackPlanar.Unit)
+            end
+            return CFrame.new(basePos)
+        end
+
+        -- Same idea as Recording playback: Lerp each frame for human-like motion; cap steps so huge durations cannot freeze.
+        local function applyWalkPlaybackMovement(rootPart: BasePart, targetCf: CFrame, durationSec: number)
+            if shouldCancel() then
+                return
+            end
+            if durationSec <= 0.015 then
+                rootPart.CFrame = targetCf
+                return
+            end
+            local startCf = rootPart.CFrame
+            local t0 = os.clock()
+            local step = 0
+            while not shouldCancel() do
+                local alpha = (os.clock() - t0) / durationSec
+                if alpha >= 1 then
+                    break
+                end
+                rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
+                step += 1
+                if step >= AUTO_WALK_LERP_MAX_STEPS then
+                    break
+                end
+                task.wait()
+            end
+            if not shouldCancel() then
+                rootPart.CFrame = targetCf
+            end
+        end
+
+        local started = os.clock()
+
+        for i, event in ipairs(events) do
+            if shouldCancel() then
+                if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+                    pcall(function()
+                        autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+                    end)
+                end
+                autoSummitWalkPlaybackHumanoid = nil
+                autoSummitWalkPlaybackAutoRotateRestore = nil
+                releaseAutoSummitWalkVirtualKeys()
+                return false
+            end
+            local targetT = tonumber(event.t) or 0
+            local deadline = started + targetT
+            while not shouldCancel() and os.clock() < deadline do
+                local rem = deadline - os.clock()
+                if rem <= 0 then
+                    break
+                end
+                task.wait(math.min(AUTO_WALK_TIMING_SLICE, rem))
+            end
+            if shouldCancel() then
+                if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+                    pcall(function()
+                        autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+                    end)
+                end
+                autoSummitWalkPlaybackHumanoid = nil
+                autoSummitWalkPlaybackAutoRotateRestore = nil
+                releaseAutoSummitWalkVirtualKeys()
+                return false
+            end
+            local kind = event.kind
+            local data = type(event.data) == "table" and event.data or {}
+            local character = lpAutoSummit.Character
+            local humanoid, rootPart = getCharacterHumanoidAndRootWalk(character)
+
+            if humanoid and autoSummitWalkPlaybackHumanoid ~= humanoid then
+                if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+                    pcall(function()
+                        autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+                    end)
+                end
+                autoSummitWalkPlaybackHumanoid = humanoid
+                autoSummitWalkPlaybackAutoRotateRestore = humanoid.AutoRotate
+                pcall(function()
+                    humanoid.AutoRotate = false
+                end)
+            end
+
+            if kind == "movement" then
+                local targetCf = buildMovementTargetCFrame(rootPart, data)
+                if rootPart and targetCf then
+                    local nextDelta = nextMovementDeltaByIndex[i]
+                    local smoothDuration = nextDelta and math.clamp(nextDelta * 0.8, 0.03, 0.14) or 0.07
+                    pcall(function()
+                        applyWalkPlaybackMovement(rootPart, targetCf, smoothDuration)
+                    end)
+                end
+            elseif kind == "jump_request" then
+                if humanoid then
+                    pcall(function()
+                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                    end)
+                end
+            elseif (kind == "key_down" or kind == "key_up") and WalkVirtualInputManager then
+                local keyCodeName = type(data.keyCode) == "string" and data.keyCode or ""
+                local enumName = string.match(keyCodeName, "Enum%.KeyCode%.(.+)")
+                local keyCode = enumName and Enum.KeyCode[enumName]
+                if keyCode then
+                    local isDown = kind == "key_down"
+                    pcall(function()
+                        WalkVirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
+                    end)
+                    autoSummitWalkKeysDown[keyCode] = isDown or nil
+                end
+            end
+        end
+
+        if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+            pcall(function()
+                autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+            end)
+        end
+        autoSummitWalkPlaybackHumanoid = nil
+        autoSummitWalkPlaybackAutoRotateRestore = nil
+        releaseAutoSummitWalkVirtualKeys()
+        return true
+    end
+
+    local function stopAutoSummitFromScript()
+        autoSummitEnabled = false
+        if autoSummitDeathCheckConn then
+            autoSummitDeathCheckConn:Disconnect()
+            autoSummitDeathCheckConn = nil
+        end
+        stopAutoSummitWalkCharacter()
+        local tc = autoSummitToggleControl
+        if tc then
+            pcall(function()
+                if tc.Set then
+                    tc:Set(false)
+                end
+                if tc.SetValue then
+                    tc:SetValue(false)
+                end
+            end)
+        end
+    end
+
+    local function runWalkSummitLegsFromCurrentCp(shouldCancel: () -> boolean, getRootPart: (number?) -> BasePart?): boolean
+        local readFileFn = resolveExecutorFnForMain("readfile")
+        if type(readFileFn) ~= "function" then
+            notifyAutoSummit("Walk mode needs readfile() from your executor", "x")
+            return false
+        end
+        if type(resolveExecutorFnForMain("listfiles")) ~= "function" then
+            notifyAutoSummit("Walk mode needs listfiles() from your executor", "x")
+            return false
+        end
+
+        local routeN = #summitTeleportRoute
+        local summitCpIndex = routeN - 1
+
+        while autoSummitEnabled and not shouldCancel() do
+            local cpLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
+            if cpLeg >= summitCpIndex then
+                return true
+            end
+            local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
+            if not prefix then
+                notifyAutoSummit("No walk route mapping for CP #" .. tostring(cpLeg), "x")
+                return false
+            end
+            local pickedPath = pickRandomRouteJsonForLegPrefix(prefix)
+            if not pickedPath then
+                notifyAutoSummit("No JSON in " .. MOUNT_ROUTES_DIR .. " for leg " .. prefix .. "_*", "x")
+                return false
+            end
+            local okRead, jsonText = pcall(function()
+                return readFileFn(pickedPath)
+            end)
+            if not okRead or type(jsonText) ~= "string" then
+                notifyAutoSummit("Failed to read " .. baseNameFromPathMain(pickedPath), "x")
+                return false
+            end
+            if #jsonText >= AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD then
+                task.wait()
+            end
+            local okDecode, payload = pcall(function()
+                return HttpService:JSONDecode(jsonText)
+            end)
+            if #jsonText >= AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD then
+                task.wait()
+            end
+            if not okDecode or type(payload) ~= "table" then
+                notifyAutoSummit("Invalid JSON: " .. baseNameFromPathMain(pickedPath), "x")
+                autoSummitSuppressStoppedNotify = true
+                stopAutoSummitFromScript()
+                return false
+            end
+            local events = payload.events
+            if type(events) ~= "table" or #events == 0 then
+                notifyAutoSummit("No events in " .. baseNameFromPathMain(pickedPath), "x")
+                return false
+            end
+            local firstPos = findFirstMovementWorldPosition(events)
+            if not firstPos then
+                notifyAutoSummit("No movement samples in " .. baseNameFromPathMain(pickedPath), "x")
+                return false
+            end
+
+            notifyAutoSummit(
+                ("Walk leg CP%d -> %s (file: %s)"):format(cpLeg, prefix, baseNameFromPathMain(pickedPath))
+            )
+
+            local rootPart = getRootPart()
+            if not rootPart then
+                return false
+            end
+            local character = lpAutoSummit.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then
+                return false
+            end
+            humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
+            if shouldCancel() then
+                return false
+            end
+
+            if not playRouteRecordingEvents(events, shouldCancel) then
+                return false
+            end
+
+            local cpBeforeLeg = cpLeg
+            local advanced = false
+            for _ = 1, 50 do
+                if shouldCancel() then
+                    return false
+                end
+                task.wait(0.25)
+                local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                if cpNow > cpBeforeLeg then
+                    advanced = true
+                    break
+                end
+            end
+            if not advanced then
+                notifyAutoSummit(
+                    "CP did not advance after leg "
+                        .. prefix
+                        .. " (still at CP #"
+                        .. tostring(getCheckpointIndexFromPlayer(lpAutoSummit))
+                        .. ")",
+                    "x"
+                )
+                return false
+            end
+        end
+
+        if not autoSummitEnabled or shouldCancel() then
+            return false
+        end
+        return getCheckpointIndexFromPlayer(lpAutoSummit) >= summitCpIndex
     end
 
     local function routeLabelForCpIndex(idx)
@@ -3852,8 +4467,6 @@ do
         end,
     })
 
-    local autoSummitDeathCheckConn = nil
-
     local function onAutoSummitDeath()
         autoSummitRestartFromDeath = true
     end
@@ -3879,7 +4492,7 @@ do
     end
     lpAutoSummit.CharacterAdded:Connect(connectAutoSummitCharacterDied)
 
-    MainTab:CreateToggle({
+    autoSummitToggleControl = MainTab:CreateToggle({
         Name = "Auto Summit",
         CurrentValue = false,
         Ext = true,
@@ -3890,6 +4503,7 @@ do
                     autoSummitDeathCheckConn:Disconnect()
                     autoSummitDeathCheckConn = nil
                 end
+                stopAutoSummitWalkCharacter()
                 return
             end
 
@@ -3905,6 +4519,11 @@ do
                 if not autoSummitEnabled then
                     return
                 end
+                local now = os.clock()
+                if now - autoSummitLastDeathHeartbeatCheck < 0.35 then
+                    return
+                end
+                autoSummitLastDeathHeartbeatCheck = now
                 local char = lpAutoSummit.Character
                 if not char then
                     return
@@ -3964,50 +4583,74 @@ do
                     local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
                     local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
                     local skippedSummitTeleports = firstWpIndex == nil
-                    if skippedSummitTeleports then
-                        skipNextCpResumeNotify = false
-                    elseif not skipNextCpResumeNotify then
-                        notifyAutoSummit(
-                            ("CP #%d (%s) â€” continuing from %sâ€¦"):format(
-                                cpClamped,
-                                routeLabelForCpIndex(cpClamped),
-                                summitTeleportRoute[firstWpIndex].name
+                    if autoSummitMode == "Walk" then
+                        local routeNWalk = #summitTeleportRoute
+                        local summitCpWalk = routeNWalk - 1
+                        skippedSummitTeleports = cpNow >= summitCpWalk
+                        cpClamped = cpNow
+                        if skippedSummitTeleports then
+                            skipNextCpResumeNotify = false
+                        elseif not skipNextCpResumeNotify then
+                            notifyAutoSummit(
+                                ("CP #%d (%s) â€” walk mode from next legâ€¦"):format(
+                                    cpClamped,
+                                    routeLabelForCpIndex(cpClamped)
+                                )
                             )
-                        )
+                        else
+                            skipNextCpResumeNotify = false
+                        end
+                        if not skippedSummitTeleports then
+                            if not runWalkSummitLegsFromCurrentCp(shouldAbort, getRootPart) then
+                                routeCompleted = false
+                            end
+                        end
                     else
-                        skipNextCpResumeNotify = false
-                    end
-                    if not skippedSummitTeleports then
-                        for wi = firstWpIndex, #summitTeleportRoute do
-                            local wp = summitTeleportRoute[wi]
-                            if not autoSummitEnabled or autoSummitRestartFromDeath then
-                                routeCompleted = false
-                                break
-                            end
-                            rootPart = getRootPart()
-                            if not rootPart then
-                                routeCompleted = false
-                                break
-                            end
-                            local targetPosition = parsePositionString(wp.position)
-                            if not targetPosition then
-                                routeCompleted = false
-                                notifyAutoSummit("Invalid position for " .. wp.name, "x")
-                                break
-                            end
-                            rootPart.CFrame = CFrame.new(targetPosition)
-                            notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
-                            local waitSec = wp.delay
-                            if
-                                autoSummitMode == "Teleport"
-                                and autoSummitRandomizeTeleportDuration
-                                and wp.name ~= "Summit"
-                            then
-                                waitSec = math.max(0.5, wp.delay + math.random(-15, 15))
-                            end
-                            if not waitWithCancel(waitSec, shouldAbort) then
-                                routeCompleted = false
-                                break
+                        if skippedSummitTeleports then
+                            skipNextCpResumeNotify = false
+                        elseif not skipNextCpResumeNotify then
+                            notifyAutoSummit(
+                                ("CP #%d (%s) â€” continuing from %sâ€¦"):format(
+                                    cpClamped,
+                                    routeLabelForCpIndex(cpClamped),
+                                    summitTeleportRoute[firstWpIndex].name
+                                )
+                            )
+                        else
+                            skipNextCpResumeNotify = false
+                        end
+                        if not skippedSummitTeleports then
+                            for wi = firstWpIndex, #summitTeleportRoute do
+                                local wp = summitTeleportRoute[wi]
+                                if not autoSummitEnabled or autoSummitRestartFromDeath then
+                                    routeCompleted = false
+                                    break
+                                end
+                                rootPart = getRootPart()
+                                if not rootPart then
+                                    routeCompleted = false
+                                    break
+                                end
+                                local targetPosition = parsePositionString(wp.position)
+                                if not targetPosition then
+                                    routeCompleted = false
+                                    notifyAutoSummit("Invalid position for " .. wp.name, "x")
+                                    break
+                                end
+                                rootPart.CFrame = CFrame.new(targetPosition)
+                                notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
+                                local waitSec = wp.delay
+                                if
+                                    autoSummitMode == "Teleport"
+                                    and autoSummitRandomizeTeleportDuration
+                                    and wp.name ~= "Summit"
+                                then
+                                    waitSec = math.max(0.5, wp.delay + math.random(-15, 15))
+                                end
+                                if not waitWithCancel(waitSec, shouldAbort) then
+                                    routeCompleted = false
+                                    break
+                                end
                             end
                         end
                     end
@@ -4094,8 +4737,11 @@ do
                 if autoSummitEnabled and qtyNum and remaining and remaining <= 0 then
                     notifyAutoSummit("All runs completed (" .. runCount .. " run(s))")
                 elseif not autoSummitEnabled then
-                    notifyAutoSummit("Stopped", "x")
+                    if not autoSummitSuppressStoppedNotify then
+                        notifyAutoSummit("Stopped", "x")
+                    end
                 end
+                autoSummitSuppressStoppedNotify = false
 
                 if autoSummitDeathCheckConn then
                     autoSummitDeathCheckConn:Disconnect()
