@@ -951,6 +951,12 @@ local function createRecordingTab(windowRef, notifyFn)
     local lastMovementSignature = nil
     local lastMovementCaptureAt = 0
     local lastSavedRecordingPath = ""
+    local recordingPlayersDropdown
+    local RECORDING_PLAYER_NONE = "(Select player)"
+    local recordingPlayerOptions = { RECORDING_PLAYER_NONE }
+    local recordingPlayerDisplayToUserId: { [string]: number } = {}
+    local selectedRecordingPlayerUserId: number? = nil
+    local selectedRecordingPlayerName: string? = nil
     local savedRecordingsDropdown
     local savedRecordingStatusParagraph
     local selectedSavedRecordingPath = nil
@@ -961,6 +967,7 @@ local function createRecordingTab(windowRef, notifyFn)
     local playbackAutoRotateRestore = nil
     local playbackKeysDown: { [Enum.KeyCode]: boolean } = {}
     local SAVED_RECORDING_NONE = "(None)"
+    local refreshRecordingPlayersDropdown = function() end
     local refreshSavedRecordingsDropdown = function(_showNotify: boolean?) end
 
     local VirtualInputManager = nil
@@ -989,7 +996,9 @@ local function createRecordingTab(windowRef, notifyFn)
             return
         end
         local stateText = recordingInProgress and "Recording: ON" or "Recording: OFF"
+        local targetText = selectedRecordingPlayerName or "(not selected)"
         local content = stateText
+            .. "\nTarget: " .. targetText
             .. "\nEvents: " .. tostring(#recordingEvents)
             .. "\nLast file: " .. (lastSavedRecordingPath ~= "" and lastSavedRecordingPath or "(none)")
         if extraLine and extraLine ~= "" then
@@ -1109,6 +1118,18 @@ local function createRecordingTab(windowRef, notifyFn)
         selectedSavedRecordingPath = pathMap[picked]
     end
 
+    local function getSelectedRecordingPlayer(): Player?
+        if type(selectedRecordingPlayerUserId) ~= "number" then
+            return nil
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.UserId == selectedRecordingPlayerUserId then
+                return player
+            end
+        end
+        return nil
+    end
+
     local function ensureRecordingsDirectory()
         makeFolderFn = makeFolderFn or resolveExecutorFn("makefolder")
         isFolderFn = isFolderFn or resolveExecutorFn("isfolder")
@@ -1170,7 +1191,8 @@ local function createRecordingTab(windowRef, notifyFn)
                 placeId = game.PlaceId,
                 gameId = game.GameId,
                 jobId = game.JobId,
-                playerName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
+                playerName = selectedRecordingPlayerName or "unknown",
+                recorderName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
                 startedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 durationSeconds = tonumber(string.format("%.3f", math.max(0, recordingNow()))),
                 totalEvents = #recordingEvents,
@@ -1201,9 +1223,8 @@ local function createRecordingTab(windowRef, notifyFn)
         return humanoid, rootPart
     end
 
-    local function recordMovementSample()
-        local localPlayer = Players.LocalPlayer
-        local character = localPlayer and localPlayer.Character
+    local function recordMovementSample(targetPlayer: Player?)
+        local character = targetPlayer and targetPlayer.Character
         local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
         if not humanoid or not rootPart then
             return
@@ -1280,8 +1301,16 @@ local function createRecordingTab(windowRef, notifyFn)
     local function startRecording()
         if recordingInProgress then
             notifyFn({ Title = "Recording", Content = "Already recording", Icon = "info" })
-            return
+            return false
         end
+
+        local targetPlayer = getSelectedRecordingPlayer()
+        if not targetPlayer then
+            updateRecordingParagraph("Select a player first")
+            notifyFn({ Title = "Recording", Content = "Select a player before recording", Icon = "x" })
+            return false
+        end
+        local recordLocalInputs = targetPlayer == Players.LocalPlayer
 
         disconnectRecordingConnections()
         recordingEvents = {}
@@ -1292,11 +1321,17 @@ local function createRecordingTab(windowRef, notifyFn)
 
         appendRecordingEvent("recording_started", {
             placeId = game.PlaceId,
-            playerName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
+            playerName = targetPlayer.Name,
+            playerUserId = targetPlayer.UserId,
+            recorderName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
+            recordKeyboardInputs = recordLocalInputs,
         })
 
         table.insert(recordingConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if not recordingInProgress then
+                return
+            end
+            if not recordLocalInputs then
                 return
             end
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
@@ -1314,6 +1349,9 @@ local function createRecordingTab(windowRef, notifyFn)
             if not recordingInProgress then
                 return
             end
+            if not recordLocalInputs then
+                return
+            end
             if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
                 if input.KeyCode == recordingToggleHotkey then
                     return
@@ -1326,17 +1364,20 @@ local function createRecordingTab(windowRef, notifyFn)
         end))
 
         table.insert(recordingConnections, UserInputService.JumpRequest:Connect(function()
+            if not recordLocalInputs then
+                return
+            end
             appendRecordingEvent("jump_request", {})
         end))
 
-        table.insert(recordingConnections, Players.LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+        table.insert(recordingConnections, targetPlayer.CharacterAdded:Connect(function(newCharacter)
             appendRecordingEvent("character_added", {
                 characterName = newCharacter and newCharacter.Name or "unknown",
             })
             attachCharacterRecordingHooks(newCharacter)
         end))
 
-        attachCharacterRecordingHooks(Players.LocalPlayer.Character)
+        attachCharacterRecordingHooks(targetPlayer.Character)
 
         table.insert(recordingConnections, RunService.Heartbeat:Connect(function()
             if not recordingInProgress then
@@ -1347,11 +1388,12 @@ local function createRecordingTab(windowRef, notifyFn)
                 return
             end
             lastMovementCaptureAt = now
-            recordMovementSample()
+            recordMovementSample(targetPlayer)
         end))
 
         updateRecordingParagraph("Capture started")
-        notifyFn({ Title = "Recording", Content = "Recording started", Icon = "check" })
+        notifyFn({ Title = "Recording", Content = "Recording started for " .. targetPlayer.Name, Icon = "check" })
+        return true
     end
 
     local function stopRecording()
@@ -1389,18 +1431,111 @@ local function createRecordingTab(windowRef, notifyFn)
 
     recordingStatusParagraph = RecordingTab:CreateParagraph({
         Title = "Status",
-        Content = "Recording: OFF\nEvents: 0\nLast file: (none)",
+        Content = "Recording: OFF\nTarget: (not selected)\nEvents: 0\nLast file: (none)",
     })
 
-    local function setRecordingEnabled(enabled: boolean)
+    refreshRecordingPlayersDropdown = function()
+        recordingPlayerOptions = { RECORDING_PLAYER_NONE }
+        recordingPlayerDisplayToUserId = {}
+
+        local localPlayer = Players.LocalPlayer
+        local playersList = Players:GetPlayers()
+        table.sort(playersList, function(a, b)
+            local aDisplay = string.lower(a.DisplayName or a.Name or "")
+            local bDisplay = string.lower(b.DisplayName or b.Name or "")
+            if aDisplay == bDisplay then
+                return string.lower(a.Name) < string.lower(b.Name)
+            end
+            return aDisplay < bDisplay
+        end)
+        local displayLabelCount: { [string]: number } = {}
+
+        for _, player in ipairs(playersList) do
+            local displayName = player.DisplayName or player.Name
+            if localPlayer and player == localPlayer then
+                displayName = displayName .. " (me)"
+            end
+            local count = (displayLabelCount[displayName] or 0) + 1
+            displayLabelCount[displayName] = count
+            if count > 1 then
+                displayName = displayName .. " [" .. tostring(count) .. "]"
+            end
+            table.insert(recordingPlayerOptions, displayName)
+            recordingPlayerDisplayToUserId[displayName] = player.UserId
+        end
+
+        if recordingPlayersDropdown and recordingPlayersDropdown.Refresh then
+            recordingPlayersDropdown:Refresh(recordingPlayerOptions)
+        end
+
+        if type(selectedRecordingPlayerUserId) == "number" then
+            local selectedStillExists = false
+            for _, player in ipairs(playersList) do
+                if player.UserId == selectedRecordingPlayerUserId then
+                    selectedStillExists = true
+                    selectedRecordingPlayerName = player.Name
+                    break
+                end
+            end
+            if not selectedStillExists then
+                selectedRecordingPlayerUserId = nil
+                selectedRecordingPlayerName = nil
+                if recordingPlayersDropdown and recordingPlayersDropdown.Set then
+                    recordingPlayersDropdown:Set({ RECORDING_PLAYER_NONE })
+                end
+            end
+        end
+
+        updateRecordingParagraph()
+    end
+
+    recordingPlayersDropdown = RecordingTab:CreateDropdown({
+        Name = "Players",
+        Options = recordingPlayerOptions,
+        CurrentOption = { RECORDING_PLAYER_NONE },
+        Search = true,
+        Callback = function(value)
+            local picked = (type(value) == "table" and value[1]) or value
+            if type(picked) ~= "string" or picked == "" or picked == RECORDING_PLAYER_NONE then
+                selectedRecordingPlayerUserId = nil
+                selectedRecordingPlayerName = nil
+                updateRecordingParagraph("Select a player to start recording")
+                return
+            end
+            local pickedUserId = recordingPlayerDisplayToUserId[picked]
+            if type(pickedUserId) == "number" then
+                selectedRecordingPlayerUserId = pickedUserId
+                local selectedPlayer = getSelectedRecordingPlayer()
+                selectedRecordingPlayerName = selectedPlayer and selectedPlayer.Name or nil
+                updateRecordingParagraph()
+            else
+                selectedRecordingPlayerUserId = nil
+                selectedRecordingPlayerName = nil
+                updateRecordingParagraph("Selected player is unavailable")
+            end
+        end,
+    })
+    refreshRecordingPlayersDropdown()
+    Players.PlayerAdded:Connect(function()
+        refreshRecordingPlayersDropdown()
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(function()
+            refreshRecordingPlayersDropdown()
+        end)
+    end)
+
+    local function setRecordingEnabled(enabled: boolean): boolean
         if enabled then
             if not recordingInProgress then
-                startRecording()
+                return startRecording()
             end
+            return true
         else
             if recordingInProgress then
                 stopRecording()
             end
+            return true
         end
     end
 
@@ -1430,7 +1565,11 @@ local function createRecordingTab(windowRef, notifyFn)
         Name = "Recording (toggle ON/OFF)",
         CurrentValue = false,
         Callback = function(enabled)
-            setRecordingEnabled(enabled == true)
+            local shouldEnable = enabled == true
+            local ok = setRecordingEnabled(shouldEnable)
+            if shouldEnable and not ok then
+                syncRecordingToggleUi(false)
+            end
         end,
     })
 
@@ -1450,7 +1589,10 @@ local function createRecordingTab(windowRef, notifyFn)
             return
         end
         local nextEnabled = not recordingInProgress
-        setRecordingEnabled(nextEnabled)
+        local ok = setRecordingEnabled(nextEnabled)
+        if nextEnabled and not ok then
+            nextEnabled = false
+        end
         syncRecordingToggleUi(nextEnabled)
     end)
 
