@@ -3652,6 +3652,8 @@ do
     local function syncMountYahayukRoutesFromRemote()
         local writeFn = resolveExecutorFnForMain("writefile")
         local makeFolderFn = resolveExecutorFnForMain("makefolder")
+        local delFn = resolveExecutorFnForMain("delfile")
+        local isFileFn = resolveExecutorFnForMain("isfile")
         if type(writeFn) ~= "function" then
             return false, "writefile() not available"
         end
@@ -3680,13 +3682,28 @@ do
         end
         for _, fname in ipairs(fileNames) do
             if type(fname) == "string" and isJsonPathMain(fname) then
+                local fullPath = MOUNT_ROUTES_DIR .. "/" .. fname
+                if type(delFn) == "function" then
+                    local shouldTryDelete = true
+                    if type(isFileFn) == "function" then
+                        local okExist, exists = pcall(function()
+                            return isFileFn(fullPath)
+                        end)
+                        shouldTryDelete = okExist and exists == true
+                    end
+                    if shouldTryDelete then
+                        pcall(function()
+                            delFn(fullPath)
+                        end)
+                    end
+                end
                 local url = MOUNT_ROUTES_REMOTE .. fname
                 local okGet, content = pcall(function()
                     return game:HttpGet(url, true)
                 end)
                 if okGet and type(content) == "string" and #content > 2 then
                     pcall(function()
-                        writeFn(MOUNT_ROUTES_DIR .. "/" .. fname, content)
+                        writeFn(fullPath, content)
                     end)
                 end
             end
