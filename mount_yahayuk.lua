@@ -3572,6 +3572,8 @@ do
     local MainTab = Window:CreateTab("Main", 4483362458)
 
     local autoSummitEnabled = false
+    local autoSummitMainToggle: any = nil
+    local autoSummitSkipFinalStoppedNotify = false
     local summitQty = ""
     local autoSummitRandomizeTeleportDuration = false
     local autoSummitRestartFromDeath = false
@@ -3581,11 +3583,6 @@ do
     local autoSummitMode = "Walk"
     local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
     local BETWEEN_RUN_DELAY = 10
-
-    local autoSummitDeathCheckConn = nil
-    local autoSummitLastDeathHeartbeatCheck = 0
-    local autoSummitToggleControl = nil
-    local autoSummitSuppressStoppedNotify = false
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_REMOTE = baseURL .. "/mount_yahayuk/routes/"
@@ -3600,13 +3597,6 @@ do
         "cp4-5_success_1.json",
         "cp5-summit_success_1.json",
     }
-
-    -- Large route JSONs: optional movement thinning + max lerp steps per segment avoid freezes while keeping motion smooth.
-    local AUTO_WALK_THIN_EVENTS_THRESHOLD = 720
-    local AUTO_WALK_MOVEMENT_MIN_INTERVAL = 0.055
-    local AUTO_WALK_LERP_MAX_STEPS = 24
-    local AUTO_WALK_TIMING_SLICE = 0.18
-    local AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD = 65536
 
     -- Next leg toward summit: route JSON basename prefix (matches files like cp1-2_success_1.json).
     local WALK_LEG_PREFIX_BY_CP: { [number]: string } = {
@@ -3699,16 +3689,13 @@ do
                         writeFn(MOUNT_ROUTES_DIR .. "/" .. fname, content)
                     end)
                 end
-                task.wait(0.04)
             end
         end
         return true, nil
     end
 
     task.defer(function()
-        task.spawn(function()
-            pcall(syncMountYahayukRoutesFromRemote)
-        end)
+        pcall(syncMountYahayukRoutesFromRemote)
     end)
 
     local WalkVirtualInputManager = nil
@@ -3736,7 +3723,7 @@ do
         return out
     end
 
-    local function pickRandomRouteJsonForLegPrefix(prefix: string): string?
+    local function listRouteJsonPathsForLegPrefix(prefix: string): { string }
         local all = listRouteJsonPathsInDir()
         local matches: { string } = {}
         local prefLower = string.lower(prefix .. "_")
@@ -3746,30 +3733,17 @@ do
                 table.insert(matches, p)
             end
         end
-        if #matches == 0 then
-            return nil
-        end
-        return matches[math.random(1, #matches)]
+        table.sort(matches, function(a, b)
+            return string.lower(baseNameFromPathMain(a)) < string.lower(baseNameFromPathMain(b))
+        end)
+        return matches
     end
 
-    local function thinWalkRouteEvents(events: { any }): { any }
-        if #events <= AUTO_WALK_THIN_EVENTS_THRESHOLD then
-            return events
+    local function shuffleStringArrayInPlace(arr: { string })
+        for i = #arr, 2, -1 do
+            local j = math.random(1, i)
+            arr[i], arr[j] = arr[j], arr[i]
         end
-        local out: { any } = {}
-        local lastMoveT = -math.huge
-        for _, ev in ipairs(events) do
-            if type(ev) == "table" and ev.kind == "movement" then
-                local t = tonumber(ev.t) or 0
-                if #out == 0 or (t - lastMoveT) >= AUTO_WALK_MOVEMENT_MIN_INTERVAL then
-                    table.insert(out, ev)
-                    lastMoveT = t
-                end
-            elseif type(ev) == "table" then
-                table.insert(out, ev)
-            end
-        end
-        return out
     end
 
     local function findFirstMovementWorldPosition(events: { any }): Vector3?
@@ -3994,11 +3968,6 @@ do
     end
 
     local function playRouteRecordingEvents(events: { any }, shouldCancel: () -> boolean): boolean
-        events = thinWalkRouteEvents(events)
-        if #events == 0 then
-            return false
-        end
-
         local nextMovementDeltaByIndex: { [number]: number? } = {}
         local nextMovementTime: number? = nil
         for i = #events, 1, -1 do
@@ -4048,28 +4017,19 @@ do
             return CFrame.new(basePos)
         end
 
-        -- Same idea as Recording playback: Lerp each frame for human-like motion; cap steps so huge durations cannot freeze.
-        local function applyWalkPlaybackMovement(rootPart: BasePart, targetCf: CFrame, durationSec: number)
-            if shouldCancel() then
-                return
-            end
+        local function applySmoothRootCFrame(rootPart: BasePart, targetCf: CFrame, durationSec: number)
             if durationSec <= 0.015 then
                 rootPart.CFrame = targetCf
                 return
             end
             local startCf = rootPart.CFrame
             local t0 = os.clock()
-            local step = 0
             while not shouldCancel() do
                 local alpha = (os.clock() - t0) / durationSec
                 if alpha >= 1 then
                     break
                 end
                 rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
-                step += 1
-                if step >= AUTO_WALK_LERP_MAX_STEPS then
-                    break
-                end
                 task.wait()
             end
             if not shouldCancel() then
@@ -4092,13 +4052,8 @@ do
                 return false
             end
             local targetT = tonumber(event.t) or 0
-            local deadline = started + targetT
-            while not shouldCancel() and os.clock() < deadline do
-                local rem = deadline - os.clock()
-                if rem <= 0 then
-                    break
-                end
-                task.wait(math.min(AUTO_WALK_TIMING_SLICE, rem))
+            while not shouldCancel() and (os.clock() - started) < targetT do
+                task.wait(0.01)
             end
             if shouldCancel() then
                 if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
@@ -4135,7 +4090,7 @@ do
                     local nextDelta = nextMovementDeltaByIndex[i]
                     local smoothDuration = nextDelta and math.clamp(nextDelta * 0.8, 0.03, 0.14) or 0.07
                     pcall(function()
-                        applyWalkPlaybackMovement(rootPart, targetCf, smoothDuration)
+                        applySmoothRootCFrame(rootPart, targetCf, smoothDuration)
                     end)
                 end
             elseif kind == "jump_request" then
@@ -4169,34 +4124,68 @@ do
         return true
     end
 
-    local function stopAutoSummitFromScript()
+    local autoSummitDeathCheckConn: any = nil
+
+    local function disableAutoSummitDueToWalkFailure(reason: string)
+        autoSummitSkipFinalStoppedNotify = true
         autoSummitEnabled = false
+        stopAutoSummitWalkCharacter()
+        notifyAutoSummit(reason, "x")
+        local tgl = autoSummitMainToggle
+        if tgl then
+            pcall(function()
+                if tgl.Set then
+                    tgl:Set(false)
+                elseif tgl.SetValue then
+                    tgl:SetValue(false)
+                end
+            end)
+        end
         if autoSummitDeathCheckConn then
             autoSummitDeathCheckConn:Disconnect()
             autoSummitDeathCheckConn = nil
         end
-        stopAutoSummitWalkCharacter()
-        local tc = autoSummitToggleControl
-        if tc then
-            pcall(function()
-                if tc.Set then
-                    tc:Set(false)
-                end
-                if tc.SetValue then
-                    tc:SetValue(false)
-                end
-            end)
+    end
+
+    local function tryLoadWalkRouteRecording(
+        readFileFn: any,
+        pickedPath: string,
+        tryIdx: number,
+        totalTries: number
+    ): ({ any }?, Vector3?, string?, string?)
+        local baseName = baseNameFromPathMain(pickedPath)
+        local label = ("(%d/%d)"):format(tryIdx, totalTries)
+        local okRead, jsonText = pcall(function()
+            return readFileFn(pickedPath)
+        end)
+        if not okRead or type(jsonText) ~= "string" then
+            return nil, nil, baseName, "read failed " .. label
         end
+        local okDecode, payload = pcall(function()
+            return HttpService:JSONDecode(jsonText)
+        end)
+        if not okDecode or type(payload) ~= "table" then
+            return nil, nil, baseName, "invalid JSON " .. label
+        end
+        local events = payload.events
+        if type(events) ~= "table" or #events == 0 then
+            return nil, nil, baseName, "no events " .. label
+        end
+        local firstPos = findFirstMovementWorldPosition(events)
+        if not firstPos then
+            return nil, nil, baseName, "no movement samples " .. label
+        end
+        return events, firstPos, baseName, nil
     end
 
     local function runWalkSummitLegsFromCurrentCp(shouldCancel: () -> boolean, getRootPart: (number?) -> BasePart?): boolean
         local readFileFn = resolveExecutorFnForMain("readfile")
         if type(readFileFn) ~= "function" then
-            notifyAutoSummit("Walk mode needs readfile() from your executor", "x")
+            disableAutoSummitDueToWalkFailure("Walk mode needs readfile() from your executor")
             return false
         end
         if type(resolveExecutorFnForMain("listfiles")) ~= "function" then
-            notifyAutoSummit("Walk mode needs listfiles() from your executor", "x")
+            disableAutoSummitDueToWalkFailure("Walk mode needs listfiles() from your executor")
             return false
         end
 
@@ -4210,90 +4199,106 @@ do
             end
             local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
             if not prefix then
-                notifyAutoSummit("No walk route mapping for CP #" .. tostring(cpLeg), "x")
-                return false
-            end
-            local pickedPath = pickRandomRouteJsonForLegPrefix(prefix)
-            if not pickedPath then
-                notifyAutoSummit("No JSON in " .. MOUNT_ROUTES_DIR .. " for leg " .. prefix .. "_*", "x")
-                return false
-            end
-            local okRead, jsonText = pcall(function()
-                return readFileFn(pickedPath)
-            end)
-            if not okRead or type(jsonText) ~= "string" then
-                notifyAutoSummit("Failed to read " .. baseNameFromPathMain(pickedPath), "x")
-                return false
-            end
-            if #jsonText >= AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD then
-                task.wait()
-            end
-            local okDecode, payload = pcall(function()
-                return HttpService:JSONDecode(jsonText)
-            end)
-            if #jsonText >= AUTO_WALK_JSON_MIN_BYTES_BEFORE_YIELD then
-                task.wait()
-            end
-            if not okDecode or type(payload) ~= "table" then
-                notifyAutoSummit("Invalid JSON: " .. baseNameFromPathMain(pickedPath), "x")
-                autoSummitSuppressStoppedNotify = true
-                stopAutoSummitFromScript()
-                return false
-            end
-            local events = payload.events
-            if type(events) ~= "table" or #events == 0 then
-                notifyAutoSummit("No events in " .. baseNameFromPathMain(pickedPath), "x")
-                return false
-            end
-            local firstPos = findFirstMovementWorldPosition(events)
-            if not firstPos then
-                notifyAutoSummit("No movement samples in " .. baseNameFromPathMain(pickedPath), "x")
+                disableAutoSummitDueToWalkFailure("No walk route mapping for CP #" .. tostring(cpLeg))
                 return false
             end
 
-            notifyAutoSummit(
-                ("Walk leg CP%d -> %s (file: %s)"):format(cpLeg, prefix, baseNameFromPathMain(pickedPath))
-            )
-
-            local rootPart = getRootPart()
-            if not rootPart then
-                return false
-            end
-            local character = lpAutoSummit.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then
-                return false
-            end
-            humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
-            if shouldCancel() then
+            local candidates = listRouteJsonPathsForLegPrefix(prefix)
+            if #candidates == 0 then
+                disableAutoSummitDueToWalkFailure(
+                    "No JSON in " .. MOUNT_ROUTES_DIR .. " for leg " .. prefix .. "_* — Auto Summit off"
+                )
                 return false
             end
 
-            if not playRouteRecordingEvents(events, shouldCancel) then
-                return false
+            local pathsToTry: { string } = {}
+            for i = 1, #candidates do
+                pathsToTry[i] = candidates[i]
             end
+            shuffleStringArrayInPlace(pathsToTry)
 
-            local cpBeforeLeg = cpLeg
-            local advanced = false
-            for _ = 1, 50 do
+            local legAdvanced = false
+            for tryIdx, pickedPath in ipairs(pathsToTry) do
+                if not autoSummitEnabled or shouldCancel() then
+                    return false
+                end
+
+                local events, firstPos, baseName, loadErr = tryLoadWalkRouteRecording(
+                    readFileFn,
+                    pickedPath,
+                    tryIdx,
+                    #pathsToTry
+                )
+                if not events or not firstPos then
+                    notifyAutoSummit(
+                        ("Skip %s: %s"):format(baseName or baseNameFromPathMain(pickedPath), tostring(loadErr)),
+                        "x"
+                    )
+                else
+
+                notifyAutoSummit(
+                    ("Walk leg CP%d -> %s (try %s/%s: %s)"):format(
+                        cpLeg,
+                        prefix,
+                        tostring(tryIdx),
+                        tostring(#pathsToTry),
+                        baseName
+                    )
+                )
+
+                local rootPart = getRootPart()
+                if not rootPart then
+                    return false
+                end
+                local character = lpAutoSummit.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if not humanoid then
+                    return false
+                end
+                humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
                 if shouldCancel() then
                     return false
                 end
-                task.wait(0.25)
-                local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
-                if cpNow > cpBeforeLeg then
-                    advanced = true
+
+                if not playRouteRecordingEvents(events, shouldCancel) then
+                    return false
+                end
+
+                local cpBeforeLeg = cpLeg
+                local advanced = false
+                for _ = 1, 50 do
+                    if shouldCancel() then
+                        return false
+                    end
+                    task.wait(0.25)
+                    local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                    if cpNow > cpBeforeLeg then
+                        advanced = true
+                        break
+                    end
+                end
+                if advanced then
+                    legAdvanced = true
                     break
                 end
-            end
-            if not advanced then
                 notifyAutoSummit(
-                    "CP did not advance after leg "
-                        .. prefix
-                        .. " (still at CP #"
-                        .. tostring(getCheckpointIndexFromPlayer(lpAutoSummit))
-                        .. ")",
+                    ("CP did not advance after %s — trying next route (%s/%s)"):format(
+                        baseName,
+                        tostring(tryIdx),
+                        tostring(#pathsToTry)
+                    ),
                     "x"
+                )
+                end
+            end
+
+            if not legAdvanced then
+                disableAutoSummitDueToWalkFailure(
+                    "All "
+                        .. tostring(#pathsToTry)
+                        .. " route file(s) failed for leg "
+                        .. prefix
+                        .. " — Auto Summit off"
                 )
                 return false
             end
@@ -4492,7 +4497,7 @@ do
     end
     lpAutoSummit.CharacterAdded:Connect(connectAutoSummitCharacterDied)
 
-    autoSummitToggleControl = MainTab:CreateToggle({
+    autoSummitMainToggle = MainTab:CreateToggle({
         Name = "Auto Summit",
         CurrentValue = false,
         Ext = true,
@@ -4519,11 +4524,6 @@ do
                 if not autoSummitEnabled then
                     return
                 end
-                local now = os.clock()
-                if now - autoSummitLastDeathHeartbeatCheck < 0.35 then
-                    return
-                end
-                autoSummitLastDeathHeartbeatCheck = now
                 local char = lpAutoSummit.Character
                 if not char then
                     return
@@ -4737,11 +4737,12 @@ do
                 if autoSummitEnabled and qtyNum and remaining and remaining <= 0 then
                     notifyAutoSummit("All runs completed (" .. runCount .. " run(s))")
                 elseif not autoSummitEnabled then
-                    if not autoSummitSuppressStoppedNotify then
+                    if autoSummitSkipFinalStoppedNotify then
+                        autoSummitSkipFinalStoppedNotify = false
+                    else
                         notifyAutoSummit("Stopped", "x")
                     end
                 end
-                autoSummitSuppressStoppedNotify = false
 
                 if autoSummitDeathCheckConn then
                     autoSummitDeathCheckConn:Disconnect()
