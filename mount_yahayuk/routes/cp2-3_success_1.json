@@ -10,36 +10,6 @@
 	},
 	"events": [
 		{
-			"t": 0.116,
-			"data": {
-				"jumpHeight": 7.2,
-				"moveDirection": {
-					"y": 0,
-					"x": 0,
-					"z": 0
-				},
-				"jumpPower": 50,
-				"position": {
-					"y": 390.414,
-					"x": -313.147,
-					"z": 554.693
-				},
-				"lookDirection": {
-					"y": 0,
-					"x": 0.997,
-					"z": 0.077
-				},
-				"velocity": {
-					"y": 0.001,
-					"x": 0,
-					"z": -0
-				},
-				"walkSpeed": 29,
-				"isGrounded": true
-			},
-			"kind": "movement"
-		},
-		{
 			"t": 0.182,
 			"data": {
 				"gameProcessed": false,

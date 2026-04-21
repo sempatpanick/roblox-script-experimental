@@ -10,66 +10,6 @@
 	},
 	"events": [
 		{
-			"t": 0.116,
-			"data": {
-				"jumpHeight": 7.2,
-				"moveDirection": {
-					"y": 0,
-					"x": 0,
-					"z": 0
-				},
-				"jumpPower": 50,
-				"position": {
-					"y": 250.122,
-					"x": -438.449,
-					"z": 722.544
-				},
-				"lookDirection": {
-					"y": -0,
-					"x": 0.072,
-					"z": -0.997
-				},
-				"velocity": {
-					"y": 0,
-					"x": 0,
-					"z": -0
-				},
-				"walkSpeed": 29,
-				"isGrounded": true
-			},
-			"kind": "movement"
-		},
-		{
-			"t": 0.217,
-			"data": {
-				"jumpHeight": 7.2,
-				"moveDirection": {
-					"y": 0,
-					"x": 0,
-					"z": 0
-				},
-				"jumpPower": 50,
-				"position": {
-					"y": 250.122,
-					"x": -438.449,
-					"z": 722.544
-				},
-				"lookDirection": {
-					"y": 0,
-					"x": 0.072,
-					"z": -0.997
-				},
-				"velocity": {
-					"y": 0,
-					"x": 0,
-					"z": -0
-				},
-				"walkSpeed": 29,
-				"isGrounded": true
-			},
-			"kind": "movement"
-		},
-		{
 			"t": 0.218,
 			"data": {
 				"gameProcessed": false,
