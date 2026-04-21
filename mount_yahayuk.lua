@@ -4231,33 +4231,37 @@ do
         return events, firstPos, baseName, nil
     end
 
-    local function runWalkSummitLegsFromCurrentCp(shouldCancel: () -> boolean, getRootPart: (number?) -> BasePart?): boolean
+    local function runWalkSummitLegsFromCurrentCp(
+        shouldCancel: () -> boolean,
+        getRootPart: (number?) -> BasePart?
+    ): (boolean, boolean)
         local readFileFn = resolveExecutorFnForMain("readfile")
         if type(readFileFn) ~= "function" then
             disableAutoSummitDueToWalkFailure("Walk mode needs readfile() from your executor")
-            return false
+            return false, false
         end
         if type(resolveExecutorFnForMain("listfiles")) ~= "function" then
             disableAutoSummitDueToWalkFailure("Walk mode needs listfiles() from your executor")
-            return false
+            return false, false
         end
 
         local routeN = #summitTeleportRoute
         local summitCpIndex = routeN - 1
+        local reachedSummitInThisCycle = false
 
         while autoSummitEnabled and not shouldCancel() do
             local cpLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
             if cpLeg > summitCpIndex then
-                return true
+                return true, reachedSummitInThisCycle
             end
             local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
             local runSingleLegOnly = cpLeg >= summitCpIndex
             if not prefix then
                 if cpLeg >= summitCpIndex then
-                    return true
+                    return true, reachedSummitInThisCycle
                 end
                 disableAutoSummitDueToWalkFailure("No walk route mapping for CP #" .. tostring(cpLeg))
-                return false
+                return false, reachedSummitInThisCycle
             end
 
             local candidates = listRouteJsonPathsForLegPrefix(prefix)
@@ -4265,7 +4269,7 @@ do
                 disableAutoSummitDueToWalkFailure(
                     "No JSON in " .. MOUNT_ROUTES_DIR .. " for leg " .. prefix .. "_* — Auto Summit off"
                 )
-                return false
+                return false, reachedSummitInThisCycle
             end
 
             local pathsToTry: { string } = {}
@@ -4277,7 +4281,7 @@ do
             local legAdvanced = false
             for tryIdx, pickedPath in ipairs(pathsToTry) do
                 if not autoSummitEnabled or shouldCancel() then
-                    return false
+                    return false, reachedSummitInThisCycle
                 end
 
                 local events, firstPos, baseName, loadErr = tryLoadWalkRouteRecording(
@@ -4305,27 +4309,27 @@ do
 
                 local rootPart = getRootPart()
                 if not rootPart then
-                    return false
+                    return false, reachedSummitInThisCycle
                 end
                 local character = lpAutoSummit.Character
                 local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 if not humanoid then
-                    return false
+                    return false, reachedSummitInThisCycle
                 end
                 humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
                 if shouldCancel() then
-                    return false
+                    return false, reachedSummitInThisCycle
                 end
 
                 if not playRouteRecordingEvents(events, shouldCancel) then
-                    return false
+                    return false, reachedSummitInThisCycle
                 end
 
                 local cpBeforeLeg = cpLeg
                 local advanced = false
                 for _ = 1, 50 do
                     if shouldCancel() then
-                        return false
+                        return false, reachedSummitInThisCycle
                     end
                     task.wait(0.25)
                     local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
@@ -4336,6 +4340,9 @@ do
                 end
                 if advanced then
                     local cpAfterLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
+                    if cpBeforeLeg < summitCpIndex and cpAfterLeg >= summitCpIndex then
+                        reachedSummitInThisCycle = true
+                    end
                     if cpAfterLeg < summitCpIndex then
                         local nextPrefix = WALK_LEG_PREFIX_BY_CP[cpAfterLeg] or "unknown"
                         notifyAutoSummit(
@@ -4367,17 +4374,17 @@ do
                         .. prefix
                         .. " — Auto Summit off"
                 )
-                return false
+                return false, reachedSummitInThisCycle
             end
             if runSingleLegOnly then
-                return true
+                return true, reachedSummitInThisCycle
             end
         end
 
         if not autoSummitEnabled or shouldCancel() then
-            return false
+            return false, reachedSummitInThisCycle
         end
-        return getCheckpointIndexFromPlayer(lpAutoSummit) >= summitCpIndex
+        return getCheckpointIndexFromPlayer(lpAutoSummit) >= summitCpIndex, reachedSummitInThisCycle
     end
 
     local function routeLabelForCpIndex(idx)
@@ -4653,12 +4660,11 @@ do
                     local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
                     local cpAtRunStart = cpNow
                     local summitCpIndexNow = #summitTeleportRoute - 1
+                    local walkReachedSummitThisCycle = false
                     local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
                     local skippedSummitTeleports = firstWpIndex == nil
                     if autoSummitMode == "Walk" then
-                        local routeNWalk = #summitTeleportRoute
-                        local summitCpWalk = routeNWalk - 1
-                        skippedSummitTeleports = cpNow >= summitCpWalk
+                        skippedSummitTeleports = WALK_LEG_PREFIX_BY_CP[cpNow] == nil
                         cpClamped = cpNow
                         if skippedSummitTeleports then
                             skipNextCpResumeNotify = false
@@ -4673,7 +4679,9 @@ do
                             skipNextCpResumeNotify = false
                         end
                         if not skippedSummitTeleports then
-                            if not runWalkSummitLegsFromCurrentCp(shouldAbort, getRootPart) then
+                            local okWalk, reachedWalkSummit = runWalkSummitLegsFromCurrentCp(shouldAbort, getRootPart)
+                            walkReachedSummitThisCycle = reachedWalkSummit == true
+                            if not okWalk then
                                 routeCompleted = false
                             end
                         end
@@ -4773,7 +4781,12 @@ do
                     elseif routeCompleted and autoSummitEnabled then
                         local cpAfterRun = getCheckpointIndexFromPlayer(lpAutoSummit)
                         local atSummitNow = cpAfterRun >= summitCpIndexNow
-                        local reachedSummitThisRun = cpAtRunStart < summitCpIndexNow and atSummitNow
+                        local reachedSummitThisRun = false
+                        if autoSummitMode == "Walk" then
+                            reachedSummitThisRun = walkReachedSummitThisCycle
+                        else
+                            reachedSummitThisRun = cpAtRunStart < summitCpIndexNow and atSummitNow
+                        end
 
                         if reachedSummitThisRun then
                             notifyAutoSummit("Reached Summit! (Run " .. (runCount + 1) .. ")")
