@@ -6454,14 +6454,6 @@
          "kind": "movement"
       },
       {
-         "t": 19.267,
-         "data": {
-            "gameProcessed": true,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_down"
-      },
-      {
          "t": 19.349,
          "data": {
             "jumpHeight": 7.2,
@@ -6490,14 +6482,6 @@
             "isGrounded": false
          },
          "kind": "movement"
-      },
-      {
-         "t": 19.383,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_up"
       },
       {
          "t": 19.401,
@@ -11745,14 +11729,6 @@
          "kind": "movement"
       },
       {
-         "t": 34.482,
-         "data": {
-            "gameProcessed": true,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_down"
-      },
-      {
          "t": 34.483,
          "data": [],
          "kind": "jump_request"
@@ -11810,14 +11786,6 @@
             "isGrounded": false
          },
          "kind": "movement"
-      },
-      {
-         "t": 34.63,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_up"
       },
       {
          "t": 34.631,

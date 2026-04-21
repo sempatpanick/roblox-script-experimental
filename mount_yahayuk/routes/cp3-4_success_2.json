@@ -1914,22 +1914,6 @@
          "kind": "movement"
       },
       {
-         "t": 5.569,
-         "data": {
-            "gameProcessed": true,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 5.65,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_up"
-      },
-      {
          "t": 5.667,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
