@@ -3730,6 +3730,7 @@ do
     pcall(function()
         WalkVirtualInputManager = game:GetService("VirtualInputManager")
     end)
+    local walkRouteRng = Random.new()
 
     local function listRouteJsonPathsInDir(): { string }
         local listFilesFn = resolveExecutorFnForMain("listfiles")
@@ -3769,7 +3770,7 @@ do
 
     local function shuffleStringArrayInPlace(arr: { string })
         for i = #arr, 2, -1 do
-            local j = math.random(1, i)
+            local j = walkRouteRng:NextInteger(1, i)
             arr[i], arr[j] = arr[j], arr[i]
         end
     end
