@@ -4330,6 +4330,24 @@ do
         return "Start"
     end
 
+    local function checkpointLabelLooksLikeSummit(labelValue: any): boolean
+        if typeof(labelValue) ~= "string" or labelValue == "" then
+            return false
+        end
+        local low = string.lower(labelValue)
+        return string.find(low, "summit", 1, true) ~= nil
+    end
+
+    local function getCheckpointIndexForWalkRouting(player, summitCpIndex: number): number
+        local cp = getCheckpointIndexFromPlayer(player)
+        -- In this place, Summit can be reported as CP 0 (same as Start) in some states.
+        -- Use label text to disambiguate so routing can choose summit-start_* correctly.
+        if cp == 0 and checkpointLabelLooksLikeSummit(getCheckpointLabelString(player)) then
+            return summitCpIndex
+        end
+        return cp
+    end
+
     local function playRouteRecordingEvents(events: { any }, shouldCancel: () -> boolean): boolean
         local nextMovementDeltaByIndex: { [number]: number? } = {}
         local nextMovementTime: number? = nil
@@ -4608,10 +4626,10 @@ do
         local reachedSummitInThisCycle = false
 
         while autoSummitEnabled and not shouldCancel() do
-            local cpLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
-            if cpLeg > summitCpIndex then
-                return true, reachedSummitInThisCycle
-            end
+            local cpLegRaw = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
+            -- Some servers can report a CP value above summit; treat it as summit
+            -- so walk mode still runs summit-start_* instead of exiting early.
+            local cpLeg = cpLegRaw > summitCpIndex and summitCpIndex or cpLegRaw
             local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
             local runSingleLegOnly = cpLeg >= summitCpIndex
             if not prefix then
@@ -4620,6 +4638,12 @@ do
                 end
                 disableAutoSummitDueToWalkFailure("No walk route mapping for CP #" .. tostring(cpLeg))
                 return false, reachedSummitInThisCycle
+            end
+            if cpLeg == 0 then
+                local startCpDelaySec = walkRouteRng:NextNumber(0, 0.5)
+                if not waitWithCancel(startCpDelaySec, shouldCancel) then
+                    return false, reachedSummitInThisCycle
+                end
             end
 
             local candidates = listRouteJsonPathsForLegPrefix(prefix)
@@ -4717,7 +4741,7 @@ do
                         if shouldCancel() then
                             return false, reachedSummitInThisCycle
                         end
-                        local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        local cpNow = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
                         if cpNow ~= cpBeforeLeg then
                             advanced = true
                             break
@@ -4742,7 +4766,7 @@ do
                         end
                     end
                     if advanced then
-                        local cpAfterLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        local cpAfterLeg = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
                         if cpBeforeLeg < summitCpIndex and cpAfterLeg >= summitCpIndex then
                             reachedSummitInThisCycle = true
                         end
@@ -4836,7 +4860,7 @@ do
         if not autoSummitEnabled or shouldCancel() then
             return false, reachedSummitInThisCycle
         end
-        return getCheckpointIndexFromPlayer(lpAutoSummit) >= summitCpIndex, reachedSummitInThisCycle
+        return getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex) >= summitCpIndex, reachedSummitInThisCycle
     end
 
     local function routeLabelForCpIndex(idx)
