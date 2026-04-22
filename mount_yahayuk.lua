@@ -3718,6 +3718,7 @@ do
     local autoSummitSkipFinalStoppedNotify = false
     local summitQty = ""
     local autoSummitRandomizeTeleportDuration = false
+    local autoSummitIncludeFailedRoute = false
     local autoSummitRestartFromDeath = false
     local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
@@ -3908,6 +3909,11 @@ do
             return string.lower(baseNameFromPathMain(a)) < string.lower(baseNameFromPathMain(b))
         end)
         return matches
+    end
+
+    local function walkRouteFileIsFailedVariant(path: string): boolean
+        local bn = string.lower(baseNameFromPathMain(path))
+        return string.find(bn, "_failed_", 1, true) ~= nil
     end
 
     local function shuffleStringArrayInPlace(arr: { string })
@@ -4408,6 +4414,15 @@ do
             end
 
             local candidates = listRouteJsonPathsForLegPrefix(prefix)
+            if not autoSummitIncludeFailedRoute then
+                local filtered: { string } = {}
+                for _, p in ipairs(candidates) do
+                    if not walkRouteFileIsFailedVariant(p) then
+                        table.insert(filtered, p)
+                    end
+                end
+                candidates = filtered
+            end
             if #candidates == 0 then
                 disableAutoSummitDueToWalkFailure(
                     "No JSON in " .. MOUNT_ROUTES_DIR .. " for leg " .. prefix .. "_* — Auto Summit off"
@@ -4689,6 +4704,15 @@ do
         Ext = true,
         Callback = function(enabled)
             autoSummitRandomizeTeleportDuration = enabled
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Include Failed Route",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(enabled)
+            autoSummitIncludeFailedRoute = enabled
         end,
     })
 
