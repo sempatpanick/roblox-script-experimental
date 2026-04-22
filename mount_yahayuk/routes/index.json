@@ -17,5 +17,38 @@
     "start-cp1_success_2.json",
     "start-cp1_success_3.json",
     "summit-start_success_1.json"
-  ]
+  ],
+  "routeProbabilitiesByPrefix": {
+    "start-cp1": {
+      "start-cp1_success_1.json": 1,
+      "start-cp1_success_2.json": 1,
+      "start-cp1_success_3.json": 1
+    },
+    "cp1-2": {
+      "cp1-2_success_1.json": 1,
+      "cp1-2_success_2.json": 1,
+      "cp1-2_success_3.json": 1,
+      "cp1-2_success_4.json": 1
+    },
+    "cp2-3": {
+      "cp2-3_success_1.json": 1,
+      "cp2-3_failed_1.json": 0.5
+    },
+    "cp3-4": {
+      "cp3-4_success_1.json": 1,
+      "cp3-4_success_2.json": 1
+    },
+    "cp4-5": {
+      "cp4-5_success_1.json": 1,
+      "cp4-5_success_2.json": 1
+    },
+    "cp5-summit": {
+      "cp5-summit_success_1.json": 1,
+      "cp5-summit_success_2.json": 1,
+      "cp5-summit_success_3.json": 1
+    },
+    "summit-start": {
+      "summit-start_success_1.json": 1
+    }
+  }
 }

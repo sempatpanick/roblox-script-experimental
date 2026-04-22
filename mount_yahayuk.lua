@@ -3728,6 +3728,7 @@ do
     local BETWEEN_RUN_DELAY = 10
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
+    local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
     local MOUNT_ROUTES_REMOTE = baseURL .. "/mount_yahayuk/routes/"
     local MOUNT_FALLSPAWNS_JSON = "sempatpanick/mount_yahayuk/fallspawns.json"
 
@@ -3912,6 +3913,103 @@ do
         return matches
     end
 
+    local mountRouteProbabilitiesByPrefixCache: { [string]: { [string]: number } }? = nil
+    local mountRouteProbabilitiesLoadAttempted = false
+
+    local function getMountRouteProbabilitiesByPrefix(readFileFn: any): { [string]: { [string]: number } }
+        if mountRouteProbabilitiesLoadAttempted then
+            return mountRouteProbabilitiesByPrefixCache or {}
+        end
+        mountRouteProbabilitiesLoadAttempted = true
+        mountRouteProbabilitiesByPrefixCache = {}
+        if type(readFileFn) ~= "function" then
+            return {}
+        end
+        local okRead, jsonText = pcall(function()
+            return readFileFn(MOUNT_ROUTES_INDEX_JSON)
+        end)
+        if not okRead or type(jsonText) ~= "string" or #jsonText < 2 then
+            return {}
+        end
+        local okDec, decoded = pcall(function()
+            return HttpService:JSONDecode(jsonText)
+        end)
+        if not okDec or type(decoded) ~= "table" then
+            return {}
+        end
+        local rawByPrefix =
+            decoded.routeProbabilitiesByPrefix or decoded.route_weights_by_prefix or decoded.routeWeightsByPrefix
+        if type(rawByPrefix) ~= "table" then
+            return {}
+        end
+        local out: { [string]: { [string]: number } } = {}
+        for prefixKey, mapAny in pairs(rawByPrefix) do
+            if type(prefixKey) == "string" and type(mapAny) == "table" then
+                local pfx = string.lower(prefixKey)
+                local m: { [string]: number } = {}
+                for fileKey, wAny in pairs(mapAny) do
+                    local fileName = type(fileKey) == "string" and string.lower(fileKey) or nil
+                    local w = tonumber(wAny)
+                    if fileName and w and w >= 0 then
+                        m[fileName] = w
+                    end
+                end
+                out[pfx] = m
+            end
+        end
+        mountRouteProbabilitiesByPrefixCache = out
+        return out
+    end
+
+    local function buildWeightedRouteOrder(
+        candidates: { string },
+        prefix: string,
+        routeProbabilitiesByPrefix: { [string]: { [string]: number } }
+    ): { string }
+        local remaining: { string } = {}
+        for i = 1, #candidates do
+            remaining[i] = candidates[i]
+        end
+
+        local out: { string } = {}
+        local pfx = string.lower(prefix or "")
+        local pfxWeights = routeProbabilitiesByPrefix[pfx]
+
+        while #remaining > 0 do
+            local totalW = 0
+            local weights: { number } = {}
+            for i, p in ipairs(remaining) do
+                local bn = string.lower(baseNameFromPathMain(p))
+                local w = 1
+                if type(pfxWeights) == "table" and type(pfxWeights[bn]) == "number" then
+                    w = math.max(0, pfxWeights[bn])
+                end
+                weights[i] = w
+                totalW = totalW + w
+            end
+
+            local pickIdx = 1
+            if totalW > 0 then
+                local roll = walkRouteRng:NextNumber(0, totalW)
+                local acc = 0
+                for i = 1, #remaining do
+                    acc = acc + weights[i]
+                    if roll <= acc then
+                        pickIdx = i
+                        break
+                    end
+                end
+            else
+                pickIdx = walkRouteRng:NextInteger(1, #remaining)
+            end
+
+            table.insert(out, remaining[pickIdx])
+            table.remove(remaining, pickIdx)
+        end
+
+        return out
+    end
+
     local function walkRouteFileIsFailedVariant(path: string): boolean
         local bn = string.lower(baseNameFromPathMain(path))
         return string.find(bn, "_failed_", 1, true) ~= nil
@@ -3993,13 +4091,6 @@ do
         end
         mountFallSpawnRowsCache = list
         return list
-    end
-
-    local function shuffleStringArrayInPlace(arr: { string })
-        for i = #arr, 2, -1 do
-            local j = walkRouteRng:NextInteger(1, i)
-            arr[i], arr[j] = arr[j], arr[i]
-        end
     end
 
     local function findFirstMovementWorldPosition(events: { any }): Vector3?
@@ -4433,7 +4524,9 @@ do
     -- excludePaths is reset at the start of each new leg (outer loop) in runWalkSummitLegsFromCurrentCp.
     local function rebuildWalkLegPathsAfterFailedAttempts(
         allCandidates: { string },
-        excludePaths: { [string]: boolean }
+        excludePaths: { [string]: boolean },
+        prefix: string,
+        routeProbabilitiesByPrefix: { [string]: { [string]: number } }
     ): { string }
         local rest: { string } = {}
         for _, p in ipairs(allCandidates) do
@@ -4450,8 +4543,8 @@ do
                 table.insert(successPaths, p)
             end
         end
-        shuffleStringArrayInPlace(successPaths)
-        shuffleStringArrayInPlace(failedPaths)
+        successPaths = buildWeightedRouteOrder(successPaths, prefix, routeProbabilitiesByPrefix)
+        failedPaths = buildWeightedRouteOrder(failedPaths, prefix, routeProbabilitiesByPrefix)
         local out: { string } = {}
         for _, p in ipairs(successPaths) do
             table.insert(out, p)
@@ -4507,6 +4600,7 @@ do
             return false, false
         end
 
+        local routeProbabilitiesByPrefix = getMountRouteProbabilitiesByPrefix(readFileFn)
         local fallSpawnRows = getMountFallSpawnRows(readFileFn)
 
         local routeN = #summitTeleportRoute
@@ -4552,7 +4646,7 @@ do
             for i = 1, #candidates do
                 pathsToTry[i] = candidates[i]
             end
-            shuffleStringArrayInPlace(pathsToTry)
+            pathsToTry = buildWeightedRouteOrder(pathsToTry, prefix, routeProbabilitiesByPrefix)
 
             local legAdvanced = false
             local retryLegWithFreshCandidates = false
@@ -4667,7 +4761,12 @@ do
 
                     if isFailedLegRoute then
                         legExcludedPaths[pickedPath] = true
-                        local rest = rebuildWalkLegPathsAfterFailedAttempts(candidates, legExcludedPaths)
+                        local rest = rebuildWalkLegPathsAfterFailedAttempts(
+                            candidates,
+                            legExcludedPaths,
+                            prefix,
+                            routeProbabilitiesByPrefix
+                        )
                         if #rest == 0 then
                             retryLegWithFreshCandidates = true
                             notifyAutoSummit(
