@@ -1,5 +1,68 @@
 {
   "placeId": 76964310785698,
-  "radiusStuds": 40,
-  "fallSpawnByCp": {}
+  "placeName": "HOME Yahayuk Mount V3",
+  "sourceFile": "place 76964310785698 HOME Yahayuk Mount V3.rbxlx",
+  "collectedAt": "2026-04-22T00:12:00.000Z",
+  "fallSpawns": [
+    {
+      "campName": "Start",
+      "instanceName": "SpawnLocation",
+      "fullPath": "Workspace.SpawnLocation",
+      "position": {
+        "x": -922.9354,
+        "y": 166.3552,
+        "z": 856.2858
+      }
+    },
+    {
+      "campName": "Camp 1",
+      "instanceName": "FallSpawn",
+      "fullPath": "Workspace.Checkpoints.CP1.FallSpawn",
+      "position": {
+        "x": -433,
+        "y": 245.3983,
+        "z": 793
+      }
+    },
+    {
+      "campName": "Camp 2",
+      "instanceName": "FallSpawn",
+      "fullPath": "Workspace.Checkpoints.CP2.FallSpawn",
+      "position": {
+        "x": -357.8944,
+        "y": 385.4008,
+        "z": 544.6857
+      }
+    },
+    {
+      "campName": "Camp 3",
+      "instanceName": "FallSpawn",
+      "fullPath": "Workspace.Checkpoints.CP3.FallSpawn",
+      "position": {
+        "x": 276.1503,
+        "y": 426.5,
+        "z": 510.5456
+      }
+    },
+    {
+      "campName": "Camp 4",
+      "instanceName": "FallSpawn",
+      "fullPath": "Workspace.Checkpoints.CP4.FallSpawn",
+      "position": {
+        "x": 343.7578,
+        "y": 481.3751,
+        "z": 378.8087
+      }
+    },
+    {
+      "campName": "Camp 5",
+      "instanceName": "FallSpawn",
+      "fullPath": "Workspace.Checkpoints.CP5.FallSpawn",
+      "position": {
+        "x": 235.9059,
+        "y": 310.4505,
+        "z": -203.1223
+      }
+    }
+  ]
 }
