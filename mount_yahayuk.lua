@@ -3729,6 +3729,7 @@ do
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_REMOTE = baseURL .. "/mount_yahayuk/routes/"
+    local MOUNT_FALLSPAWNS_JSON = "sempatpanick/mount_yahayuk/fallspawns.json"
 
     local DEFAULT_MOUNT_ROUTE_INDEX_FILES = {
         "index.json",
@@ -3914,6 +3915,84 @@ do
     local function walkRouteFileIsFailedVariant(path: string): boolean
         local bn = string.lower(baseNameFromPathMain(path))
         return string.find(bn, "_failed_", 1, true) ~= nil
+    end
+
+    -- fallspawns.json: campName + position for each camp's FallSpawn / Start SpawnLocation.
+    local FALL_SPAWN_MATCH_RADIUS_STUDS = 40
+
+    local function campNameForWalkCheckpoint(cp: number): string?
+        if cp <= 0 then
+            return "Start"
+        end
+        if cp >= 6 then
+            return nil
+        end
+        return "Camp " .. tostring(cp)
+    end
+
+    local function parseFallSpawnRowPosition(row: any): Vector3?
+        if type(row) ~= "table" then
+            return nil
+        end
+        local pos = row.position
+        if type(pos) ~= "table" then
+            return nil
+        end
+        local x = tonumber(pos.x)
+        local y = tonumber(pos.y)
+        local z = tonumber(pos.z)
+        if not (x and y and z) then
+            return nil
+        end
+        return Vector3.new(x, y, z)
+    end
+
+    local function fallSpawnWorldPositionForCamp(rows: { any }, campName: string): Vector3?
+        if type(campName) ~= "string" or campName == "" then
+            return nil
+        end
+        for _, row in ipairs(rows) do
+            if type(row) == "table" and row.campName == campName then
+                return parseFallSpawnRowPosition(row)
+            end
+        end
+        return nil
+    end
+
+    local function rootPartNearWorldPosition(rootPart: BasePart, worldPos: Vector3, radius: number): boolean
+        return (rootPart.Position - worldPos).Magnitude <= radius
+    end
+
+    local mountFallSpawnRowsCache: { any }? = nil
+    local mountFallSpawnRowsLoadAttempted = false
+
+    local function getMountFallSpawnRows(readFileFn: any): { any }
+        if mountFallSpawnRowsLoadAttempted then
+            return mountFallSpawnRowsCache or {}
+        end
+        mountFallSpawnRowsLoadAttempted = true
+        mountFallSpawnRowsCache = {}
+        if type(readFileFn) ~= "function" then
+            return {}
+        end
+        local okRead, jsonText = pcall(function()
+            return readFileFn(MOUNT_FALLSPAWNS_JSON)
+        end)
+        if not okRead or type(jsonText) ~= "string" or #jsonText < 2 then
+            return {}
+        end
+        local okDec, decoded = pcall(function()
+            return HttpService:JSONDecode(jsonText)
+        end)
+        if not okDec or type(decoded) ~= "table" then
+            return {}
+        end
+        local list = decoded.fallSpawns or decoded.fallspawns
+        if type(list) ~= "table" then
+            return {}
+        end
+        mountFallSpawnRowsCache = list
+        return list
     end
 
     local function shuffleStringArrayInPlace(arr: { string })
@@ -4349,6 +4428,40 @@ do
         end
     end
 
+    -- After a *_failed_* recording finishes and CP is unchanged, retry using other JSONs for this leg,
+    -- excluding failed files recorded in excludePaths (prefer non-failed routes first).
+    -- excludePaths is reset at the start of each new leg (outer loop) in runWalkSummitLegsFromCurrentCp.
+    local function rebuildWalkLegPathsAfterFailedAttempts(
+        allCandidates: { string },
+        excludePaths: { [string]: boolean }
+    ): { string }
+        local rest: { string } = {}
+        for _, p in ipairs(allCandidates) do
+            if not excludePaths[p] then
+                table.insert(rest, p)
+            end
+        end
+        local successPaths: { string } = {}
+        local failedPaths: { string } = {}
+        for _, p in ipairs(rest) do
+            if walkRouteFileIsFailedVariant(p) then
+                table.insert(failedPaths, p)
+            else
+                table.insert(successPaths, p)
+            end
+        end
+        shuffleStringArrayInPlace(successPaths)
+        shuffleStringArrayInPlace(failedPaths)
+        local out: { string } = {}
+        for _, p in ipairs(successPaths) do
+            table.insert(out, p)
+        end
+        for _, p in ipairs(failedPaths) do
+            table.insert(out, p)
+        end
+        return out
+    end
+
     local function tryLoadWalkRouteRecording(
         readFileFn: any,
         pickedPath: string,
@@ -4394,6 +4507,8 @@ do
             return false, false
         end
 
+        local fallSpawnRows = getMountFallSpawnRows(readFileFn)
+
         local routeN = #summitTeleportRoute
         local summitCpIndex = routeN - 1
         local reachedSummitInThisCycle = false
@@ -4430,6 +4545,9 @@ do
                 return false, reachedSummitInThisCycle
             end
 
+            -- Cleared each outer loop: failed-route exclusions must not carry to the next camp/leg.
+            local legExcludedPaths: { [string]: boolean } = {}
+
             local pathsToTry: { string } = {}
             for i = 1, #candidates do
                 pathsToTry[i] = candidates[i]
@@ -4437,10 +4555,14 @@ do
             shuffleStringArrayInPlace(pathsToTry)
 
             local legAdvanced = false
-            for tryIdx, pickedPath in ipairs(pathsToTry) do
+            local retryLegWithFreshCandidates = false
+            local tryIdx = 1
+            while tryIdx <= #pathsToTry do
                 if not autoSummitEnabled or shouldCancel() then
                     return false, reachedSummitInThisCycle
                 end
+
+                local pickedPath = pathsToTry[tryIdx]
 
                 local events, firstPos, baseName, loadErr = tryLoadWalkRouteRecording(
                     readFileFn,
@@ -4453,86 +4575,159 @@ do
                         ("Skip %s: %s"):format(baseName or baseNameFromPathMain(pickedPath), tostring(loadErr)),
                         "x"
                     )
+                    tryIdx = tryIdx + 1
                 else
-
-                notifyAutoSummit(
-                    ("Walk leg CP%d -> %s (try %s/%s: %s)"):format(
-                        cpLeg,
-                        prefix,
-                        tostring(tryIdx),
-                        tostring(#pathsToTry),
-                        baseName
+                    notifyAutoSummit(
+                        ("Walk leg CP%d -> %s (try %s/%s: %s)"):format(
+                            cpLeg,
+                            prefix,
+                            tostring(tryIdx),
+                            tostring(#pathsToTry),
+                            baseName
+                        )
                     )
-                )
 
-                local rootPart = getRootPart()
-                if not rootPart then
-                    return false, reachedSummitInThisCycle
-                end
-                local character = lpAutoSummit.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                if not humanoid then
-                    return false, reachedSummitInThisCycle
-                end
-                humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
-                if shouldCancel() then
-                    return false, reachedSummitInThisCycle
-                end
-
-                if not playRouteRecordingEvents(events, shouldCancel) then
-                    return false, reachedSummitInThisCycle
-                end
-
-                local cpBeforeLeg = cpLeg
-                local advanced = false
-                for _ = 1, 50 do
+                    local rootPart = getRootPart()
+                    if not rootPart then
+                        return false, reachedSummitInThisCycle
+                    end
+                    local character = lpAutoSummit.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    if not humanoid then
+                        return false, reachedSummitInThisCycle
+                    end
+                    humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
                     if shouldCancel() then
                         return false, reachedSummitInThisCycle
                     end
-                    task.wait(0.25)
-                    local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
-                    if cpNow ~= cpBeforeLeg then
-                        advanced = true
-                        break
+
+                    if not playRouteRecordingEvents(events, shouldCancel) then
+                        return false, reachedSummitInThisCycle
                     end
-                end
-                if advanced then
-                    local cpAfterLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
-                    if cpBeforeLeg < summitCpIndex and cpAfterLeg >= summitCpIndex then
-                        reachedSummitInThisCycle = true
-                    end
-                    if cpAfterLeg < summitCpIndex then
-                        local nextPrefix = WALK_LEG_PREFIX_BY_CP[cpAfterLeg] or "unknown"
+
+                    local isFailedLegRoute = walkRouteFileIsFailedVariant(pickedPath)
+                    if isFailedLegRoute then
                         notifyAutoSummit(
-                            ("Leg done at CP #%d -> next route %s_*"):format(
-                                cpAfterLeg,
-                                tostring(nextPrefix)
-                            )
+                            ("Playback finished (%s) — watching CP / fall spawn (up to ~12s)..."):format(baseName),
+                            "check"
                         )
                     end
-                    legAdvanced = true
-                    break
-                end
-                notifyAutoSummit(
-                    ("CP did not change after %s — trying next route (%s/%s)"):format(
-                        baseName,
-                        tostring(tryIdx),
-                        tostring(#pathsToTry)
-                    ),
-                    "x"
-                )
+
+                    -- CP can update shortly after playback. For *_failed_* routes, CP often stays the same;
+                    -- fallspawns.json (campName + position) detects respawn at this leg's camp so we can continue.
+                    local cpBeforeLeg = cpLeg
+                    local advanced = false
+                    local atFallSpawnForLeg = false
+                    local cpPollMax = 50
+                    for pollI = 1, cpPollMax do
+                        if shouldCancel() then
+                            return false, reachedSummitInThisCycle
+                        end
+                        local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        if cpNow ~= cpBeforeLeg then
+                            advanced = true
+                            break
+                        end
+                        if isFailedLegRoute and #fallSpawnRows > 0 then
+                            local campNm = campNameForWalkCheckpoint(cpBeforeLeg)
+                            local spawnPos = campNm and fallSpawnWorldPositionForCamp(fallSpawnRows, campNm)
+                            local charPoll = lpAutoSummit.Character
+                            local rootPoll = charPoll and charPoll:FindFirstChild("HumanoidRootPart")
+                            if
+                                spawnPos
+                                and rootPoll
+                                and rootPoll:IsA("BasePart")
+                                and rootPartNearWorldPosition(rootPoll, spawnPos, FALL_SPAWN_MATCH_RADIUS_STUDS)
+                            then
+                                atFallSpawnForLeg = true
+                                break
+                            end
+                        end
+                        if pollI < cpPollMax then
+                            task.wait(0.25)
+                        end
+                    end
+                    if advanced then
+                        local cpAfterLeg = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        if cpBeforeLeg < summitCpIndex and cpAfterLeg >= summitCpIndex then
+                            reachedSummitInThisCycle = true
+                        end
+                        if cpAfterLeg < summitCpIndex then
+                            local nextPrefix = WALK_LEG_PREFIX_BY_CP[cpAfterLeg] or "unknown"
+                            notifyAutoSummit(
+                                ("Leg done at CP #%d -> next route %s_*"):format(
+                                    cpAfterLeg,
+                                    tostring(nextPrefix)
+                                )
+                            )
+                        end
+                        legAdvanced = true
+                        break
+                    end
+
+                    if isFailedLegRoute then
+                        legExcludedPaths[pickedPath] = true
+                        local rest = rebuildWalkLegPathsAfterFailedAttempts(candidates, legExcludedPaths)
+                        if #rest == 0 then
+                            retryLegWithFreshCandidates = true
+                            notifyAutoSummit(
+                                ("No remaining routes for %s after %s — rechecking route list for this camp..."):format(
+                                    prefix,
+                                    baseName
+                                ),
+                                "x"
+                            )
+                            break
+                        else
+                            if atFallSpawnForLeg then
+                                local cn = campNameForWalkCheckpoint(cpBeforeLeg) or ("CP " .. tostring(cpBeforeLeg))
+                                notifyAutoSummit(
+                                    ("At %s fall spawn (still CP #%d) after %s — retrying other routes (skipped this file)."):format(
+                                        cn,
+                                        cpLeg,
+                                        baseName
+                                    ),
+                                    "x"
+                                )
+                            else
+                                notifyAutoSummit(
+                                    ("Still at CP #%d after failed route %s — retrying other routes (skipped this file)."):format(
+                                        cpLeg,
+                                        baseName
+                                    ),
+                                    "x"
+                                )
+                            end
+                            pathsToTry = rest
+                            tryIdx = 1
+                        end
+                    else
+                        notifyAutoSummit(
+                            ("CP did not change after %s — trying next route (%s/%s)"):format(
+                                baseName,
+                                tostring(tryIdx),
+                                tostring(#pathsToTry)
+                            ),
+                            "x"
+                        )
+                        tryIdx = tryIdx + 1
+                    end
                 end
             end
 
             if not legAdvanced then
-                disableAutoSummitDueToWalkFailure(
-                    "All "
-                        .. tostring(#pathsToTry)
-                        .. " route file(s) failed for leg "
-                        .. prefix
-                        .. " — Auto Summit off"
-                )
-                return false, reachedSummitInThisCycle
+                if retryLegWithFreshCandidates then
+                    task.wait(0.25)
+                else
+                    disableAutoSummitDueToWalkFailure(
+                        "All "
+                            .. tostring(#pathsToTry)
+                            .. " route file(s) failed for leg "
+                            .. prefix
+                            .. " — Auto Summit off"
+                    )
+                    return false, reachedSummitInThisCycle
+                end
             end
             if runSingleLegOnly then
                 return true, reachedSummitInThisCycle
