@@ -2723,13 +2723,15 @@ function RayfieldLibrary:CreateWindow(Settings)
 			local Paragraph = Elements.Template.Paragraph:Clone()
 			Paragraph.Title.Text = ParagraphSettings.Title
 			Paragraph.Content.Text = ParagraphSettings.Content
+			Paragraph.Title.AnchorPoint = Vector2.new(0, 0)
 			Paragraph.Title.TextXAlignment = Enum.TextXAlignment.Left
 			Paragraph.Content.TextWrapped = true
+			Paragraph.Content.AnchorPoint = Vector2.new(0, 0)
 			Paragraph.Content.TextXAlignment = Enum.TextXAlignment.Left
 			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
-			Paragraph.Title.Position = UDim2.fromOffset(12, 9)
+			Paragraph.Title.Position = UDim2.new(0, 12, 0, 9)
 			Paragraph.Title.Size = UDim2.new(1, -24, 0, 16)
-			Paragraph.Content.Position = UDim2.fromOffset(12, 29)
+			Paragraph.Content.Position = UDim2.new(0, 12, 0, 29)
 			Paragraph.Visible = true
 			Paragraph.Parent = TabPage
 
