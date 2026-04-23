@@ -1058,7 +1058,8 @@ local function createRecordingTab(windowRef, notifyFn)
         })
     end
 
-    local function stopSavedRecordingPlayback(reason: string?, shouldNotify: boolean?)
+    -- Release virtual keys, clear walk intent, and kill residual momentum (key_up alone does not).
+    local function releaseSavedRecordingInputAndMotion()
         if VirtualInputManager then
             for keyCode, isDown in pairs(playbackKeysDown) do
                 if isDown then
@@ -1086,6 +1087,10 @@ local function createRecordingTab(windowRef, notifyFn)
                 localRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
             end)
         end
+    end
+
+    local function stopSavedRecordingPlayback(reason: string?, shouldNotify: boolean?)
+        releaseSavedRecordingInputAndMotion()
 
         if playbackHumanoid and playbackAutoRotateRestore ~= nil then
             pcall(function()
@@ -1895,6 +1900,7 @@ local function createRecordingTab(windowRef, notifyFn)
                 end
 
                 if token == playbackToken then
+                    releaseSavedRecordingInputAndMotion()
                     if playbackHumanoid and playbackAutoRotateRestore ~= nil then
                         pcall(function()
                             playbackHumanoid.AutoRotate = playbackAutoRotateRestore
