@@ -2723,8 +2723,13 @@ function RayfieldLibrary:CreateWindow(Settings)
 			local Paragraph = Elements.Template.Paragraph:Clone()
 			Paragraph.Title.Text = ParagraphSettings.Title
 			Paragraph.Content.Text = ParagraphSettings.Content
+			Paragraph.Title.TextXAlignment = Enum.TextXAlignment.Left
 			Paragraph.Content.TextWrapped = true
+			Paragraph.Content.TextXAlignment = Enum.TextXAlignment.Left
 			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
+			Paragraph.Title.Position = UDim2.fromOffset(12, 9)
+			Paragraph.Title.Size = UDim2.new(1, -24, 0, 16)
+			Paragraph.Content.Position = UDim2.fromOffset(12, 29)
 			Paragraph.Visible = true
 			Paragraph.Parent = TabPage
 
@@ -2741,7 +2746,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				if Paragraph.Content.AbsoluteSize.Y ~= contentHeight then
 					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, contentHeight)
 				end
-				local paragraphHeight = contentHeight + 42
+				local paragraphHeight = contentHeight + 45
 				if Paragraph.AbsoluteSize.Y ~= paragraphHeight then
 					Paragraph.Size = UDim2.new(1, -10, 0, paragraphHeight)
 				end
