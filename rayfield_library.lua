@@ -922,6 +922,9 @@ local resizeMaxSize = Vector2.new(900, 700)
 local resizeHandle
 local resizeInputChangedConnection
 local resizeInputEndedConnection
+local paragraphLayoutEntries = {}
+local paragraphLayoutConnection
+local paragraphLayoutPending = false
 
 local function parseWindowSizeSetting(value, fallback)
 	if typeof(value) == "Vector2" then
@@ -947,6 +950,34 @@ local function setExpandedWindowSize(size)
 	expandedWindowSize = clampWindowSize(size)
 	minimisedWindowWidth = math.max(expandedWindowSize.X - 5, resizeMinSize.X)
 	hiddenWindowWidth = math.max(expandedWindowSize.X - 30, resizeMinSize.X)
+end
+
+local function runParagraphLayoutUpdates()
+	paragraphLayoutPending = false
+	for idx = #paragraphLayoutEntries, 1, -1 do
+		local entry = paragraphLayoutEntries[idx]
+		if not entry.Element.Parent then
+			table.remove(paragraphLayoutEntries, idx)
+		else
+			entry.Update()
+		end
+	end
+end
+
+local function requestParagraphLayoutUpdates()
+	if paragraphLayoutPending then
+		return
+	end
+	paragraphLayoutPending = true
+	task.defer(runParagraphLayoutUpdates)
+end
+
+local function registerParagraphLayout(paragraph, updateFn)
+	table.insert(paragraphLayoutEntries, {Element = paragraph, Update = updateFn})
+	if not paragraphLayoutConnection then
+		paragraphLayoutConnection = Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(requestParagraphLayoutUpdates)
+	end
+	requestParagraphLayoutUpdates()
 end
 
 local function ChangeTheme(Theme)
@@ -2754,9 +2785,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
-			task.defer(updateParagraphLayout)
-			Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateParagraphLayout)
-			Paragraph:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateParagraphLayout)
+			registerParagraphLayout(Paragraph, updateParagraphLayout)
 
 			Paragraph.BackgroundTransparency = 1
 			Paragraph.UIStroke.Transparency = 1
@@ -2774,7 +2803,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			function ParagraphValue:Set(NewParagraphSettings)
 				Paragraph.Title.Text = NewParagraphSettings.Title
 				Paragraph.Content.Text = NewParagraphSettings.Content
-				task.defer(updateParagraphLayout)
+				requestParagraphLayoutUpdates()
 			end
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
