@@ -2,11 +2,11 @@
    "meta": {
       "recorderName": "sempat_panick",
       "startedAtUtc": "2026-04-22T23:08:32Z",
-      "totalEvents": 443,
+      "totalEvents": 441,
       "gameId": 8644306226,
       "jobId": "fab59bb3-029c-4990-af17-d5655f34ffab",
       "placeId": 76964310785698,
-      "durationSeconds": 21.783,
+      "durationSeconds": 21.751,
       "playerName": "sempat_panick"
    },
    "events": [
@@ -4138,14 +4138,6 @@
       {
          "t": 11.918,
          "data": {
-            "gameProcessed": true,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 11.949,
-         "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
                "y": 0,
@@ -4174,7 +4166,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.05,
+         "t": 12.019,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4204,15 +4196,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.05,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 12.051,
+         "t": 12.019,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -4220,7 +4204,7 @@
          "kind": "key_down"
       },
       {
-         "t": 12.167,
+         "t": 12.135,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4250,7 +4234,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.217,
+         "t": 12.185,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4258,36 +4242,36 @@
          "kind": "key_down"
       },
       {
-         "t": 12.218,
+         "t": 12.186,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.233,
+         "t": 12.201,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 12.235,
+         "t": 12.203,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.249,
+         "t": 12.217,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 12.25,
+         "t": 12.218,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.283,
+         "t": 12.251,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4317,7 +4301,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.334,
+         "t": 12.302,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4325,7 +4309,7 @@
          "kind": "key_up"
       },
       {
-         "t": 12.4,
+         "t": 12.368,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4355,7 +4339,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.4,
+         "t": 12.368,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -4363,7 +4347,7 @@
          "kind": "key_up"
       },
       {
-         "t": 12.5,
+         "t": 12.468,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4393,14 +4377,14 @@
          "kind": "movement"
       },
       {
-         "t": 12.516,
+         "t": 12.484,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 12.616,
+         "t": 12.584,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4430,7 +4414,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.717,
+         "t": 12.685,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4460,7 +4444,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.733,
+         "t": 12.701,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4468,36 +4452,36 @@
          "kind": "key_down"
       },
       {
-         "t": 12.735,
+         "t": 12.703,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.749,
+         "t": 12.717,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 12.751,
+         "t": 12.719,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.765,
+         "t": 12.733,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 12.767,
+         "t": 12.735,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 12.8,
+         "t": 12.768,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4505,7 +4489,7 @@
          "kind": "key_up"
       },
       {
-         "t": 12.833,
+         "t": 12.801,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4535,7 +4519,7 @@
          "kind": "movement"
       },
       {
-         "t": 12.933,
+         "t": 12.901,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4565,7 +4549,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.049,
+         "t": 13.017,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4595,7 +4579,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.15,
+         "t": 13.118,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4625,7 +4609,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.25,
+         "t": 13.218,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4655,7 +4639,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.367,
+         "t": 13.335,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4685,7 +4669,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.482,
+         "t": 13.45,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4715,7 +4699,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.483,
+         "t": 13.451,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4723,36 +4707,36 @@
          "kind": "key_down"
       },
       {
-         "t": 13.487,
+         "t": 13.455,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 13.499,
+         "t": 13.467,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 13.504,
+         "t": 13.472,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 13.515,
+         "t": 13.483,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 13.517,
+         "t": 13.485,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 13.567,
+         "t": 13.535,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4760,7 +4744,7 @@
          "kind": "key_up"
       },
       {
-         "t": 13.583,
+         "t": 13.551,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4790,7 +4774,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.699,
+         "t": 13.667,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4820,14 +4804,14 @@
          "kind": "movement"
       },
       {
-         "t": 13.782,
+         "t": 13.75,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 13.817,
+         "t": 13.785,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4857,7 +4841,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.932,
+         "t": 13.9,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4887,7 +4871,7 @@
          "kind": "movement"
       },
       {
-         "t": 13.999,
+         "t": 13.967,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4895,31 +4879,31 @@
          "kind": "key_down"
       },
       {
-         "t": 14.001,
+         "t": 13.969,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.016,
+         "t": 13.984,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 14.018,
+         "t": 13.986,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.032,
+         "t": 14,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 14.033,
+         "t": 14.001,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4949,12 +4933,12 @@
          "kind": "movement"
       },
       {
-         "t": 14.034,
+         "t": 14.002,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.116,
+         "t": 14.084,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -4962,7 +4946,7 @@
          "kind": "key_up"
       },
       {
-         "t": 14.133,
+         "t": 14.101,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -4992,7 +4976,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.25,
+         "t": 14.218,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5022,7 +5006,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.366,
+         "t": 14.334,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5052,14 +5036,14 @@
          "kind": "movement"
       },
       {
-         "t": 14.449,
+         "t": 14.417,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 14.467,
+         "t": 14.435,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5089,7 +5073,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.582,
+         "t": 14.55,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5119,7 +5103,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.582,
+         "t": 14.55,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5127,36 +5111,36 @@
          "kind": "key_down"
       },
       {
-         "t": 14.584,
+         "t": 14.552,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.598,
+         "t": 14.566,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 14.601,
+         "t": 14.569,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.616,
+         "t": 14.584,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 14.618,
+         "t": 14.586,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 14.666,
+         "t": 14.634,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5164,7 +5148,7 @@
          "kind": "key_up"
       },
       {
-         "t": 14.683,
+         "t": 14.651,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5194,7 +5178,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.799,
+         "t": 14.767,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5224,7 +5208,7 @@
          "kind": "movement"
       },
       {
-         "t": 14.9,
+         "t": 14.868,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5254,14 +5238,14 @@
          "kind": "movement"
       },
       {
-         "t": 14.932,
+         "t": 14.9,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 15.017,
+         "t": 14.985,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5291,7 +5275,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.117,
+         "t": 15.085,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5299,19 +5283,19 @@
          "kind": "key_down"
       },
       {
-         "t": 15.119,
+         "t": 15.087,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 15.132,
+         "t": 15.1,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 15.133,
+         "t": 15.101,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5341,24 +5325,24 @@
          "kind": "movement"
       },
       {
-         "t": 15.135,
+         "t": 15.103,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 15.149,
+         "t": 15.117,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 15.15,
+         "t": 15.118,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 15.183,
+         "t": 15.151,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5366,7 +5350,7 @@
          "kind": "key_up"
       },
       {
-         "t": 15.25,
+         "t": 15.218,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5396,7 +5380,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.367,
+         "t": 15.335,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5426,7 +5410,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.467,
+         "t": 15.435,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5456,7 +5440,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.583,
+         "t": 15.551,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5486,7 +5470,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.699,
+         "t": 15.667,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5516,7 +5500,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.799,
+         "t": 15.767,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5546,7 +5530,7 @@
          "kind": "movement"
       },
       {
-         "t": 15.917,
+         "t": 15.885,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5576,7 +5560,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.033,
+         "t": 16.001,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5606,7 +5590,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.149,
+         "t": 16.117,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5636,7 +5620,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.249,
+         "t": 16.217,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5666,7 +5650,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.366,
+         "t": 16.334,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5696,7 +5680,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.466,
+         "t": 16.434,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5726,7 +5710,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.582,
+         "t": 16.55,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5756,7 +5740,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.682,
+         "t": 16.65,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5786,7 +5770,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.782,
+         "t": 16.75,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5816,7 +5800,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.883,
+         "t": 16.851,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5846,7 +5830,7 @@
          "kind": "movement"
       },
       {
-         "t": 16.917,
+         "t": 16.885,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5854,36 +5838,36 @@
          "kind": "key_down"
       },
       {
-         "t": 16.918,
+         "t": 16.886,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 16.933,
+         "t": 16.901,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 16.935,
+         "t": 16.903,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 16.949,
+         "t": 16.917,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 16.95,
+         "t": 16.918,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 16.999,
+         "t": 16.967,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5913,7 +5897,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.017,
+         "t": 16.985,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -5921,7 +5905,7 @@
          "kind": "key_up"
       },
       {
-         "t": 17.115,
+         "t": 17.083,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5951,7 +5935,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.217,
+         "t": 17.185,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -5981,7 +5965,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.333,
+         "t": 17.301,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6011,14 +5995,14 @@
          "kind": "movement"
       },
       {
-         "t": 17.432,
+         "t": 17.4,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 17.433,
+         "t": 17.401,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6048,7 +6032,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.533,
+         "t": 17.501,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6078,7 +6062,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.534,
+         "t": 17.502,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6086,36 +6070,36 @@
          "kind": "key_down"
       },
       {
-         "t": 17.536,
+         "t": 17.504,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 17.549,
+         "t": 17.517,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 17.554,
+         "t": 17.522,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 17.566,
+         "t": 17.534,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 17.571,
+         "t": 17.539,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 17.634,
+         "t": 17.602,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6145,7 +6129,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.649,
+         "t": 17.617,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6153,7 +6137,7 @@
          "kind": "key_up"
       },
       {
-         "t": 17.75,
+         "t": 17.718,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6183,7 +6167,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.866,
+         "t": 17.834,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6213,7 +6197,7 @@
          "kind": "movement"
       },
       {
-         "t": 17.983,
+         "t": 17.951,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6243,14 +6227,14 @@
          "kind": "movement"
       },
       {
-         "t": 18.066,
+         "t": 18.034,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.083,
+         "t": 18.051,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6280,7 +6264,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.167,
+         "t": 18.135,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6288,19 +6272,19 @@
          "kind": "key_down"
       },
       {
-         "t": 18.169,
+         "t": 18.137,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.182,
+         "t": 18.15,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.184,
+         "t": 18.152,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6330,24 +6314,24 @@
          "kind": "movement"
       },
       {
-         "t": 18.185,
+         "t": 18.153,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.198,
+         "t": 18.166,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.2,
+         "t": 18.168,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.266,
+         "t": 18.234,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6355,7 +6339,7 @@
          "kind": "key_up"
       },
       {
-         "t": 18.3,
+         "t": 18.268,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6385,7 +6369,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.417,
+         "t": 18.385,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6415,7 +6399,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.517,
+         "t": 18.485,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6445,7 +6429,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.633,
+         "t": 18.601,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6475,14 +6459,14 @@
          "kind": "movement"
       },
       {
-         "t": 18.699,
+         "t": 18.667,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.734,
+         "t": 18.702,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6512,7 +6496,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.8,
+         "t": 18.768,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6520,36 +6504,36 @@
          "kind": "key_down"
       },
       {
-         "t": 18.801,
+         "t": 18.769,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.815,
+         "t": 18.783,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.817,
+         "t": 18.785,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.832,
+         "t": 18.8,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 18.833,
+         "t": 18.801,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 18.85,
+         "t": 18.818,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6579,7 +6563,7 @@
          "kind": "movement"
       },
       {
-         "t": 18.867,
+         "t": 18.835,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6587,7 +6571,7 @@
          "kind": "key_up"
       },
       {
-         "t": 18.967,
+         "t": 18.935,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6617,7 +6601,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.082,
+         "t": 19.05,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6647,7 +6631,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.183,
+         "t": 19.151,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6677,7 +6661,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.299,
+         "t": 19.267,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6707,14 +6691,14 @@
          "kind": "movement"
       },
       {
-         "t": 19.316,
+         "t": 19.284,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 19.399,
+         "t": 19.367,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6744,7 +6728,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.4,
+         "t": 19.368,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6752,36 +6736,36 @@
          "kind": "key_down"
       },
       {
-         "t": 19.401,
+         "t": 19.369,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 19.415,
+         "t": 19.383,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 19.417,
+         "t": 19.385,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 19.432,
+         "t": 19.4,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 19.433,
+         "t": 19.401,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 19.517,
+         "t": 19.485,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6811,7 +6795,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.517,
+         "t": 19.485,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -6819,7 +6803,7 @@
          "kind": "key_up"
       },
       {
-         "t": 19.633,
+         "t": 19.601,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6849,7 +6833,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.749,
+         "t": 19.717,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6879,7 +6863,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.851,
+         "t": 19.819,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6909,14 +6893,14 @@
          "kind": "movement"
       },
       {
-         "t": 19.933,
+         "t": 19.901,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 19.967,
+         "t": 19.935,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6946,7 +6930,7 @@
          "kind": "movement"
       },
       {
-         "t": 19.999,
+         "t": 19.967,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -6954,7 +6938,7 @@
          "kind": "key_down"
       },
       {
-         "t": 20.035,
+         "t": 20.003,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -6962,7 +6946,7 @@
          "kind": "key_up"
       },
       {
-         "t": 20.084,
+         "t": 20.052,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -6992,7 +6976,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.167,
+         "t": 20.135,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -7000,7 +6984,7 @@
          "kind": "key_down"
       },
       {
-         "t": 20.199,
+         "t": 20.167,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7030,7 +7014,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.234,
+         "t": 20.202,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -7038,7 +7022,7 @@
          "kind": "key_up"
       },
       {
-         "t": 20.315,
+         "t": 20.283,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7068,7 +7052,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.416,
+         "t": 20.384,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7098,7 +7082,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.417,
+         "t": 20.385,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -7106,7 +7090,7 @@
          "kind": "key_down"
       },
       {
-         "t": 20.434,
+         "t": 20.402,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.W"
@@ -7114,7 +7098,7 @@
          "kind": "key_up"
       },
       {
-         "t": 20.532,
+         "t": 20.5,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7144,7 +7128,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.533,
+         "t": 20.501,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -7152,7 +7136,7 @@
          "kind": "key_down"
       },
       {
-         "t": 20.551,
+         "t": 20.519,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -7160,7 +7144,7 @@
          "kind": "key_up"
       },
       {
-         "t": 20.633,
+         "t": 20.601,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7190,7 +7174,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.75,
+         "t": 20.718,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7220,7 +7204,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.85,
+         "t": 20.818,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7250,7 +7234,7 @@
          "kind": "movement"
       },
       {
-         "t": 20.851,
+         "t": 20.819,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.W"
@@ -7258,7 +7242,7 @@
          "kind": "key_down"
       },
       {
-         "t": 20.9,
+         "t": 20.868,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.A"
@@ -7266,7 +7250,7 @@
          "kind": "key_up"
       },
       {
-         "t": 20.966,
+         "t": 20.934,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7296,7 +7280,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.067,
+         "t": 21.035,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7326,7 +7310,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.133,
+         "t": 21.101,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -7334,31 +7318,31 @@
          "kind": "key_down"
       },
       {
-         "t": 21.138,
+         "t": 21.106,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 21.149,
+         "t": 21.117,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 21.154,
+         "t": 21.122,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 21.166,
+         "t": 21.134,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 21.167,
+         "t": 21.135,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7388,12 +7372,12 @@
          "kind": "movement"
       },
       {
-         "t": 21.17,
+         "t": 21.138,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 21.234,
+         "t": 21.202,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -7401,7 +7385,7 @@
          "kind": "key_up"
       },
       {
-         "t": 21.283,
+         "t": 21.251,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7431,7 +7415,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.384,
+         "t": 21.352,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7461,7 +7445,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.5,
+         "t": 21.468,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7491,7 +7475,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.616,
+         "t": 21.584,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7521,14 +7505,14 @@
          "kind": "movement"
       },
       {
-         "t": 21.666,
+         "t": 21.634,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 21.733,
+         "t": 21.701,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -7558,7 +7542,7 @@
          "kind": "movement"
       },
       {
-         "t": 21.783,
+         "t": 21.751,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.W"

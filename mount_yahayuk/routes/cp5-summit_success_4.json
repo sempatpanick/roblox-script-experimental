@@ -2,11 +2,11 @@
    "meta": {
       "recorderName": "sempat_panick",
       "startedAtUtc": "2026-04-23T00:28:01Z",
-      "totalEvents": 1148,
+      "totalEvents": 1146,
       "gameId": 8644306226,
       "jobId": "21854905-8a7c-445e-a214-73803c81ec2d",
       "placeId": 76964310785698,
-      "durationSeconds": 45.197,
+      "durationSeconds": 45.063,
       "playerName": "sempat_panick"
    },
    "events": [
@@ -12180,14 +12180,6 @@
       {
          "t": 32.115,
          "data": {
-            "gameProcessed": true,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 32.198,
-         "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
                "y": 0,
@@ -12216,15 +12208,7 @@
          "kind": "movement"
       },
       {
-         "t": 32.247,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.LeftShift"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 32.298,
+         "t": 32.164,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12254,7 +12238,7 @@
          "kind": "movement"
       },
       {
-         "t": 32.398,
+         "t": 32.264,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12284,14 +12268,14 @@
          "kind": "movement"
       },
       {
-         "t": 32.48,
+         "t": 32.346,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 32.515,
+         "t": 32.381,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12321,7 +12305,7 @@
          "kind": "movement"
       },
       {
-         "t": 32.532,
+         "t": 32.398,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -12329,36 +12313,36 @@
          "kind": "key_down"
       },
       {
-         "t": 32.533,
+         "t": 32.399,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 32.547,
+         "t": 32.413,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 32.55,
+         "t": 32.416,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 32.564,
+         "t": 32.43,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 32.565,
+         "t": 32.431,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 32.631,
+         "t": 32.497,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12388,12 +12372,12 @@
          "kind": "movement"
       },
       {
-         "t": 32.649,
+         "t": 32.515,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 32.747,
+         "t": 32.613,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12423,7 +12407,7 @@
          "kind": "movement"
       },
       {
-         "t": 32.848,
+         "t": 32.714,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12453,7 +12437,7 @@
          "kind": "movement"
       },
       {
-         "t": 32.964,
+         "t": 32.83,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12483,14 +12467,14 @@
          "kind": "movement"
       },
       {
-         "t": 33.064,
+         "t": 32.93,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.064,
+         "t": 32.93,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12520,46 +12504,46 @@
          "kind": "movement"
       },
       {
-         "t": 33.065,
+         "t": 32.931,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.099,
+         "t": 32.965,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.115,
+         "t": 32.981,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.116,
+         "t": 32.982,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.131,
+         "t": 32.997,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.132,
+         "t": 32.998,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.149,
+         "t": 33.015,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.18,
+         "t": 33.046,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12589,7 +12573,7 @@
          "kind": "movement"
       },
       {
-         "t": 33.282,
+         "t": 33.148,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12619,7 +12603,7 @@
          "kind": "movement"
       },
       {
-         "t": 33.398,
+         "t": 33.264,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12649,7 +12633,7 @@
          "kind": "movement"
       },
       {
-         "t": 33.513,
+         "t": 33.379,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12679,7 +12663,7 @@
          "kind": "movement"
       },
       {
-         "t": 33.613,
+         "t": 33.479,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12709,48 +12693,48 @@
          "kind": "movement"
       },
       {
-         "t": 33.631,
+         "t": 33.497,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.632,
+         "t": 33.498,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.665,
+         "t": 33.531,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.68,
+         "t": 33.546,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.682,
+         "t": 33.548,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.698,
+         "t": 33.564,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 33.699,
+         "t": 33.565,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.714,
+         "t": 33.58,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12780,12 +12764,12 @@
          "kind": "movement"
       },
       {
-         "t": 33.765,
+         "t": 33.631,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 33.83,
+         "t": 33.696,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12815,7 +12799,7 @@
          "kind": "movement"
       },
       {
-         "t": 33.93,
+         "t": 33.796,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12845,7 +12829,7 @@
          "kind": "movement"
       },
       {
-         "t": 34.032,
+         "t": 33.898,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12875,7 +12859,7 @@
          "kind": "movement"
       },
       {
-         "t": 34.148,
+         "t": 34.014,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12905,43 +12889,43 @@
          "kind": "movement"
       },
       {
-         "t": 34.18,
+         "t": 34.046,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.181,
+         "t": 34.047,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.215,
+         "t": 34.081,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.23,
+         "t": 34.096,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.231,
+         "t": 34.097,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.248,
+         "t": 34.114,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.248,
+         "t": 34.114,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -12971,12 +12955,12 @@
          "kind": "movement"
       },
       {
-         "t": 34.249,
+         "t": 34.115,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.366,
+         "t": 34.232,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13006,7 +12990,7 @@
          "kind": "movement"
       },
       {
-         "t": 34.481,
+         "t": 34.347,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13036,7 +13020,7 @@
          "kind": "movement"
       },
       {
-         "t": 34.597,
+         "t": 34.463,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13066,48 +13050,48 @@
          "kind": "movement"
       },
       {
-         "t": 34.615,
+         "t": 34.481,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.617,
+         "t": 34.483,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.649,
+         "t": 34.515,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.664,
+         "t": 34.53,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.665,
+         "t": 34.531,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.68,
+         "t": 34.546,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 34.681,
+         "t": 34.547,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.698,
+         "t": 34.564,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13137,12 +13121,12 @@
          "kind": "movement"
       },
       {
-         "t": 34.765,
+         "t": 34.631,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 34.799,
+         "t": 34.665,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13172,7 +13156,7 @@
          "kind": "movement"
       },
       {
-         "t": 34.915,
+         "t": 34.781,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13202,7 +13186,7 @@
          "kind": "movement"
       },
       {
-         "t": 35.032,
+         "t": 34.898,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13232,7 +13216,7 @@
          "kind": "movement"
       },
       {
-         "t": 35.148,
+         "t": 35.014,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13262,43 +13246,43 @@
          "kind": "movement"
       },
       {
-         "t": 35.198,
+         "t": 35.064,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.2,
+         "t": 35.066,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.233,
+         "t": 35.099,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.247,
+         "t": 35.113,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.249,
+         "t": 35.115,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.264,
+         "t": 35.13,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.265,
+         "t": 35.131,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13328,17 +13312,17 @@
          "kind": "movement"
       },
       {
-         "t": 35.266,
+         "t": 35.132,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.366,
+         "t": 35.232,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.382,
+         "t": 35.248,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13368,7 +13352,7 @@
          "kind": "movement"
       },
       {
-         "t": 35.497,
+         "t": 35.363,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13398,43 +13382,43 @@
          "kind": "movement"
       },
       {
-         "t": 35.53,
+         "t": 35.396,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.531,
+         "t": 35.397,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.566,
+         "t": 35.432,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.58,
+         "t": 35.446,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.583,
+         "t": 35.449,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.597,
+         "t": 35.463,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.599,
+         "t": 35.465,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13464,17 +13448,17 @@
          "kind": "movement"
       },
       {
-         "t": 35.6,
+         "t": 35.466,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.631,
+         "t": 35.497,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.714,
+         "t": 35.58,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13504,7 +13488,7 @@
          "kind": "movement"
       },
       {
-         "t": 35.816,
+         "t": 35.682,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13534,31 +13518,31 @@
          "kind": "movement"
       },
       {
-         "t": 35.88,
+         "t": 35.746,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.882,
+         "t": 35.748,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.915,
+         "t": 35.781,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 35.93,
+         "t": 35.796,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 35.931,
+         "t": 35.797,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13588,12 +13572,12 @@
          "kind": "movement"
       },
       {
-         "t": 35.932,
+         "t": 35.798,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.048,
+         "t": 35.914,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13623,7 +13607,7 @@
          "kind": "movement"
       },
       {
-         "t": 36.163,
+         "t": 36.029,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13653,7 +13637,7 @@
          "kind": "movement"
       },
       {
-         "t": 36.264,
+         "t": 36.13,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13683,7 +13667,7 @@
          "kind": "movement"
       },
       {
-         "t": 36.364,
+         "t": 36.23,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -13691,7 +13675,7 @@
          "kind": "key_down"
       },
       {
-         "t": 36.381,
+         "t": 36.247,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13721,19 +13705,19 @@
          "kind": "movement"
       },
       {
-         "t": 36.396,
+         "t": 36.262,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 36.397,
+         "t": 36.263,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.497,
+         "t": 36.363,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13763,7 +13747,7 @@
          "kind": "movement"
       },
       {
-         "t": 36.517,
+         "t": 36.383,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.D"
@@ -13771,12 +13755,12 @@
          "kind": "key_up"
       },
       {
-         "t": 36.518,
+         "t": 36.384,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.597,
+         "t": 36.463,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13806,7 +13790,7 @@
          "kind": "movement"
       },
       {
-         "t": 36.697,
+         "t": 36.563,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13836,43 +13820,43 @@
          "kind": "movement"
       },
       {
-         "t": 36.714,
+         "t": 36.58,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 36.715,
+         "t": 36.581,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.765,
+         "t": 36.631,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.781,
+         "t": 36.647,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 36.782,
+         "t": 36.648,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.797,
+         "t": 36.663,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 36.798,
+         "t": 36.664,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13902,17 +13886,17 @@
          "kind": "movement"
       },
       {
-         "t": 36.799,
+         "t": 36.665,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.899,
+         "t": 36.765,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 36.914,
+         "t": 36.78,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13942,7 +13926,7 @@
          "kind": "movement"
       },
       {
-         "t": 37.03,
+         "t": 36.896,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -13972,31 +13956,31 @@
          "kind": "movement"
       },
       {
-         "t": 37.082,
+         "t": 36.948,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.083,
+         "t": 36.949,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.115,
+         "t": 36.981,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.13,
+         "t": 36.996,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.131,
+         "t": 36.997,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14026,17 +14010,17 @@
          "kind": "movement"
       },
       {
-         "t": 37.132,
+         "t": 36.998,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.182,
+         "t": 37.048,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.248,
+         "t": 37.114,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14066,19 +14050,19 @@
          "kind": "movement"
       },
       {
-         "t": 37.296,
+         "t": 37.162,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.297,
+         "t": 37.163,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.348,
+         "t": 37.214,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14108,7 +14092,7 @@
          "kind": "movement"
       },
       {
-         "t": 37.464,
+         "t": 37.33,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14138,14 +14122,14 @@
          "kind": "movement"
       },
       {
-         "t": 37.58,
+         "t": 37.446,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.581,
+         "t": 37.447,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14175,34 +14159,34 @@
          "kind": "movement"
       },
       {
-         "t": 37.581,
+         "t": 37.447,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.631,
+         "t": 37.497,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.649,
+         "t": 37.515,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.665,
+         "t": 37.531,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.666,
+         "t": 37.532,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.682,
+         "t": 37.548,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14232,7 +14216,7 @@
          "kind": "movement"
       },
       {
-         "t": 37.799,
+         "t": 37.665,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14262,19 +14246,19 @@
          "kind": "movement"
       },
       {
-         "t": 37.88,
+         "t": 37.746,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 37.881,
+         "t": 37.747,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 37.913,
+         "t": 37.779,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14304,7 +14288,7 @@
          "kind": "movement"
       },
       {
-         "t": 38.014,
+         "t": 37.88,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14334,7 +14318,7 @@
          "kind": "movement"
       },
       {
-         "t": 38.131,
+         "t": 37.997,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14364,7 +14348,7 @@
          "kind": "movement"
       },
       {
-         "t": 38.231,
+         "t": 38.097,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14394,31 +14378,31 @@
          "kind": "movement"
       },
       {
-         "t": 38.28,
+         "t": 38.146,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.282,
+         "t": 38.148,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.315,
+         "t": 38.181,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.33,
+         "t": 38.196,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.331,
+         "t": 38.197,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14448,24 +14432,24 @@
          "kind": "movement"
       },
       {
-         "t": 38.332,
+         "t": 38.198,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.347,
+         "t": 38.213,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.348,
+         "t": 38.214,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.448,
+         "t": 38.314,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14495,7 +14479,7 @@
          "kind": "movement"
       },
       {
-         "t": 38.564,
+         "t": 38.43,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14525,43 +14509,43 @@
          "kind": "movement"
       },
       {
-         "t": 38.614,
+         "t": 38.48,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.614,
+         "t": 38.48,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.647,
+         "t": 38.513,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.663,
+         "t": 38.529,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.664,
+         "t": 38.53,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.68,
+         "t": 38.546,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.681,
+         "t": 38.547,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14591,17 +14575,17 @@
          "kind": "movement"
       },
       {
-         "t": 38.681,
+         "t": 38.547,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.765,
+         "t": 38.631,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.796,
+         "t": 38.662,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14631,7 +14615,7 @@
          "kind": "movement"
       },
       {
-         "t": 38.898,
+         "t": 38.764,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14661,19 +14645,19 @@
          "kind": "movement"
       },
       {
-         "t": 38.98,
+         "t": 38.846,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 38.981,
+         "t": 38.847,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 38.999,
+         "t": 38.865,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14703,29 +14687,29 @@
          "kind": "movement"
       },
       {
-         "t": 39.015,
+         "t": 38.881,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.032,
+         "t": 38.898,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.033,
+         "t": 38.899,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.082,
+         "t": 38.948,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.114,
+         "t": 38.98,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14755,19 +14739,19 @@
          "kind": "movement"
       },
       {
-         "t": 39.163,
+         "t": 39.029,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.165,
+         "t": 39.031,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.231,
+         "t": 39.097,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14797,12 +14781,12 @@
          "kind": "movement"
       },
       {
-         "t": 39.265,
+         "t": 39.131,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.282,
+         "t": 39.148,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -14810,7 +14794,7 @@
          "kind": "key_up"
       },
       {
-         "t": 39.348,
+         "t": 39.214,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14840,7 +14824,7 @@
          "kind": "movement"
       },
       {
-         "t": 39.465,
+         "t": 39.331,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14870,14 +14854,14 @@
          "kind": "movement"
       },
       {
-         "t": 39.548,
+         "t": 39.414,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.581,
+         "t": 39.447,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14907,7 +14891,7 @@
          "kind": "movement"
       },
       {
-         "t": 39.681,
+         "t": 39.547,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -14937,7 +14921,7 @@
          "kind": "movement"
       },
       {
-         "t": 39.682,
+         "t": 39.548,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -14945,36 +14929,36 @@
          "kind": "key_down"
       },
       {
-         "t": 39.682,
+         "t": 39.548,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.697,
+         "t": 39.563,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.7,
+         "t": 39.566,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.713,
+         "t": 39.579,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.714,
+         "t": 39.58,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.798,
+         "t": 39.664,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15004,12 +14988,12 @@
          "kind": "movement"
       },
       {
-         "t": 39.815,
+         "t": 39.681,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 39.914,
+         "t": 39.78,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15039,31 +15023,31 @@
          "kind": "movement"
       },
       {
-         "t": 39.98,
+         "t": 39.846,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 39.982,
+         "t": 39.848,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.014,
+         "t": 39.88,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.03,
+         "t": 39.896,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 40.03,
+         "t": 39.896,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15093,17 +15077,17 @@
          "kind": "movement"
       },
       {
-         "t": 40.031,
+         "t": 39.897,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.065,
+         "t": 39.931,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.131,
+         "t": 39.997,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15133,24 +15117,24 @@
          "kind": "movement"
       },
       {
-         "t": 40.149,
+         "t": 40.015,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.197,
+         "t": 40.063,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 40.199,
+         "t": 40.065,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.248,
+         "t": 40.114,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15180,12 +15164,12 @@
          "kind": "movement"
       },
       {
-         "t": 40.281,
+         "t": 40.147,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.364,
+         "t": 40.23,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15215,7 +15199,7 @@
          "kind": "movement"
       },
       {
-         "t": 40.465,
+         "t": 40.331,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15245,31 +15229,31 @@
          "kind": "movement"
       },
       {
-         "t": 40.53,
+         "t": 40.396,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 40.532,
+         "t": 40.398,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.565,
+         "t": 40.431,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.581,
+         "t": 40.447,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 40.581,
+         "t": 40.447,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15299,22 +15283,22 @@
          "kind": "movement"
       },
       {
-         "t": 40.583,
+         "t": 40.449,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.616,
+         "t": 40.482,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.682,
+         "t": 40.548,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.698,
+         "t": 40.564,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15344,19 +15328,19 @@
          "kind": "movement"
       },
       {
-         "t": 40.731,
+         "t": 40.597,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 40.732,
+         "t": 40.598,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.798,
+         "t": 40.664,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15386,12 +15370,12 @@
          "kind": "movement"
       },
       {
-         "t": 40.816,
+         "t": 40.682,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 40.915,
+         "t": 40.781,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15421,14 +15405,14 @@
          "kind": "movement"
       },
       {
-         "t": 41.03,
+         "t": 40.896,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.031,
+         "t": 40.897,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15458,46 +15442,46 @@
          "kind": "movement"
       },
       {
-         "t": 41.032,
+         "t": 40.898,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.065,
+         "t": 40.931,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.081,
+         "t": 40.947,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.082,
+         "t": 40.948,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.098,
+         "t": 40.964,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.1,
+         "t": 40.966,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.115,
+         "t": 40.981,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.148,
+         "t": 41.014,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15527,12 +15511,12 @@
          "kind": "movement"
       },
       {
-         "t": 41.2,
+         "t": 41.066,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.264,
+         "t": 41.13,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15562,14 +15546,14 @@
          "kind": "movement"
       },
       {
-         "t": 41.38,
+         "t": 41.246,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.381,
+         "t": 41.247,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15599,41 +15583,41 @@
          "kind": "movement"
       },
       {
-         "t": 41.382,
+         "t": 41.248,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.415,
+         "t": 41.281,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.43,
+         "t": 41.296,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.431,
+         "t": 41.297,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.447,
+         "t": 41.313,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.448,
+         "t": 41.314,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.482,
+         "t": 41.348,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15663,7 +15647,7 @@
          "kind": "movement"
       },
       {
-         "t": 41.598,
+         "t": 41.464,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15693,14 +15677,14 @@
          "kind": "movement"
       },
       {
-         "t": 41.714,
+         "t": 41.58,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.714,
+         "t": 41.58,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15730,41 +15714,41 @@
          "kind": "movement"
       },
       {
-         "t": 41.716,
+         "t": 41.582,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.749,
+         "t": 41.615,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.764,
+         "t": 41.63,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.765,
+         "t": 41.631,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.797,
+         "t": 41.663,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 41.799,
+         "t": 41.665,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 41.831,
+         "t": 41.697,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15794,7 +15778,7 @@
          "kind": "movement"
       },
       {
-         "t": 41.948,
+         "t": 41.814,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15824,14 +15808,14 @@
          "kind": "movement"
       },
       {
-         "t": 42.063,
+         "t": 41.929,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.063,
+         "t": 41.929,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15861,41 +15845,41 @@
          "kind": "movement"
       },
       {
-         "t": 42.064,
+         "t": 41.93,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.115,
+         "t": 41.981,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.13,
+         "t": 41.996,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.131,
+         "t": 41.997,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.147,
+         "t": 42.013,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.148,
+         "t": 42.014,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.164,
+         "t": 42.03,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15925,12 +15909,12 @@
          "kind": "movement"
       },
       {
-         "t": 42.248,
+         "t": 42.114,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.28,
+         "t": 42.146,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15960,7 +15944,7 @@
          "kind": "movement"
       },
       {
-         "t": 42.381,
+         "t": 42.247,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -15990,43 +15974,43 @@
          "kind": "movement"
       },
       {
-         "t": 42.414,
+         "t": 42.28,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.416,
+         "t": 42.282,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.448,
+         "t": 42.314,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.464,
+         "t": 42.33,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.465,
+         "t": 42.331,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.481,
+         "t": 42.347,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.481,
+         "t": 42.347,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16056,12 +16040,12 @@
          "kind": "movement"
       },
       {
-         "t": 42.483,
+         "t": 42.349,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.597,
+         "t": 42.463,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16091,12 +16075,12 @@
          "kind": "movement"
       },
       {
-         "t": 42.616,
+         "t": 42.482,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.714,
+         "t": 42.58,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16126,43 +16110,43 @@
          "kind": "movement"
       },
       {
-         "t": 42.746,
+         "t": 42.612,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.748,
+         "t": 42.614,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.783,
+         "t": 42.649,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.797,
+         "t": 42.663,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.799,
+         "t": 42.665,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.813,
+         "t": 42.679,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 42.814,
+         "t": 42.68,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16192,17 +16176,17 @@
          "kind": "movement"
       },
       {
-         "t": 42.815,
+         "t": 42.681,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.916,
+         "t": 42.782,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 42.93,
+         "t": 42.796,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16232,7 +16216,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.031,
+         "t": 42.897,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16262,48 +16246,48 @@
          "kind": "movement"
       },
       {
-         "t": 43.046,
+         "t": 42.912,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 43.048,
+         "t": 42.914,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.082,
+         "t": 42.948,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.098,
+         "t": 42.964,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 43.099,
+         "t": 42.965,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.113,
+         "t": 42.979,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 43.114,
+         "t": 42.98,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.148,
+         "t": 43.014,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16333,12 +16317,12 @@
          "kind": "movement"
       },
       {
-         "t": 43.232,
+         "t": 43.098,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.264,
+         "t": 43.13,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16368,7 +16352,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.364,
+         "t": 43.23,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16398,7 +16382,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.447,
+         "t": 43.313,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -16406,7 +16390,7 @@
          "kind": "key_up"
       },
       {
-         "t": 43.48,
+         "t": 43.346,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16436,7 +16420,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.58,
+         "t": 43.446,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16466,14 +16450,14 @@
          "kind": "movement"
       },
       {
-         "t": 43.663,
+         "t": 43.529,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 43.681,
+         "t": 43.547,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16503,7 +16487,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.799,
+         "t": 43.665,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16533,7 +16517,7 @@
          "kind": "movement"
       },
       {
-         "t": 43.898,
+         "t": 43.764,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -16541,19 +16525,19 @@
          "kind": "key_down"
       },
       {
-         "t": 43.899,
+         "t": 43.765,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.914,
+         "t": 43.78,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 43.916,
+         "t": 43.782,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16583,24 +16567,24 @@
          "kind": "movement"
       },
       {
-         "t": 43.916,
+         "t": 43.782,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 43.998,
+         "t": 43.864,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 44,
+         "t": 43.866,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 44.03,
+         "t": 43.896,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16630,12 +16614,12 @@
          "kind": "movement"
       },
       {
-         "t": 44.047,
+         "t": 43.913,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 44.131,
+         "t": 43.997,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16665,7 +16649,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.197,
+         "t": 44.063,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -16673,7 +16657,7 @@
          "kind": "key_up"
       },
       {
-         "t": 44.246,
+         "t": 44.112,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16703,14 +16687,14 @@
          "kind": "movement"
       },
       {
-         "t": 44.28,
+         "t": 44.146,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 44.347,
+         "t": 44.213,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16740,7 +16724,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.463,
+         "t": 44.329,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16770,7 +16754,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.513,
+         "t": 44.379,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -16778,24 +16762,24 @@
          "kind": "key_down"
       },
       {
-         "t": 44.515,
+         "t": 44.381,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 44.531,
+         "t": 44.397,
          "data": {
             "state": "Enum.HumanoidStateType.Jumping"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 44.533,
+         "t": 44.399,
          "data": [],
          "kind": "jump_request"
       },
       {
-         "t": 44.58,
+         "t": 44.446,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16825,14 +16809,14 @@
          "kind": "movement"
       },
       {
-         "t": 44.612,
+         "t": 44.478,
          "data": {
             "state": "Enum.HumanoidStateType.Freefall"
          },
          "kind": "humanoid_state"
       },
       {
-         "t": 44.613,
+         "t": 44.479,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.Space"
@@ -16840,7 +16824,7 @@
          "kind": "key_up"
       },
       {
-         "t": 44.681,
+         "t": 44.547,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16870,7 +16854,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.798,
+         "t": 44.664,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16900,7 +16884,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.913,
+         "t": 44.779,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16930,7 +16914,7 @@
          "kind": "movement"
       },
       {
-         "t": 44.98,
+         "t": 44.846,
          "data": {
             "gameProcessed": false,
             "keyCode": "Enum.KeyCode.W"
@@ -16938,7 +16922,7 @@
          "kind": "key_up"
       },
       {
-         "t": 45.014,
+         "t": 44.88,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16968,7 +16952,7 @@
          "kind": "movement"
       },
       {
-         "t": 45.115,
+         "t": 44.981,
          "data": {
             "jumpHeight": 7.2,
             "moveDirection": {
@@ -16998,7 +16982,7 @@
          "kind": "movement"
       },
       {
-         "t": 45.197,
+         "t": 45.063,
          "data": {
             "state": "Enum.HumanoidStateType.Landed"
          },
