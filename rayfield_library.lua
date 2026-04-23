@@ -911,6 +911,43 @@ local Notifications = Rayfield.Notifications
 local keybindConnections = {} -- For storing keybind connections to disconnect when Rayfield is destroyed
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
+local topbarHeight = 45
+local defaultExpandedWindowSize = useMobileSizing and Vector2.new(500, 275) or Vector2.new(500, 475)
+local expandedWindowSize = defaultExpandedWindowSize
+local minimisedWindowWidth = 495
+local hiddenWindowWidth = 470
+local resizeEnabled = false
+local resizeMinSize = Vector2.new(420, useMobileSizing and 240 or 320)
+local resizeMaxSize = Vector2.new(900, 700)
+local resizeHandle
+local resizeInputChangedConnection
+local resizeInputEndedConnection
+
+local function parseWindowSizeSetting(value, fallback)
+	if typeof(value) == "Vector2" then
+		return Vector2.new(value.X, value.Y)
+	end
+	if type(value) == "table" then
+		local x = tonumber(value.X or value.x or value.Width or value.width or value[1])
+		local y = tonumber(value.Y or value.y or value.Height or value.height or value[2])
+		if x and y then
+			return Vector2.new(x, y)
+		end
+	end
+	return Vector2.new(fallback.X, fallback.Y)
+end
+
+local function clampWindowSize(size)
+	local clampedX = math.clamp(size.X, resizeMinSize.X, resizeMaxSize.X)
+	local clampedY = math.clamp(size.Y, resizeMinSize.Y, resizeMaxSize.Y)
+	return Vector2.new(clampedX, clampedY)
+end
+
+local function setExpandedWindowSize(size)
+	expandedWindowSize = clampWindowSize(size)
+	minimisedWindowWidth = math.max(expandedWindowSize.X - 5, resizeMinSize.X)
+	hiddenWindowWidth = math.max(expandedWindowSize.X - 30, resizeMinSize.X)
+end
 
 local function ChangeTheme(Theme)
 	if typeof(Theme) == 'string' then
@@ -1422,8 +1459,8 @@ local function Hide(notify: boolean?)
 		end
 	end
 
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 0)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 45)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(hiddenWindowWidth, 0)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(hiddenWindowWidth, topbarHeight)}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
@@ -1449,6 +1486,7 @@ local function Hide(notify: boolean?)
 	setTabButtonsVisible(false)
 
 	if dragInteract then dragInteract.Visible = false end
+	if resizeHandle then resizeHandle.Visible = false end
 
 	setElementsVisible(false)
 
@@ -1466,8 +1504,8 @@ local function Maximise()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)}):Play()
 	TabList.Visible = true
 	task.wait(0.2)
 
@@ -1480,6 +1518,7 @@ local function Maximise()
 	setTabButtonsVisible(true)
 
 	task.wait(0.5)
+	if resizeHandle then resizeHandle.Visible = resizeEnabled end
 	Debounce = false
 end
 
@@ -1488,8 +1527,8 @@ local function Unhide()
 	Debounce = true
 	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Main.Visible = true
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
@@ -1514,6 +1553,7 @@ local function Unhide()
 	dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset)
 
 	dragInteract.Visible = true
+	if resizeHandle then resizeHandle.Visible = resizeEnabled end
 
 	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
 		if TopbarButton.ClassName == "ImageButton" then
@@ -1554,8 +1594,9 @@ local function Minimise()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(minimisedWindowWidth, topbarHeight)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(minimisedWindowWidth, topbarHeight)}):Play()
+	if resizeHandle then resizeHandle.Visible = false end
 
 	task.wait(0.3)
 
@@ -1705,6 +1746,15 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 
+	resizeEnabled = Settings.Resizable == true
+	resizeMinSize = parseWindowSizeSetting(Settings.MinSize or Settings.MinimumSize, Vector2.new(420, useMobileSizing and 240 or 320))
+	resizeMaxSize = parseWindowSizeSetting(Settings.MaxSize or Settings.MaximumSize, Vector2.new(900, 700))
+	resizeMaxSize = Vector2.new(
+		math.max(resizeMaxSize.X, resizeMinSize.X),
+		math.max(resizeMaxSize.Y, resizeMinSize.Y)
+	)
+	setExpandedWindowSize(parseWindowSizeSetting(Settings.Size or Settings.WindowSize, defaultExpandedWindowSize))
+
 	ensureFolder(RayfieldFolder)
 
 	local Passthrough = false
@@ -1804,6 +1854,76 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	makeDraggable(Main, Topbar, false, {dragOffset, dragOffsetMobile})
 	if dragBar then dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset) makeDraggable(Main, dragInteract, true, {dragOffset, dragOffsetMobile}) end
+
+	if resizeInputChangedConnection then
+		resizeInputChangedConnection:Disconnect()
+		resizeInputChangedConnection = nil
+	end
+	if resizeInputEndedConnection then
+		resizeInputEndedConnection:Disconnect()
+		resizeInputEndedConnection = nil
+	end
+	if resizeHandle then
+		resizeHandle:Destroy()
+		resizeHandle = nil
+	end
+
+	if resizeEnabled then
+		local handle = Instance.new("Frame")
+		handle.Name = "ResizeHandle"
+		handle.Size = UDim2.fromOffset(14, 14)
+		handle.Position = UDim2.new(1, -18, 1, -18)
+		handle.BackgroundColor3 = SelectedTheme.ElementStroke
+		handle.BackgroundTransparency = 0.2
+		handle.BorderSizePixel = 0
+		handle.ZIndex = Topbar.ZIndex + 2
+		handle.Parent = Main
+		local handleCorner = Instance.new("UICorner")
+		handleCorner.CornerRadius = UDim.new(1, 0)
+		handleCorner.Parent = handle
+		local handleInput = Instance.new("TextButton")
+		handleInput.Name = "Interact"
+		handleInput.Text = ""
+		handleInput.AutoButtonColor = false
+		handleInput.BackgroundTransparency = 1
+		handleInput.Size = UDim2.fromScale(1, 1)
+		handleInput.ZIndex = handle.ZIndex + 1
+		handleInput.Parent = handle
+
+		resizeHandle = handle
+
+		local resizing = false
+		local startMouse = Vector2.zero
+		local startSize = expandedWindowSize
+
+		handleInput.InputBegan:Connect(function(input)
+			if Hidden or Minimised then return end
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			resizing = true
+			startMouse = UserInputService:GetMouseLocation()
+			startSize = expandedWindowSize
+		end)
+
+		resizeInputEndedConnection = UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				resizing = false
+			end
+		end)
+
+		resizeInputChangedConnection = UserInputService.InputChanged:Connect(function(input)
+			if not resizing then return end
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			local mousePos = UserInputService:GetMouseLocation()
+			local delta = mousePos - startMouse
+			setExpandedWindowSize(startSize + Vector2.new(delta.X, delta.Y))
+			Main.Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)
+			Topbar.Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)
+		end)
+	end
 
 	for _, TabButton in ipairs(TabList:GetChildren()) do
 		if TabButton.ClassName == "Frame" and TabButton.Name ~= "Placeholder" then
@@ -3644,7 +3764,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	task.wait(0.1)
-	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 
 	Topbar.BackgroundTransparency = 1
@@ -3681,6 +3801,9 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	if dragBar then
 		TweenService:Create(dragBarCosmetic, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+	end
+	if resizeHandle then
+		resizeHandle.Visible = resizeEnabled
 	end
 
 	function Window.ModifyTheme(NewTheme)
