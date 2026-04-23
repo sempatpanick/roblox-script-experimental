@@ -3737,6 +3737,7 @@ do
     local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
     local MOUNT_ROUTES_REMOTE = baseURL .. "/mount_yahayuk/routes/"
     local MOUNT_FALLSPAWNS_JSON = "sempatpanick/mount_yahayuk/fallspawns.json"
+    local MOUNT_FALLSPAWNS_REMOTE = baseURL .. "/mount_yahayuk/fallspawns.json"
 
     local DEFAULT_MOUNT_ROUTE_INDEX_FILES = {
         "index.json",
@@ -3800,6 +3801,11 @@ do
     local function isJsonPathMain(path: string): boolean
         return string.sub(string.lower(path), -5) == ".json"
     end
+
+    local mountRouteProbabilitiesByPrefixCache: { [string]: { [string]: number } }? = nil
+    local mountRouteProbabilitiesLoadAttempted = false
+    local mountFallSpawnRowsCache: { any }? = nil
+    local mountFallSpawnRowsLoadAttempted = false
 
     local function syncMountYahayukRoutesFromRemote()
         local writeFn = resolveExecutorFnForMain("writefile")
@@ -3870,6 +3876,36 @@ do
                 end
             end
         end
+        -- fallspawns.json lives beside routes/; re-fetch same as route files (delete then write).
+        do
+            local fallPath = MOUNT_FALLSPAWNS_JSON
+            if type(delFn) == "function" then
+                local shouldTryDeleteFall = true
+                if type(isFileFn) == "function" then
+                    local okExistFall, existsFall = pcall(function()
+                        return isFileFn(fallPath)
+                    end)
+                    shouldTryDeleteFall = okExistFall and existsFall == true
+                end
+                if shouldTryDeleteFall then
+                    pcall(function()
+                        delFn(fallPath)
+                    end)
+                end
+            end
+            local okFallGet, fallContent = pcall(function()
+                return game:HttpGet(MOUNT_FALLSPAWNS_REMOTE, true)
+            end)
+            if okFallGet and type(fallContent) == "string" and #fallContent > 2 then
+                pcall(function()
+                    writeFn(fallPath, fallContent)
+                end)
+            end
+        end
+        mountRouteProbabilitiesLoadAttempted = false
+        mountRouteProbabilitiesByPrefixCache = nil
+        mountFallSpawnRowsLoadAttempted = false
+        mountFallSpawnRowsCache = nil
         return true, nil
     end
 
@@ -3918,9 +3954,6 @@ do
         end)
         return matches
     end
-
-    local mountRouteProbabilitiesByPrefixCache: { [string]: { [string]: number } }? = nil
-    local mountRouteProbabilitiesLoadAttempted = false
 
     local function getMountRouteProbabilitiesByPrefix(readFileFn: any): { [string]: { [string]: number } }
         if mountRouteProbabilitiesLoadAttempted then
@@ -4067,9 +4100,6 @@ do
         return (rootPart.Position - worldPos).Magnitude <= radius
     end
 
-    local mountFallSpawnRowsCache: { any }? = nil
-    local mountFallSpawnRowsLoadAttempted = false
-
     local function getMountFallSpawnRows(readFileFn: any): { any }
         if mountFallSpawnRowsLoadAttempted then
             return mountFallSpawnRowsCache or {}
@@ -4210,7 +4240,7 @@ do
                 notifyAutoSummit("Refreshing walk routes from remote...")
                 local okSync, syncErr = syncMountYahayukRoutesFromRemote()
                 if okSync then
-                    notifyAutoSummit("Routes refreshed (including index.json)")
+                    notifyAutoSummit("Routes and fallspawns.json refreshed (delete + re-fetch + write)")
                 else
                     notifyAutoSummit("Failed to refresh routes: " .. tostring(syncErr), "x")
                 end
