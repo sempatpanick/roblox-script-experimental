@@ -1097,6 +1097,8 @@ end
 local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
 	local dragging = false
 	local relative = nil
+	local lastObjectPosition = nil
+	local lastDragBarPosition = nil
 
 	local offset = Vector2.zero
 	local screenGui = object:FindFirstAncestorWhichIsA("ScreenGui")
@@ -1152,14 +1154,33 @@ local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
 	local renderStepped = RunService.RenderStepped:Connect(function()
 		if dragging and not Hidden then
 			local position = UserInputService:GetMouseLocation() + relative + offset
+			local objectPosition = UDim2.fromOffset(position.X, position.Y)
+			local dragBarPosition = nil
+			if tapticOffset then
+				local dragBarY = position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1])
+				dragBarPosition = UDim2.fromOffset(position.X, dragBarY)
+			end
+
 			if enableTaptic and tapticOffset then
-				TweenService:Create(object, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y)}):Play()
-				TweenService:Create(dragObject.Parent, TweenInfo.new(0.05, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))}):Play()
+				if objectPosition ~= lastObjectPosition then
+					object.Position = objectPosition
+					lastObjectPosition = objectPosition
+				end
+				if dragBarPosition ~= lastDragBarPosition then
+					dragObject.Parent.Position = dragBarPosition
+					lastDragBarPosition = dragBarPosition
+				end
 			else
 				if dragBar and tapticOffset then
-					dragBar.Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))
+					if dragBarPosition ~= lastDragBarPosition then
+						dragBar.Position = dragBarPosition
+						lastDragBarPosition = dragBarPosition
+					end
 				end
-				object.Position = UDim2.fromOffset(position.X, position.Y)
+				if objectPosition ~= lastObjectPosition then
+					object.Position = objectPosition
+					lastObjectPosition = objectPosition
+				end
 			end
 		end
 	end)
