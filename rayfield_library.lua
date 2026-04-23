@@ -2723,8 +2723,33 @@ function RayfieldLibrary:CreateWindow(Settings)
 			local Paragraph = Elements.Template.Paragraph:Clone()
 			Paragraph.Title.Text = ParagraphSettings.Title
 			Paragraph.Content.Text = ParagraphSettings.Content
+			Paragraph.Content.TextWrapped = true
+			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
 			Paragraph.Visible = true
 			Paragraph.Parent = TabPage
+
+			local function updateParagraphLayout()
+				if not Paragraph.Parent then
+					return
+				end
+
+				local contentWidth = math.max(Paragraph.AbsoluteSize.X - 24, 120)
+				if Paragraph.Content.AbsoluteSize.X ~= contentWidth then
+					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, 1000)
+				end
+				local contentHeight = math.max(Paragraph.Content.TextBounds.Y, 14)
+				if Paragraph.Content.AbsoluteSize.Y ~= contentHeight then
+					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, contentHeight)
+				end
+				local paragraphHeight = contentHeight + 42
+				if Paragraph.AbsoluteSize.Y ~= paragraphHeight then
+					Paragraph.Size = UDim2.new(1, -10, 0, paragraphHeight)
+				end
+			end
+
+			task.defer(updateParagraphLayout)
+			Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateParagraphLayout)
+			Paragraph:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateParagraphLayout)
 
 			Paragraph.BackgroundTransparency = 1
 			Paragraph.UIStroke.Transparency = 1
@@ -2742,6 +2767,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			function ParagraphValue:Set(NewParagraphSettings)
 				Paragraph.Title.Text = NewParagraphSettings.Title
 				Paragraph.Content.Text = NewParagraphSettings.Content
+				task.defer(updateParagraphLayout)
 			end
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
