@@ -1,5 +1,6 @@
 {
   "files": [
+    "cp1-2_failed_1.json",
     "cp1-2_success_1.json",
     "cp1-2_success_2.json",
     "cp1-2_success_3.json",
@@ -7,11 +8,19 @@
     "cp1-2_success_5.json",
     "cp1-cp2_failed_1.json",
     "cp2-3_failed_1.json",
+    "cp2-3_failed_2.json",
+    "cp2-3_failed_3.json",
+    "cp2-3_failed_4.json",
     "cp2-3_success_1.json",
+    "cp2-3_success_2.json",
+    "cp2-3_success_3.json",
+    "cp2-3_success_4.json",
     "cp3-4_success_1.json",
     "cp3-4_success_2.json",
+    "cp4-5_failed_1.json",
     "cp4-5_success_1.json",
     "cp4-5_success_2.json",
+    "cp4-5_success_3.json",
     "cp5-summit_failed_1.json",
     "cp5-summit_failed_2.json",
     "cp5-summit_failed_3.json",
@@ -19,6 +28,7 @@
     "cp5-summit_success_1.json",
     "cp5-summit_success_2.json",
     "cp5-summit_success_3.json",
+    "cp5-summit_success_4.json",
     "start-cp1_failed_1.json",
     "start-cp1_success_1.json",
     "start-cp1_success_2.json",
@@ -28,13 +38,14 @@
   ],
   "routeProbabilitiesByPrefix": {
     "start-cp1": {
+      "start-cp1_failed_1.json": 0.5,
       "start-cp1_success_1.json": 1,
       "start-cp1_success_2.json": 1,
       "start-cp1_success_3.json": 1,
-      "start-cp1_success_4.json": 1,
-      "start-cp1_failed_1.json": 0.5
+      "start-cp1_success_4.json": 1
     },
     "cp1-2": {
+      "cp1-2_failed_1.json": 0.5,
       "cp1-2_success_1.json": 1,
       "cp1-2_success_2.json": 1,
       "cp1-2_success_3.json": 1,
@@ -42,25 +53,34 @@
       "cp1-2_success_5.json": 1
     },
     "cp2-3": {
+      "cp2-3_failed_1.json": 0.2,
+      "cp2-3_failed_2.json": 0.2,
+      "cp2-3_failed_3.json": 0.2,
+      "cp2-3_failed_4.json": 0.2,
       "cp2-3_success_1.json": 1,
-      "cp2-3_failed_1.json": 0.5
+      "cp2-3_success_2.json": 1,
+      "cp2-3_success_3.json": 1,
+      "cp2-3_success_4.json": 1
     },
     "cp3-4": {
       "cp3-4_success_1.json": 1,
       "cp3-4_success_2.json": 1
     },
     "cp4-5": {
+      "cp4-5_failed_1.json": 0.5,
       "cp4-5_success_1.json": 1,
-      "cp4-5_success_2.json": 1
+      "cp4-5_success_2.json": 1,
+      "cp4-5_success_3.json": 1
     },
     "cp5-summit": {
-      "cp5-summit_success_1.json": 1,
-      "cp5-summit_success_2.json": 1,
-      "cp5-summit_success_3.json": 1,
       "cp5-summit_failed_1.json": 0.5,
       "cp5-summit_failed_2.json": 0.5,
       "cp5-summit_failed_3.json": 0.5,
-      "cp5-summit_failed_4.json": 0.5
+      "cp5-summit_failed_4.json": 0.5,
+      "cp5-summit_success_1.json": 1,
+      "cp5-summit_success_2.json": 1,
+      "cp5-summit_success_3.json": 1,
+      "cp5-summit_success_4.json": 1
     },
     "summit-start": {
       "summit-start_success_1.json": 1
