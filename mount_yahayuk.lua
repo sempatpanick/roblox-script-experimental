@@ -3732,7 +3732,9 @@ do
     local autoSummitMode = "Walk"
     local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
     local updateAutoSummitRouteModeParagraph: () -> ()
-    local BETWEEN_RUN_DELAY = 10
+    local TELEPORT_BETWEEN_RUN_DELAY = 10
+    local WALK_BETWEEN_RUN_DELAY_MIN = 3
+    local WALK_BETWEEN_RUN_DELAY_MAX = 6
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
@@ -5405,7 +5407,14 @@ do
                                 end)
                             end
                             if autoSummitEnabled and (not qtyNum or remaining > 0) then
-                                if not waitWithCancel(BETWEEN_RUN_DELAY, function()
+                                local betweenRunDelay = TELEPORT_BETWEEN_RUN_DELAY
+                                if autoSummitMode == "Walk" then
+                                    betweenRunDelay = walkRouteRng:NextNumber(
+                                        WALK_BETWEEN_RUN_DELAY_MIN,
+                                        WALK_BETWEEN_RUN_DELAY_MAX
+                                    )
+                                end
+                                if not waitWithCancel(betweenRunDelay, function()
                                     return not autoSummitEnabled
                                 end) then
                                     break
