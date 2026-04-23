@@ -3731,6 +3731,7 @@ do
     local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
     local autoSummitMode = "Walk"
     local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
+    local updateAutoSummitRouteModeParagraph: () -> ()
     local BETWEEN_RUN_DELAY = 10
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
@@ -4257,6 +4258,7 @@ do
             local picked = rayfieldDropdownFirst(value)
             if picked and table.find(AUTO_SUMMIT_MODE_OPTIONS, picked) then
                 autoSummitMode = picked
+                task.defer(updateAutoSummitRouteModeParagraph)
             end
         end,
     })
@@ -4552,6 +4554,42 @@ do
 
     local autoSummitDeathCheckConn: any = nil
 
+    -- Auto Summit UI: route file (walk) or teleport leg + delay (teleport)
+    local autoSummitWalkRouteFileDisplay = "—"
+    local autoSummitTeleportCurrentLeg = "—"
+    local autoSummitTeleportNextLeg = "—"
+    local autoSummitTeleportDelayText = "—"
+
+    local AutoSummitRouteModeParagraph: any = nil
+    updateAutoSummitRouteModeParagraph = function()
+        if not AutoSummitRouteModeParagraph or not AutoSummitRouteModeParagraph.Set then
+            return
+        end
+        if not autoSummitEnabled then
+            AutoSummitRouteModeParagraph:Set({
+                Title = "Active route / teleport",
+                Content = "Auto Summit is off.",
+            })
+            return
+        end
+        if autoSummitMode == "Walk" then
+            AutoSummitRouteModeParagraph:Set({
+                Title = "Active route / teleport",
+                Content = "Walk mode\nCurrent: " .. autoSummitWalkRouteFileDisplay,
+            })
+            return
+        end
+        AutoSummitRouteModeParagraph:Set({
+            Title = "Active route / teleport",
+            Content = string.format(
+                "Teleport mode\nCurrent: %s\nNext: %s\nDelay (this stop): %s",
+                autoSummitTeleportCurrentLeg,
+                autoSummitTeleportNextLeg,
+                autoSummitTeleportDelayText
+            ),
+        })
+    end
+
     local function disableAutoSummitDueToWalkFailure(reason: string)
         autoSummitSkipFinalStoppedNotify = true
         autoSummitEnabled = false
@@ -4657,6 +4695,9 @@ do
         local routeProbabilitiesByPrefix = getMountRouteProbabilitiesByPrefix(readFileFn)
         local fallSpawnRows = getMountFallSpawnRows(readFileFn)
 
+        autoSummitWalkRouteFileDisplay = "—"
+        task.defer(updateAutoSummitRouteModeParagraph)
+
         local routeN = #summitTeleportRoute
         local summitCpIndex = routeN - 1
         local reachedSummitInThisCycle = false
@@ -4740,6 +4781,9 @@ do
                             baseName
                         )
                     )
+
+                    autoSummitWalkRouteFileDisplay = baseName
+                    task.defer(updateAutoSummitRouteModeParagraph)
 
                     local rootPart = getRootPart()
                     if not rootPart then
@@ -5001,6 +5045,12 @@ do
         Content = "POSISI: â€”\nCP #0 Â· Start",
     })
 
+    AutoSummitRouteModeParagraph = MainTab:CreateParagraph({
+        Title = "Active route / teleport",
+        Content = "Auto Summit is off.",
+    })
+    task.defer(updateAutoSummitRouteModeParagraph)
+
     AutoSummitTimesParagraph = MainTab:CreateParagraph({
         Title = AUTO_SUMMIT_TIMES_TITLE,
         Content = "No completed runs yet.",
@@ -5107,6 +5157,11 @@ do
                     autoSummitDeathCheckConn = nil
                 end
                 stopAutoSummitWalkCharacter()
+                autoSummitWalkRouteFileDisplay = "—"
+                autoSummitTeleportCurrentLeg = "—"
+                autoSummitTeleportNextLeg = "—"
+                autoSummitTeleportDelayText = "—"
+                task.defer(updateAutoSummitRouteModeParagraph)
                 return
             end
 
@@ -5114,6 +5169,7 @@ do
             autoSummitRunTimes = {}
             updateAutoSummitTimesParagraph()
             updateAutoSummitCpParagraph()
+            updateAutoSummitRouteModeParagraph()
 
             if autoSummitDeathCheckConn then
                 autoSummitDeathCheckConn:Disconnect()
@@ -5159,6 +5215,14 @@ do
                     if not autoSummitEnabled then
                         break
                     end
+                    if autoSummitMode == "Teleport" then
+                        autoSummitTeleportCurrentLeg = "—"
+                        autoSummitTeleportNextLeg = "—"
+                        autoSummitTeleportDelayText = "—"
+                    else
+                        autoSummitWalkRouteFileDisplay = "—"
+                    end
+                    task.defer(updateAutoSummitRouteModeParagraph)
                     local runStartTime = os.clock()
                     rootPart = getRootPart()
                     if not rootPart then
@@ -5241,13 +5305,24 @@ do
                                 rootPart.CFrame = CFrame.new(targetPosition)
                                 notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
                                 local waitSec = wp.delay
+                                local delayRandomized = false
                                 if
                                     autoSummitMode == "Teleport"
                                     and autoSummitRandomizeTeleportDuration
                                     and wp.name ~= "Summit"
                                 then
                                     waitSec = math.max(0.5, wp.delay + math.random(-15, 15))
+                                    delayRandomized = true
                                 end
+                                local nextWp = summitTeleportRoute[wi + 1]
+                                autoSummitTeleportCurrentLeg = wp.name
+                                autoSummitTeleportNextLeg = nextWp and nextWp.name or "—"
+                                if delayRandomized then
+                                    autoSummitTeleportDelayText = string.format("%.1fs (randomized)", waitSec)
+                                else
+                                    autoSummitTeleportDelayText = string.format("%.1fs", waitSec)
+                                end
+                                task.defer(updateAutoSummitRouteModeParagraph)
                                 if not waitWithCancel(waitSec, shouldAbort) then
                                     routeCompleted = false
                                     break
