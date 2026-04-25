@@ -2835,6 +2835,167 @@ function RayfieldLibrary:CreateWindow(Settings)
 			return ParagraphValue
 		end
 
+		-- Image (ImageLabel inside a paragraph-style card; supports rbxthumb://, rbxassetid numbers, Lucide names, rbxasset://)
+		function Tab:CreateImage(ImageSettings)
+			local ImageValue = {}
+			local imagePixelSize = tonumber(ImageSettings.ImageSize) or 128
+			if imagePixelSize < 32 then
+				imagePixelSize = 32
+			elseif imagePixelSize > 256 then
+				imagePixelSize = 256
+			end
+
+			local Paragraph = Elements.Template.Paragraph:Clone()
+			Paragraph.Name = ImageSettings.Name or "Image"
+			Paragraph.Title.Text = ImageSettings.Title or "Image"
+			Paragraph.Content.Text = ImageSettings.Description or ""
+			Paragraph.Title.AnchorPoint = Vector2.new(0, 0)
+			Paragraph.Title.TextXAlignment = Enum.TextXAlignment.Left
+			Paragraph.Content.TextWrapped = true
+			Paragraph.Content.AnchorPoint = Vector2.new(0, 0)
+			Paragraph.Content.TextXAlignment = Enum.TextXAlignment.Left
+			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
+			Paragraph.Title.Position = UDim2.new(0, 12, 0, 9)
+			Paragraph.Title.Size = UDim2.new(1, -24, 0, 16)
+			Paragraph.Visible = true
+			Paragraph.Parent = TabPage
+
+			local imgHolder = Instance.new("Frame")
+			imgHolder.Name = "ImageHolder"
+			imgHolder.BackgroundTransparency = 1
+			imgHolder.BorderSizePixel = 0
+			imgHolder.ClipsDescendants = false
+			imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
+			imgHolder.Position = UDim2.new(0, 12, 0, 29)
+			imgHolder.Parent = Paragraph
+
+			local imgLabel = Instance.new("ImageLabel")
+			imgLabel.Name = "Image"
+			imgLabel.BackgroundTransparency = 0.15
+			imgLabel.BackgroundColor3 = SelectedTheme.InputBackground
+			imgLabel.BorderSizePixel = 0
+			imgLabel.ScaleType = Enum.ScaleType.Fit
+			imgLabel.Size = UDim2.fromOffset(imagePixelSize, imagePixelSize)
+			local xOff = math.floor(-imagePixelSize / 2)
+			imgLabel.Position = UDim2.new(0.5, xOff, 0, 0)
+			imgLabel.Parent = imgHolder
+
+			local imgCorner = Instance.new("UICorner")
+			imgCorner.CornerRadius = UDim.new(0, 8)
+			imgCorner.Parent = imgLabel
+
+			local function applyImageSource(src: any)
+				local uri, ro, rs = resolveIcon(src)
+				if uri == nil or uri == "" then
+					imgLabel.Image = ""
+					imgHolder.Visible = false
+					imgLabel.ImageRectOffset = Vector2.zero
+					imgLabel.ImageRectSize = Vector2.zero
+					Paragraph.Content.Position = UDim2.new(0, 12, 0, 29)
+					return false
+				end
+				imgLabel.Image = uri
+				if ro then
+					imgLabel.ImageRectOffset = ro
+				else
+					imgLabel.ImageRectOffset = Vector2.zero
+				end
+				if rs then
+					imgLabel.ImageRectSize = rs
+				else
+					imgLabel.ImageRectSize = Vector2.zero
+				end
+				imgHolder.Visible = true
+				imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
+				Paragraph.Content.Position = UDim2.new(0, 12, 0, 29 + imagePixelSize + 8)
+				return true
+			end
+
+			applyImageSource(ImageSettings.Image)
+
+			local function updateImageBlockLayout()
+				if not Paragraph.Parent then
+					return
+				end
+				local hasImageRow = imgHolder.Visible
+				local imageRowHeight = hasImageRow and imagePixelSize or 0
+				local gapAfterImage = hasImageRow and 8 or 0
+				local contentTop = 29 + imageRowHeight + gapAfterImage
+				Paragraph.Content.Position = UDim2.new(0, 12, 0, contentTop)
+
+				local contentWidth = math.max(Paragraph.AbsoluteSize.X - 24, 120)
+				if Paragraph.Content.AbsoluteSize.X ~= contentWidth then
+					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, 1000)
+				end
+				local contentHeight = math.max(Paragraph.Content.TextBounds.Y, 14)
+				if Paragraph.Content.Text == "" then
+					contentHeight = 0
+				end
+				if Paragraph.Content.AbsoluteSize.Y ~= contentHeight then
+					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, math.max(contentHeight, 1))
+				end
+				local bottomPad = 12
+				local paragraphHeight = contentTop + contentHeight + bottomPad
+				if Paragraph.AbsoluteSize.Y ~= paragraphHeight then
+					Paragraph.Size = UDim2.new(1, -10, 0, paragraphHeight)
+				end
+			end
+
+			registerParagraphLayout(Paragraph, updateImageBlockLayout)
+
+			Paragraph.BackgroundTransparency = 1
+			Paragraph.UIStroke.Transparency = 1
+			Paragraph.Title.TextTransparency = 1
+			Paragraph.Content.TextTransparency = 1
+			imgLabel.ImageTransparency = 1
+
+			Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
+			Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
+
+			TweenService:Create(Paragraph, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+			TweenService:Create(Paragraph.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { Transparency = 0 }):Play()
+			TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+			TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+			TweenService:Create(imgLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+
+			function ImageValue:Set(newSettings: any)
+				if newSettings.Title ~= nil then
+					Paragraph.Title.Text = newSettings.Title
+				end
+				if newSettings.Description ~= nil then
+					Paragraph.Content.Text = newSettings.Description
+				end
+				if newSettings.ImageSize ~= nil then
+					local n = tonumber(newSettings.ImageSize)
+					if n then
+						imagePixelSize = math.clamp(n, 32, 256)
+						imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
+						imgLabel.Size = UDim2.fromOffset(imagePixelSize, imagePixelSize)
+						local xOff2 = math.floor(-imagePixelSize / 2)
+						imgLabel.Position = UDim2.new(0.5, xOff2, 0, 0)
+					end
+				end
+				if newSettings.Image ~= nil then
+					applyImageSource(newSettings.Image)
+				end
+				requestParagraphLayoutUpdates()
+			end
+
+			function ImageValue:Destroy()
+				pcall(function()
+					Paragraph:Destroy()
+				end)
+			end
+
+			Rayfield.Main:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+				Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
+				Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
+				imgLabel.BackgroundColor3 = SelectedTheme.InputBackground
+			end)
+
+			return ImageValue
+		end
+
 		-- Input
 		function Tab:CreateInput(InputSettings)
 			local Input = Elements.Template.Input:Clone()
