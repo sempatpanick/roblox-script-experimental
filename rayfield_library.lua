@@ -1076,6 +1076,10 @@ local function resolveIcon(icon)
 	if not icon or icon == 0 then
 		return "", nil, nil
 	end
+	-- Empty string is truthy in Lua; without this branch, getIcon("") errors when the Lucide atlas is loaded.
+	if type(icon) == "string" and #icon == 0 then
+		return "", nil, nil
+	end
 
 	if isCustomAsset(icon) then
 		return icon, nil, nil
@@ -3070,6 +3074,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				if not InputSettings.Ext then
 					SaveConfiguration()
 				end
+			end
+
+			function InputSettings:GetValue()
+				return Input.InputFrame.InputBox.Text
 			end
 
 			if Settings.ConfigurationSaving then
