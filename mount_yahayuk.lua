@@ -3736,8 +3736,8 @@ do
     local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
     local updateAutoSummitRouteModeParagraph: () -> ()
     local TELEPORT_BETWEEN_RUN_DELAY = 10
-    local WALK_BETWEEN_RUN_DELAY_MIN = 3
-    local WALK_BETWEEN_RUN_DELAY_MAX = 6
+    local WALK_BETWEEN_RUN_DELAY_MIN = 0
+    local WALK_BETWEEN_RUN_DELAY_MAX = 2
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
@@ -6543,6 +6543,596 @@ do
         end
         task.defer(applyAdminMiniBtnVisibility)
     end
+end
+-- */  Map Tab  /* --
+do
+    local MapTab = Window:CreateTab("Map", 4483362458)
+    local LightingService = game:GetService("Lighting")
+    local Terrain = Workspace:FindFirstChildOfClass("Terrain")
+
+    MapTab:CreateSection("Map / Performance")
+
+    local fpsBoostEnabled = false
+    local fpsBoostState = {
+        cachedEffects = {} :: { [Instance]: boolean },
+        cachedVfx = {} :: { [Instance]: boolean },
+        cachedPartProps = {} :: { [BasePart]: { Material: Enum.Material, CastShadow: boolean, Reflectance: number } },
+        lighting = nil :: { GlobalShadows: boolean }?,
+        terrainDecoration = nil :: boolean?,
+    }
+
+    local function safeSet(instance: any, propertyName: string, value: any)
+        pcall(function()
+            instance[propertyName] = value
+        end)
+    end
+
+    local function applyFpsBoost()
+        if not fpsBoostState.lighting then
+            local okLightRead, lightData = pcall(function()
+                return {
+                    GlobalShadows = LightingService.GlobalShadows,
+                }
+            end)
+            if okLightRead and type(lightData) == "table" then
+                fpsBoostState.lighting = lightData
+            end
+        end
+        safeSet(LightingService, "GlobalShadows", false)
+
+        if Terrain then
+            if fpsBoostState.terrainDecoration == nil then
+                local okDecoration, decoration = pcall(function()
+                    return Terrain.Decoration
+                end)
+                if okDecoration then
+                    fpsBoostState.terrainDecoration = decoration
+                end
+            end
+            safeSet(Terrain, "Decoration", false)
+        end
+
+        for _, effect in ipairs(LightingService:GetChildren()) do
+            if effect:IsA("PostEffect") then
+                if fpsBoostState.cachedEffects[effect] == nil then
+                    local okEnabled, enabledValue = pcall(function()
+                        return effect.Enabled
+                    end)
+                    if okEnabled then
+                        fpsBoostState.cachedEffects[effect] = enabledValue
+                    end
+                end
+                safeSet(effect, "Enabled", false)
+            end
+        end
+
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            if inst:IsA("ParticleEmitter")
+                or inst:IsA("Trail")
+                or inst:IsA("Smoke")
+                or inst:IsA("Fire")
+                or inst:IsA("Sparkles")
+            then
+                if fpsBoostState.cachedVfx[inst] == nil then
+                    local okEnabled, enabledValue = pcall(function()
+                        return inst.Enabled
+                    end)
+                    if okEnabled then
+                        fpsBoostState.cachedVfx[inst] = enabledValue
+                    end
+                end
+                safeSet(inst, "Enabled", false)
+            elseif inst:IsA("BasePart") then
+                if fpsBoostState.cachedPartProps[inst] == nil then
+                    local okPartRead, partData = pcall(function()
+                        return {
+                            Material = inst.Material,
+                            CastShadow = inst.CastShadow,
+                            Reflectance = inst.Reflectance,
+                        }
+                    end)
+                    if okPartRead and type(partData) == "table" then
+                        fpsBoostState.cachedPartProps[inst] = partData
+                    end
+                end
+                safeSet(inst, "Material", Enum.Material.SmoothPlastic)
+                safeSet(inst, "CastShadow", false)
+                safeSet(inst, "Reflectance", 0)
+            end
+        end
+    end
+
+    local function restoreFpsBoost()
+        if fpsBoostState.lighting then
+            safeSet(LightingService, "GlobalShadows", fpsBoostState.lighting.GlobalShadows)
+        end
+
+        if Terrain and fpsBoostState.terrainDecoration ~= nil then
+            safeSet(Terrain, "Decoration", fpsBoostState.terrainDecoration)
+        end
+
+        for inst, wasEnabled in pairs(fpsBoostState.cachedEffects) do
+            if inst and inst.Parent then
+                safeSet(inst, "Enabled", wasEnabled)
+            end
+        end
+
+        for inst, wasEnabled in pairs(fpsBoostState.cachedVfx) do
+            if inst and inst.Parent then
+                safeSet(inst, "Enabled", wasEnabled)
+            end
+        end
+
+        for part, props in pairs(fpsBoostState.cachedPartProps) do
+            if part and part.Parent then
+                safeSet(part, "Material", props.Material)
+                safeSet(part, "CastShadow", props.CastShadow)
+                safeSet(part, "Reflectance", props.Reflectance)
+            end
+        end
+    end
+
+    MapTab:CreateToggle({
+        Name = "Boost FPS",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(value)
+            local enabled = value == true or (type(value) == "table" and value[1] == true)
+            if enabled == fpsBoostEnabled then
+                return
+            end
+            local ok, err = pcall(function()
+                fpsBoostEnabled = enabled
+                if enabled then
+                    applyFpsBoost()
+                    mountNotify({ Title = "Map", Content = "Boost FPS enabled", Icon = "check" })
+                else
+                    restoreFpsBoost()
+                    mountNotify({ Title = "Map", Content = "Boost FPS disabled (restored)", Icon = "check" })
+                end
+            end)
+            if not ok then
+                fpsBoostEnabled = false
+                mountNotify({ Title = "Map", Content = "Boost FPS failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+
+    local mapVfxHideEnabled = false
+    local mapVfxState = {
+        enabledByInstance = {} :: { [Instance]: boolean },
+    }
+    local ensureMapWatchers: () -> ()
+    local MAP_VFX_HIDE_CLASS_SET = {
+        ParticleEmitter = true,
+        Trail = true,
+        Beam = true,
+        Smoke = true,
+        Fire = true,
+        Sparkles = true,
+        PointLight = true,
+        SpotLight = true,
+        SurfaceLight = true,
+    }
+    local mapWatcherDescAddedConn: RBXScriptConnection? = nil
+    local mapWatcherCharacterAddedConn: RBXScriptConnection? = nil
+
+    local function applyMapSpecificVfxHideToInstance(inst: Instance)
+        if MAP_VFX_HIDE_CLASS_SET[inst.ClassName] ~= true then
+            return
+        end
+        local obj: any = inst
+        if mapVfxState.enabledByInstance[inst] == nil then
+            local okEnabled, enabledValue = pcall(function()
+                return obj.Enabled
+            end)
+            if okEnabled then
+                mapVfxState.enabledByInstance[inst] = enabledValue
+            end
+        end
+        safeSet(inst, "Enabled", false)
+    end
+
+    local function applyMapSpecificVfxHide()
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            applyMapSpecificVfxHideToInstance(inst)
+        end
+
+        for _, effect in ipairs(LightingService:GetChildren()) do
+            if effect:IsA("BlurEffect") then
+                if mapVfxState.enabledByInstance[effect] == nil then
+                    local okEnabled, enabledValue = pcall(function()
+                        return effect.Enabled
+                    end)
+                    if okEnabled then
+                        mapVfxState.enabledByInstance[effect] = enabledValue
+                    end
+                end
+                safeSet(effect, "Enabled", false)
+            end
+        end
+    end
+
+    local function restoreMapSpecificVfxHide()
+        for inst, wasEnabled in pairs(mapVfxState.enabledByInstance) do
+            if inst and inst.Parent then
+                safeSet(inst, "Enabled", wasEnabled)
+            end
+        end
+    end
+
+    MapTab:CreateToggle({
+        Name = "Hide Heavy VFX (Map-specific)",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(value)
+            local enabled = value == true or (type(value) == "table" and value[1] == true)
+            if enabled == mapVfxHideEnabled then
+                return
+            end
+            local ok, err = pcall(function()
+                mapVfxHideEnabled = enabled
+                if enabled then
+                    applyMapSpecificVfxHide()
+                    ensureMapWatchers()
+                    mountNotify({
+                        Title = "Map",
+                        Content = "Heavy VFX hidden (particles, beams, trails, lights, blur)",
+                        Icon = "check",
+                    })
+                else
+                    restoreMapSpecificVfxHide()
+                    ensureMapWatchers()
+                    mountNotify({
+                        Title = "Map",
+                        Content = "Heavy VFX restored",
+                        Icon = "check",
+                    })
+                end
+            end)
+            if not ok then
+                mapVfxHideEnabled = false
+                ensureMapWatchers()
+                mountNotify({ Title = "Map", Content = "Hide Heavy VFX failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+
+    local hideMapDecorEnabled = false
+    local hideMapDecorState = {
+        originalParentByInstance = {} :: { [Instance]: Instance? },
+    }
+    local MAP_DECOR_HIDE_EXACT_NAME_SET = {
+        ["roadbarrier"] = true,
+        ["middle rail"] = true,
+        ["bottom rail"] = true,
+        ["right side support"] = true,
+        ["left side support"] = true,
+        ["street batop rail"] = true,
+        ["trash"] = true,
+        ["trashcan"] = true,
+        ["wood"] = true,
+        ["effectcp"] = true,
+        ["trunk"] = true,
+        ["sun"] = true,
+        ["mountain"] = true,
+        ["jungle tree"] = true,
+        ["leaf"] = true,
+        ["leafs"] = true,
+        ["fire"] = true,
+        ["torso"] = true,
+        ["main wire"] = true,
+        ["extra barbs"] = true,
+        ["threedtextboundingbox"] = true,
+        ["stand"] = true,
+        ["seat"] = true,
+        ["clover patch"] = true,
+        ["obby stair"] = true,
+        ["top rail"] = true,
+        ["qqq"] = true,
+        ["meshes/a"] = true,
+        ["meshpart"] = true,
+        ["board"] = true,
+        ["updateboardpart"] = true,
+        ["updateboardtimer"] = true,
+        ["scoreblock"] = true,
+        ["lightsource"] = true,
+        ["side rail"] = true,
+        ["localleaderboard"] = true,
+        ["globalleaderboard"] = true,
+        ["besttimeleaderboard"] = true,
+        ["timeplayedleaderboard"] = true,
+        ["waterfall"] = true,
+        ["street barrier police sign"] = true,
+        ["oak tree"] = true,
+        ["dragon"] = true,
+        ["barbed wire"] = true,
+        ["bonfire"] = true,
+        ["clock aura"] = true,
+        ["realistic tree"] = true,
+        ["tree3"] = true,
+        -- ["rightupperarm"] = true,
+        -- ["leftupperarm"] = true,
+        -- ["rightlowerarm"] = true,
+        -- ["righthand"] = true,
+        -- ["lefthand"] = true,
+        -- ["leftlowerarm"] = true,
+        -- ["lowertorso"] = true,
+        -- ["uppertorso"] = true,
+        -- ["rightupperleg"] = true,
+        -- ["leftupperleg"] = true,
+        -- ["rightlowerleg"] = true,
+        -- ["leftlowerleg"] = true,
+        -- ["rightfoot"] = true,
+        -- ["leftfoot"] = true,
+        ["kaimenduzy"] = true,
+        ["swingmesh1"] = true,
+        ["swingmesh2"] = true,
+        ["swingseat1"] = true,
+        ["swingseat2"] = true,
+        ["ropeshaftroundsmoothbase"] = true,
+        ["ropesupport1"] = true,
+        ["ropesupport2"] = true,
+        ["ropesupport3"] = true,
+        ["ropesupport4"] = true,
+        ["rope1"] = true,
+        ["rope2"] = true,
+        ["rope3"] = true,
+        ["rope4"] = true,
+        ["hook1"] = true,
+        ["hook2"] = true,
+        ["hook3"] = true,
+        ["hook4"] = true,
+        ["chaos glow"] = true,
+        ["group15585"] = true,
+        ["group40649"] = true,
+        ["group30024"] = true,
+        ["group14682"] = true,
+        ["group25145"] = true,
+        ["group6034"] = true,
+    }
+    local MAP_DECOR_HIDE_PREFIX_LIST = {
+        "flower",
+        "vine",
+        "leaves",
+        "cherry",
+        "cube.071",
+        "waterlily",
+        "plant",
+        "dead",
+        "lamp",
+        "street light",
+        "beechwoodtree",
+        "jungletree",
+        "donation board",
+    }
+
+    local function mapDecorNameShouldHide(name: string): boolean
+        local n = string.lower(name or "")
+        if MAP_DECOR_HIDE_EXACT_NAME_SET[n] == true then
+            return true
+        end
+        for _, prefix in ipairs(MAP_DECOR_HIDE_PREFIX_LIST) do
+            if string.sub(n, 1, #prefix) == prefix then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function applyMapDecorHideToInstance(inst: Instance)
+        if not mapDecorNameShouldHide(inst.Name) then
+            return
+        end
+        if hideMapDecorState.originalParentByInstance[inst] == nil then
+            hideMapDecorState.originalParentByInstance[inst] = inst.Parent
+        end
+        pcall(function()
+            inst.Parent = nil
+        end)
+    end
+
+    local function applyMapDecorHide()
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            applyMapDecorHideToInstance(inst)
+        end
+    end
+
+    local function restoreMapDecorHide()
+        for inst, originalParent in pairs(hideMapDecorState.originalParentByInstance) do
+            if inst and originalParent then
+                pcall(function()
+                    inst.Parent = originalParent
+                end)
+            end
+        end
+    end
+
+    local function mapWatcherNeeded(): boolean
+        return mapVfxHideEnabled or hideMapDecorEnabled
+    end
+
+    local function stopMapWatchers()
+        if mapWatcherDescAddedConn then
+            mapWatcherDescAddedConn:Disconnect()
+            mapWatcherDescAddedConn = nil
+        end
+        if mapWatcherCharacterAddedConn then
+            mapWatcherCharacterAddedConn:Disconnect()
+            mapWatcherCharacterAddedConn = nil
+        end
+    end
+
+    local function reapplyActiveMapHides()
+        if mapVfxHideEnabled then
+            applyMapSpecificVfxHide()
+        end
+        if hideMapDecorEnabled then
+            applyMapDecorHide()
+        end
+    end
+
+    function ensureMapWatchers()
+        if not mapWatcherNeeded() then
+            stopMapWatchers()
+            return
+        end
+        if not mapWatcherDescAddedConn then
+            mapWatcherDescAddedConn = Workspace.DescendantAdded:Connect(function(inst)
+                if mapVfxHideEnabled then
+                    applyMapSpecificVfxHideToInstance(inst)
+                end
+                if hideMapDecorEnabled then
+                    applyMapDecorHideToInstance(inst)
+                end
+            end)
+        end
+        if not mapWatcherCharacterAddedConn then
+            mapWatcherCharacterAddedConn = Players.LocalPlayer.CharacterAdded:Connect(function()
+                task.defer(reapplyActiveMapHides)
+            end)
+        end
+    end
+
+    MapTab:CreateToggle({
+        Name = "Hide Map Decor (Road/Flower/Vine/Leaves/Trashcan)",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(value)
+            local enabled = value == true or (type(value) == "table" and value[1] == true)
+            if enabled == hideMapDecorEnabled then
+                return
+            end
+            local ok, err = pcall(function()
+                hideMapDecorEnabled = enabled
+                if enabled then
+                    applyMapDecorHide()
+                    ensureMapWatchers()
+                    mountNotify({
+                        Title = "Map",
+                        Content = "Map decor hidden (RoadBarrier, rails, supports, Flower*, Vine*, Leaves*, Trashcan)",
+                        Icon = "check",
+                    })
+                else
+                    restoreMapDecorHide()
+                    ensureMapWatchers()
+                    mountNotify({
+                        Title = "Map",
+                        Content = "Map decor restored",
+                        Icon = "check",
+                    })
+                end
+            end)
+            if not ok then
+                hideMapDecorEnabled = false
+                ensureMapWatchers()
+                mountNotify({ Title = "Map", Content = "Hide Map Decor failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+
+    MapTab:CreateSection("FPS Analyzer")
+    local analyzerParagraph = MapTab:CreateParagraph({
+        Title = "Scan Result",
+        Content = "Press Scan FPS Analyzer.",
+    })
+
+    local function formatAnalyzerSummary(stats)
+        local lines = {
+            string.format("Workspace descendants: %d", stats.totalDescendants),
+            string.format("Parts: %d (MeshParts: %d)", stats.baseParts, stats.meshParts),
+            string.format("Textures/Decals: %d", stats.decals + stats.textures),
+            string.format("Particles: %d (emitters: %d, trails: %d, beams: %d)", stats.totalParticles, stats.emitters, stats.trails, stats.beams),
+            string.format("Lights: %d", stats.lights),
+            string.format("Post effects: %d", stats.postEffects),
+            string.format("Auras (name match): %d", stats.auras),
+        }
+        return table.concat(lines, "\n")
+    end
+
+    MapTab:CreateButton({
+        Name = "Scan FPS Analyzer",
+        Ext = true,
+        Callback = function()
+            local ok, err = pcall(function()
+                local stats = {
+                    totalDescendants = 0,
+                    baseParts = 0,
+                    meshParts = 0,
+                    decals = 0,
+                    textures = 0,
+                    emitters = 0,
+                    trails = 0,
+                    beams = 0,
+                    smoke = 0,
+                    fire = 0,
+                    sparkles = 0,
+                    totalParticles = 0,
+                    lights = 0,
+                    postEffects = 0,
+                    auras = 0,
+                }
+
+                for _, inst in ipairs(Workspace:GetDescendants()) do
+                    stats.totalDescendants += 1
+                    if inst:IsA("BasePart") then
+                        stats.baseParts += 1
+                    end
+                    if inst:IsA("MeshPart") then
+                        stats.meshParts += 1
+                    elseif inst:IsA("Decal") then
+                        stats.decals += 1
+                    elseif inst:IsA("Texture") then
+                        stats.textures += 1
+                    elseif inst:IsA("ParticleEmitter") then
+                        stats.emitters += 1
+                    elseif inst:IsA("Trail") then
+                        stats.trails += 1
+                    elseif inst:IsA("Beam") then
+                        stats.beams += 1
+                    elseif inst:IsA("Smoke") then
+                        stats.smoke += 1
+                    elseif inst:IsA("Fire") then
+                        stats.fire += 1
+                    elseif inst:IsA("Sparkles") then
+                        stats.sparkles += 1
+                    elseif inst:IsA("PointLight") or inst:IsA("SpotLight") or inst:IsA("SurfaceLight") then
+                        stats.lights += 1
+                    end
+
+                    local instName = string.lower(inst.Name or "")
+                    if string.find(instName, "aura", 1, true) or string.find(instName, "fx", 1, true) then
+                        stats.auras += 1
+                    end
+                end
+
+                stats.totalParticles = stats.emitters + stats.trails + stats.beams + stats.smoke + stats.fire + stats.sparkles
+
+                for _, effect in ipairs(LightingService:GetChildren()) do
+                    if effect:IsA("PostEffect") then
+                        stats.postEffects += 1
+                    end
+                end
+
+                local summary = formatAnalyzerSummary(stats)
+                if analyzerParagraph and analyzerParagraph.Set then
+                    analyzerParagraph:Set({
+                        Title = "Scan Result",
+                        Content = summary,
+                    })
+                end
+
+                mountNotify({
+                    Title = "FPS Analyzer",
+                    Content = string.format("Scan done. Particles=%d, Lights=%d, PostEffects=%d", stats.totalParticles, stats.lights, stats.postEffects),
+                    Icon = "check",
+                })
+            end)
+            if not ok then
+                mountNotify({ Title = "FPS Analyzer", Content = "Scan failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
 end
 -- */  Teleport Tab  /* --
 do
