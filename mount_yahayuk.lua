@@ -5216,6 +5216,7 @@ do
                 local runCount = 0
                 local remaining = qtyNum
                 local skipNextCpResumeNotify = false
+                local forceTeleportFullRouteNext = false
                 repeat
                     if not autoSummitEnabled then
                         break
@@ -5247,23 +5248,34 @@ do
                     end
 
                     local routeCompleted = true
-                    local cpNow = getCheckpointIndexFromPlayer(lpAutoSummit)
-                    local cpAtRunStart = cpNow
                     local summitCpIndexNow = #summitTeleportRoute - 1
+                    local cpRawNow = getCheckpointIndexFromPlayer(lpAutoSummit)
+                    local cpRoutedNow = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
                     local walkReachedSummitThisCycle = false
                     local teleportReachedSummitThisCycle = false
-                    local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
-                    local skippedSummitTeleports = firstWpIndex == nil
-                    -- Teleport mode: CP usually stays at/past Summit after a run; resume full route from Start.
-                    if autoSummitMode == "Teleport" and skippedSummitTeleports then
-                        if typeof(cpClamped) == "number" and cpClamped >= summitCpIndexNow then
-                            firstWpIndex = 1
-                            skippedSummitTeleports = false
+                    local firstWpIndex, cpClamped
+                    local skippedSummitTeleports
+                    if autoSummitMode == "Teleport" and forceTeleportFullRouteNext then
+                        -- Last run finished teleport summit; game CP may still be Start/Summit same id â€” always rerun full route.
+                        firstWpIndex = 1
+                        cpClamped = 0
+                        skippedSummitTeleports = false
+                        forceTeleportFullRouteNext = false
+                    else
+                        local cpForFirstWp = autoSummitMode == "Teleport" and cpRoutedNow or cpRawNow
+                        firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpForFirstWp)
+                        skippedSummitTeleports = firstWpIndex == nil
+                        -- Teleport mode: CP usually stays at/past Summit after a run; resume full route from Start.
+                        if autoSummitMode == "Teleport" and skippedSummitTeleports then
+                            if typeof(cpClamped) == "number" and cpClamped >= summitCpIndexNow then
+                                firstWpIndex = 1
+                                skippedSummitTeleports = false
+                            end
                         end
                     end
                     if autoSummitMode == "Walk" then
-                        skippedSummitTeleports = WALK_LEG_PREFIX_BY_CP[cpNow] == nil
-                        cpClamped = cpNow
+                        skippedSummitTeleports = WALK_LEG_PREFIX_BY_CP[cpRawNow] == nil
+                        cpClamped = cpRawNow
                         if skippedSummitTeleports then
                             skipNextCpResumeNotify = false
                         elseif not skipNextCpResumeNotify then
@@ -5369,8 +5381,17 @@ do
                             task.wait(0.1)
                         end
                         task.wait(0.35)
-                        local cpRespawn = getCheckpointIndexFromPlayer(lpAutoSummit)
-                        local firstRespawn, cpRespawnClamped = getFirstSummitRouteIndexFromCp(cpRespawn)
+                        local cpRespawnRaw = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        local cpRespawnForRoute = autoSummitMode == "Teleport"
+                                and getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
+                            or cpRespawnRaw
+                        local firstRespawn, cpRespawnClamped =
+                            getFirstSummitRouteIndexFromCp(cpRespawnForRoute)
+                        if autoSummitMode == "Teleport" and firstRespawn == nil then
+                            if typeof(cpRespawnClamped) == "number" and cpRespawnClamped >= summitCpIndexNow then
+                                firstRespawn = 1
+                            end
+                        end
                         task.defer(updateAutoSummitCpParagraph)
                         autoSummitRestartFromDeath = false
                         skipNextCpResumeNotify = true
@@ -5391,15 +5412,17 @@ do
                             )
                         end
                     elseif routeCompleted and autoSummitEnabled then
-                        local cpAfterRun = getCheckpointIndexFromPlayer(lpAutoSummit)
-                        local atSummitNow = cpAfterRun >= summitCpIndexNow
+                        local cpAfterRunRaw = getCheckpointIndexFromPlayer(lpAutoSummit)
+                        local cpAfterRunRouted =
+                            getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
+                        local atSummitNow = cpAfterRunRouted >= summitCpIndexNow
                         local reachedSummitThisRun = false
                         if autoSummitMode == "Walk" then
                             reachedSummitThisRun = walkReachedSummitThisCycle
                         else
                             -- Teleport: leaderstats often do not update from client CFrame; use route completion.
                             reachedSummitThisRun = teleportReachedSummitThisCycle
-                                or (cpAtRunStart < summitCpIndexNow and atSummitNow)
+                                or (cpRoutedNow < summitCpIndexNow and atSummitNow)
                         end
 
                         if reachedSummitThisRun then
@@ -5408,6 +5431,9 @@ do
                             table.insert(autoSummitRunTimes, elapsedRun)
                             task.defer(updateAutoSummitTimesParagraph)
                             runCount = runCount + 1
+                            if autoSummitMode == "Teleport" then
+                                forceTeleportFullRouteNext = true
+                            end
                             if remaining then
                                 remaining = remaining - 1
                                 summitQty = tostring(remaining)
@@ -5439,7 +5465,7 @@ do
                         elseif atSummitNow then
                             notifyAutoSummit(
                                 ("At Summit (CP #%d), waiting for camp change before counting next run."):format(
-                                    cpAfterRun
+                                    cpAfterRunRaw
                                 )
                             )
                             if not waitWithCancel(1, function()
@@ -5450,8 +5476,8 @@ do
                         else
                             notifyAutoSummit(
                                 ("Route ended at CP #%d (%s) — continuing from current camp."):format(
-                                    cpAfterRun,
-                                    routeLabelForCpIndex(cpAfterRun)
+                                    cpAfterRunRouted,
+                                    routeLabelForCpIndex(cpAfterRunRouted)
                                 )
                             )
                         end
