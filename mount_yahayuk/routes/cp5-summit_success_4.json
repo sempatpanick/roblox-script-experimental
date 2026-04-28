@@ -7,7 +7,26 @@
       "jobId": "21854905-8a7c-445e-a214-73803c81ec2d",
       "placeId": 76964310785698,
       "durationSeconds": 45.063,
-      "playerName": "sempat_panick"
+      "playerName": "sempat_panick",
+      "avatarProfile": {
+         "capturedAtUtc": "2026-04-28T22:23:01Z",
+         "jumpHeight": 7.2,
+         "bodyDepthScale": 1,
+         "rigType": "Enum.HumanoidRigType.R15",
+         "hipHeight": 5.077,
+         "bodyTypeScale": 1,
+         "rootPartSize": {
+            "y": 2,
+            "x": 2,
+            "z": 1
+         },
+         "jumpPower": 50,
+         "rootToFeetHeight": 6.077,
+         "headScale": 1,
+         "bodyWidthScale": 1,
+         "walkSpeed": 29,
+         "bodyHeightScale": 1
+      }
    },
    "events": [
       {
