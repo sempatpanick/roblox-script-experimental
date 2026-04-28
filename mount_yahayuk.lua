@@ -4200,10 +4200,10 @@ do
     end
 
     local summitTeleportRoute = {
-        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 10 },
-        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 10 },
-        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 10 },
-        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 10 },
+        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 8 },
+        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 8 },
+        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 8 },
+        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 8 },
         { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 35 },
         { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 45 },
         { name = "Summit", position = "-613.51, 905.28, -533.45", delay = 3 },
