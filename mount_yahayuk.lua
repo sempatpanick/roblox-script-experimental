@@ -4391,6 +4391,17 @@ do
         return cp
     end
 
+    local function getCheckpointStateSignature(player, summitCpIndex: number): string
+        local routedCp = getCheckpointIndexForWalkRouting(player, summitCpIndex)
+        local rawLabel = getCheckpointLabelString(player)
+        local normalizedLabel = ""
+        if typeof(rawLabel) == "string" then
+            local trimmedLabel = string.gsub(rawLabel, "^%s*(.-)%s*$", "%1")
+            normalizedLabel = string.lower(trimmedLabel)
+        end
+        return string.format("%d|%s", routedCp, normalizedLabel)
+    end
+
     local function playRouteRecordingEvents(events: { any }, shouldCancel: () -> boolean): boolean
         local nextMovementDeltaByIndex: { [number]: number? } = {}
         local nextMovementTime: number? = nil
@@ -5327,8 +5338,8 @@ do
                                     notifyAutoSummit("Invalid position for " .. wp.name, "x")
                                     break
                                 end
-                                local cpBeforeTeleport =
-                                    getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
+                                local cpBeforeTeleportSig =
+                                    getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
                                 local maxTeleportAttempts = 2
                                 local teleportAttempt = 0
                                 local cpChangedAfterTeleport = false
@@ -5350,9 +5361,9 @@ do
                                         routeCompleted = false
                                         break
                                     end
-                                    local cpAfterAttempt =
-                                        getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
-                                    if cpAfterAttempt ~= cpBeforeTeleport then
+                                    local cpAfterAttemptSig =
+                                        getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
+                                    if cpAfterAttemptSig ~= cpBeforeTeleportSig then
                                         cpChangedAfterTeleport = true
                                         break
                                     end
