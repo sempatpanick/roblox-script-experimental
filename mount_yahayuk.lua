@@ -1175,6 +1175,8 @@ local function createRecordingTab(windowRef, notifyFn)
         return true, nil
     end
 
+    local captureAvatarProfileForCharacter: (character: Model?) -> { [string]: any }
+
     local function saveRecordingAsJson()
         writeFileFn = writeFileFn or resolveExecutorFn("writefile")
         if type(writeFileFn) ~= "function" then
@@ -1191,6 +1193,7 @@ local function createRecordingTab(windowRef, notifyFn)
             os.date("!%Y%m%d_%H%M%S")
         )
         local path = RECORDINGS_DIR .. "/" .. fileName
+        local targetPlayer = getSelectedRecordingPlayer()
         local payload = {
             meta = {
                 placeId = game.PlaceId,
@@ -1201,6 +1204,7 @@ local function createRecordingTab(windowRef, notifyFn)
                 startedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 durationSeconds = tonumber(string.format("%.3f", math.max(0, recordingNow()))),
                 totalEvents = #recordingEvents,
+                avatarProfile = captureAvatarProfileForCharacter(targetPlayer and targetPlayer.Character),
             },
             events = recordingEvents,
         }
@@ -1226,6 +1230,51 @@ local function createRecordingTab(windowRef, notifyFn)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         local rootPart = character:FindFirstChild("HumanoidRootPart")
         return humanoid, rootPart
+    end
+
+    captureAvatarProfileForCharacter = function(character: Model?): { [string]: any }
+        local profile = {
+            capturedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        }
+        local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
+        if humanoid then
+            profile.rigType = tostring(humanoid.RigType)
+            profile.hipHeight = tonumber(string.format("%.3f", humanoid.HipHeight))
+            profile.walkSpeed = tonumber(string.format("%.3f", humanoid.WalkSpeed))
+            profile.jumpPower = tonumber(string.format("%.3f", humanoid.JumpPower))
+            profile.jumpHeight = tonumber(string.format("%.3f", humanoid.JumpHeight))
+            local bodyHeightScaleObj = humanoid:FindFirstChild("BodyHeightScale")
+            local bodyWidthScaleObj = humanoid:FindFirstChild("BodyWidthScale")
+            local bodyDepthScaleObj = humanoid:FindFirstChild("BodyDepthScale")
+            local bodyTypeScaleObj = humanoid:FindFirstChild("BodyTypeScale")
+            local headScaleObj = humanoid:FindFirstChild("HeadScale")
+            if bodyHeightScaleObj and bodyHeightScaleObj:IsA("NumberValue") then
+                profile.bodyHeightScale = tonumber(string.format("%.3f", bodyHeightScaleObj.Value))
+            end
+            if bodyWidthScaleObj and bodyWidthScaleObj:IsA("NumberValue") then
+                profile.bodyWidthScale = tonumber(string.format("%.3f", bodyWidthScaleObj.Value))
+            end
+            if bodyDepthScaleObj and bodyDepthScaleObj:IsA("NumberValue") then
+                profile.bodyDepthScale = tonumber(string.format("%.3f", bodyDepthScaleObj.Value))
+            end
+            if bodyTypeScaleObj and bodyTypeScaleObj:IsA("NumberValue") then
+                profile.bodyTypeScale = tonumber(string.format("%.3f", bodyTypeScaleObj.Value))
+            end
+            if headScaleObj and headScaleObj:IsA("NumberValue") then
+                profile.headScale = tonumber(string.format("%.3f", headScaleObj.Value))
+            end
+        end
+        if rootPart then
+            profile.rootPartSize = {
+                x = tonumber(string.format("%.3f", rootPart.Size.X)),
+                y = tonumber(string.format("%.3f", rootPart.Size.Y)),
+                z = tonumber(string.format("%.3f", rootPart.Size.Z)),
+            }
+        end
+        local rootSizeY = (rootPart and rootPart.Size and rootPart.Size.Y) or 0
+        local hipHeight = (humanoid and humanoid.HipHeight) or 0
+        profile.rootToFeetHeight = tonumber(string.format("%.3f", (rootSizeY * 0.5) + hipHeight))
+        return profile
     end
 
     local function recordMovementSample(targetPlayer: Player?)
@@ -1330,6 +1379,7 @@ local function createRecordingTab(windowRef, notifyFn)
             playerUserId = targetPlayer.UserId,
             recorderName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
             recordKeyboardInputs = recordLocalInputs,
+            avatarProfile = captureAvatarProfileForCharacter(targetPlayer.Character),
         })
 
         table.insert(recordingConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -1780,6 +1830,55 @@ local function createRecordingTab(windowRef, notifyFn)
             })
 
             task.spawn(function()
+                local function extractRecordedAvatarProfile(payloadTable, eventsTable)
+                    if type(payloadTable) == "table" and type(payloadTable.meta) == "table" and type(payloadTable.meta.avatarProfile) == "table" then
+                        return payloadTable.meta.avatarProfile
+                    end
+                    if type(eventsTable) == "table" then
+                        for _, ev in ipairs(eventsTable) do
+                            if type(ev) == "table" and ev.kind == "recording_started" and type(ev.data) == "table" and type(ev.data.avatarProfile) == "table" then
+                                return ev.data.avatarProfile
+                            end
+                        end
+                    end
+                    return nil
+                end
+
+                local function buildPlaybackAvatarAdjustment(recordedAvatarProfile, localCharacter)
+                    if type(recordedAvatarProfile) ~= "table" then
+                        return {
+                            yOffset = 0,
+                            detail = "No avatar profile in recording",
+                        }
+                    end
+                    local currentAvatarProfile = captureAvatarProfileForCharacter(localCharacter)
+                    local recordedRootToFeet = tonumber(recordedAvatarProfile.rootToFeetHeight)
+                    local currentRootToFeet = tonumber(currentAvatarProfile.rootToFeetHeight)
+                    if not (recordedRootToFeet and currentRootToFeet) then
+                        return {
+                            yOffset = 0,
+                            detail = "Avatar profile missing root height",
+                        }
+                    end
+                    local yOffset = currentRootToFeet - recordedRootToFeet
+                    return {
+                        yOffset = yOffset,
+                        detail = string.format(
+                            "Avatar-adjusted Y %.2f (recorded %.2f -> current %.2f)",
+                            yOffset,
+                            recordedRootToFeet,
+                            currentRootToFeet
+                        ),
+                    }
+                end
+
+                local recordedAvatarProfile = extractRecordedAvatarProfile(payload, events)
+                local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
+                local playbackAvatarAdjust = buildPlaybackAvatarAdjustment(recordedAvatarProfile, localCharacter)
+                if playbackAvatarAdjust and playbackAvatarAdjust.detail then
+                    updateSavedRecordingStatus("Playing: " .. selectedName .. "\n" .. playbackAvatarAdjust.detail)
+                end
+
                 local function buildMovementTargetCFrame(rootPart, dataTable)
                     local pos = dataTable.position
                     if not rootPart or type(pos) ~= "table" then
@@ -1793,6 +1892,9 @@ local function createRecordingTab(windowRef, notifyFn)
                     end
 
                     local basePos = Vector3.new(x, y, z)
+                    if type(playbackAvatarAdjust) == "table" and type(playbackAvatarAdjust.yOffset) == "number" then
+                        basePos = basePos + Vector3.new(0, playbackAvatarAdjust.yOffset, 0)
+                    end
                     local lookData = dataTable.lookDirection
                     local lx, ly, lz = nil, nil, nil
                     if type(lookData) == "table" then
@@ -4161,6 +4263,37 @@ do
         return humanoid, rootPart
     end
 
+    local function getCharacterRootToFeetHeightWalk(character: Model?): number?
+        local humanoid, rootPart = getCharacterHumanoidAndRootWalk(character)
+        if not humanoid or not rootPart then
+            return nil
+        end
+        return (rootPart.Size.Y * 0.5) + humanoid.HipHeight
+    end
+
+    local function extractRecordedRootToFeetHeightWalk(payload: { [string]: any }?, events: { any }?): number?
+        if type(payload) == "table" and type(payload.meta) == "table" and type(payload.meta.avatarProfile) == "table" then
+            local h = tonumber(payload.meta.avatarProfile.rootToFeetHeight)
+            if h then
+                return h
+            end
+        end
+        if type(events) == "table" then
+            for _, ev in ipairs(events) do
+                if type(ev) == "table" and ev.kind == "recording_started" and type(ev.data) == "table" then
+                    local ap = ev.data.avatarProfile
+                    if type(ap) == "table" then
+                        local h = tonumber(ap.rootToFeetHeight)
+                        if h then
+                            return h
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     local function humanoidWalkToWorldPosition(
         humanoid: Humanoid,
         rootPart: BasePart,
@@ -4408,7 +4541,11 @@ do
         return string.format("%d|%s", routedCp, normalizedLabel)
     end
 
-    local function playRouteRecordingEvents(events: { any }, shouldCancel: () -> boolean): boolean
+    local function playRouteRecordingEvents(
+        events: { any },
+        payload: { [string]: any }?,
+        shouldCancel: () -> boolean
+    ): boolean
         local nextMovementDeltaByIndex: { [number]: number? } = {}
         local nextMovementTime: number? = nil
         for i = #events, 1, -1 do
@@ -4420,6 +4557,13 @@ do
             else
                 nextMovementDeltaByIndex[i] = nil
             end
+        end
+
+        local recordedRootToFeet = extractRecordedRootToFeetHeightWalk(payload, events)
+        local currentRootToFeet = getCharacterRootToFeetHeightWalk(lpAutoSummit.Character)
+        local playbackAvatarYOffset = 0
+        if recordedRootToFeet and currentRootToFeet then
+            playbackAvatarYOffset = currentRootToFeet - recordedRootToFeet
         end
 
         local function buildMovementTargetCFrame(rootPart: BasePart?, dataTable: { [string]: any }): CFrame?
@@ -4434,6 +4578,9 @@ do
                 return nil
             end
             local basePos = Vector3.new(x, y, z)
+            if playbackAvatarYOffset ~= 0 then
+                basePos = basePos + Vector3.new(0, playbackAvatarYOffset, 0)
+            end
             local lookData = dataTable.lookDirection
             local lx, ly, lz = nil, nil, nil
             if type(lookData) == "table" then
@@ -4677,30 +4824,30 @@ do
         pickedPath: string,
         tryIdx: number,
         totalTries: number
-    ): ({ any }?, Vector3?, string?, string?)
+    ): ({ any }?, Vector3?, { [string]: any }?, string?, string?)
         local baseName = baseNameFromPathMain(pickedPath)
         local label = ("(%d/%d)"):format(tryIdx, totalTries)
         local okRead, jsonText = pcall(function()
             return readFileFn(pickedPath)
         end)
         if not okRead or type(jsonText) ~= "string" then
-            return nil, nil, baseName, "read failed " .. label
+            return nil, nil, nil, baseName, "read failed " .. label
         end
         local okDecode, payload = pcall(function()
             return HttpService:JSONDecode(jsonText)
         end)
         if not okDecode or type(payload) ~= "table" then
-            return nil, nil, baseName, "invalid JSON " .. label
+            return nil, nil, nil, baseName, "invalid JSON " .. label
         end
         local events = payload.events
         if type(events) ~= "table" or #events == 0 then
-            return nil, nil, baseName, "no events " .. label
+            return nil, nil, nil, baseName, "no events " .. label
         end
         local firstPos = findFirstMovementWorldPosition(events)
         if not firstPos then
-            return nil, nil, baseName, "no movement samples " .. label
+            return nil, nil, nil, baseName, "no movement samples " .. label
         end
-        return events, firstPos, baseName, nil
+        return events, firstPos, payload, baseName, nil
     end
 
     local function runWalkSummitLegsFromCurrentCp(
@@ -4784,7 +4931,7 @@ do
 
                 local pickedPath = pathsToTry[tryIdx]
 
-                local events, firstPos, baseName, loadErr = tryLoadWalkRouteRecording(
+                local events, firstPos, payload, baseName, loadErr = tryLoadWalkRouteRecording(
                     readFileFn,
                     pickedPath,
                     tryIdx,
@@ -4819,12 +4966,19 @@ do
                     if not humanoid then
                         return false, reachedSummitInThisCycle
                     end
-                    humanoidWalkToWorldPosition(humanoid, rootPart, firstPos, shouldCancel, 7)
+                    local firstTargetPos = firstPos
+                    local recordedRootToFeet = extractRecordedRootToFeetHeightWalk(payload, events)
+                    local currentRootToFeet = getCharacterRootToFeetHeightWalk(character)
+                    if recordedRootToFeet and currentRootToFeet then
+                        local yOffset = currentRootToFeet - recordedRootToFeet
+                        firstTargetPos = firstPos + Vector3.new(0, yOffset, 0)
+                    end
+                    humanoidWalkToWorldPosition(humanoid, rootPart, firstTargetPos, shouldCancel, 7)
                     if shouldCancel() then
                         return false, reachedSummitInThisCycle
                     end
 
-                    if not playRouteRecordingEvents(events, shouldCancel) then
+                    if not playRouteRecordingEvents(events, payload, shouldCancel) then
                         return false, reachedSummitInThisCycle
                     end
 
