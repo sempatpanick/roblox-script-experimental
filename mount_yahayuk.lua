@@ -5251,8 +5251,16 @@ do
                     local cpAtRunStart = cpNow
                     local summitCpIndexNow = #summitTeleportRoute - 1
                     local walkReachedSummitThisCycle = false
+                    local teleportReachedSummitThisCycle = false
                     local firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpNow)
                     local skippedSummitTeleports = firstWpIndex == nil
+                    -- Teleport mode: CP usually stays at/past Summit after a run; resume full route from Start.
+                    if autoSummitMode == "Teleport" and skippedSummitTeleports then
+                        if typeof(cpClamped) == "number" and cpClamped >= summitCpIndexNow then
+                            firstWpIndex = 1
+                            skippedSummitTeleports = false
+                        end
+                    end
                     if autoSummitMode == "Walk" then
                         skippedSummitTeleports = WALK_LEG_PREFIX_BY_CP[cpNow] == nil
                         cpClamped = cpNow
@@ -5332,6 +5340,9 @@ do
                                     routeCompleted = false
                                     break
                                 end
+                                if wi == #summitTeleportRoute then
+                                    teleportReachedSummitThisCycle = true
+                                end
                             end
                         end
                     end
@@ -5386,7 +5397,9 @@ do
                         if autoSummitMode == "Walk" then
                             reachedSummitThisRun = walkReachedSummitThisCycle
                         else
-                            reachedSummitThisRun = cpAtRunStart < summitCpIndexNow and atSummitNow
+                            -- Teleport: leaderstats often do not update from client CFrame; use route completion.
+                            reachedSummitThisRun = teleportReachedSummitThisCycle
+                                or (cpAtRunStart < summitCpIndexNow and atSummitNow)
                         end
 
                         if reachedSummitThisRun then
