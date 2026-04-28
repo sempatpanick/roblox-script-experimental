@@ -3735,9 +3735,10 @@ do
     local autoSummitMode = "Walk"
     local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
     local updateAutoSummitRouteModeParagraph: () -> ()
-    local TELEPORT_BETWEEN_RUN_DELAY = 10
     local WALK_BETWEEN_RUN_DELAY_MIN = 0
     local WALK_BETWEEN_RUN_DELAY_MAX = 2
+    local TELEPORT_RANDOM_DELAY_MIN_OFFSET = 0
+    local TELEPORT_RANDOM_DELAY_MAX_OFFSET = 8
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
@@ -4198,12 +4199,12 @@ do
     end
 
     local summitTeleportRoute = {
-        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 19 },
-        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 19 },
-        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 19 },
-        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 19 },
+        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 10 },
+        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 10 },
+        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 10 },
+        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 10 },
         { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 35 },
-        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 50 },
+        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 45 },
         { name = "Summit", position = "-613.51, 905.28, -533.45", delay = 1 },
     }
 
@@ -5338,44 +5339,46 @@ do
                                     notifyAutoSummit("Invalid position for " .. wp.name, "x")
                                     break
                                 end
-                                local cpBeforeTeleportSig =
-                                    getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
-                                local maxTeleportAttempts = 2
-                                local teleportAttempt = 0
-                                local cpChangedAfterTeleport = false
-                                while teleportAttempt < maxTeleportAttempts do
-                                    teleportAttempt = teleportAttempt + 1
-                                    rootPart.CFrame = CFrame.new(targetPosition)
-                                    if teleportAttempt == 1 then
-                                        notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
-                                    else
-                                        notifyAutoSummit(
-                                            ("CP not changed in 8s, retrying %s (attempt %d/%d)â€¦"):format(
-                                                wp.name,
-                                                teleportAttempt,
-                                                maxTeleportAttempts
+                                rootPart.CFrame = CFrame.new(targetPosition)
+                                notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
+                                if wp.name ~= "Summit" then
+                                    local cpBeforeTeleportSig =
+                                        getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
+                                    local maxTeleportAttempts = 2
+                                    local teleportAttempt = 1
+                                    local cpChangedAfterTeleport = false
+                                    while teleportAttempt <= maxTeleportAttempts do
+                                        if not waitWithCancel(8, shouldAbort) then
+                                            routeCompleted = false
+                                            break
+                                        end
+                                        local cpAfterAttemptSig =
+                                            getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
+                                        if cpAfterAttemptSig ~= cpBeforeTeleportSig then
+                                            cpChangedAfterTeleport = true
+                                            break
+                                        end
+                                        teleportAttempt = teleportAttempt + 1
+                                        if teleportAttempt <= maxTeleportAttempts then
+                                            notifyAutoSummit(
+                                                ("CP not changed in 8s, retrying %s (attempt %d/%d)â€¦"):format(
+                                                    wp.name,
+                                                    teleportAttempt,
+                                                    maxTeleportAttempts
+                                                )
                                             )
+                                            rootPart.CFrame = CFrame.new(targetPosition)
+                                        end
+                                    end
+                                    if routeCompleted == false then
+                                        break
+                                    end
+                                    if not cpChangedAfterTeleport then
+                                        notifyAutoSummit(
+                                            ("CP still unchanged after retry at %s; continuing route."):format(wp.name),
+                                            "x"
                                         )
                                     end
-                                    if not waitWithCancel(8, shouldAbort) then
-                                        routeCompleted = false
-                                        break
-                                    end
-                                    local cpAfterAttemptSig =
-                                        getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
-                                    if cpAfterAttemptSig ~= cpBeforeTeleportSig then
-                                        cpChangedAfterTeleport = true
-                                        break
-                                    end
-                                end
-                                if routeCompleted == false then
-                                    break
-                                end
-                                if not cpChangedAfterTeleport then
-                                    notifyAutoSummit(
-                                        ("CP still unchanged after retry at %s; continuing route."):format(wp.name),
-                                        "x"
-                                    )
                                 end
                                 local waitSec = wp.delay
                                 local delayRandomized = false
@@ -5384,7 +5387,14 @@ do
                                     and autoSummitRandomizeTeleportDuration
                                     and wp.name ~= "Summit"
                                 then
-                                    waitSec = math.max(0.5, wp.delay + math.random(-15, 15))
+                                    waitSec = math.max(
+                                        0.5,
+                                        wp.delay
+                                            + math.random(
+                                                TELEPORT_RANDOM_DELAY_MIN_OFFSET,
+                                                TELEPORT_RANDOM_DELAY_MAX_OFFSET
+                                            )
+                                    )
                                     delayRandomized = true
                                 end
                                 local nextWp = summitTeleportRoute[wi + 1]
@@ -5497,12 +5507,15 @@ do
                                 end)
                             end
                             if autoSummitEnabled and (not qtyNum or remaining > 0) then
-                                local betweenRunDelay = TELEPORT_BETWEEN_RUN_DELAY
+                                local betweenRunDelay = 0
                                 if autoSummitMode == "Walk" then
                                     betweenRunDelay = walkRouteRng:NextNumber(
                                         WALK_BETWEEN_RUN_DELAY_MIN,
                                         WALK_BETWEEN_RUN_DELAY_MAX
                                     )
+                                else
+                                    -- Teleport mode already waits on each route waypoint (including Summit delay).
+                                    betweenRunDelay = 0
                                 end
                                 if not waitWithCancel(betweenRunDelay, function()
                                     return not autoSummitEnabled
