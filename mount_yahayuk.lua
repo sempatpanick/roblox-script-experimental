@@ -4202,8 +4202,8 @@ do
         { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 19 },
         { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 19 },
         { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 19 },
-        { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 28 },
-        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 45 },
+        { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 35 },
+        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 50 },
         { name = "Summit", position = "-613.51, 905.28, -533.45", delay = 1 },
     }
 
@@ -5327,8 +5327,45 @@ do
                                     notifyAutoSummit("Invalid position for " .. wp.name, "x")
                                     break
                                 end
-                                rootPart.CFrame = CFrame.new(targetPosition)
-                                notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
+                                local cpBeforeTeleport =
+                                    getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
+                                local maxTeleportAttempts = 2
+                                local teleportAttempt = 0
+                                local cpChangedAfterTeleport = false
+                                while teleportAttempt < maxTeleportAttempts do
+                                    teleportAttempt = teleportAttempt + 1
+                                    rootPart.CFrame = CFrame.new(targetPosition)
+                                    if teleportAttempt == 1 then
+                                        notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
+                                    else
+                                        notifyAutoSummit(
+                                            ("CP not changed in 8s, retrying %s (attempt %d/%d)â€¦"):format(
+                                                wp.name,
+                                                teleportAttempt,
+                                                maxTeleportAttempts
+                                            )
+                                        )
+                                    end
+                                    if not waitWithCancel(8, shouldAbort) then
+                                        routeCompleted = false
+                                        break
+                                    end
+                                    local cpAfterAttempt =
+                                        getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndexNow)
+                                    if cpAfterAttempt ~= cpBeforeTeleport then
+                                        cpChangedAfterTeleport = true
+                                        break
+                                    end
+                                end
+                                if routeCompleted == false then
+                                    break
+                                end
+                                if not cpChangedAfterTeleport then
+                                    notifyAutoSummit(
+                                        ("CP still unchanged after retry at %s; continuing route."):format(wp.name),
+                                        "x"
+                                    )
+                                end
                                 local waitSec = wp.delay
                                 local delayRandomized = false
                                 if
