@@ -1,2169 +1,2169 @@
 {
-   "meta": {
-      "recorderName": "sempat_panick",
-      "startedAtUtc": "2026-04-27T00:13:19Z",
-      "totalEvents": 129,
-      "gameId": 8644306226,
-      "jobId": "f7dfafff-a43a-44e0-95d0-b2ee686f5ac9",
-      "placeId": 76964310785698,
-      "durationSeconds": 5.967,
-      "playerName": "sempat_panick",
-      "avatarProfile": {
-         "capturedAtUtc": "2026-04-27T00:13:19Z",
-         "jumpHeight": 7.2,
-         "bodyDepthScale": 1,
-         "rigType": "Enum.HumanoidRigType.R15",
-         "hipHeight": 5.077,
-         "bodyTypeScale": 1,
-         "rootPartSize": {
-            "y": 2,
-            "x": 2,
-            "z": 1
-         },
-         "jumpPower": 50,
-         "rootToFeetHeight": 6.077,
-         "headScale": 1,
-         "bodyWidthScale": 1,
-         "walkSpeed": 29,
-         "bodyHeightScale": 1
+  "meta": {
+    "recorderName": "sempat_panick",
+    "playerName": "sempat_panick",
+    "avatarProfile": {
+      "bodyDepthScale": 1,
+      "bodyHeightScale": 1,
+      "bodyTypeScale": 1,
+      "bodyWidthScale": 1,
+      "capturedAtUtc": "2026-04-27T00:13:19Z",
+      "headScale": 1,
+      "hipHeight": 5.077,
+      "jumpHeight": 7.2,
+      "jumpPower": 50,
+      "rigType": "Enum.HumanoidRigType.R15",
+      "rootPartSize": {
+        "x": 2,
+        "y": 2,
+        "z": 1
+      },
+      "rootToFeetHeight": 6.077,
+      "walkSpeed": 29
+    },
+    "totalEvents": 129,
+    "durationSeconds": 5.967,
+    "startedAtUtc": "2026-04-27T00:13:19Z",
+    "gameId": 8644306226,
+    "placeId": 76964310785698,
+    "jobId": "f7dfafff-a43a-44e0-95d0-b2ee686f5ac9"
+  },
+  "events": [
+    {
+      "t": 0,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.W"
       }
-   },
-   "events": [
-      {
-         "t": 0,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.W"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 0.017,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": -0.087,
-               "z": -0.996
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 250.122,
-               "x": -435.733,
-               "z": 714.628
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": -0.112,
-               "z": -0.994
-            },
-            "velocity": {
-               "y": 0,
-               "x": -0.687,
-               "z": -7.832
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.133,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": -0.087,
-               "z": -0.996
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 250.122,
-               "x": -435.99,
-               "z": 711.69
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": -0.096,
-               "z": -0.995
-            },
-            "velocity": {
-               "y": 0,
-               "x": -2.532,
-               "z": -28.889
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.133,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 0.135,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.149,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 0.152,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.166,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 0.168,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.25,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": -0.087,
-               "z": -0.996
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 255.036,
-               "x": -436.285,
-               "z": 708.32
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": -0.09,
-               "z": -0.996
-            },
-            "velocity": {
-               "y": 31.081,
-               "x": -2.528,
-               "z": -28.89
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.25,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 0.367,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": -0.087,
-               "z": -0.996
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 257.279,
-               "x": -436.58,
-               "z": 704.95
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": -0.088,
-               "z": -0.996
-            },
-            "velocity": {
-               "y": 8.191,
-               "x": -2.528,
-               "z": -28.89
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.482,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.105,
-               "z": -0.995
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 256.852,
-               "x": -436.597,
-               "z": 701.572
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": -0.028,
-               "z": -1
-            },
-            "velocity": {
-               "y": -14.699,
-               "x": 2.982,
-               "z": -28.845
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.582,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 0.583,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.399,
-               "z": -0.917
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 254.703,
-               "x": -435.837,
-               "z": 698.817
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.158,
-               "z": -0.987
-            },
-            "velocity": {
-               "y": -1.68,
-               "x": 9.219,
-               "z": -23.052
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.683,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 0.685,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.698,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 0.699,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.857,
-               "z": -0.515
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 255.887,
-               "x": -433.906,
-               "z": 696.672
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.541,
-               "z": -0.841
-            },
-            "velocity": {
-               "y": 53.154,
-               "x": 19.257,
-               "z": -16.419
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.701,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.716,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 0.718,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 0.8,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.993,
-               "z": -0.122
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 260.181,
-               "x": -431.426,
-               "z": 695.531
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.837,
-               "z": -0.547
-            },
-            "velocity": {
-               "y": 33.534,
-               "x": 28.025,
-               "z": -5.78
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 0.801,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 0.916,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0.009
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 262.71,
-               "x": -428.05,
-               "z": 695.457
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.979,
-               "z": -0.203
-            },
-            "velocity": {
-               "y": 10.644,
-               "x": 28.999,
-               "z": 0.253
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.016,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.978,
-               "z": -0.208
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 263.645,
-               "x": -425.163,
-               "z": 695.304
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.993,
-               "z": -0.12
-            },
-            "velocity": {
-               "y": 17.799,
-               "x": 28.285,
-               "z": -5.921
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.132,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.755,
-               "z": -0.656
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 264.031,
-               "x": -422.447,
-               "z": 693.697
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.913,
-               "z": -0.408
-            },
-            "velocity": {
-               "y": 11.372,
-               "x": 17.465,
-               "z": -14.98
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.166,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 1.168,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.183,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.185,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.199,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.201,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.232,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.755,
-               "z": -0.656
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 267.565,
-               "x": -420.601,
-               "z": 692.09
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.825,
-               "z": -0.565
-            },
-            "velocity": {
-               "y": 43.344,
-               "x": 21.836,
-               "z": -18.98
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.284,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 1.348,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.788,
-               "z": -0.616
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 271.239,
-               "x": -418.019,
-               "z": 689.904
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.787,
-               "z": -0.617
-            },
-            "velocity": {
-               "y": 20.454,
-               "x": 22.849,
-               "z": -17.859
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.449,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.891,
-               "z": -0.454
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 274.252,
-               "x": -415.628,
-               "z": 688.39
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.825,
-               "z": -0.565
-            },
-            "velocity": {
-               "y": 10.561,
-               "x": 25.108,
-               "z": -12.88
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.567,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.94,
-               "z": -0.342
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 274.24,
-               "x": -412.572,
-               "z": 687.112
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.895,
-               "z": -0.447
-            },
-            "velocity": {
-               "y": -10.294,
-               "x": 27.221,
-               "z": -9.979
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.583,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 1.585,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.599,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.602,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.615,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.617,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 1.682,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.964,
-               "z": -0.267
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 278.634,
-               "x": -409.352,
-               "z": 686.076
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.936,
-               "z": -0.353
-            },
-            "velocity": {
-               "y": 36.803,
-               "x": 27.942,
-               "z": -7.76
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.7,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 1.8,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.989,
-               "z": -0.148
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 281.545,
-               "x": -406.041,
-               "z": 685.387
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.968,
-               "z": -0.253
-            },
-            "velocity": {
-               "y": 13.913,
-               "x": 28.68,
-               "z": -4.297
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 1.899,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 1.917,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.009
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 284.418,
-               "x": -402.665,
-               "z": 685.213
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.993,
-               "z": -0.116
-            },
-            "velocity": {
-               "y": 76.201,
-               "x": 28.98,
-               "z": -0.317
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.017,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.009
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 286.671,
-               "x": -399.645,
-               "z": 685.186
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.999,
-               "z": -0.041
-            },
-            "velocity": {
-               "y": 9.872,
-               "x": 28.994,
-               "z": -0.287
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.101,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 2.104,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.116,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 2.119,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 286.442,
-               "x": -396.866,
-               "z": 685.174
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.018
-            },
-            "velocity": {
-               "y": 51.518,
-               "x": 29,
-               "z": -0.011
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.121,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.132,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 2.135,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.217,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 2.233,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 291.069,
-               "x": -393.483,
-               "z": 685.174
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.006
-            },
-            "velocity": {
-               "y": 28.628,
-               "x": 29,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.35,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 293.026,
-               "x": -390.1,
-               "z": 685.175
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.002
-            },
-            "velocity": {
-               "y": 5.738,
-               "x": 29,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.466,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 292.313,
-               "x": -386.717,
-               "z": 685.175
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.001
-            },
-            "velocity": {
-               "y": -17.152,
-               "x": 29,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.532,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 2.582,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 290.634,
-               "x": -383.334,
-               "z": 685.175
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "velocity": {
-               "y": -18.419,
-               "x": 28.999,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.683,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 289.296,
-               "x": -380.454,
-               "z": 685.175
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "velocity": {
-               "y": 4.957,
-               "x": 27.647,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.783,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 2.785,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.799,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 2.8,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 290.218,
-               "x": -377.075,
-               "z": 685.175
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "velocity": {
-               "y": 50.701,
-               "x": 29,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 2.802,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.816,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 2.818,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 2.899,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 2.915,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.026
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 294.751,
-               "x": -373.692,
-               "z": 685.16
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": -0.003
-            },
-            "velocity": {
-               "y": 27.811,
-               "x": 28.99,
-               "z": -0.749
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.015,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.993,
-               "z": -0.122
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 296.51,
-               "x": -370.802,
-               "z": 684.924
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.999,
-               "z": -0.051
-            },
-            "velocity": {
-               "y": 8.191,
-               "x": 28.785,
-               "z": -3.524
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.132,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.989,
-               "z": -0.148
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 296.082,
-               "x": -367.454,
-               "z": 684.436
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.994,
-               "z": -0.112
-            },
-            "velocity": {
-               "y": -14.699,
-               "x": 28.681,
-               "z": -4.287
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.232,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.989,
-               "z": -0.148
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 293.591,
-               "x": -364.586,
-               "z": 684.005
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.991,
-               "z": -0.133
-            },
-            "velocity": {
-               "y": -34.319,
-               "x": 28.681,
-               "z": -4.287
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.249,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 3.333,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.989,
-               "z": -0.148
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 292.971,
-               "x": -362.123,
-               "z": 683.637
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.99,
-               "z": -0.142
-            },
-            "velocity": {
-               "y": -0.007,
-               "x": 21.039,
-               "z": -3.141
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.449,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.995,
-               "z": -0.105
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 292.436,
-               "x": -359.47,
-               "z": 683.276
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.991,
-               "z": -0.134
-            },
-            "velocity": {
-               "y": 0,
-               "x": 20.397,
-               "z": -2.162
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.466,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 3.468,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 3.482,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 3.485,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 3.499,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 3.501,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 3.55,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.996,
-               "z": -0.087
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 296.082,
-               "x": -356.734,
-               "z": 683.031
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.994,
-               "z": -0.106
-            },
-            "velocity": {
-               "y": 38.438,
-               "x": 28.89,
-               "z": -2.528
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.566,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 3.666,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.996,
-               "z": -0.087
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 299.183,
-               "x": -353.364,
-               "z": 682.736
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.996,
-               "z": -0.094
-            },
-            "velocity": {
-               "y": 15.548,
-               "x": 28.89,
-               "z": -2.528
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.766,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.996,
-               "z": -0.087
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 299.716,
-               "x": -350.475,
-               "z": 682.483
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.996,
-               "z": -0.09
-            },
-            "velocity": {
-               "y": -4.072,
-               "x": 28.89,
-               "z": -2.528
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.833,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 3.867,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.986,
-               "z": -0.165
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 299.212,
-               "x": -347.712,
-               "z": 682.17
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.994,
-               "z": -0.106
-            },
-            "velocity": {
-               "y": 0,
-               "x": 26.298,
-               "z": -4.34
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 3.951,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 3.954,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 3.965,
-         "data": {
-            "state": "Enum.HumanoidStateType.Jumping"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 3.969,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 3.984,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.927,
-               "z": -0.375
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 301.373,
-               "x": -344.758,
-               "z": 681.364
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.975,
-               "z": -0.222
-            },
-            "velocity": {
-               "y": 53.154,
-               "x": 27.451,
-               "z": -9.077
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.051,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 4.067,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 4.081,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 4.099,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.879,
-               "z": -0.477
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 307.451,
-               "x": -341.591,
-               "z": 680.214
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.933,
-               "z": -0.361
-            },
-            "velocity": {
-               "y": 46.614,
-               "x": 25.637,
-               "z": -13.485
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.216,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.788,
-               "z": -0.616
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 311.507,
-               "x": -338.771,
-               "z": 678.352
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.871,
-               "z": -0.492
-            },
-            "velocity": {
-               "y": 23.724,
-               "x": 22.862,
-               "z": -17.842
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.332,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.682,
-               "z": -0.731
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 312.891,
-               "x": -336.305,
-               "z": 676.039
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.781,
-               "z": -0.624
-            },
-            "velocity": {
-               "y": 0.834,
-               "x": 19.785,
-               "z": -21.202
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.45,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.574,
-               "z": -0.819
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 311.606,
-               "x": -334.199,
-               "z": 673.393
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.679,
-               "z": -0.734
-            },
-            "velocity": {
-               "y": -22.056,
-               "x": 16.638,
-               "z": -23.752
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.534,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 4.536,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 4.551,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.53,
-               "z": -0.848
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 308.378,
-               "x": -332.618,
-               "z": 670.962
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.602,
-               "z": -0.799
-            },
-            "velocity": {
-               "y": -41.676,
-               "x": 15.372,
-               "z": -24.591
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.599,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 4.601,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 4.65,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 4.666,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.545,
-               "z": -0.839
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 304.933,
-               "x": -330.816,
-               "z": 668.099
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.557,
-               "z": -0.83
-            },
-            "velocity": {
-               "y": 5.294,
-               "x": 15.799,
-               "z": -24.319
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.782,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.574,
-               "z": -0.819
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 304.653,
-               "x": -328.912,
-               "z": 665.302
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.563,
-               "z": -0.827
-            },
-            "velocity": {
-               "y": -12.14,
-               "x": 16.421,
-               "z": -23.903
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 4.831,
-         "data": {
-            "state": "Enum.HumanoidStateType.Freefall"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 4.9,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.581,
-               "z": -0.814
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 301.854,
-               "x": -326.975,
-               "z": 662.527
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.57,
-               "z": -0.821
-            },
-            "velocity": {
-               "y": -35.03,
-               "x": 16.836,
-               "z": -23.612
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.016,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.609,
-               "z": -0.793
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 296.384,
-               "x": -324.957,
-               "z": 659.812
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.588,
-               "z": -0.809
-            },
-            "velocity": {
-               "y": -57.92,
-               "x": 17.65,
-               "z": -23.01
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.117,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 289.57,
-               "x": -323.149,
-               "z": 657.545
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.61,
-               "z": -0.793
-            },
-            "velocity": {
-               "y": -77.54,
-               "x": 18.25,
-               "z": -22.537
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.133,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_down"
-      },
-      {
-         "t": 5.135,
-         "data": [],
-         "kind": "jump_request"
-      },
-      {
-         "t": 5.232,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 279.141,
-               "x": -321.019,
-               "z": 654.915
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.623,
-               "z": -0.783
-            },
-            "velocity": {
-               "y": -100.43,
-               "x": 18.25,
-               "z": -22.537
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.233,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.Space"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 5.333,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 267.572,
-               "x": -319.118,
-               "z": 652.567
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.627,
-               "z": -0.779
-            },
-            "velocity": {
-               "y": -120.867,
-               "x": 18.25,
-               "z": -22.537
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.45,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 252.687,
-               "x": -317.064,
-               "z": 650.031
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.628,
-               "z": -0.778
-            },
-            "velocity": {
-               "y": -142.94,
-               "x": 18.25,
-               "z": -22.537
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.549,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 237.371,
-               "x": -315.239,
-               "z": 647.776
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "velocity": {
-               "y": -162.56,
-               "x": 18.25,
-               "z": -22.537
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.586,
-         "data": {
-            "gameProcessed": false,
-            "keyCode": "Enum.KeyCode.W"
-         },
-         "kind": "key_up"
-      },
-      {
-         "t": 5.649,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 220.093,
-               "x": -313.626,
-               "z": 645.785
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "velocity": {
-               "y": -182.18,
-               "x": 12.251,
-               "z": -15.128
-            },
-            "walkSpeed": 29,
-            "isGrounded": false
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.732,
-         "data": {
-            "state": "Enum.HumanoidStateType.Landed"
-         },
-         "kind": "humanoid_state"
-      },
-      {
-         "t": 5.766,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 206.822,
-               "x": -312.942,
-               "z": 644.94
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 0.629,
-               "z": -0.777
-            },
-            "velocity": {
-               "y": 20.561,
-               "x": 0.002,
-               "z": -0.003
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.866,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 250.114,
-               "x": -433,
-               "z": 793
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "velocity": {
-               "y": 0.303,
-               "x": 0,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
-      },
-      {
-         "t": 5.967,
-         "data": {
-            "jumpHeight": 7.2,
-            "moveDirection": {
-               "y": 0,
-               "x": 0,
-               "z": 0
-            },
-            "jumpPower": 50,
-            "position": {
-               "y": 250.122,
-               "x": -433,
-               "z": 793
-            },
-            "lookDirection": {
-               "y": 0,
-               "x": 1,
-               "z": 0
-            },
-            "velocity": {
-               "y": 0.008,
-               "x": 0,
-               "z": 0
-            },
-            "walkSpeed": 29,
-            "isGrounded": true
-         },
-         "kind": "movement"
+    },
+    {
+      "t": 0.017,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -435.733,
+          "y": 250.122,
+          "z": 714.628
+        },
+        "lookDirection": {
+          "x": -0.112,
+          "y": 0,
+          "z": -0.994
+        },
+        "moveDirection": {
+          "x": -0.087,
+          "y": 0,
+          "z": -0.996
+        },
+        "velocity": {
+          "x": -0.687,
+          "y": 0,
+          "z": -7.832
+        }
       }
-   ]
+    },
+    {
+      "t": 0.133,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -435.99,
+          "y": 250.122,
+          "z": 711.69
+        },
+        "lookDirection": {
+          "x": -0.096,
+          "y": 0,
+          "z": -0.995
+        },
+        "moveDirection": {
+          "x": -0.087,
+          "y": 0,
+          "z": -0.996
+        },
+        "velocity": {
+          "x": -2.532,
+          "y": 0,
+          "z": -28.889
+        }
+      }
+    },
+    {
+      "t": 0.133,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 0.135,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.149,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 0.152,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.166,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 0.168,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.25,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -436.285,
+          "y": 255.036,
+          "z": 708.32
+        },
+        "lookDirection": {
+          "x": -0.09,
+          "y": 0,
+          "z": -0.996
+        },
+        "moveDirection": {
+          "x": -0.087,
+          "y": 0,
+          "z": -0.996
+        },
+        "velocity": {
+          "x": -2.528,
+          "y": 31.081,
+          "z": -28.89
+        }
+      }
+    },
+    {
+      "t": 0.25,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 0.367,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -436.58,
+          "y": 257.279,
+          "z": 704.95
+        },
+        "lookDirection": {
+          "x": -0.088,
+          "y": 0,
+          "z": -0.996
+        },
+        "moveDirection": {
+          "x": -0.087,
+          "y": 0,
+          "z": -0.996
+        },
+        "velocity": {
+          "x": -2.528,
+          "y": 8.191,
+          "z": -28.89
+        }
+      }
+    },
+    {
+      "t": 0.482,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -436.597,
+          "y": 256.852,
+          "z": 701.572
+        },
+        "lookDirection": {
+          "x": -0.028,
+          "y": 0,
+          "z": -1
+        },
+        "moveDirection": {
+          "x": 0.105,
+          "y": 0,
+          "z": -0.995
+        },
+        "velocity": {
+          "x": 2.982,
+          "y": -14.699,
+          "z": -28.845
+        }
+      }
+    },
+    {
+      "t": 0.582,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 0.583,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -435.837,
+          "y": 254.703,
+          "z": 698.817
+        },
+        "lookDirection": {
+          "x": 0.158,
+          "y": 0,
+          "z": -0.987
+        },
+        "moveDirection": {
+          "x": 0.399,
+          "y": 0,
+          "z": -0.917
+        },
+        "velocity": {
+          "x": 9.219,
+          "y": -1.68,
+          "z": -23.052
+        }
+      }
+    },
+    {
+      "t": 0.683,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 0.685,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.698,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 0.699,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -433.906,
+          "y": 255.887,
+          "z": 696.672
+        },
+        "lookDirection": {
+          "x": 0.541,
+          "y": 0,
+          "z": -0.841
+        },
+        "moveDirection": {
+          "x": 0.857,
+          "y": 0,
+          "z": -0.515
+        },
+        "velocity": {
+          "x": 19.257,
+          "y": 53.154,
+          "z": -16.419
+        }
+      }
+    },
+    {
+      "t": 0.701,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.716,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 0.718,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 0.8,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -431.426,
+          "y": 260.181,
+          "z": 695.531
+        },
+        "lookDirection": {
+          "x": 0.837,
+          "y": 0,
+          "z": -0.547
+        },
+        "moveDirection": {
+          "x": 0.993,
+          "y": 0,
+          "z": -0.122
+        },
+        "velocity": {
+          "x": 28.025,
+          "y": 33.534,
+          "z": -5.78
+        }
+      }
+    },
+    {
+      "t": 0.801,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 0.916,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -428.05,
+          "y": 262.71,
+          "z": 695.457
+        },
+        "lookDirection": {
+          "x": 0.979,
+          "y": 0,
+          "z": -0.203
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0.009
+        },
+        "velocity": {
+          "x": 28.999,
+          "y": 10.644,
+          "z": 0.253
+        }
+      }
+    },
+    {
+      "t": 1,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 1.016,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -425.163,
+          "y": 263.645,
+          "z": 695.304
+        },
+        "lookDirection": {
+          "x": 0.993,
+          "y": 0,
+          "z": -0.12
+        },
+        "moveDirection": {
+          "x": 0.978,
+          "y": 0,
+          "z": -0.208
+        },
+        "velocity": {
+          "x": 28.285,
+          "y": 17.799,
+          "z": -5.921
+        }
+      }
+    },
+    {
+      "t": 1.132,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -422.447,
+          "y": 264.031,
+          "z": 693.697
+        },
+        "lookDirection": {
+          "x": 0.913,
+          "y": 0,
+          "z": -0.408
+        },
+        "moveDirection": {
+          "x": 0.755,
+          "y": 0,
+          "z": -0.656
+        },
+        "velocity": {
+          "x": 17.465,
+          "y": 11.372,
+          "z": -14.98
+        }
+      }
+    },
+    {
+      "t": 1.166,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 1.168,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.183,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 1.185,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.199,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 1.201,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.232,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -420.601,
+          "y": 267.565,
+          "z": 692.09
+        },
+        "lookDirection": {
+          "x": 0.825,
+          "y": 0,
+          "z": -0.565
+        },
+        "moveDirection": {
+          "x": 0.755,
+          "y": 0,
+          "z": -0.656
+        },
+        "velocity": {
+          "x": 21.836,
+          "y": 43.344,
+          "z": -18.98
+        }
+      }
+    },
+    {
+      "t": 1.284,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 1.348,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -418.019,
+          "y": 271.239,
+          "z": 689.904
+        },
+        "lookDirection": {
+          "x": 0.787,
+          "y": 0,
+          "z": -0.617
+        },
+        "moveDirection": {
+          "x": 0.788,
+          "y": 0,
+          "z": -0.616
+        },
+        "velocity": {
+          "x": 22.849,
+          "y": 20.454,
+          "z": -17.859
+        }
+      }
+    },
+    {
+      "t": 1.449,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -415.628,
+          "y": 274.252,
+          "z": 688.39
+        },
+        "lookDirection": {
+          "x": 0.825,
+          "y": 0,
+          "z": -0.565
+        },
+        "moveDirection": {
+          "x": 0.891,
+          "y": 0,
+          "z": -0.454
+        },
+        "velocity": {
+          "x": 25.108,
+          "y": 10.561,
+          "z": -12.88
+        }
+      }
+    },
+    {
+      "t": 1.567,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -412.572,
+          "y": 274.24,
+          "z": 687.112
+        },
+        "lookDirection": {
+          "x": 0.895,
+          "y": 0,
+          "z": -0.447
+        },
+        "moveDirection": {
+          "x": 0.94,
+          "y": 0,
+          "z": -0.342
+        },
+        "velocity": {
+          "x": 27.221,
+          "y": -10.294,
+          "z": -9.979
+        }
+      }
+    },
+    {
+      "t": 1.583,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 1.585,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.599,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 1.602,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.615,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 1.617,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 1.682,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -409.352,
+          "y": 278.634,
+          "z": 686.076
+        },
+        "lookDirection": {
+          "x": 0.936,
+          "y": 0,
+          "z": -0.353
+        },
+        "moveDirection": {
+          "x": 0.964,
+          "y": 0,
+          "z": -0.267
+        },
+        "velocity": {
+          "x": 27.942,
+          "y": 36.803,
+          "z": -7.76
+        }
+      }
+    },
+    {
+      "t": 1.7,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 1.8,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -406.041,
+          "y": 281.545,
+          "z": 685.387
+        },
+        "lookDirection": {
+          "x": 0.968,
+          "y": 0,
+          "z": -0.253
+        },
+        "moveDirection": {
+          "x": 0.989,
+          "y": 0,
+          "z": -0.148
+        },
+        "velocity": {
+          "x": 28.68,
+          "y": 13.913,
+          "z": -4.297
+        }
+      }
+    },
+    {
+      "t": 1.899,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 1.917,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -402.665,
+          "y": 284.418,
+          "z": 685.213
+        },
+        "lookDirection": {
+          "x": 0.993,
+          "y": 0,
+          "z": -0.116
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.009
+        },
+        "velocity": {
+          "x": 28.98,
+          "y": 76.201,
+          "z": -0.317
+        }
+      }
+    },
+    {
+      "t": 2.017,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -399.645,
+          "y": 286.671,
+          "z": 685.186
+        },
+        "lookDirection": {
+          "x": 0.999,
+          "y": 0,
+          "z": -0.041
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.009
+        },
+        "velocity": {
+          "x": 28.994,
+          "y": 9.872,
+          "z": -0.287
+        }
+      }
+    },
+    {
+      "t": 2.101,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 2.104,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.116,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 2.119,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -396.866,
+          "y": 286.442,
+          "z": 685.174
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.018
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 29,
+          "y": 51.518,
+          "z": -0.011
+        }
+      }
+    },
+    {
+      "t": 2.121,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.132,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 2.135,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.217,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 2.233,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -393.483,
+          "y": 291.069,
+          "z": 685.174
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.006
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 29,
+          "y": 28.628,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.35,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -390.1,
+          "y": 293.026,
+          "z": 685.175
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.002
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 29,
+          "y": 5.738,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.466,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -386.717,
+          "y": 292.313,
+          "z": 685.175
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.001
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 29,
+          "y": -17.152,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.532,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 2.582,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -383.334,
+          "y": 290.634,
+          "z": 685.175
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 28.999,
+          "y": -18.419,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.683,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -380.454,
+          "y": 289.296,
+          "z": 685.175
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 27.647,
+          "y": 4.957,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.783,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 2.785,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.799,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 2.8,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -377.075,
+          "y": 290.218,
+          "z": 685.175
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 29,
+          "y": 50.701,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 2.802,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.816,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 2.818,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 2.899,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 2.915,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -373.692,
+          "y": 294.751,
+          "z": 685.16
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.003
+        },
+        "moveDirection": {
+          "x": 1,
+          "y": 0,
+          "z": -0.026
+        },
+        "velocity": {
+          "x": 28.99,
+          "y": 27.811,
+          "z": -0.749
+        }
+      }
+    },
+    {
+      "t": 3.015,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -370.802,
+          "y": 296.51,
+          "z": 684.924
+        },
+        "lookDirection": {
+          "x": 0.999,
+          "y": 0,
+          "z": -0.051
+        },
+        "moveDirection": {
+          "x": 0.993,
+          "y": 0,
+          "z": -0.122
+        },
+        "velocity": {
+          "x": 28.785,
+          "y": 8.191,
+          "z": -3.524
+        }
+      }
+    },
+    {
+      "t": 3.132,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -367.454,
+          "y": 296.082,
+          "z": 684.436
+        },
+        "lookDirection": {
+          "x": 0.994,
+          "y": 0,
+          "z": -0.112
+        },
+        "moveDirection": {
+          "x": 0.989,
+          "y": 0,
+          "z": -0.148
+        },
+        "velocity": {
+          "x": 28.681,
+          "y": -14.699,
+          "z": -4.287
+        }
+      }
+    },
+    {
+      "t": 3.232,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -364.586,
+          "y": 293.591,
+          "z": 684.005
+        },
+        "lookDirection": {
+          "x": 0.991,
+          "y": 0,
+          "z": -0.133
+        },
+        "moveDirection": {
+          "x": 0.989,
+          "y": 0,
+          "z": -0.148
+        },
+        "velocity": {
+          "x": 28.681,
+          "y": -34.319,
+          "z": -4.287
+        }
+      }
+    },
+    {
+      "t": 3.249,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 3.333,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -362.123,
+          "y": 292.971,
+          "z": 683.637
+        },
+        "lookDirection": {
+          "x": 0.99,
+          "y": 0,
+          "z": -0.142
+        },
+        "moveDirection": {
+          "x": 0.989,
+          "y": 0,
+          "z": -0.148
+        },
+        "velocity": {
+          "x": 21.039,
+          "y": -0.007,
+          "z": -3.141
+        }
+      }
+    },
+    {
+      "t": 3.449,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -359.47,
+          "y": 292.436,
+          "z": 683.276
+        },
+        "lookDirection": {
+          "x": 0.991,
+          "y": 0,
+          "z": -0.134
+        },
+        "moveDirection": {
+          "x": 0.995,
+          "y": 0,
+          "z": -0.105
+        },
+        "velocity": {
+          "x": 20.397,
+          "y": 0,
+          "z": -2.162
+        }
+      }
+    },
+    {
+      "t": 3.466,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 3.468,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 3.482,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 3.485,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 3.499,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 3.501,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 3.55,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -356.734,
+          "y": 296.082,
+          "z": 683.031
+        },
+        "lookDirection": {
+          "x": 0.994,
+          "y": 0,
+          "z": -0.106
+        },
+        "moveDirection": {
+          "x": 0.996,
+          "y": 0,
+          "z": -0.087
+        },
+        "velocity": {
+          "x": 28.89,
+          "y": 38.438,
+          "z": -2.528
+        }
+      }
+    },
+    {
+      "t": 3.566,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 3.666,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -353.364,
+          "y": 299.183,
+          "z": 682.736
+        },
+        "lookDirection": {
+          "x": 0.996,
+          "y": 0,
+          "z": -0.094
+        },
+        "moveDirection": {
+          "x": 0.996,
+          "y": 0,
+          "z": -0.087
+        },
+        "velocity": {
+          "x": 28.89,
+          "y": 15.548,
+          "z": -2.528
+        }
+      }
+    },
+    {
+      "t": 3.766,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -350.475,
+          "y": 299.716,
+          "z": 682.483
+        },
+        "lookDirection": {
+          "x": 0.996,
+          "y": 0,
+          "z": -0.09
+        },
+        "moveDirection": {
+          "x": 0.996,
+          "y": 0,
+          "z": -0.087
+        },
+        "velocity": {
+          "x": 28.89,
+          "y": -4.072,
+          "z": -2.528
+        }
+      }
+    },
+    {
+      "t": 3.833,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 3.867,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -347.712,
+          "y": 299.212,
+          "z": 682.17
+        },
+        "lookDirection": {
+          "x": 0.994,
+          "y": 0,
+          "z": -0.106
+        },
+        "moveDirection": {
+          "x": 0.986,
+          "y": 0,
+          "z": -0.165
+        },
+        "velocity": {
+          "x": 26.298,
+          "y": 0,
+          "z": -4.34
+        }
+      }
+    },
+    {
+      "t": 3.951,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 3.954,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 3.965,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Jumping"
+      }
+    },
+    {
+      "t": 3.969,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 3.984,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -344.758,
+          "y": 301.373,
+          "z": 681.364
+        },
+        "lookDirection": {
+          "x": 0.975,
+          "y": 0,
+          "z": -0.222
+        },
+        "moveDirection": {
+          "x": 0.927,
+          "y": 0,
+          "z": -0.375
+        },
+        "velocity": {
+          "x": 27.451,
+          "y": 53.154,
+          "z": -9.077
+        }
+      }
+    },
+    {
+      "t": 4.051,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 4.067,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 4.081,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 4.099,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -341.591,
+          "y": 307.451,
+          "z": 680.214
+        },
+        "lookDirection": {
+          "x": 0.933,
+          "y": 0,
+          "z": -0.361
+        },
+        "moveDirection": {
+          "x": 0.879,
+          "y": 0,
+          "z": -0.477
+        },
+        "velocity": {
+          "x": 25.637,
+          "y": 46.614,
+          "z": -13.485
+        }
+      }
+    },
+    {
+      "t": 4.216,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -338.771,
+          "y": 311.507,
+          "z": 678.352
+        },
+        "lookDirection": {
+          "x": 0.871,
+          "y": 0,
+          "z": -0.492
+        },
+        "moveDirection": {
+          "x": 0.788,
+          "y": 0,
+          "z": -0.616
+        },
+        "velocity": {
+          "x": 22.862,
+          "y": 23.724,
+          "z": -17.842
+        }
+      }
+    },
+    {
+      "t": 4.332,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -336.305,
+          "y": 312.891,
+          "z": 676.039
+        },
+        "lookDirection": {
+          "x": 0.781,
+          "y": 0,
+          "z": -0.624
+        },
+        "moveDirection": {
+          "x": 0.682,
+          "y": 0,
+          "z": -0.731
+        },
+        "velocity": {
+          "x": 19.785,
+          "y": 0.834,
+          "z": -21.202
+        }
+      }
+    },
+    {
+      "t": 4.45,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -334.199,
+          "y": 311.606,
+          "z": 673.393
+        },
+        "lookDirection": {
+          "x": 0.679,
+          "y": 0,
+          "z": -0.734
+        },
+        "moveDirection": {
+          "x": 0.574,
+          "y": 0,
+          "z": -0.819
+        },
+        "velocity": {
+          "x": 16.638,
+          "y": -22.056,
+          "z": -23.752
+        }
+      }
+    },
+    {
+      "t": 4.534,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 4.536,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 4.551,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -332.618,
+          "y": 308.378,
+          "z": 670.962
+        },
+        "lookDirection": {
+          "x": 0.602,
+          "y": 0,
+          "z": -0.799
+        },
+        "moveDirection": {
+          "x": 0.53,
+          "y": 0,
+          "z": -0.848
+        },
+        "velocity": {
+          "x": 15.372,
+          "y": -41.676,
+          "z": -24.591
+        }
+      }
+    },
+    {
+      "t": 4.599,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 4.601,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 4.65,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 4.666,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -330.816,
+          "y": 304.933,
+          "z": 668.099
+        },
+        "lookDirection": {
+          "x": 0.557,
+          "y": 0,
+          "z": -0.83
+        },
+        "moveDirection": {
+          "x": 0.545,
+          "y": 0,
+          "z": -0.839
+        },
+        "velocity": {
+          "x": 15.799,
+          "y": 5.294,
+          "z": -24.319
+        }
+      }
+    },
+    {
+      "t": 4.782,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -328.912,
+          "y": 304.653,
+          "z": 665.302
+        },
+        "lookDirection": {
+          "x": 0.563,
+          "y": 0,
+          "z": -0.827
+        },
+        "moveDirection": {
+          "x": 0.574,
+          "y": 0,
+          "z": -0.819
+        },
+        "velocity": {
+          "x": 16.421,
+          "y": -12.14,
+          "z": -23.903
+        }
+      }
+    },
+    {
+      "t": 4.831,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Freefall"
+      }
+    },
+    {
+      "t": 4.9,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -326.975,
+          "y": 301.854,
+          "z": 662.527
+        },
+        "lookDirection": {
+          "x": 0.57,
+          "y": 0,
+          "z": -0.821
+        },
+        "moveDirection": {
+          "x": 0.581,
+          "y": 0,
+          "z": -0.814
+        },
+        "velocity": {
+          "x": 16.836,
+          "y": -35.03,
+          "z": -23.612
+        }
+      }
+    },
+    {
+      "t": 5.016,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -324.957,
+          "y": 296.384,
+          "z": 659.812
+        },
+        "lookDirection": {
+          "x": 0.588,
+          "y": 0,
+          "z": -0.809
+        },
+        "moveDirection": {
+          "x": 0.609,
+          "y": 0,
+          "z": -0.793
+        },
+        "velocity": {
+          "x": 17.65,
+          "y": -57.92,
+          "z": -23.01
+        }
+      }
+    },
+    {
+      "t": 5.117,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -323.149,
+          "y": 289.57,
+          "z": 657.545
+        },
+        "lookDirection": {
+          "x": 0.61,
+          "y": 0,
+          "z": -0.793
+        },
+        "moveDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "velocity": {
+          "x": 18.25,
+          "y": -77.54,
+          "z": -22.537
+        }
+      }
+    },
+    {
+      "t": 5.133,
+      "kind": "key_down",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 5.135,
+      "kind": "jump_request",
+      "data": []
+    },
+    {
+      "t": 5.232,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -321.019,
+          "y": 279.141,
+          "z": 654.915
+        },
+        "lookDirection": {
+          "x": 0.623,
+          "y": 0,
+          "z": -0.783
+        },
+        "moveDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "velocity": {
+          "x": 18.25,
+          "y": -100.43,
+          "z": -22.537
+        }
+      }
+    },
+    {
+      "t": 5.233,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.Space"
+      }
+    },
+    {
+      "t": 5.333,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -319.118,
+          "y": 267.572,
+          "z": 652.567
+        },
+        "lookDirection": {
+          "x": 0.627,
+          "y": 0,
+          "z": -0.779
+        },
+        "moveDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "velocity": {
+          "x": 18.25,
+          "y": -120.867,
+          "z": -22.537
+        }
+      }
+    },
+    {
+      "t": 5.45,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -317.064,
+          "y": 252.687,
+          "z": 650.031
+        },
+        "lookDirection": {
+          "x": 0.628,
+          "y": 0,
+          "z": -0.778
+        },
+        "moveDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "velocity": {
+          "x": 18.25,
+          "y": -142.94,
+          "z": -22.537
+        }
+      }
+    },
+    {
+      "t": 5.549,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -315.239,
+          "y": 237.371,
+          "z": 647.776
+        },
+        "lookDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "moveDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "velocity": {
+          "x": 18.25,
+          "y": -162.56,
+          "z": -22.537
+        }
+      }
+    },
+    {
+      "t": 5.586,
+      "kind": "key_up",
+      "data": {
+        "gameProcessed": false,
+        "keyCode": "Enum.KeyCode.W"
+      }
+    },
+    {
+      "t": 5.649,
+      "kind": "movement",
+      "data": {
+        "isGrounded": false,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -313.626,
+          "y": 220.093,
+          "z": 645.785
+        },
+        "lookDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "moveDirection": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 12.251,
+          "y": -182.18,
+          "z": -15.128
+        }
+      }
+    },
+    {
+      "t": 5.732,
+      "kind": "humanoid_state",
+      "data": {
+        "state": "Enum.HumanoidStateType.Landed"
+      }
+    },
+    {
+      "t": 5.766,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -312.942,
+          "y": 206.822,
+          "z": 644.94
+        },
+        "lookDirection": {
+          "x": 0.629,
+          "y": 0,
+          "z": -0.777
+        },
+        "moveDirection": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 0.002,
+          "y": 20.561,
+          "z": -0.003
+        }
+      }
+    },
+    {
+      "t": 5.866,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -433,
+          "y": 250.114,
+          "z": 793
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "moveDirection": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 0,
+          "y": 0.303,
+          "z": 0
+        }
+      }
+    },
+    {
+      "t": 5.967,
+      "kind": "movement",
+      "data": {
+        "isGrounded": true,
+        "walkSpeed": 29,
+        "jumpHeight": 7.2,
+        "jumpPower": 50,
+        "position": {
+          "x": -433,
+          "y": 250.122,
+          "z": 793
+        },
+        "lookDirection": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "moveDirection": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "velocity": {
+          "x": 0,
+          "y": 0.008,
+          "z": 0
+        }
+      }
+    }
+  ]
 }
