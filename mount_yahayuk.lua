@@ -2288,6 +2288,7 @@ end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Mount Yahayuk",
+    ScriptID = "sid_oy28ga5qf82i",
     LoadingTitle = "sempatpanick",
     LoadingSubtitle = "Mount Yahayuk",
     Icon = 4483362458,
@@ -2396,6 +2397,138 @@ do
     local freeCameraSpeed = 50
     local freeCameraSensitivity = 0.5
     local freeCameraCf = nil
+    local shiftLockCenteringEnabled = false
+    local shiftLockCenteringConnection = nil
+    local shiftLockDefaultOffset = Vector3.new(1.75, 0, 0)
+    local shiftLockDefaultOffsetCaptured = false
+
+    local function getMouseLockController()
+        local localPlayer = Players.LocalPlayer
+        local playerScripts = localPlayer and localPlayer:FindFirstChild("PlayerScripts")
+        local playerModule = playerScripts and playerScripts:FindFirstChild("PlayerModule")
+        if not playerModule then
+            return nil
+        end
+
+        local okModule, loadedPlayerModule = pcall(require, playerModule)
+        if not okModule or type(loadedPlayerModule) ~= "table" then
+            return nil
+        end
+
+        local cameraModule = loadedPlayerModule.CameraModule
+        if type(cameraModule) ~= "table" then
+            return nil
+        end
+
+        if type(cameraModule.GetMouseLockController) == "function" then
+            local okController, controller = pcall(function()
+                return cameraModule:GetMouseLockController()
+            end)
+            if okController and controller then
+                return controller
+            end
+        end
+
+        local moduleScript = cameraModule.MouseLockController
+        if typeof(moduleScript) == "Instance" and moduleScript:IsA("ModuleScript") then
+            local okController, controller = pcall(require, moduleScript)
+            if okController and controller then
+                return controller
+            end
+        end
+
+        return nil
+    end
+
+    local function setMouseLockOffset(controller, offset)
+        if type(controller) ~= "table" then
+            return false
+        end
+        if type(controller.SetMouseLockOffset) == "function" then
+            local ok = pcall(function()
+                controller:SetMouseLockOffset(offset)
+            end)
+            return ok
+        end
+        if controller.CameraOffset ~= nil then
+            local ok = pcall(function()
+                controller.CameraOffset = offset
+            end)
+            return ok
+        end
+        return false
+    end
+
+    local function isShiftLockActive(controller)
+        if type(controller) == "table" then
+            if type(controller.IsMouseLocked) == "function" then
+                local ok, isLocked = pcall(function()
+                    return controller:IsMouseLocked()
+                end)
+                if ok and type(isLocked) == "boolean" then
+                    return isLocked
+                end
+            end
+            if type(controller.GetIsMouseLocked) == "function" then
+                local ok, isLocked = pcall(function()
+                    return controller:GetIsMouseLocked()
+                end)
+                if ok and type(isLocked) == "boolean" then
+                    return isLocked
+                end
+            end
+            if type(controller.IsMouseLocked) == "boolean" then
+                return controller.IsMouseLocked
+            end
+            if type(controller.isMouseLocked) == "boolean" then
+                return controller.isMouseLocked
+            end
+        end
+        return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+    end
+
+    local function applyShiftLockCentering()
+        local controller = getMouseLockController()
+        if not controller then
+            return
+        end
+
+        if not shiftLockDefaultOffsetCaptured and type(controller.GetMouseLockOffset) == "function" then
+            local ok, currentOffset = pcall(function()
+                return controller:GetMouseLockOffset()
+            end)
+            if ok and typeof(currentOffset) == "Vector3" then
+                shiftLockDefaultOffset = currentOffset
+                shiftLockDefaultOffsetCaptured = true
+            end
+        end
+
+        if shiftLockCenteringEnabled and isShiftLockActive(controller) then
+            setMouseLockOffset(controller, Vector3.new(0, 0, 0))
+        else
+            setMouseLockOffset(controller, shiftLockDefaultOffset)
+        end
+    end
+
+    local function stopShiftLockCentering()
+        if shiftLockCenteringConnection then
+            shiftLockCenteringConnection:Disconnect()
+            shiftLockCenteringConnection = nil
+        end
+        shiftLockCenteringEnabled = false
+        applyShiftLockCentering()
+    end
+
+    local function startShiftLockCentering()
+        stopShiftLockCentering()
+        shiftLockCenteringEnabled = true
+        applyShiftLockCentering()
+        shiftLockCenteringConnection = RunService.RenderStepped:Connect(function()
+            if shiftLockCenteringEnabled then
+                applyShiftLockCentering()
+            end
+        end)
+    end
 
     local function stopFly()
         if flyConnection then
@@ -2674,6 +2807,18 @@ do
                 lp.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
             else
                 lp.DevCameraOcclusionMode = defaultCameraOcclusionMode
+            end
+        end
+    })
+
+    LocalPlayerTab:CreateToggle({
+        Name = "Centering Shift Lock Camera",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if enabled then
+                startShiftLockCentering()
+            else
+                stopShiftLockCentering()
             end
         end
     })
