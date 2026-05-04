@@ -2383,6 +2383,7 @@ do
     local antiAfkConnection = nil
     local noClipEnabled = false
     local cameraPenetrateEnabled = false
+    local centerShiftLockCameraEnabled = false
     local defaultCameraOcclusionMode = Players.LocalPlayer.DevCameraOcclusionMode
     local flyEnabled = false
     local flySpeed = 50
@@ -2397,136 +2398,46 @@ do
     local freeCameraSpeed = 50
     local freeCameraSensitivity = 0.5
     local freeCameraCf = nil
-    local shiftLockCenteringEnabled = false
-    local shiftLockCenteringConnection = nil
-    local shiftLockDefaultOffset = Vector3.new(1.75, 0, 0)
-    local shiftLockDefaultOffsetCaptured = false
+    local CENTER_SHIFTLOCK_RENDERSTEP_ID = "MountYahayukCenterShiftLockCamera"
 
-    local function getMouseLockController()
-        local localPlayer = Players.LocalPlayer
-        local playerScripts = localPlayer and localPlayer:FindFirstChild("PlayerScripts")
-        local playerModule = playerScripts and playerScripts:FindFirstChild("PlayerModule")
-        if not playerModule then
-            return nil
-        end
-
-        local okModule, loadedPlayerModule = pcall(require, playerModule)
-        if not okModule or type(loadedPlayerModule) ~= "table" then
-            return nil
-        end
-
-        local cameraModule = loadedPlayerModule.CameraModule
-        if type(cameraModule) ~= "table" then
-            return nil
-        end
-
-        if type(cameraModule.GetMouseLockController) == "function" then
-            local okController, controller = pcall(function()
-                return cameraModule:GetMouseLockController()
-            end)
-            if okController and controller then
-                return controller
-            end
-        end
-
-        local moduleScript = cameraModule.MouseLockController
-        if typeof(moduleScript) == "Instance" and moduleScript:IsA("ModuleScript") then
-            local okController, controller = pcall(require, moduleScript)
-            if okController and controller then
-                return controller
-            end
-        end
-
-        return nil
+    local function stopCenterShiftLockCamera()
+        RunService:UnbindFromRenderStep(CENTER_SHIFTLOCK_RENDERSTEP_ID)
     end
 
-    local function setMouseLockOffset(controller, offset)
-        if type(controller) ~= "table" then
-            return false
-        end
-        if type(controller.SetMouseLockOffset) == "function" then
-            local ok = pcall(function()
-                controller:SetMouseLockOffset(offset)
-            end)
-            return ok
-        end
-        if controller.CameraOffset ~= nil then
-            local ok = pcall(function()
-                controller.CameraOffset = offset
-            end)
-            return ok
-        end
-        return false
-    end
-
-    local function isShiftLockActive(controller)
-        if type(controller) == "table" then
-            if type(controller.IsMouseLocked) == "function" then
-                local ok, isLocked = pcall(function()
-                    return controller:IsMouseLocked()
-                end)
-                if ok and type(isLocked) == "boolean" then
-                    return isLocked
-                end
+    local function startCenterShiftLockCamera()
+        stopCenterShiftLockCamera()
+        RunService:BindToRenderStep(CENTER_SHIFTLOCK_RENDERSTEP_ID, Enum.RenderPriority.Camera.Value + 1, function()
+            if not centerShiftLockCameraEnabled then
+                return
             end
-            if type(controller.GetIsMouseLocked) == "function" then
-                local ok, isLocked = pcall(function()
-                    return controller:GetIsMouseLocked()
-                end)
-                if ok and type(isLocked) == "boolean" then
-                    return isLocked
-                end
-            end
-            if type(controller.IsMouseLocked) == "boolean" then
-                return controller.IsMouseLocked
-            end
-            if type(controller.isMouseLocked) == "boolean" then
-                return controller.isMouseLocked
-            end
-        end
-        return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
-    end
 
-    local function applyShiftLockCentering()
-        local controller = getMouseLockController()
-        if not controller then
-            return
-        end
-
-        if not shiftLockDefaultOffsetCaptured and type(controller.GetMouseLockOffset) == "function" then
-            local ok, currentOffset = pcall(function()
-                return controller:GetMouseLockOffset()
-            end)
-            if ok and typeof(currentOffset) == "Vector3" then
-                shiftLockDefaultOffset = currentOffset
-                shiftLockDefaultOffsetCaptured = true
+            -- Shift Lock keeps the mouse locked to center.
+            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+                return
             end
-        end
 
-        if shiftLockCenteringEnabled and isShiftLockActive(controller) then
-            setMouseLockOffset(controller, Vector3.new(0, 0, 0))
-        else
-            setMouseLockOffset(controller, shiftLockDefaultOffset)
-        end
-    end
-
-    local function stopShiftLockCentering()
-        if shiftLockCenteringConnection then
-            shiftLockCenteringConnection:Disconnect()
-            shiftLockCenteringConnection = nil
-        end
-        shiftLockCenteringEnabled = false
-        applyShiftLockCentering()
-    end
-
-    local function startShiftLockCentering()
-        stopShiftLockCentering()
-        shiftLockCenteringEnabled = true
-        applyShiftLockCentering()
-        shiftLockCenteringConnection = RunService.RenderStepped:Connect(function()
-            if shiftLockCenteringEnabled then
-                applyShiftLockCentering()
+            local cam = Workspace.CurrentCamera
+            if not cam or cam.CameraType ~= Enum.CameraType.Custom then
+                return
             end
+
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then
+                return
+            end
+
+            local focusHeight = 1.5
+            local desiredFocus = rootPart.Position + Vector3.new(0, focusHeight, 0)
+            local distance = (cam.CFrame.Position - cam.Focus.Position).Magnitude
+
+            if distance <= 0.05 then
+                return
+            end
+
+            local lookVector = cam.CFrame.LookVector
+            local desiredPosition = desiredFocus - lookVector * distance
+            cam.CFrame = CFrame.lookAt(desiredPosition, desiredFocus)
         end)
     end
 
@@ -2815,10 +2726,11 @@ do
         Name = "Centering Shift Lock Camera",
         CurrentValue = false,
         Callback = function(enabled)
+            centerShiftLockCameraEnabled = enabled
             if enabled then
-                startShiftLockCentering()
+                startCenterShiftLockCamera()
             else
-                stopShiftLockCentering()
+                stopCenterShiftLockCamera()
             end
         end
     })
@@ -2834,6 +2746,11 @@ do
                     if noClipEnabled and part:IsA("BasePart") then
                         part.CanCollide = false
                     end
+                end)
+            end
+            if centerShiftLockCameraEnabled then
+                task.defer(function()
+                    startCenterShiftLockCamera()
                 end)
             end
         end)
