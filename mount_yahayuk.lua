@@ -4052,8 +4052,8 @@ do
     local updateAutoSummitRouteModeParagraph: () -> ()
     local syncAutoSummitTeleportStatusFromCurrentCp: () -> () = function() end
     local WALK_BETWEEN_RUN_DELAY_MIN = 0
-    local WALK_BETWEEN_RUN_DELAY_MAX = 2
-    local TELEPORT_RANDOM_DELAY_MIN_OFFSET = 0
+    local WALK_BETWEEN_RUN_DELAY_MAX = 1
+    local TELEPORT_RANDOM_DELAY_MIN_OFFSET = -3
     local TELEPORT_RANDOM_DELAY_MAX_OFFSET = 8
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
