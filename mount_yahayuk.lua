@@ -4546,7 +4546,7 @@ do
     end
 
     local summitTeleportRoute = {
-        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 8 },
+        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 3 },
         { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 8 },
         { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 8 },
         { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 8 },
