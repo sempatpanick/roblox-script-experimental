@@ -5727,6 +5727,9 @@ do
                                 "Reached reset point but Start not detected in 3s; retrying walk...",
                                 "x"
                             )
+                            pcall(function()
+                                humanoid.Jump = true
+                            end)
                         else
                             notifyAutoSummit("Could not reach reset point; retrying walk...", "x")
                         end
