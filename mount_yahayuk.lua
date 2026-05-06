@@ -5730,7 +5730,7 @@ do
                                 "x"
                             )
                             pcall(function()
-                                humanoid.Jump = true
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                             end)
                         else
                             notifyAutoSummit("Could not reach reset point; retrying walk...", "x")
