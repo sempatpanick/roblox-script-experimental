@@ -5671,6 +5671,8 @@ do
                     local attempt = 0
                     while autoSummitEnabled and not autoSummitRestartFromDeath do
                         attempt = attempt + 1
+                        syncAutoSummitCurrentCheckpointSnapshot()
+                        task.defer(updateAutoSummitCpParagraph)
                         local character = lpAutoSummit.Character
                         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                         rootPart = getRootPart(5)
@@ -5842,6 +5844,8 @@ do
                                     routeCompleted = false
                                     break
                                 end
+                                syncAutoSummitCurrentCheckpointSnapshot()
+                                task.defer(updateAutoSummitCpParagraph)
                                 rootPart = getRootPart()
                                 if not rootPart then
                                     routeCompleted = false
@@ -5886,6 +5890,8 @@ do
                                         end
                                         teleportAttempt = teleportAttempt + 1
                                         if teleportAttempt <= maxTeleportAttempts then
+                                            syncAutoSummitCurrentCheckpointSnapshot()
+                                            task.defer(updateAutoSummitCpParagraph)
                                             notifyAutoSummit(
                                                 ("CP not changed in 8s, retrying %s (attempt %d/%d)â€¦"):format(
                                                     wp.name,
