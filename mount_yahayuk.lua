@@ -4041,20 +4041,17 @@ do
     local autoSummitMainToggle: any = nil
     local autoSummitSkipFinalStoppedNotify = false
     local summitQty = ""
-    local autoSummitRandomizeTeleportDuration = false
     local autoSummitIncludeFailedRoute = false
     local autoSummitRestartFromDeath = false
     local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
     local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
     local autoSummitMode = "Walk"
-    local AUTO_SUMMIT_MODE_OPTIONS = { "Teleport", "Walk" }
+    local AUTO_SUMMIT_MODE_OPTIONS = { "Walk" }
     local updateAutoSummitRouteModeParagraph: () -> ()
-    local syncAutoSummitTeleportStatusFromCurrentCp: () -> () = function() end
+    local getCurrentAutoSummitModeHandler: () -> any
     local WALK_BETWEEN_RUN_DELAY_MIN = 0
     local WALK_BETWEEN_RUN_DELAY_MAX = 1
-    local TELEPORT_RANDOM_DELAY_MIN_OFFSET = -3
-    local TELEPORT_RANDOM_DELAY_MAX_OFFSET = 8
 
     local MOUNT_ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
     local MOUNT_ROUTES_INDEX_JSON = MOUNT_ROUTES_DIR .. "/index.json"
@@ -4545,32 +4542,15 @@ do
         return false
     end
 
-    local summitTeleportRoute = {
-        { name = "Start", position = "-922.94, 169.22, 856.29", delay = 3 },
-        { name = "Camp 1", position = "-407.77, 248.20, 794.09", delay = 8 },
-        { name = "Camp 2", position = "-337.77, 388.27, 522.16", delay = 8 },
-        { name = "Camp 3", position = "294.19, 430.33, 494.17", delay = 8 },
-        { name = "Camp 4", position = "323.46, 490.24, 348.33", delay = 35 },
-        { name = "Camp 5", position = "226.70, 314.21, -143.64", delay = 45 },
-        { name = "Summit", position = "-613.51, 905.28, -533.45", delay = 3 },
+    local summitRoute = {
+        { name = "Start", teleportPosition = "-922.94, 169.22, 856.29", teleportDelay = 3 },
+        { name = "Camp 1", teleportPosition = "-407.77, 248.20, 794.09", teleportDelay = 8 },
+        { name = "Camp 2", teleportPosition = "-337.77, 388.27, 522.16", teleportDelay = 8 },
+        { name = "Camp 3", teleportPosition = "294.19, 430.33, 494.17", teleportDelay = 8 },
+        { name = "Camp 4", teleportPosition = "323.46, 490.24, 348.33", teleportDelay = 35 },
+        { name = "Camp 5", teleportPosition = "226.70, 314.21, -143.64", teleportDelay = 45 },
+        { name = "Summit", teleportPosition = "-613.51, 905.28, -533.45", teleportDelay = 3 },
     }
-    local TELEPORT_SUMMIT_TO_START_WALK_POSITION = "-621.82, 907.67, -494.61"
-    local TELEPORT_SUMMIT_TO_START_WALK_XZ_RADIUS = 5
-    local TELEPORT_SUMMIT_TO_START_CP_WAIT_SECONDS = 3
-    local TELEPORT_SUMMIT_TO_START_WALK_ATTEMPT_TIMEOUT = 8
-
-    local function parsePositionString(positionText)
-        if typeof(positionText) ~= "string" then
-            return nil
-        end
-        local xStr, yStr, zStr = string.match(positionText, "^%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*$")
-        local x, y, z = tonumber(xStr), tonumber(yStr), tonumber(zStr)
-        if not x or not y or not z then
-            return nil
-        end
-        return Vector3.new(x, y, z)
-    end
-
     local function notifyAutoSummit(content, icon)
         mountNotify({ Title = "Auto Summit", Content = content, Icon = icon or "check" })
     end
@@ -4741,17 +4721,6 @@ do
             return summitCpIndex
         end
         return cp
-    end
-
-    local function getCheckpointStateSignature(player, summitCpIndex: number): string
-        local routedCp = getCheckpointIndexForWalkRouting(player, summitCpIndex)
-        local rawLabel = getCheckpointLabelString(player)
-        local normalizedLabel = ""
-        if typeof(rawLabel) == "string" then
-            local trimmedLabel = string.gsub(rawLabel, "^%s*(.-)%s*$", "%1")
-            normalizedLabel = string.lower(trimmedLabel)
-        end
-        return string.format("%d|%s", routedCp, normalizedLabel)
     end
 
     local function playRouteRecordingEvents(
@@ -4936,11 +4905,8 @@ do
 
     local autoSummitDeathCheckConn: any = nil
 
-    -- Auto Summit UI: route file (walk) or teleport leg + delay (teleport)
+    -- Auto Summit UI: active walk route file
     local autoSummitWalkRouteFileDisplay = "—"
-    local autoSummitTeleportCurrentLeg = "—"
-    local autoSummitTeleportNextLeg = "—"
-    local autoSummitTeleportDelayText = "—"
 
     local AutoSummitRouteModeParagraph: any = nil
     updateAutoSummitRouteModeParagraph = function()
@@ -4949,29 +4915,15 @@ do
         end
         if not autoSummitEnabled then
             AutoSummitRouteModeParagraph:Set({
-                Title = "Active route / teleport",
+                Title = "Active route",
                 Content = "Auto Summit is off.",
             })
             return
         end
-        if autoSummitMode == "Walk" then
-            AutoSummitRouteModeParagraph:Set({
-                Title = "Active route / teleport",
-                Content = "Walk mode\nCurrent: " .. autoSummitWalkRouteFileDisplay,
-            })
-            return
-        end
-        if syncAutoSummitTeleportStatusFromCurrentCp then
-            syncAutoSummitTeleportStatusFromCurrentCp()
-        end
+        local modeHandler = getCurrentAutoSummitModeHandler()
         AutoSummitRouteModeParagraph:Set({
-            Title = "Active route / teleport",
-            Content = string.format(
-                "Teleport mode\nCurrent: %s\nNext: %s\nDelay (this stop): %s",
-                autoSummitTeleportCurrentLeg,
-                autoSummitTeleportNextLeg,
-                autoSummitTeleportDelayText
-            ),
+            Title = "Active route",
+            Content = modeHandler.getRouteStatusContent(),
         })
     end
 
@@ -5083,7 +5035,7 @@ do
         autoSummitWalkRouteFileDisplay = "—"
         task.defer(updateAutoSummitRouteModeParagraph)
 
-        local routeN = #summitTeleportRoute
+        local routeN = #summitRoute
         local summitCpIndex = routeN - 1
         local reachedSummitInThisCycle = false
 
@@ -5336,16 +5288,16 @@ do
     end
 
     local function routeLabelForCpIndex(idx)
-        local wp = summitTeleportRoute[idx + 1]
+        local wp = summitRoute[idx + 1]
         if wp then
             return wp.name
         end
         return "CP " .. tostring(idx)
     end
 
-    -- CP 0 = Start â€¦ CP (#route-1) = Summit. Next teleport is route[cp+2] (1-based); at/past Summit nothing to skip.
+    -- CP 0 = Start â€¦ CP (#route-1) = Summit. Next route leg is route[cp+2] (1-based); at/past Summit nothing to skip.
     local function getFirstSummitRouteIndexFromCp(cpIdx)
-        local routeN = #summitTeleportRoute
+        local routeN = #summitRoute
         local summitCpIndex = routeN - 1
         local cp = cpIdx
         if typeof(cp) ~= "number" then
@@ -5429,23 +5381,64 @@ do
         end
         return cp
     end
-    syncAutoSummitTeleportStatusFromCurrentCp = function()
-        if not autoSummitEnabled or autoSummitMode ~= "Teleport" then
-            return
+
+    local function runAutoSummitWalkCycle(
+        shouldAbort: () -> boolean,
+        getRootPart: (number?) -> BasePart?,
+        skipNextCpResumeNotify: boolean
+    ): (boolean, boolean, number, boolean)
+        local routeCompleted = true
+        local summitCpIndexNow = #summitRoute - 1
+        syncAutoSummitCurrentCheckpointSnapshot()
+        local cpRawNow = getAutoSummitCurrentCpRaw()
+        local walkReachedSummitThisCycle = false
+        local cpClamped = cpRawNow
+        local skippedSummitLegs = WALK_LEG_PREFIX_BY_CP[cpRawNow] == nil
+        if skippedSummitLegs then
+            skipNextCpResumeNotify = false
+        elseif not skipNextCpResumeNotify then
+            notifyAutoSummit(
+                ("CP #%d (%s) — walk mode from next leg..."):format(
+                    cpClamped,
+                    routeLabelForCpIndex(cpClamped)
+                )
+            )
+        else
+            skipNextCpResumeNotify = false
         end
-        local summitCpIndexNow = #summitTeleportRoute - 1
-        local cpRouted = getAutoSummitCurrentCpRouted(summitCpIndexNow)
-        local currentLabel = routeLabelForCpIndex(cpRouted)
-        local nextIndex = cpRouted + 2
-        local nextLabel = "—"
-        if cpRouted >= summitCpIndexNow then
-            nextLabel = "Start"
-        elseif summitTeleportRoute[nextIndex] then
-            nextLabel = summitTeleportRoute[nextIndex].name
+        if not skippedSummitLegs then
+            local okWalk, reachedWalkSummit = runWalkSummitLegsFromCurrentCp(shouldAbort, getRootPart)
+            walkReachedSummitThisCycle = reachedWalkSummit == true
+            if not okWalk then
+                routeCompleted = false
+            end
         end
-        autoSummitTeleportCurrentLeg = currentLabel
-        autoSummitTeleportNextLeg = nextLabel
+        return routeCompleted, walkReachedSummitThisCycle, summitCpIndexNow, skipNextCpResumeNotify
     end
+
+    local AUTO_SUMMIT_MODE_HANDLERS = {
+        Walk = {
+            getRouteStatusContent = function()
+                return "Walk mode\nCurrent: " .. autoSummitWalkRouteFileDisplay
+            end,
+            resetRouteStatus = function()
+                autoSummitWalkRouteFileDisplay = "—"
+            end,
+            runCycle = runAutoSummitWalkCycle,
+            getBetweenRunDelay = function()
+                return walkRouteRng:NextNumber(
+                    WALK_BETWEEN_RUN_DELAY_MIN,
+                    WALK_BETWEEN_RUN_DELAY_MAX
+                )
+            end,
+        },
+    }
+
+    getCurrentAutoSummitModeHandler = function()
+        local h = AUTO_SUMMIT_MODE_HANDLERS[autoSummitMode]
+        return h or AUTO_SUMMIT_MODE_HANDLERS.Walk
+    end
+
     local function updateAutoSummitCpParagraph()
         syncAutoSummitCurrentCheckpointSnapshot()
         if not autoSummitEnabled then
@@ -5464,7 +5457,6 @@ do
                 Content = desc,
             })
         end
-        syncAutoSummitTeleportStatusFromCurrentCp()
         task.defer(updateAutoSummitRouteModeParagraph)
     end
 
@@ -5474,7 +5466,7 @@ do
     })
 
     AutoSummitRouteModeParagraph = MainTab:CreateParagraph({
-        Title = "Active route / teleport",
+        Title = "Active route",
         Content = "Auto Summit is off.",
     })
     task.defer(updateAutoSummitRouteModeParagraph)
@@ -5535,15 +5527,6 @@ do
     })
 
     MainTab:CreateToggle({
-        Name = "Randomize duration (teleport mode)",
-        CurrentValue = false,
-        Ext = true,
-        Callback = function(enabled)
-            autoSummitRandomizeTeleportDuration = enabled
-        end,
-    })
-
-    MainTab:CreateToggle({
         Name = "Include Failed Route",
         CurrentValue = false,
         Ext = true,
@@ -5590,9 +5573,6 @@ do
                 end
                 stopAutoSummitWalkCharacter()
                 autoSummitWalkRouteFileDisplay = "—"
-                autoSummitTeleportCurrentLeg = "—"
-                autoSummitTeleportNextLeg = "—"
-                autoSummitTeleportDelayText = "—"
                 task.defer(updateAutoSummitRouteModeParagraph)
                 return
             end
@@ -5643,118 +5623,12 @@ do
                 local runCount = 0
                 local remaining = qtyNum
                 local skipNextCpResumeNotify = false
-                local forceTeleportFullRouteNext = false
-                local summitToStartWalkTarget = parsePositionString(TELEPORT_SUMMIT_TO_START_WALK_POSITION)
-                local function isCheckpointAtStartNow(): boolean
-                    syncAutoSummitCurrentCheckpointSnapshot()
-                    local label = autoSummitCurrentCpLabel
-                    if typeof(label) == "string" then
-                        local low = string.lower(label)
-                        if string.find(low, "start", 1, true) then
-                            return true
-                        end
-                        if checkpointLabelLooksLikeSummit(low) then
-                            return false
-                        end
-                    end
-                    return autoSummitCurrentCpIndexRaw == 0
-                end
-                local function runTeleportSummitToStartWalkTransition(): boolean
-                    if not summitToStartWalkTarget then
-                        notifyAutoSummit("Invalid summit->start walk position", "x")
-                        return false
-                    end
-                    autoSummitTeleportCurrentLeg = "Summit->Walk"
-                    autoSummitTeleportNextLeg = "Start"
-                    autoSummitTeleportDelayText = string.format("%.1fs check", TELEPORT_SUMMIT_TO_START_CP_WAIT_SECONDS)
-                    task.defer(updateAutoSummitRouteModeParagraph)
-                    local attempt = 0
-                    while autoSummitEnabled and not autoSummitRestartFromDeath do
-                        attempt = attempt + 1
-                        syncAutoSummitCurrentCheckpointSnapshot()
-                        task.defer(updateAutoSummitCpParagraph)
-                        local character = lpAutoSummit.Character
-                        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                        rootPart = getRootPart(5)
-                        if not rootPart or not humanoid then
-                            notifyAutoSummit("Could not start summit->start walk", "x")
-                            return false
-                        end
-                        notifyAutoSummit(
-                            ("Summit->Start walk attempt %d: moving to reset point..."):format(attempt)
-                        )
-                        autoSummitTeleportCurrentLeg = ("Summit->Walk (%d)"):format(attempt)
-                        autoSummitTeleportNextLeg = "Start"
-                        autoSummitTeleportDelayText = string.format(
-                            "%.1fs check",
-                            TELEPORT_SUMMIT_TO_START_CP_WAIT_SECONDS
-                        )
-                        task.defer(updateAutoSummitRouteModeParagraph)
-                        pcall(function()
-                            humanoid:MoveTo(summitToStartWalkTarget)
-                        end)
-                        local walkStart = os.clock()
-                        local reachedWalkTarget = false
-                        while autoSummitEnabled and not autoSummitRestartFromDeath do
-                            rootPart = getRootPart(5)
-                            if not rootPart then
-                                break
-                            end
-                            local dx = rootPart.Position.X - summitToStartWalkTarget.X
-                            local dz = rootPart.Position.Z - summitToStartWalkTarget.Z
-                            if (dx * dx + dz * dz) <= (TELEPORT_SUMMIT_TO_START_WALK_XZ_RADIUS
-                                * TELEPORT_SUMMIT_TO_START_WALK_XZ_RADIUS) then
-                                reachedWalkTarget = true
-                                break
-                            end
-                            if os.clock() - walkStart >= TELEPORT_SUMMIT_TO_START_WALK_ATTEMPT_TIMEOUT then
-                                break
-                            end
-                            if not waitWithCancel(0.1, shouldAbort) then
-                                return false
-                            end
-                        end
-                        if not autoSummitEnabled or autoSummitRestartFromDeath then
-                            return false
-                        end
-                        if reachedWalkTarget then
-                            if not waitWithCancel(TELEPORT_SUMMIT_TO_START_CP_WAIT_SECONDS, shouldAbort) then
-                                return false
-                            end
-                            if isCheckpointAtStartNow() then
-                                notifyAutoSummit("Summit->Start transition complete.")
-                                return true
-                            end
-                            notifyAutoSummit(
-                                "Reached reset point but Start not detected in 3s; retrying walk...",
-                                "x"
-                            )
-                            pcall(function()
-                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                            end)
-                        else
-                            notifyAutoSummit("Could not reach reset point; retrying walk...", "x")
-                        end
-                    end
-                    return false
-                end
                 repeat
                     if not autoSummitEnabled then
                         break
                     end
-                    if autoSummitMode == "Teleport" then
-                        if not forceTeleportFullRouteNext then
-                            autoSummitTeleportCurrentLeg = "—"
-                            autoSummitTeleportNextLeg = "—"
-                            autoSummitTeleportDelayText = "—"
-                        else
-                            autoSummitTeleportCurrentLeg = "Summit"
-                            autoSummitTeleportNextLeg = "Start"
-                            autoSummitTeleportDelayText = "queued"
-                        end
-                    else
-                        autoSummitWalkRouteFileDisplay = "—"
-                    end
+                    local modeHandler = getCurrentAutoSummitModeHandler()
+                    modeHandler.resetRouteStatus()
                     task.defer(updateAutoSummitRouteModeParagraph)
                     local runStartTime = os.clock()
                     rootPart = getRootPart()
@@ -5774,181 +5648,9 @@ do
                         end
                     end
 
-                    local routeCompleted = true
-                    local summitCpIndexNow = #summitTeleportRoute - 1
-                    syncAutoSummitCurrentCheckpointSnapshot()
-                    local cpRawNow = getAutoSummitCurrentCpRaw()
-                    local cpRoutedNow = getAutoSummitCurrentCpRouted(summitCpIndexNow)
-                    local walkReachedSummitThisCycle = false
-                    local teleportReachedSummitThisCycle = false
-                    local firstWpIndex, cpClamped
-                    local skippedSummitTeleports
-                    if autoSummitMode == "Teleport" and forceTeleportFullRouteNext then
-                        -- Last run finished teleport summit; game CP may still be Start/Summit same id â€” always rerun full route.
-                        firstWpIndex = 1
-                        cpClamped = 0
-                        skippedSummitTeleports = false
-                        forceTeleportFullRouteNext = false
-                    else
-                        local cpForFirstWp = autoSummitMode == "Teleport" and cpRoutedNow or cpRawNow
-                        firstWpIndex, cpClamped = getFirstSummitRouteIndexFromCp(cpForFirstWp)
-                        skippedSummitTeleports = firstWpIndex == nil
-                        -- Teleport mode: CP usually stays at/past Summit after a run; resume full route from Start.
-                        if autoSummitMode == "Teleport" and skippedSummitTeleports then
-                            if typeof(cpClamped) == "number" and cpClamped >= summitCpIndexNow then
-                                firstWpIndex = 1
-                                skippedSummitTeleports = false
-                            end
-                        end
-                    end
-                    if autoSummitMode == "Walk" then
-                        skippedSummitTeleports = WALK_LEG_PREFIX_BY_CP[cpRawNow] == nil
-                        cpClamped = cpRawNow
-                        if skippedSummitTeleports then
-                            skipNextCpResumeNotify = false
-                        elseif not skipNextCpResumeNotify then
-                            notifyAutoSummit(
-                                ("CP #%d (%s) â€” walk mode from next legâ€¦"):format(
-                                    cpClamped,
-                                    routeLabelForCpIndex(cpClamped)
-                                )
-                            )
-                        else
-                            skipNextCpResumeNotify = false
-                        end
-                        if not skippedSummitTeleports then
-                            local okWalk, reachedWalkSummit = runWalkSummitLegsFromCurrentCp(shouldAbort, getRootPart)
-                            walkReachedSummitThisCycle = reachedWalkSummit == true
-                            if not okWalk then
-                                routeCompleted = false
-                            end
-                        end
-                    else
-                        if skippedSummitTeleports then
-                            skipNextCpResumeNotify = false
-                        elseif not skipNextCpResumeNotify then
-                            notifyAutoSummit(
-                                ("CP #%d (%s) â€” continuing from %sâ€¦"):format(
-                                    cpClamped,
-                                    routeLabelForCpIndex(cpClamped),
-                                    summitTeleportRoute[firstWpIndex].name
-                                )
-                            )
-                        else
-                            skipNextCpResumeNotify = false
-                        end
-                        if not skippedSummitTeleports then
-                            for wi = firstWpIndex, #summitTeleportRoute do
-                                local wp = summitTeleportRoute[wi]
-                                if not autoSummitEnabled or autoSummitRestartFromDeath then
-                                    routeCompleted = false
-                                    break
-                                end
-                                syncAutoSummitCurrentCheckpointSnapshot()
-                                task.defer(updateAutoSummitCpParagraph)
-                                rootPart = getRootPart()
-                                if not rootPart then
-                                    routeCompleted = false
-                                    break
-                                end
-                                local targetPosition = parsePositionString(wp.position)
-                                if not targetPosition then
-                                    routeCompleted = false
-                                    notifyAutoSummit("Invalid position for " .. wp.name, "x")
-                                    break
-                                end
-                                local didTeleportThisLeg = true
-                                if wi == 1 and isCheckpointAtStartNow() then
-                                    didTeleportThisLeg = false
-                                    notifyAutoSummit("Already at Start, skipping teleport.")
-                                else
-                                    rootPart.CFrame = CFrame.new(targetPosition)
-                                    notifyAutoSummit("Teleported to " .. wp.name .. "â€¦")
-                                end
-                                if didTeleportThisLeg and wp.name ~= "Summit" then
-                                    local cpBeforeTeleportSig =
-                                        getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
-                                    local maxTeleportAttempts = 2
-                                    local teleportAttempt = 1
-                                    local cpChangedAfterTeleport = false
-                                    while teleportAttempt <= maxTeleportAttempts do
-                                        local listenStart = os.clock()
-                                        while os.clock() - listenStart < 8 do
-                                            local cpAfterAttemptSig =
-                                                getCheckpointStateSignature(lpAutoSummit, summitCpIndexNow)
-                                            if cpAfterAttemptSig ~= cpBeforeTeleportSig then
-                                                cpChangedAfterTeleport = true
-                                                break
-                                            end
-                                            if not waitWithCancel(0.1, shouldAbort) then
-                                                routeCompleted = false
-                                                break
-                                            end
-                                        end
-                                        if routeCompleted == false or cpChangedAfterTeleport then
-                                            break
-                                        end
-                                        teleportAttempt = teleportAttempt + 1
-                                        if teleportAttempt <= maxTeleportAttempts then
-                                            syncAutoSummitCurrentCheckpointSnapshot()
-                                            task.defer(updateAutoSummitCpParagraph)
-                                            notifyAutoSummit(
-                                                ("CP not changed in 8s, retrying %s (attempt %d/%d)â€¦"):format(
-                                                    wp.name,
-                                                    teleportAttempt,
-                                                    maxTeleportAttempts
-                                                )
-                                            )
-                                            rootPart.CFrame = CFrame.new(targetPosition)
-                                        end
-                                    end
-                                    if routeCompleted == false then
-                                        break
-                                    end
-                                    if not cpChangedAfterTeleport then
-                                        notifyAutoSummit(
-                                            ("CP still unchanged after retry at %s; continuing route."):format(wp.name),
-                                            "x"
-                                        )
-                                    end
-                                end
-                                local waitSec = wp.delay
-                                local delayRandomized = false
-                                if
-                                    autoSummitMode == "Teleport"
-                                    and autoSummitRandomizeTeleportDuration
-                                    and wi ~= #summitTeleportRoute
-                                    and wp.name ~= "Summit"
-                                then
-                                    waitSec = math.max(
-                                        0.5,
-                                        wp.delay
-                                            + math.random(
-                                                TELEPORT_RANDOM_DELAY_MIN_OFFSET,
-                                                TELEPORT_RANDOM_DELAY_MAX_OFFSET
-                                            )
-                                    )
-                                    delayRandomized = true
-                                end
-                                local nextWp = summitTeleportRoute[wi + 1]
-                                autoSummitTeleportCurrentLeg = wp.name
-                                autoSummitTeleportNextLeg = nextWp and nextWp.name or "—"
-                                if delayRandomized then
-                                    autoSummitTeleportDelayText = string.format("%.1fs (randomized)", waitSec)
-                                else
-                                    autoSummitTeleportDelayText = string.format("%.1fs", waitSec)
-                                end
-                                task.defer(updateAutoSummitRouteModeParagraph)
-                                if not waitWithCancel(waitSec, shouldAbort) then
-                                    routeCompleted = false
-                                    break
-                                end
-                                if wi == #summitTeleportRoute then
-                                    teleportReachedSummitThisCycle = true
-                                end
-                            end
-                        end
-                    end
+                    local routeCompleted, reachedSummitThisCycle, summitCpIndexNow
+                    routeCompleted, reachedSummitThisCycle, summitCpIndexNow, skipNextCpResumeNotify =
+                        modeHandler.runCycle(shouldAbort, getRootPart, skipNextCpResumeNotify)
 
                     if autoSummitRestartFromDeath then
                         notifyAutoSummit("Character died â€” waiting for respawnâ€¦")
@@ -5974,22 +5676,13 @@ do
                         task.wait(0.35)
                         syncAutoSummitCurrentCheckpointSnapshot()
                         local cpRespawnRaw = getAutoSummitCurrentCpRaw()
-                        local cpRespawnForRoute = autoSummitMode == "Teleport"
-                                and getAutoSummitCurrentCpRouted(summitCpIndexNow)
-                            or cpRespawnRaw
-                        local firstRespawn, cpRespawnClamped =
-                            getFirstSummitRouteIndexFromCp(cpRespawnForRoute)
-                        if autoSummitMode == "Teleport" and firstRespawn == nil then
-                            if typeof(cpRespawnClamped) == "number" and cpRespawnClamped >= summitCpIndexNow then
-                                firstRespawn = 1
-                            end
-                        end
+                        local firstRespawn, cpRespawnClamped = getFirstSummitRouteIndexFromCp(cpRespawnRaw)
                         task.defer(updateAutoSummitCpParagraph)
                         autoSummitRestartFromDeath = false
                         skipNextCpResumeNotify = true
                         if firstRespawn == nil then
                             notifyAutoSummit(
-                                ("Respawned â€” CP #%d (%s). Next leg: Summit / count run (no teleports)."):format(
+                                ("Respawned â€” CP #%d (%s). Next leg: Summit / count run."):format(
                                     cpRespawnClamped,
                                     routeLabelForCpIndex(cpRespawnClamped)
                                 )
@@ -5999,7 +5692,7 @@ do
                                 ("Respawned â€” CP #%d (%s); resuming from %s."):format(
                                     cpRespawnClamped,
                                     routeLabelForCpIndex(cpRespawnClamped),
-                                    summitTeleportRoute[firstRespawn].name
+                                    summitRoute[firstRespawn].name
                                 )
                             )
                         end
@@ -6008,14 +5701,7 @@ do
                         local cpAfterRunRaw = getAutoSummitCurrentCpRaw()
                         local cpAfterRunRouted = getAutoSummitCurrentCpRouted(summitCpIndexNow)
                         local atSummitNow = cpAfterRunRouted >= summitCpIndexNow
-                        local reachedSummitThisRun = false
-                        if autoSummitMode == "Walk" then
-                            reachedSummitThisRun = walkReachedSummitThisCycle
-                        else
-                            -- Teleport: leaderstats often do not update from client CFrame; use route completion.
-                            reachedSummitThisRun = teleportReachedSummitThisCycle
-                                or (cpRoutedNow < summitCpIndexNow and atSummitNow)
-                        end
+                        local reachedSummitThisRun = reachedSummitThisCycle
 
                         if reachedSummitThisRun then
                             notifyAutoSummit("Reached Summit! (Run " .. (runCount + 1) .. ")")
@@ -6023,14 +5709,6 @@ do
                             table.insert(autoSummitRunTimes, elapsedRun)
                             task.defer(updateAutoSummitTimesParagraph)
                             runCount = runCount + 1
-                            if autoSummitMode == "Teleport" then
-                                -- Once summit is reached in teleport mode, always start next cycle from Start route.
-                                forceTeleportFullRouteNext = true
-                                autoSummitTeleportCurrentLeg = "Summit"
-                                autoSummitTeleportNextLeg = "Start"
-                                autoSummitTeleportDelayText = "queued"
-                                task.defer(updateAutoSummitRouteModeParagraph)
-                            end
                             if remaining then
                                 remaining = remaining - 1
                                 summitQty = tostring(remaining)
@@ -6046,26 +5724,7 @@ do
                                 end)
                             end
                             if autoSummitEnabled and (not qtyNum or remaining > 0) then
-                                if autoSummitMode == "Teleport" then
-                                    if not runTeleportSummitToStartWalkTransition() then
-                                        if not autoSummitEnabled then
-                                            break
-                                        end
-                                        if autoSummitRestartFromDeath then
-                                            continue
-                                        end
-                                    end
-                                end
-                                local betweenRunDelay = 0
-                                if autoSummitMode == "Walk" then
-                                    betweenRunDelay = walkRouteRng:NextNumber(
-                                        WALK_BETWEEN_RUN_DELAY_MIN,
-                                        WALK_BETWEEN_RUN_DELAY_MAX
-                                    )
-                                else
-                                    -- Teleport mode already waits on each route waypoint (including Summit delay).
-                                    betweenRunDelay = 0
-                                end
+                                local betweenRunDelay = modeHandler.getBetweenRunDelay()
                                 if not waitWithCancel(betweenRunDelay, function()
                                     return not autoSummitEnabled
                                 end) then
