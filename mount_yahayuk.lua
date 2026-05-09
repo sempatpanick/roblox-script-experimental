@@ -4070,17 +4070,6 @@ do
         "cp5-summit_success_1.json",
     }
 
-    -- Next leg toward summit: route JSON basename prefix (matches files like cp1-2_success_1.json).
-    local WALK_LEG_PREFIX_BY_CP: { [number]: string } = {
-        [0] = "start-cp1",
-        [1] = "cp1-2",
-        [2] = "cp2-3",
-        [3] = "cp3-4",
-        [4] = "cp4-5",
-        [5] = "cp5-summit",
-        [6] = "summit-start",
-    }
-
     local function resolveExecutorFnForMain(name: string): any
         local v = rawget(_G, name)
         if type(v) == "function" then
@@ -4377,16 +4366,6 @@ do
     -- fallspawns.json: campName + position for each camp's FallSpawn / Start SpawnLocation.
     local FALL_SPAWN_MATCH_RADIUS_STUDS = 40
 
-    local function campNameForWalkCheckpoint(cp: number): string?
-        if cp <= 0 then
-            return "Start"
-        end
-        if cp >= 6 then
-            return nil
-        end
-        return "Camp " .. tostring(cp)
-    end
-
     local function parseFallSpawnRowPosition(row: any): Vector3?
         if type(row) ~= "table" then
             return nil
@@ -4543,14 +4522,134 @@ do
     end
 
     local summitRoute = {
-        { name = "Start", teleportPosition = "-922.94, 169.22, 856.29", teleportDelay = 3 },
-        { name = "Camp 1", teleportPosition = "-407.77, 248.20, 794.09", teleportDelay = 8 },
-        { name = "Camp 2", teleportPosition = "-337.77, 388.27, 522.16", teleportDelay = 8 },
-        { name = "Camp 3", teleportPosition = "294.19, 430.33, 494.17", teleportDelay = 8 },
-        { name = "Camp 4", teleportPosition = "323.46, 490.24, 348.33", teleportDelay = 35 },
-        { name = "Camp 5", teleportPosition = "226.70, 314.21, -143.64", teleportDelay = 45 },
-        { name = "Summit", teleportPosition = "-613.51, 905.28, -533.45", teleportDelay = 3 },
+        {
+            name = "Start",
+            teleportPosition = "-922.94, 169.22, 856.29",
+            teleportDelay = 3,
+            walkLegPrefix = "start-cp1",
+            walkWithJump = false,
+        },
+        {
+            name = "Camp 1",
+            teleportPosition = "-407.77, 248.20, 794.09",
+            teleportDelay = 8,
+            walkLegPrefix = "cp1-2",
+            walkWithJump = false,
+        },
+        {
+            name = "Camp 2",
+            teleportPosition = "-337.77, 388.27, 522.16",
+            teleportDelay = 8,
+            walkLegPrefix = "cp2-3",
+            walkWithJump = false,
+        },
+        {
+            name = "Camp 3",
+            teleportPosition = "294.19, 430.33, 494.17",
+            teleportDelay = 8,
+            walkLegPrefix = "cp3-4",
+            walkWithJump = false,
+        },
+        {
+            name = "Camp 4",
+            teleportPosition = "323.46, 490.24, 348.33",
+            teleportDelay = 35,
+            walkLegPrefix = "cp4-5",
+            walkWithJump = false,
+        },
+        {
+            name = "Camp 5",
+            teleportPosition = "226.70, 314.21, -143.64",
+            teleportDelay = 45,
+            walkLegPrefix = "cp5-summit",
+            walkWithJump = false,
+        },
+        {
+            name = "Summit",
+            teleportPosition = "-613.51, 905.28, -533.45",
+            teleportDelay = 3,
+            walkLegPrefix = "summit-start",
+            walkWithJump = true,
+        },
     }
+
+    local function normalizeSummitCheckpointLabel(s: any): string
+        if typeof(s) ~= "string" then
+            s = tostring(s or "")
+        end
+        s = string.lower(s)
+        s = string.gsub(s, "^%s+", "")
+        s = string.gsub(s, "%s+$", "")
+        return s
+    end
+
+    local function checkpointLabelLooksLikeSummit(labelValue: any): boolean
+        if typeof(labelValue) ~= "string" or labelValue == "" then
+            return false
+        end
+        local low = string.lower(labelValue)
+        return string.find(low, "summit", 1, true) ~= nil
+    end
+
+    local function summitRouteStepIndexFromLabel(labelValue: any): number?
+        local raw = typeof(labelValue) == "string" and labelValue or tostring(labelValue or "")
+        local norm = normalizeSummitCheckpointLabel(raw)
+
+        for i, wp in ipairs(summitRoute) do
+            if normalizeSummitCheckpointLabel(wp.name) == norm then
+                return i
+            end
+        end
+
+        if norm == "start" then
+            return 1
+        end
+
+        local onlyNum = tonumber(string.match(raw, "^%s*(%d+)%s*$"))
+        if onlyNum ~= nil then
+            if onlyNum == 0 then
+                return 1
+            end
+            if onlyNum >= 1 and onlyNum <= 5 then
+                return onlyNum + 1
+            end
+            if onlyNum == 6 then
+                return #summitRoute
+            end
+        end
+
+        local d = string.match(raw, "(%d+)")
+        if d then
+            local n = tonumber(d)
+            if n == 0 then
+                return 1
+            end
+            if n >= 1 and n <= 5 then
+                return n + 1
+            end
+            if n == 6 then
+                return #summitRoute
+            end
+        end
+
+        if checkpointLabelLooksLikeSummit(raw) then
+            return #summitRoute
+        end
+
+        return nil
+    end
+
+    local function campNameForWalkRouteStep(routeStepIndex: number): string?
+        local wp = summitRoute[routeStepIndex]
+        if not wp then
+            return nil
+        end
+        if wp.name == "Summit" then
+            return nil
+        end
+        return wp.name
+    end
+
     local function notifyAutoSummit(content, icon)
         mountNotify({ Title = "Auto Summit", Content = content, Icon = icon or "check" })
     end
@@ -4650,37 +4749,28 @@ do
         autoSummitWalkPlaybackAutoRotateRestore = nil
     end
 
-    local function getCheckpointIndexFromPlayer(player)
-        local ls = player:FindFirstChild("leaderstats")
-        if ls then
-            local n = ls:FindFirstChild("LastCheckpoint")
-            if n and n:IsA("IntValue") then
-                return n.Value
-            end
-            local s = ls:FindFirstChild("Checkpoint")
-            if s and s:IsA("StringValue") then
-                local v = s.Value
-                if v and v ~= "" then
-                    if v:lower() == "start" then
-                        return 0
-                    end
-                    local d = string.match(v, "%d+")
-                    return (d and tonumber(d)) or 0
+    -- Periodic jumps during MoveTo + recording playback when summitRoute[*].walkWithJump is true.
+    local function startWalkJumpAssistForLeg(shouldCancel: () -> boolean): () -> ()
+        local stopFlag = false
+        task.spawn(function()
+            while not stopFlag and not shouldCancel() do
+                local char = lpAutoSummit.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    pcall(function()
+                        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    end)
+                end
+                local elapsed = 0
+                while elapsed < 0.47 and not stopFlag and not shouldCancel() do
+                    task.wait(0.05)
+                    elapsed = elapsed + 0.05
                 end
             end
+        end)
+        return function()
+            stopFlag = true
         end
-        local a = player:GetAttribute("LastCheckpoint")
-        if typeof(a) == "number" then
-            return a
-        end
-        if typeof(a) == "string" and a ~= "" then
-            if a:lower() == "start" then
-                return 0
-            end
-            local d = string.match(a, "%d+")
-            return (d and tonumber(d)) or 0
-        end
-        return 0
     end
 
     local function getCheckpointLabelString(player)
@@ -4703,24 +4793,6 @@ do
             end
         end
         return "Start"
-    end
-
-    local function checkpointLabelLooksLikeSummit(labelValue: any): boolean
-        if typeof(labelValue) ~= "string" or labelValue == "" then
-            return false
-        end
-        local low = string.lower(labelValue)
-        return string.find(low, "summit", 1, true) ~= nil
-    end
-
-    local function getCheckpointIndexForWalkRouting(player, summitCpIndex: number): number
-        local cp = getCheckpointIndexFromPlayer(player)
-        -- In this place, Summit can be reported as CP 0 (same as Start) in some states.
-        -- Use label text to disambiguate so routing can choose summit-start_* correctly.
-        if cp == 0 and checkpointLabelLooksLikeSummit(getCheckpointLabelString(player)) then
-            return summitCpIndex
-        end
-        return cp
     end
 
     local function playRouteRecordingEvents(
@@ -5036,24 +5108,32 @@ do
         task.defer(updateAutoSummitRouteModeParagraph)
 
         local routeN = #summitRoute
-        local summitCpIndex = routeN - 1
         local reachedSummitInThisCycle = false
 
         while autoSummitEnabled and not shouldCancel() do
-            local cpLegRaw = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
-            -- Some servers can report a CP value above summit; treat it as summit
-            -- so walk mode still runs summit-start_* instead of exiting early.
-            local cpLeg = cpLegRaw > summitCpIndex and summitCpIndex or cpLegRaw
-            local prefix = WALK_LEG_PREFIX_BY_CP[cpLeg]
-            local runSingleLegOnly = cpLeg >= summitCpIndex
-            if not prefix then
-                if cpLeg >= summitCpIndex then
-                    return true, reachedSummitInThisCycle
-                end
-                disableAutoSummitDueToWalkFailure("No walk route mapping for CP #" .. tostring(cpLeg))
+            local labelLeg = getCheckpointLabelString(lpAutoSummit)
+            local routeStepStartOuter = summitRouteStepIndexFromLabel(labelLeg)
+            if not routeStepStartOuter then
+                disableAutoSummitDueToWalkFailure(
+                    "Unknown checkpoint label (not on summit route): " .. tostring(labelLeg)
+                )
                 return false, reachedSummitInThisCycle
             end
-            if cpLeg == 0 then
+
+            local prefix = summitRoute[routeStepStartOuter] and summitRoute[routeStepStartOuter].walkLegPrefix
+            local runSingleLegOnly = routeStepStartOuter >= routeN
+            if not prefix then
+                if runSingleLegOnly then
+                    return true, reachedSummitInThisCycle
+                end
+                disableAutoSummitDueToWalkFailure(
+                    "No walk route mapping for route step " .. tostring(routeStepStartOuter)
+                )
+                return false, reachedSummitInThisCycle
+            end
+
+            local routeNameOuter = summitRoute[routeStepStartOuter].name
+            if routeStepStartOuter == 1 then
                 local startCpDelaySec = walkRouteRng:NextNumber(0, 0.5)
                 if not waitWithCancel(startCpDelaySec, shouldCancel) then
                     return false, reachedSummitInThisCycle
@@ -5110,8 +5190,8 @@ do
                     tryIdx = tryIdx + 1
                 else
                     notifyAutoSummit(
-                        ("Walk leg CP%d -> %s (try %s/%s: %s)"):format(
-                            cpLeg,
+                        ("Walk leg %s -> %s (try %s/%s: %s)"):format(
+                            routeNameOuter,
                             prefix,
                             tostring(tryIdx),
                             tostring(#pathsToTry),
@@ -5138,14 +5218,27 @@ do
                         local yOffset = currentRootToFeet - recordedRootToFeet
                         firstTargetPos = firstPos + Vector3.new(0, yOffset, 0)
                     end
+
+                    local wpLeg = summitRoute[routeStepStartOuter]
+                    local jumpAssistStop = (wpLeg and wpLeg.walkWithJump) and startWalkJumpAssistForLeg(shouldCancel)
+                        or nil
+                    local function endWalkJumpAssist()
+                        if jumpAssistStop then
+                            jumpAssistStop()
+                        end
+                    end
+
                     humanoidWalkToWorldPosition(humanoid, rootPart, firstTargetPos, shouldCancel, 7)
                     if shouldCancel() then
+                        endWalkJumpAssist()
                         return false, reachedSummitInThisCycle
                     end
 
                     if not playRouteRecordingEvents(events, payload, shouldCancel) then
+                        endWalkJumpAssist()
                         return false, reachedSummitInThisCycle
                     end
+                    endWalkJumpAssist()
 
                     local isFailedLegRoute = walkRouteFileIsFailedVariant(pickedPath)
                     if isFailedLegRoute then
@@ -5155,9 +5248,9 @@ do
                         )
                     end
 
-                    -- CP can update shortly after playback. For *_failed_* routes, CP often stays the same;
+                    -- Checkpoint label can update shortly after playback. For *_failed_* routes it often stays the same;
                     -- fallspawns.json (campName + position) detects respawn at this leg's camp so we can continue.
-                    local cpBeforeLeg = cpLeg
+                    local stepAtLegStart = routeStepStartOuter
                     local advanced = false
                     local atFallSpawnForLeg = false
                     local cpPollMax = 50
@@ -5165,13 +5258,13 @@ do
                         if shouldCancel() then
                             return false, reachedSummitInThisCycle
                         end
-                        local cpNow = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
-                        if cpNow ~= cpBeforeLeg then
+                        local stepNow = summitRouteStepIndexFromLabel(getCheckpointLabelString(lpAutoSummit))
+                        if stepNow and stepNow ~= stepAtLegStart then
                             advanced = true
                             break
                         end
                         if isFailedLegRoute and #fallSpawnRows > 0 then
-                            local campNm = campNameForWalkCheckpoint(cpBeforeLeg)
+                            local campNm = campNameForWalkRouteStep(routeStepStartOuter)
                             local spawnPos = campNm and fallSpawnWorldPositionForCamp(fallSpawnRows, campNm)
                             local charPoll = lpAutoSummit.Character
                             local rootPoll = charPoll and charPoll:FindFirstChild("HumanoidRootPart")
@@ -5190,15 +5283,17 @@ do
                         end
                     end
                     if advanced then
-                        local cpAfterLeg = getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex)
-                        if cpBeforeLeg < summitCpIndex and cpAfterLeg >= summitCpIndex then
+                        local stepAfterLeg = summitRouteStepIndexFromLabel(getCheckpointLabelString(lpAutoSummit))
+                        if stepAfterLeg and stepAtLegStart < routeN and stepAfterLeg == routeN then
                             reachedSummitInThisCycle = true
                         end
-                        if cpAfterLeg < summitCpIndex then
-                            local nextPrefix = WALK_LEG_PREFIX_BY_CP[cpAfterLeg] or "unknown"
+                        if stepAfterLeg and stepAfterLeg < routeN then
+                            local nextWp = summitRoute[stepAfterLeg]
+                            local nextPrefix = (nextWp and nextWp.walkLegPrefix) or "unknown"
+                            local afterName = summitRoute[stepAfterLeg].name
                             notifyAutoSummit(
-                                ("Leg done at CP #%d -> next route %s_*"):format(
-                                    cpAfterLeg,
+                                ("Leg done at %s -> next route %s_*"):format(
+                                    afterName,
                                     tostring(nextPrefix)
                                 )
                             )
@@ -5227,19 +5322,20 @@ do
                             break
                         else
                             if atFallSpawnForLeg then
-                                local cn = campNameForWalkCheckpoint(cpBeforeLeg) or ("CP " .. tostring(cpBeforeLeg))
+                                local cn = campNameForWalkRouteStep(routeStepStartOuter)
+                                    or routeNameOuter
                                 notifyAutoSummit(
-                                    ("At %s fall spawn (still CP #%d) after %s — retrying other routes (skipped this file)."):format(
+                                    ("At %s fall spawn (still %s) after %s — retrying other routes (skipped this file)."):format(
                                         cn,
-                                        cpLeg,
+                                        routeNameOuter,
                                         baseName
                                     ),
                                     "x"
                                 )
                             else
                                 notifyAutoSummit(
-                                    ("Still at CP #%d after failed route %s — retrying other routes (skipped this file)."):format(
-                                        cpLeg,
+                                    ("Still at %s after failed route %s — retrying other routes (skipped this file)."):format(
+                                        routeNameOuter,
                                         baseName
                                     ),
                                     "x"
@@ -5250,7 +5346,7 @@ do
                         end
                     else
                         notifyAutoSummit(
-                            ("CP did not change after %s — trying next route (%s/%s)"):format(
+                            ("Checkpoint unchanged after %s — trying next route (%s/%s)"):format(
                                 baseName,
                                 tostring(tryIdx),
                                 tostring(#pathsToTry)
@@ -5284,40 +5380,8 @@ do
         if not autoSummitEnabled or shouldCancel() then
             return false, reachedSummitInThisCycle
         end
-        return getCheckpointIndexForWalkRouting(lpAutoSummit, summitCpIndex) >= summitCpIndex, reachedSummitInThisCycle
-    end
-
-    local function routeLabelForCpIndex(idx)
-        local wp = summitRoute[idx + 1]
-        if wp then
-            return wp.name
-        end
-        return "CP " .. tostring(idx)
-    end
-
-    -- CP 0 = Start â€¦ CP (#route-1) = Summit. Next route leg is route[cp+2] (1-based); at/past Summit nothing to skip.
-    local function getFirstSummitRouteIndexFromCp(cpIdx)
-        local routeN = #summitRoute
-        local summitCpIndex = routeN - 1
-        local cp = cpIdx
-        if typeof(cp) ~= "number" then
-            cp = 0
-        end
-        cp = math.floor(cp)
-        if cp < 0 then
-            cp = 0
-        end
-        if cp >= summitCpIndex then
-            return nil, cp
-        end
-        local first = cp + 2
-        if first < 1 then
-            first = 1
-        end
-        if first > routeN then
-            return nil, cp
-        end
-        return first, cp
+        local finalStep = summitRouteStepIndexFromLabel(getCheckpointLabelString(lpAutoSummit))
+        return finalStep == routeN, reachedSummitInThisCycle
     end
 
     local autoSummitRunTimes = {}
@@ -5366,43 +5430,25 @@ do
     local AUTO_SUMMIT_CP_TITLE = "Current camp / CP"
     local AutoSummitCpParagraph
     local autoSummitCurrentCpLabel = "Start"
-    local autoSummitCurrentCpIndexRaw = 0
     local function syncAutoSummitCurrentCheckpointSnapshot()
         autoSummitCurrentCpLabel = getCheckpointLabelString(lpAutoSummit)
-        autoSummitCurrentCpIndexRaw = getCheckpointIndexFromPlayer(lpAutoSummit)
-    end
-    local function getAutoSummitCurrentCpRaw(): number
-        return autoSummitCurrentCpIndexRaw
-    end
-    local function getAutoSummitCurrentCpRouted(summitCpIndex: number): number
-        local cp = autoSummitCurrentCpIndexRaw
-        if cp == 0 and checkpointLabelLooksLikeSummit(autoSummitCurrentCpLabel) then
-            return summitCpIndex
-        end
-        return cp
     end
 
     local function runAutoSummitWalkCycle(
         shouldAbort: () -> boolean,
         getRootPart: (number?) -> BasePart?,
         skipNextCpResumeNotify: boolean
-    ): (boolean, boolean, number, boolean)
+    ): (boolean, boolean, boolean)
         local routeCompleted = true
-        local summitCpIndexNow = #summitRoute - 1
         syncAutoSummitCurrentCheckpointSnapshot()
-        local cpRawNow = getAutoSummitCurrentCpRaw()
+        local routeStepNow = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
         local walkReachedSummitThisCycle = false
-        local cpClamped = cpRawNow
-        local skippedSummitLegs = WALK_LEG_PREFIX_BY_CP[cpRawNow] == nil
+        local skippedSummitLegs = routeStepNow == nil
         if skippedSummitLegs then
             skipNextCpResumeNotify = false
         elseif not skipNextCpResumeNotify then
-            notifyAutoSummit(
-                ("CP #%d (%s) — walk mode from next leg..."):format(
-                    cpClamped,
-                    routeLabelForCpIndex(cpClamped)
-                )
-            )
+            local canonical = routeStepNow and summitRoute[routeStepNow].name or autoSummitCurrentCpLabel
+            notifyAutoSummit(("%s — walk mode from next leg..."):format(canonical))
         else
             skipNextCpResumeNotify = false
         end
@@ -5413,7 +5459,7 @@ do
                 routeCompleted = false
             end
         end
-        return routeCompleted, walkReachedSummitThisCycle, summitCpIndexNow, skipNextCpResumeNotify
+        return routeCompleted, walkReachedSummitThisCycle, skipNextCpResumeNotify
     end
 
     local AUTO_SUMMIT_MODE_HANDLERS = {
@@ -5448,9 +5494,9 @@ do
             return
         end
         local posisi = autoSummitCurrentCpLabel
-        local idx = autoSummitCurrentCpIndexRaw
-        local routeName = routeLabelForCpIndex(idx)
-        local desc = string.format("POSISI: %s\nCP #%d Â· %s", string.upper(posisi), idx, routeName)
+        local routeStep = summitRouteStepIndexFromLabel(posisi)
+        local routeName = routeStep and summitRoute[routeStep].name or "—"
+        local desc = string.format("POSISI: %s\nRoute: %s", string.upper(posisi), routeName)
         if AutoSummitCpParagraph.Set then
             AutoSummitCpParagraph:Set({
                 Title = AUTO_SUMMIT_CP_TITLE,
@@ -5462,7 +5508,7 @@ do
 
     AutoSummitCpParagraph = MainTab:CreateParagraph({
         Title = AUTO_SUMMIT_CP_TITLE,
-        Content = "POSISI: â€”\nCP #0 Â· Start",
+        Content = "POSISI: —\nRoute: Start",
     })
 
     AutoSummitRouteModeParagraph = MainTab:CreateParagraph({
@@ -5648,8 +5694,8 @@ do
                         end
                     end
 
-                    local routeCompleted, reachedSummitThisCycle, summitCpIndexNow
-                    routeCompleted, reachedSummitThisCycle, summitCpIndexNow, skipNextCpResumeNotify =
+                    local routeCompleted, reachedSummitThisCycle
+                    routeCompleted, reachedSummitThisCycle, skipNextCpResumeNotify =
                         modeHandler.runCycle(shouldAbort, getRootPart, skipNextCpResumeNotify)
 
                     if autoSummitRestartFromDeath then
@@ -5675,32 +5721,30 @@ do
                         end
                         task.wait(0.35)
                         syncAutoSummitCurrentCheckpointSnapshot()
-                        local cpRespawnRaw = getAutoSummitCurrentCpRaw()
-                        local firstRespawn, cpRespawnClamped = getFirstSummitRouteIndexFromCp(cpRespawnRaw)
+                        local stepRespawn = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+                        local nextResumeIdx = (stepRespawn and stepRespawn < #summitRoute) and (stepRespawn + 1)
+                            or nil
                         task.defer(updateAutoSummitCpParagraph)
                         autoSummitRestartFromDeath = false
                         skipNextCpResumeNotify = true
-                        if firstRespawn == nil then
+                        if nextResumeIdx == nil then
                             notifyAutoSummit(
-                                ("Respawned â€” CP #%d (%s). Next leg: Summit / count run."):format(
-                                    cpRespawnClamped,
-                                    routeLabelForCpIndex(cpRespawnClamped)
-                                )
+                                ("Respawned — %s. Next leg: Summit / count run."):format(autoSummitCurrentCpLabel)
                             )
                         else
                             notifyAutoSummit(
-                                ("Respawned â€” CP #%d (%s); resuming from %s."):format(
-                                    cpRespawnClamped,
-                                    routeLabelForCpIndex(cpRespawnClamped),
-                                    summitRoute[firstRespawn].name
+                                ("Respawned — %s; resuming from %s."):format(
+                                    autoSummitCurrentCpLabel,
+                                    summitRoute[nextResumeIdx].name
                                 )
                             )
                         end
                     elseif routeCompleted and autoSummitEnabled then
                         syncAutoSummitCurrentCheckpointSnapshot()
-                        local cpAfterRunRaw = getAutoSummitCurrentCpRaw()
-                        local cpAfterRunRouted = getAutoSummitCurrentCpRouted(summitCpIndexNow)
-                        local atSummitNow = cpAfterRunRouted >= summitCpIndexNow
+                        local stepAfterRun = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+                        local atSummitNow = stepAfterRun == #summitRoute
+                        local nameAfterRun = stepAfterRun and summitRoute[stepAfterRun].name
+                            or autoSummitCurrentCpLabel
                         local reachedSummitThisRun = reachedSummitThisCycle
 
                         if reachedSummitThisRun then
@@ -5733,8 +5777,8 @@ do
                             end
                         elseif atSummitNow then
                             notifyAutoSummit(
-                                ("At Summit (CP #%d), waiting for camp change before counting next run."):format(
-                                    cpAfterRunRaw
+                                ("At Summit (%s), waiting for camp change before counting next run."):format(
+                                    autoSummitCurrentCpLabel
                                 )
                             )
                             if not waitWithCancel(1, function()
@@ -5744,10 +5788,7 @@ do
                             end
                         else
                             notifyAutoSummit(
-                                ("Route ended at CP #%d (%s) — continuing from current camp."):format(
-                                    cpAfterRunRouted,
-                                    routeLabelForCpIndex(cpAfterRunRouted)
-                                )
+                                ("Route ended at %s — continuing from current camp."):format(nameAfterRun)
                             )
                         end
                     end
