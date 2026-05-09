@@ -4047,7 +4047,7 @@ do
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
     local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
     local autoSummitMode = "Walk"
-    local AUTO_SUMMIT_MODE_OPTIONS = { "Walk" }
+    local AUTO_SUMMIT_MODE_OPTIONS = { "Walk", "Teleport" }
     local updateAutoSummitRouteModeParagraph: () -> ()
     local getCurrentAutoSummitModeHandler: () -> any
     local WALK_BETWEEN_RUN_DELAY_MIN = 0
@@ -4585,7 +4585,7 @@ do
         {
             name = "Summit",
             teleportPosition = "-613.51, 905.28, -533.45",
-            teleportDelay = 3,
+            teleportDelay = 8,
             teleportWalkTo = "-621.35, 905.13, -495.14",
             teleportWalkToRadius = 1.5,
             teleportWalkToWithJump = true,
@@ -5000,6 +5000,7 @@ do
 
     -- Auto Summit UI: active walk route file
     local autoSummitWalkRouteFileDisplay = "—"
+    local autoSummitTeleportStepDisplay = "—"
 
     local AutoSummitRouteModeParagraph: any = nil
     updateAutoSummitRouteModeParagraph = function()
@@ -5455,6 +5456,165 @@ do
         autoSummitCurrentCpLabel = getCheckpointLabelString(lpAutoSummit)
     end
 
+    local function parseSummitTeleportPositionString(posStr: any): Vector3?
+        if typeof(posStr) ~= "string" then
+            return nil
+        end
+        local s = posStr:gsub(",", " "):gsub("%s+", " ")
+        local parts = {}
+        for part in string.gmatch(s, "[%d%.%-]+") do
+            local n = tonumber(part)
+            if n ~= nil then
+                table.insert(parts, n)
+            end
+        end
+        if #parts < 3 then
+            return nil
+        end
+        return Vector3.new(parts[1], parts[2], parts[3])
+    end
+
+    local function teleportAutoSummitRootToWorld(rootPart: BasePart, pos: Vector3)
+        pcall(function()
+            rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end)
+        rootPart.CFrame = CFrame.new(pos)
+    end
+
+    local CP_NOTIFY_OK_SUFFIX = "tersimpan."
+    local CP_WARN_TOO_FAST_PREFIX = "Terlalu cepat"
+    local CP_NOTIFY_REMOTE_WAIT_SEC = 8
+    local TELEPORT_ACK_POLL_TIMEOUT_SEC = 10
+
+    local function getCpNotifyPayloadKindText(payload: any): (string?, string?)
+        if type(payload) ~= "table" then
+            return nil, nil
+        end
+        local kind = payload.kind
+        local text = payload.text
+        if typeof(text) ~= "string" or text == "" then
+            text = payload.message
+        end
+        if typeof(text) ~= "string" or text == "" then
+            text = payload.msg
+        end
+        if typeof(text) ~= "string" then
+            return nil, nil
+        end
+        local ks = kind ~= nil and string.lower(tostring(kind)) or nil
+        return ks, text
+    end
+
+    local function cpNotifyPayloadIsOkSaved(payload: any): boolean
+        local kind, text = getCpNotifyPayloadKindText(payload)
+        if not kind or kind ~= "ok" or not text then
+            return false
+        end
+        local suf = string.lower(CP_NOTIFY_OK_SUFFIX)
+        local low = string.lower(text)
+        if string.len(low) < string.len(suf) then
+            return false
+        end
+        return string.sub(low, -string.len(suf)) == suf
+    end
+
+    local function cpNotifyPayloadIsTerlaluCepat(payload: any): boolean
+        local kind, text = getCpNotifyPayloadKindText(payload)
+        if not kind or kind ~= "warn" or not text then
+            return false
+        end
+        local lowText = string.lower(text)
+        local lowPre = string.lower(CP_WARN_TOO_FAST_PREFIX)
+        if string.len(lowText) < string.len(lowPre) then
+            return false
+        end
+        return string.sub(lowText, 1, string.len(lowPre)) == lowPre
+    end
+
+    local cpNotifyEventCached: Instance? = nil
+    local function getCpNotifyRemoteEvent(): Instance?
+        if cpNotifyEventCached and cpNotifyEventCached.Parent then
+            return cpNotifyEventCached
+        end
+        local inst = ReplicatedStorage:FindFirstChild("CP_Notify")
+            or ReplicatedStorage:WaitForChild("CP_Notify", CP_NOTIFY_REMOTE_WAIT_SEC)
+        if
+            inst
+            and (
+                inst:IsA("RemoteEvent")
+                or inst:IsA("UnreliableRemoteEvent")
+            )
+        then
+            cpNotifyEventCached = inst
+            return inst
+        end
+        return nil
+    end
+
+    -- Realtime buffer: one listener for the whole teleport cycle so warns are never missed (connect-before-teleport race).
+    local cpNotifyRealtimeQueue: { any } = {}
+    local cpNotifyRealtimeConn: RBXScriptConnection? = nil
+
+    local function flushCpNotifyRealtimeQueue()
+        cpNotifyRealtimeQueue = {}
+    end
+
+    local function ensureCpNotifyRealtimeListener()
+        local ev = getCpNotifyRemoteEvent()
+        if not ev then
+            return
+        end
+        if cpNotifyRealtimeConn then
+            return
+        end
+        cpNotifyRealtimeConn = ev.OnClientEvent:Connect(function(payload)
+            table.insert(cpNotifyRealtimeQueue, payload)
+        end)
+    end
+
+    local function stopCpNotifyRealtimeListener()
+        if cpNotifyRealtimeConn then
+            cpNotifyRealtimeConn:Disconnect()
+            cpNotifyRealtimeConn = nil
+        end
+        flushCpNotifyRealtimeQueue()
+    end
+
+    -- After each teleport, success when LastCheckpoint changes OR CP_Notify ok + text ends with "tersimpan.".
+    -- kind=warn + "Terlalu cepat..." => retry same teleport within 5 seconds.
+    local function waitForTeleportCpNotifyOrCheckpointAdvance(
+        cpLabelBefore: string,
+        shouldAbort: () -> boolean
+    ): "confirmed" | "abort" | "too_fast"
+        local waitStart = os.clock()
+        while not shouldAbort() do
+            if os.clock() - waitStart > TELEPORT_ACK_POLL_TIMEOUT_SEC then
+                notifyAutoSummit("Teleport: no CP change / CP_Notify ok within " .. tostring(TELEPORT_ACK_POLL_TIMEOUT_SEC) .. "s", "x")
+                return "abort"
+            end
+
+            syncAutoSummitCurrentCheckpointSnapshot()
+            if autoSummitCurrentCpLabel ~= cpLabelBefore then
+                return "confirmed"
+            end
+
+            while #cpNotifyRealtimeQueue > 0 do
+                local payload = table.remove(cpNotifyRealtimeQueue, 1)
+                if cpNotifyPayloadIsOkSaved(payload) then
+                    return "confirmed"
+                end
+                if cpNotifyPayloadIsTerlaluCepat(payload) then
+                    return "too_fast"
+                end
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+        return "abort"
+    end
+
     local function runAutoSummitWalkCycle(
         shouldAbort: () -> boolean,
         getRootPart: (number?) -> BasePart?,
@@ -5483,6 +5643,146 @@ do
         return routeCompleted, walkReachedSummitThisCycle, skipNextCpResumeNotify
     end
 
+    local function runAutoSummitTeleportCycle(
+        shouldAbort: () -> boolean,
+        getRootPart: (number?) -> BasePart?,
+        skipNextCpResumeNotify: boolean
+    ): (boolean, boolean, boolean)
+        -- Subscribe before any teleport so CP_Notify (especially warn) cannot fire before we listen.
+        ensureCpNotifyRealtimeListener()
+
+        local function teleportCycleImpl(): (boolean, boolean, boolean)
+            local routeCompleted = true
+            syncAutoSummitCurrentCheckpointSnapshot()
+            local routeStepNow = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+            local teleportReachedSummitThisCycle = false
+            local skippedSummitLegs = routeStepNow == nil
+            if skippedSummitLegs then
+                skipNextCpResumeNotify = false
+                disableAutoSummitDueToWalkFailure(
+                    "Unknown checkpoint label (not on summit route): " .. tostring(autoSummitCurrentCpLabel)
+                )
+                return false, false, skipNextCpResumeNotify
+            end
+
+            if not skipNextCpResumeNotify then
+                local canonical = summitRoute[routeStepNow].name or autoSummitCurrentCpLabel
+                notifyAutoSummit(("%s — teleport mode..."):format(canonical))
+            else
+                skipNextCpResumeNotify = false
+            end
+
+            local routeN = #summitRoute
+            if routeStepNow >= routeN then
+                return true, false, skipNextCpResumeNotify
+            end
+
+            local TELEPORT_TOO_FAST_RETRY_SEC = 5
+
+            for nextIdx = routeStepNow + 1, routeN do
+            if not autoSummitEnabled or shouldAbort() then
+                return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+            end
+
+            local wp = summitRoute[nextIdx]
+            if not wp then
+                return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+            end
+
+            local telePos = parseSummitTeleportPositionString(wp.teleportPosition)
+            if not telePos then
+                disableAutoSummitDueToWalkFailure(
+                    ("Teleport mode: invalid teleportPosition for %s"):format(tostring(wp.name))
+                )
+                return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+            end
+
+            autoSummitTeleportStepDisplay = wp.name
+            task.defer(updateAutoSummitRouteModeParagraph)
+
+            syncAutoSummitCurrentCheckpointSnapshot()
+            local cpBeforeStep = autoSummitCurrentCpLabel
+            local tooFastWindowEnd: number? = nil
+            local firstTeleportAttempt = true
+
+            while true do
+                if not autoSummitEnabled or shouldAbort() then
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+
+                if firstTeleportAttempt then
+                    notifyAutoSummit(("Teleport -> %s"):format(wp.name))
+                    firstTeleportAttempt = false
+                end
+
+                local rootPart = getRootPart()
+                if not rootPart then
+                    notifyAutoSummit("Teleport mode: HumanoidRootPart missing", "x")
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+
+                flushCpNotifyRealtimeQueue()
+                teleportAutoSummitRootToWorld(rootPart, telePos)
+
+                local character = lpAutoSummit.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local walkDest = wp.teleportWalkTo
+                if typeof(walkDest) == "string" and walkDest ~= "" then
+                    local wtPos = parseSummitTeleportPositionString(walkDest)
+                    if wtPos and humanoid and rootPart:IsA("BasePart") then
+                        local arrivalDist = tonumber(wp.teleportWalkToRadius) or 8
+                        local jumpAssistStop = wp.teleportWalkToWithJump and startWalkJumpAssistForLeg(shouldAbort)
+                            or nil
+                        humanoidWalkToWorldPosition(humanoid, rootPart, wtPos, shouldAbort, arrivalDist)
+                        if jumpAssistStop then
+                            jumpAssistStop()
+                        end
+                    end
+                end
+
+                if shouldAbort() or not autoSummitEnabled then
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+
+                local ack = waitForTeleportCpNotifyOrCheckpointAdvance(cpBeforeStep, shouldAbort)
+                if ack == "abort" then
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+                if ack == "confirmed" then
+                    break
+                end
+
+                if not tooFastWindowEnd then
+                    tooFastWindowEnd = os.clock() + TELEPORT_TOO_FAST_RETRY_SEC
+                end
+                if os.clock() >= tooFastWindowEnd then
+                    notifyAutoSummit("Teleport: Terlalu cepat — gave up after 5s", "x")
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+                notifyAutoSummit("Teleport: Terlalu cepat — retrying...", "x")
+                task.wait(TELEPORT_TOO_FAST_RETRY_SEC)
+            end
+
+            local delaySec = tonumber(wp.teleportDelay) or 0
+            if delaySec > 0 then
+                if not waitWithCancel(delaySec, shouldAbort) then
+                    return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+                end
+            end
+
+            if nextIdx == routeN then
+                teleportReachedSummitThisCycle = true
+            end
+            end
+
+            return routeCompleted, teleportReachedSummitThisCycle, skipNextCpResumeNotify
+        end
+
+        local tr, ts, tu = teleportCycleImpl()
+        stopCpNotifyRealtimeListener()
+        return tr, ts, tu
+    end
+
     local AUTO_SUMMIT_MODE_HANDLERS = {
         Walk = {
             getRouteStatusContent = function()
@@ -5492,6 +5792,21 @@ do
                 autoSummitWalkRouteFileDisplay = "—"
             end,
             runCycle = runAutoSummitWalkCycle,
+            getBetweenRunDelay = function()
+                return walkRouteRng:NextNumber(
+                    WALK_BETWEEN_RUN_DELAY_MIN,
+                    WALK_BETWEEN_RUN_DELAY_MAX
+                )
+            end,
+        },
+        Teleport = {
+            getRouteStatusContent = function()
+                return "Teleport mode\nStep: " .. autoSummitTeleportStepDisplay
+            end,
+            resetRouteStatus = function()
+                autoSummitTeleportStepDisplay = "—"
+            end,
+            runCycle = runAutoSummitTeleportCycle,
             getBetweenRunDelay = function()
                 return walkRouteRng:NextNumber(
                     WALK_BETWEEN_RUN_DELAY_MIN,
@@ -5640,6 +5955,7 @@ do
                 end
                 stopAutoSummitWalkCharacter()
                 autoSummitWalkRouteFileDisplay = "—"
+                autoSummitTeleportStepDisplay = "—"
                 task.defer(updateAutoSummitRouteModeParagraph)
                 return
             end
