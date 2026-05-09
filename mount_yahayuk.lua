@@ -4042,6 +4042,7 @@ do
     local autoSummitSkipFinalStoppedNotify = false
     local summitQty = ""
     local autoSummitIncludeFailedRoute = false
+    local autoSummitRandomizeTeleportDelay = false
     local autoSummitRestartFromDeath = false
     local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
@@ -4526,6 +4527,8 @@ do
             name = "Start",
             teleportPosition = "-922.94, 169.22, 856.29",
             teleportDelay = 3,
+            teleportDelayRandomMin = 0,
+            teleportDelayRandomMax = 0,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4536,6 +4539,8 @@ do
             name = "Camp 1",
             teleportPosition = "-407.77, 248.20, 794.09",
             teleportDelay = 8,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4546,6 +4551,8 @@ do
             name = "Camp 2",
             teleportPosition = "-337.77, 388.27, 522.16",
             teleportDelay = 8,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4556,6 +4563,8 @@ do
             name = "Camp 3",
             teleportPosition = "294.19, 430.33, 494.17",
             teleportDelay = 8,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4566,6 +4575,8 @@ do
             name = "Camp 4",
             teleportPosition = "323.46, 490.24, 348.33",
             teleportDelay = 35,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4576,6 +4587,8 @@ do
             name = "Camp 5",
             teleportPosition = "226.70, 314.21, -143.64",
             teleportDelay = 45,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = nil,
             teleportWalkToRadius = nil,
             teleportWalkToWithJump = false,
@@ -4586,6 +4599,8 @@ do
             name = "Summit",
             teleportPosition = "-613.51, 905.28, -533.45",
             teleportDelay = 8,
+            teleportDelayRandomMin = -3,
+            teleportDelayRandomMax = 10,
             teleportWalkTo = "-621.35, 905.13, -495.14",
             teleportWalkToRadius = 1.5,
             teleportWalkToWithJump = true,
@@ -5763,7 +5778,18 @@ do
                 task.wait(TELEPORT_TOO_FAST_RETRY_SEC)
             end
 
-            local delaySec = tonumber(wp.teleportDelay) or 0
+            local baseDelay = tonumber(wp.teleportDelay) or 0
+            local delaySec = baseDelay
+            if autoSummitRandomizeTeleportDelay then
+                local ra = tonumber(wp.teleportDelayRandomMin)
+                local rb = tonumber(wp.teleportDelayRandomMax)
+                if ra ~= nil and rb ~= nil then
+                    delaySec = baseDelay + walkRouteRng:NextNumber(math.min(ra, rb), math.max(ra, rb))
+                end
+            end
+            if delaySec < 0 then
+                delaySec = 0
+            end
             if delaySec > 0 then
                 if not waitWithCancel(delaySec, shouldAbort) then
                     return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
@@ -5905,6 +5931,15 @@ do
         Ext = true,
         Callback = function(value)
             summitQty = value
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Randomize Teleport",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(enabled)
+            autoSummitRandomizeTeleportDelay = enabled
         end,
     })
 
