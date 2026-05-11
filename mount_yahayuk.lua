@@ -5501,6 +5501,7 @@ do
     local CP_WARN_TOO_FAST_PREFIX = "Terlalu cepat"
     local CP_NOTIFY_REMOTE_WAIT_SEC = 8
     local TELEPORT_ACK_POLL_TIMEOUT_SEC = 10
+    local TELEPORT_SUMMIT_POST_WALK_SETTLE_SEC = 2
 
     local function getCpNotifyPayloadKindText(payload: any): (string?, string?)
         if type(payload) ~= "table" then
@@ -5630,6 +5631,29 @@ do
         return "abort"
     end
 
+    -- Final leg: after teleportWalkTo, give CP / CP_Notify time; always ~2s unless ok arrives first. Still honor Terlalu cepat.
+    local function waitForTeleportSummitLegSettle(shouldAbort: () -> boolean): "confirmed" | "abort" | "too_fast"
+        local waitStart = os.clock()
+        while not shouldAbort() do
+            while #cpNotifyRealtimeQueue > 0 do
+                local payload = table.remove(cpNotifyRealtimeQueue, 1)
+                if cpNotifyPayloadIsOkSaved(payload) then
+                    return "confirmed"
+                end
+                if cpNotifyPayloadIsTerlaluCepat(payload) then
+                    return "too_fast"
+                end
+            end
+
+            if os.clock() - waitStart >= TELEPORT_SUMMIT_POST_WALK_SETTLE_SEC then
+                return "confirmed"
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+        return "abort"
+    end
+
     local function runAutoSummitWalkCycle(
         shouldAbort: () -> boolean,
         getRootPart: (number?) -> BasePart?,
@@ -5688,13 +5712,17 @@ do
             end
 
             local routeN = #summitRoute
+            local loopStartIdx = routeStepNow + 1
             if routeStepNow >= routeN then
+                loopStartIdx = routeN
+            end
+            if loopStartIdx > routeN then
                 return true, false, skipNextCpResumeNotify
             end
 
             local TELEPORT_TOO_FAST_RETRY_SEC = 5
 
-            for nextIdx = routeStepNow + 1, routeN do
+            for nextIdx = loopStartIdx, routeN do
             if not autoSummitEnabled or shouldAbort() then
                 return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
             end
@@ -5759,7 +5787,12 @@ do
                     return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
                 end
 
-                local ack = waitForTeleportCpNotifyOrCheckpointAdvance(cpBeforeStep, shouldAbort)
+                local ack: "confirmed" | "abort" | "too_fast"
+                if nextIdx == routeN then
+                    ack = waitForTeleportSummitLegSettle(shouldAbort)
+                else
+                    ack = waitForTeleportCpNotifyOrCheckpointAdvance(cpBeforeStep, shouldAbort)
+                end
                 if ack == "abort" then
                     return false, teleportReachedSummitThisCycle, skipNextCpResumeNotify
                 end
