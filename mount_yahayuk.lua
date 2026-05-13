@@ -7306,7 +7306,17 @@ do
 
     MapTab:CreateSection("Map / Performance")
 
+    local MAP_PERF_DESC_BATCH = 400
+    local MAP_PERF_SYNC_DESCENDANT_MAX = 800
+    local mapPerfJobGeneration = 0
+
+    local function bumpMapPerfJobGeneration(): number
+        mapPerfJobGeneration += 1
+        return mapPerfJobGeneration
+    end
+
     local fpsBoostEnabled = false
+    local fpsBoostPartMaterialsEnabled = false
     local fpsBoostState = {
         cachedEffects = {} :: { [Instance]: boolean },
         cachedVfx = {} :: { [Instance]: boolean },
@@ -7321,7 +7331,7 @@ do
         end)
     end
 
-    local function applyFpsBoost()
+    local function applyFpsBoostLightingTerrainPosts()
         if not fpsBoostState.lighting then
             local okLightRead, lightData = pcall(function()
                 return {
@@ -7359,71 +7369,315 @@ do
                 safeSet(effect, "Enabled", false)
             end
         end
+    end
 
-        for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst:IsA("ParticleEmitter")
-                or inst:IsA("Trail")
-                or inst:IsA("Smoke")
-                or inst:IsA("Fire")
-                or inst:IsA("Sparkles")
-            then
-                if fpsBoostState.cachedVfx[inst] == nil then
-                    local okEnabled, enabledValue = pcall(function()
-                        return inst.Enabled
-                    end)
-                    if okEnabled then
-                        fpsBoostState.cachedVfx[inst] = enabledValue
-                    end
+    local function applyFpsBoostWorkspaceInst(inst: Instance)
+        if inst:IsA("ParticleEmitter")
+            or inst:IsA("Trail")
+            or inst:IsA("Smoke")
+            or inst:IsA("Fire")
+            or inst:IsA("Sparkles")
+        then
+            if fpsBoostState.cachedVfx[inst] == nil then
+                local okEnabled, enabledValue = pcall(function()
+                    return (inst :: any).Enabled
+                end)
+                if okEnabled then
+                    fpsBoostState.cachedVfx[inst] = enabledValue
                 end
-                safeSet(inst, "Enabled", false)
-            elseif inst:IsA("BasePart") then
-                if fpsBoostState.cachedPartProps[inst] == nil then
-                    local okPartRead, partData = pcall(function()
-                        return {
-                            Material = inst.Material,
-                            CastShadow = inst.CastShadow,
-                            Reflectance = inst.Reflectance,
-                        }
-                    end)
-                    if okPartRead and type(partData) == "table" then
-                        fpsBoostState.cachedPartProps[inst] = partData
-                    end
-                end
-                safeSet(inst, "Material", Enum.Material.SmoothPlastic)
-                safeSet(inst, "CastShadow", false)
-                safeSet(inst, "Reflectance", 0)
             end
+            safeSet(inst, "Enabled", false)
+        elseif fpsBoostPartMaterialsEnabled and inst:IsA("BasePart") then
+            if fpsBoostState.cachedPartProps[inst] == nil then
+                local okPartRead, partData = pcall(function()
+                    return {
+                        Material = inst.Material,
+                        CastShadow = inst.CastShadow,
+                        Reflectance = inst.Reflectance,
+                    }
+                end)
+                if okPartRead and type(partData) == "table" then
+                    fpsBoostState.cachedPartProps[inst] = partData
+                end
+            end
+            safeSet(inst, "Material", Enum.Material.SmoothPlastic)
+            safeSet(inst, "CastShadow", false)
+            safeSet(inst, "Reflectance", 0)
         end
     end
 
-    local function restoreFpsBoost()
+    local function applyFpsBoostWorkspaceDescendants(descendants: { Instance }, jobGen: number, onDone: (() -> ())?)
+        for i = 1, #descendants do
+            if jobGen ~= mapPerfJobGeneration or not fpsBoostEnabled then
+                return
+            end
+            applyFpsBoostWorkspaceInst(descendants[i])
+            if i % MAP_PERF_DESC_BATCH == 0 then
+                RunService.Heartbeat:Wait()
+            end
+        end
+        if jobGen == mapPerfJobGeneration and fpsBoostEnabled and onDone then
+            onDone()
+        end
+    end
+
+    local function applyFpsBoost(onDone: (() -> ())?)
+        local jobGen = bumpMapPerfJobGeneration()
+        applyFpsBoostLightingTerrainPosts()
+        local descendants = Workspace:GetDescendants()
+        if #descendants <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            applyFpsBoostWorkspaceDescendants(descendants, jobGen, onDone)
+            return
+        end
+        task.spawn(function()
+            applyFpsBoostWorkspaceDescendants(descendants, jobGen, onDone)
+        end)
+    end
+
+    local function restoreFpsBoostWorkspaceCaches(jobGen: number, onDone: (() -> ())?)
+        local vfxList = {}
+        for inst, wasEnabled in pairs(fpsBoostState.cachedVfx) do
+            table.insert(vfxList, { inst, wasEnabled })
+        end
+        local partList = {}
+        for part, props in pairs(fpsBoostState.cachedPartProps) do
+            table.insert(partList, { part, props })
+        end
+
+        local i = 1
+        while i <= #vfxList do
+            if jobGen ~= mapPerfJobGeneration then
+                return
+            end
+            local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #vfxList)
+            for j = i, n do
+                local row = vfxList[j]
+                local inst = row[1] :: Instance
+                local wasEnabled = row[2] :: boolean
+                if inst and inst.Parent then
+                    safeSet(inst, "Enabled", wasEnabled)
+                end
+            end
+            i = n + 1
+            if i <= #vfxList then
+                RunService.Heartbeat:Wait()
+            end
+        end
+
+        i = 1
+        while i <= #partList do
+            if jobGen ~= mapPerfJobGeneration then
+                return
+            end
+            local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #partList)
+            for j = i, n do
+                local row = partList[j]
+                local part = row[1] :: BasePart
+                local props = row[2] :: { Material: Enum.Material, CastShadow: boolean, Reflectance: number }
+                if part and part.Parent then
+                    safeSet(part, "Material", props.Material)
+                    safeSet(part, "CastShadow", props.CastShadow)
+                    safeSet(part, "Reflectance", props.Reflectance)
+                end
+            end
+            i = n + 1
+            if i <= #partList then
+                RunService.Heartbeat:Wait()
+            end
+        end
+
+        if jobGen == mapPerfJobGeneration and onDone then
+            fpsBoostState.cachedVfx = {}
+            fpsBoostState.cachedPartProps = {}
+            onDone()
+        end
+    end
+
+    local function restoreFpsBoostLightingPostsAndEffects(jobGen: number, onDone: (() -> ())?)
+        if jobGen ~= mapPerfJobGeneration then
+            return
+        end
         if fpsBoostState.lighting then
             safeSet(LightingService, "GlobalShadows", fpsBoostState.lighting.GlobalShadows)
+            fpsBoostState.lighting = nil
         end
 
         if Terrain and fpsBoostState.terrainDecoration ~= nil then
             safeSet(Terrain, "Decoration", fpsBoostState.terrainDecoration)
+            fpsBoostState.terrainDecoration = nil
         end
 
+        local effList = {}
         for inst, wasEnabled in pairs(fpsBoostState.cachedEffects) do
-            if inst and inst.Parent then
-                safeSet(inst, "Enabled", wasEnabled)
+            table.insert(effList, { inst, wasEnabled })
+        end
+        fpsBoostState.cachedEffects = {}
+        if #effList <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            for _, row in ipairs(effList) do
+                local inst = row[1] :: Instance
+                local wasEnabled = row[2] :: boolean
+                if inst and inst.Parent then
+                    safeSet(inst, "Enabled", wasEnabled)
+                end
+            end
+            if jobGen == mapPerfJobGeneration and onDone then
+                onDone()
+            end
+            return
+        end
+        task.spawn(function()
+            local i = 1
+            while i <= #effList do
+                if jobGen ~= mapPerfJobGeneration then
+                    return
+                end
+                local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #effList)
+                for j = i, n do
+                    local row = effList[j]
+                    local inst = row[1] :: Instance
+                    local wasEnabled = row[2] :: boolean
+                    if inst and inst.Parent then
+                        safeSet(inst, "Enabled", wasEnabled)
+                    end
+                end
+                i = n + 1
+                if i <= #effList then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            if jobGen == mapPerfJobGeneration and onDone then
+                onDone()
+            end
+        end)
+    end
+
+    local function restoreFpsBoost(onDone: (() -> ())?)
+        local jobGen = bumpMapPerfJobGeneration()
+        restoreFpsBoostLightingPostsAndEffects(jobGen, function()
+            if jobGen ~= mapPerfJobGeneration then
+                return
+            end
+            local vfxCount = 0
+            for _ in pairs(fpsBoostState.cachedVfx) do
+                vfxCount += 1
+            end
+            local partCount = 0
+            for _ in pairs(fpsBoostState.cachedPartProps) do
+                partCount += 1
+            end
+            if vfxCount + partCount == 0 then
+                if onDone then
+                    onDone()
+                end
+                return
+            end
+            if vfxCount + partCount <= MAP_PERF_SYNC_DESCENDANT_MAX then
+                restoreFpsBoostWorkspaceCaches(jobGen, onDone)
+                return
+            end
+            task.spawn(function()
+                restoreFpsBoostWorkspaceCaches(jobGen, onDone)
+            end)
+        end)
+    end
+
+    local function applyFpsBoostPartsOnly(onDone: (() -> ())?)
+        if not fpsBoostEnabled or not fpsBoostPartMaterialsEnabled then
+            if onDone then
+                onDone()
+            end
+            return
+        end
+        local jobGen = bumpMapPerfJobGeneration()
+        local descendants = Workspace:GetDescendants()
+        local function runList(list: { Instance })
+            for i = 1, #list do
+                if jobGen ~= mapPerfJobGeneration or not fpsBoostEnabled or not fpsBoostPartMaterialsEnabled then
+                    return
+                end
+                local inst = list[i]
+                if inst:IsA("BasePart") then
+                    if fpsBoostState.cachedPartProps[inst] == nil then
+                        local okPartRead, partData = pcall(function()
+                            return {
+                                Material = inst.Material,
+                                CastShadow = inst.CastShadow,
+                                Reflectance = inst.Reflectance,
+                            }
+                        end)
+                        if okPartRead and type(partData) == "table" then
+                            fpsBoostState.cachedPartProps[inst] = partData
+                        end
+                    end
+                    safeSet(inst, "Material", Enum.Material.SmoothPlastic)
+                    safeSet(inst, "CastShadow", false)
+                    safeSet(inst, "Reflectance", 0)
+                end
+                if i % MAP_PERF_DESC_BATCH == 0 then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            if jobGen == mapPerfJobGeneration and fpsBoostEnabled and onDone then
+                onDone()
             end
         end
-
-        for inst, wasEnabled in pairs(fpsBoostState.cachedVfx) do
-            if inst and inst.Parent then
-                safeSet(inst, "Enabled", wasEnabled)
-            end
+        if #descendants <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            runList(descendants)
+            return
         end
+        task.spawn(function()
+            runList(descendants)
+        end)
+    end
 
+    local function restoreFpsBoostPartsOnly(onDone: (() -> ())?)
+        local jobGen = bumpMapPerfJobGeneration()
+        local partList = {}
         for part, props in pairs(fpsBoostState.cachedPartProps) do
-            if part and part.Parent then
-                safeSet(part, "Material", props.Material)
-                safeSet(part, "CastShadow", props.CastShadow)
-                safeSet(part, "Reflectance", props.Reflectance)
+            table.insert(partList, { part, props })
+        end
+        if #partList == 0 then
+            if onDone then
+                onDone()
+            end
+            return
+        end
+        local function runRestore()
+            local i = 1
+            while i <= #partList do
+                if jobGen ~= mapPerfJobGeneration then
+                    return
+                end
+                local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #partList)
+                for j = i, n do
+                    local row = partList[j]
+                    local part = row[1] :: BasePart
+                    local props = row[2] :: { Material: Enum.Material, CastShadow: boolean, Reflectance: number }
+                    if part and part.Parent then
+                        safeSet(part, "Material", props.Material)
+                        safeSet(part, "CastShadow", props.CastShadow)
+                        safeSet(part, "Reflectance", props.Reflectance)
+                    end
+                end
+                i = n + 1
+                if i <= #partList then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            if jobGen == mapPerfJobGeneration and onDone then
+                for _, row in ipairs(partList) do
+                    fpsBoostState.cachedPartProps[row[1] :: BasePart] = nil
+                end
+                onDone()
             end
         end
+        if #partList <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            runRestore()
+            return
+        end
+        task.spawn(function()
+            runRestore()
+        end)
     end
 
     MapTab:CreateToggle({
@@ -7436,18 +7690,63 @@ do
                 return
             end
             local ok, err = pcall(function()
-                fpsBoostEnabled = enabled
                 if enabled then
-                    applyFpsBoost()
-                    mountNotify({ Title = "Map", Content = "Boost FPS enabled", Icon = "check" })
+                    fpsBoostEnabled = true
+                    applyFpsBoost(function()
+                        mountNotify({ Title = "Map", Content = "Boost FPS enabled", Icon = "check" })
+                    end)
                 else
-                    restoreFpsBoost()
-                    mountNotify({ Title = "Map", Content = "Boost FPS disabled (restored)", Icon = "check" })
+                    fpsBoostEnabled = false
+                    restoreFpsBoost(function()
+                        mountNotify({ Title = "Map", Content = "Boost FPS disabled (restored)", Icon = "check" })
+                    end)
                 end
             end)
             if not ok then
                 fpsBoostEnabled = false
+                bumpMapPerfJobGeneration()
                 mountNotify({ Title = "Map", Content = "Boost FPS failed: " .. tostring(err), Icon = "x" })
+            end
+        end,
+    })
+
+    MapTab:CreateToggle({
+        Name = "Boost FPS: part materials (heavy)",
+        CurrentValue = false,
+        Ext = true,
+        Callback = function(value)
+            local enabled = value == true or (type(value) == "table" and value[1] == true)
+            if enabled == fpsBoostPartMaterialsEnabled then
+                return
+            end
+            local ok, err = pcall(function()
+                fpsBoostPartMaterialsEnabled = enabled
+                if not fpsBoostEnabled then
+                    mountNotify({
+                        Title = "Map",
+                        Content = enabled and "Part materials will apply when Boost FPS is on"
+                            or "Part materials boost off",
+                        Icon = "check",
+                    })
+                    return
+                end
+                if enabled then
+                    applyFpsBoostPartsOnly(function()
+                        mountNotify({
+                            Title = "Map",
+                            Content = "Part material optimizations applied (SmoothPlastic, no shadows)",
+                            Icon = "check",
+                        })
+                    end)
+                else
+                    restoreFpsBoostPartsOnly(function()
+                        mountNotify({ Title = "Map", Content = "Part materials restored", Icon = "check" })
+                    end)
+                end
+            end)
+            if not ok then
+                fpsBoostPartMaterialsEnabled = not enabled
+                mountNotify({ Title = "Map", Content = "Part materials toggle failed: " .. tostring(err), Icon = "x" })
             end
         end,
     })
@@ -7470,6 +7769,11 @@ do
     }
     local mapWatcherDescAddedConn: RBXScriptConnection? = nil
     local mapWatcherCharacterAddedConn: RBXScriptConnection? = nil
+    local mapDescendantFlushConn: RBXScriptConnection? = nil
+    local mapDescendantPending = {} :: { Instance }
+    local mapDescQHead = 1
+    local mapDescQTail = 0
+    local MAP_DESC_FLUSH_BUDGET_PER_HEARTBEAT = 320
 
     local function applyMapSpecificVfxHideToInstance(inst: Instance)
         if MAP_VFX_HIDE_CLASS_SET[inst.ClassName] ~= true then
@@ -7487,11 +7791,7 @@ do
         safeSet(inst, "Enabled", false)
     end
 
-    local function applyMapSpecificVfxHide()
-        for _, inst in ipairs(Workspace:GetDescendants()) do
-            applyMapSpecificVfxHideToInstance(inst)
-        end
-
+    local function applyMapBlurEffectsHide()
         for _, effect in ipairs(LightingService:GetChildren()) do
             if effect:IsA("BlurEffect") then
                 if mapVfxState.enabledByInstance[effect] == nil then
@@ -7507,12 +7807,57 @@ do
         end
     end
 
-    local function restoreMapSpecificVfxHide()
+    local applyWorkspaceMapHidesCombined: (onDone: (() -> ())?) -> () = function(_onDone: (() -> ())?) end
+
+    local function restoreMapSpecificVfxHide(onDone: (() -> ())?)
+        bumpMapPerfJobGeneration()
+        local entries = {}
         for inst, wasEnabled in pairs(mapVfxState.enabledByInstance) do
-            if inst and inst.Parent then
-                safeSet(inst, "Enabled", wasEnabled)
+            table.insert(entries, { inst, wasEnabled })
+        end
+        if #entries == 0 then
+            mapVfxState.enabledByInstance = {}
+            if onDone then
+                onDone()
+            end
+            return
+        end
+        local jobGen = mapPerfJobGeneration
+        local function runRestoreRows(rows)
+            local i = 1
+            while i <= #rows do
+                if jobGen ~= mapPerfJobGeneration then
+                    return
+                end
+                local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #rows)
+                for j = i, n do
+                    local row = rows[j]
+                    local inst = row[1] :: Instance
+                    local wasEnabled = row[2] :: boolean
+                    if inst and inst.Parent then
+                        safeSet(inst, "Enabled", wasEnabled)
+                    end
+                    mapVfxState.enabledByInstance[inst] = nil
+                end
+                i = n + 1
+                if i <= #rows then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            if jobGen == mapPerfJobGeneration then
+                mapVfxState.enabledByInstance = {}
+                if onDone then
+                    onDone()
+                end
             end
         end
+        if #entries <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            runRestoreRows(entries)
+            return
+        end
+        task.spawn(function()
+            runRestoreRows(entries)
+        end)
     end
 
     MapTab:CreateToggle({
@@ -7527,21 +7872,23 @@ do
             local ok, err = pcall(function()
                 mapVfxHideEnabled = enabled
                 if enabled then
-                    applyMapSpecificVfxHide()
                     ensureMapWatchers()
-                    mountNotify({
-                        Title = "Map",
-                        Content = "Heavy VFX hidden (particles, beams, trails, lights, blur)",
-                        Icon = "check",
-                    })
+                    applyWorkspaceMapHidesCombined(function()
+                        mountNotify({
+                            Title = "Map",
+                            Content = "Heavy VFX hidden (particles, beams, trails, lights, blur)",
+                            Icon = "check",
+                        })
+                    end)
                 else
-                    restoreMapSpecificVfxHide()
-                    ensureMapWatchers()
-                    mountNotify({
-                        Title = "Map",
-                        Content = "Heavy VFX restored",
-                        Icon = "check",
-                    })
+                    restoreMapSpecificVfxHide(function()
+                        ensureMapWatchers()
+                        mountNotify({
+                            Title = "Map",
+                            Content = "Heavy VFX restored",
+                            Icon = "check",
+                        })
+                    end)
                 end
             end)
             if not ok then
@@ -7686,24 +8033,162 @@ do
         end)
     end
 
-    local function applyMapDecorHide()
-        for _, inst in ipairs(Workspace:GetDescendants()) do
-            applyMapDecorHideToInstance(inst)
+    applyWorkspaceMapHidesCombined = function(onDone: (() -> ())?)
+        if not mapVfxHideEnabled and not hideMapDecorEnabled then
+            if onDone then
+                onDone()
+            end
+            return
         end
-    end
-
-    local function restoreMapDecorHide()
-        for inst, originalParent in pairs(hideMapDecorState.originalParentByInstance) do
-            if inst and originalParent then
-                pcall(function()
-                    inst.Parent = originalParent
-                end)
+        local jobGen = bumpMapPerfJobGeneration()
+        local descendants = Workspace:GetDescendants()
+        local function finishWorkspaceMapHides()
+            if jobGen ~= mapPerfJobGeneration then
+                return
+            end
+            if mapVfxHideEnabled then
+                applyMapBlurEffectsHide()
+            end
+            if onDone then
+                onDone()
             end
         end
+        if #descendants <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            for _, inst in ipairs(descendants) do
+                if not mapVfxHideEnabled and not hideMapDecorEnabled then
+                    break
+                end
+                if mapVfxHideEnabled then
+                    applyMapSpecificVfxHideToInstance(inst)
+                end
+                if hideMapDecorEnabled then
+                    applyMapDecorHideToInstance(inst)
+                end
+            end
+            finishWorkspaceMapHides()
+            return
+        end
+        task.spawn(function()
+            for i = 1, #descendants do
+                if jobGen ~= mapPerfJobGeneration then
+                    return
+                end
+                if not mapVfxHideEnabled and not hideMapDecorEnabled then
+                    break
+                end
+                local inst = descendants[i]
+                if mapVfxHideEnabled then
+                    applyMapSpecificVfxHideToInstance(inst)
+                end
+                if hideMapDecorEnabled then
+                    applyMapDecorHideToInstance(inst)
+                end
+                if i % MAP_PERF_DESC_BATCH == 0 then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            finishWorkspaceMapHides()
+        end)
+    end
+
+    local function restoreMapDecorHide(onDone: (() -> ())?)
+        bumpMapPerfJobGeneration()
+        local entries = {}
+        for inst, originalParent in pairs(hideMapDecorState.originalParentByInstance) do
+            table.insert(entries, { inst, originalParent })
+        end
+        if #entries == 0 then
+            hideMapDecorState.originalParentByInstance = {}
+            if onDone then
+                onDone()
+            end
+            return
+        end
+        local jobGen = mapPerfJobGeneration
+        local function runDecorRestore(rows)
+            local i = 1
+            while i <= #rows do
+                if jobGen ~= mapPerfJobGeneration then
+                    return
+                end
+                local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #rows)
+                for j = i, n do
+                    local row = rows[j]
+                    local inst = row[1] :: Instance
+                    local originalParent = row[2] :: Instance?
+                    if inst and originalParent then
+                        pcall(function()
+                            inst.Parent = originalParent
+                        end)
+                    end
+                    hideMapDecorState.originalParentByInstance[inst] = nil
+                end
+                i = n + 1
+                if i <= #rows then
+                    RunService.Heartbeat:Wait()
+                end
+            end
+            if jobGen == mapPerfJobGeneration then
+                hideMapDecorState.originalParentByInstance = {}
+                if onDone then
+                    onDone()
+                end
+            end
+        end
+        if #entries <= MAP_PERF_SYNC_DESCENDANT_MAX then
+            runDecorRestore(entries)
+            return
+        end
+        task.spawn(function()
+            runDecorRestore(entries)
+        end)
     end
 
     local function mapWatcherNeeded(): boolean
         return mapVfxHideEnabled or hideMapDecorEnabled
+    end
+
+    local function ensureMapDescendantFlushLoop()
+        if mapDescendantFlushConn then
+            return
+        end
+        mapDescendantFlushConn = RunService.Heartbeat:Connect(function()
+            if not mapWatcherNeeded() then
+                if mapDescendantFlushConn then
+                    mapDescendantFlushConn:Disconnect()
+                    mapDescendantFlushConn = nil
+                end
+                mapDescQHead = 1
+                mapDescQTail = 0
+                mapDescendantPending = {}
+                return
+            end
+            local budget = 0
+            while budget < MAP_DESC_FLUSH_BUDGET_PER_HEARTBEAT and mapDescQHead <= mapDescQTail do
+                local inst = mapDescendantPending[mapDescQHead]
+                mapDescendantPending[mapDescQHead] = nil
+                mapDescQHead += 1
+                if inst and inst.Parent then
+                    if mapVfxHideEnabled then
+                        applyMapSpecificVfxHideToInstance(inst)
+                    end
+                    if hideMapDecorEnabled then
+                        applyMapDecorHideToInstance(inst)
+                    end
+                end
+                budget += 1
+            end
+            if mapDescQHead > mapDescQTail then
+                mapDescQHead = 1
+                mapDescQTail = 0
+            end
+        end)
+    end
+
+    local function enqueueMapDescendantForHide(inst: Instance)
+        mapDescQTail += 1
+        mapDescendantPending[mapDescQTail] = inst
+        ensureMapDescendantFlushLoop()
     end
 
     local function stopMapWatchers()
@@ -7715,15 +8200,17 @@ do
             mapWatcherCharacterAddedConn:Disconnect()
             mapWatcherCharacterAddedConn = nil
         end
+        if mapDescendantFlushConn then
+            mapDescendantFlushConn:Disconnect()
+            mapDescendantFlushConn = nil
+        end
+        mapDescQHead = 1
+        mapDescQTail = 0
+        mapDescendantPending = {}
     end
 
     local function reapplyActiveMapHides()
-        if mapVfxHideEnabled then
-            applyMapSpecificVfxHide()
-        end
-        if hideMapDecorEnabled then
-            applyMapDecorHide()
-        end
+        applyWorkspaceMapHidesCombined(nil)
     end
 
     function ensureMapWatchers()
@@ -7733,14 +8220,10 @@ do
         end
         if not mapWatcherDescAddedConn then
             mapWatcherDescAddedConn = Workspace.DescendantAdded:Connect(function(inst)
-                if mapVfxHideEnabled then
-                    applyMapSpecificVfxHideToInstance(inst)
-                end
-                if hideMapDecorEnabled then
-                    applyMapDecorHideToInstance(inst)
-                end
+                enqueueMapDescendantForHide(inst)
             end)
         end
+        ensureMapDescendantFlushLoop()
         if not mapWatcherCharacterAddedConn then
             mapWatcherCharacterAddedConn = Players.LocalPlayer.CharacterAdded:Connect(function()
                 task.defer(reapplyActiveMapHides)
@@ -7760,21 +8243,23 @@ do
             local ok, err = pcall(function()
                 hideMapDecorEnabled = enabled
                 if enabled then
-                    applyMapDecorHide()
                     ensureMapWatchers()
-                    mountNotify({
-                        Title = "Map",
-                        Content = "Map decor hidden (RoadBarrier, rails, supports, Flower*, Vine*, Leaves*, Trashcan)",
-                        Icon = "check",
-                    })
+                    applyWorkspaceMapHidesCombined(function()
+                        mountNotify({
+                            Title = "Map",
+                            Content = "Map decor hidden (RoadBarrier, rails, supports, Flower*, Vine*, Leaves*, Trashcan)",
+                            Icon = "check",
+                        })
+                    end)
                 else
-                    restoreMapDecorHide()
-                    ensureMapWatchers()
-                    mountNotify({
-                        Title = "Map",
-                        Content = "Map decor restored",
-                        Icon = "check",
-                    })
+                    restoreMapDecorHide(function()
+                        ensureMapWatchers()
+                        mountNotify({
+                            Title = "Map",
+                            Content = "Map decor restored",
+                            Icon = "check",
+                        })
+                    end)
                 end
             end)
             if not ok then
@@ -7809,6 +8294,7 @@ do
         Ext = true,
         Callback = function()
             local ok, err = pcall(function()
+                local jobGen = bumpMapPerfJobGeneration()
                 local stats = {
                     totalDescendants = 0,
                     baseParts = 0,
@@ -7827,7 +8313,7 @@ do
                     auras = 0,
                 }
 
-                for _, inst in ipairs(Workspace:GetDescendants()) do
+                local function tallyInstance(inst: Instance)
                     stats.totalDescendants += 1
                     if inst:IsA("BasePart") then
                         stats.baseParts += 1
@@ -7860,27 +8346,69 @@ do
                     end
                 end
 
-                stats.totalParticles = stats.emitters + stats.trails + stats.beams + stats.smoke + stats.fire + stats.sparkles
-
-                for _, effect in ipairs(LightingService:GetChildren()) do
-                    if effect:IsA("PostEffect") then
-                        stats.postEffects += 1
+                local function finalizeAnalyzerResults()
+                    if jobGen ~= mapPerfJobGeneration then
+                        return
                     end
-                end
+                    stats.totalParticles = stats.emitters
+                        + stats.trails
+                        + stats.beams
+                        + stats.smoke
+                        + stats.fire
+                        + stats.sparkles
 
-                local summary = formatAnalyzerSummary(stats)
-                if analyzerParagraph and analyzerParagraph.Set then
-                    analyzerParagraph:Set({
-                        Title = "Scan Result",
-                        Content = summary,
+                    for _, effect in ipairs(LightingService:GetChildren()) do
+                        if effect:IsA("PostEffect") then
+                            stats.postEffects += 1
+                        end
+                    end
+
+                    local summary = formatAnalyzerSummary(stats)
+                    if analyzerParagraph and analyzerParagraph.Set then
+                        analyzerParagraph:Set({
+                            Title = "Scan Result",
+                            Content = summary,
+                        })
+                    end
+
+                    mountNotify({
+                        Title = "FPS Analyzer",
+                        Content = string.format(
+                            "Scan done. Particles=%d, Lights=%d, PostEffects=%d",
+                            stats.totalParticles,
+                            stats.lights,
+                            stats.postEffects
+                        ),
+                        Icon = "check",
                     })
                 end
 
-                mountNotify({
-                    Title = "FPS Analyzer",
-                    Content = string.format("Scan done. Particles=%d, Lights=%d, PostEffects=%d", stats.totalParticles, stats.lights, stats.postEffects),
-                    Icon = "check",
-                })
+                local descendants = Workspace:GetDescendants()
+                if #descendants <= MAP_PERF_SYNC_DESCENDANT_MAX then
+                    for _, inst in ipairs(descendants) do
+                        tallyInstance(inst)
+                    end
+                    finalizeAnalyzerResults()
+                    return
+                end
+
+                task.spawn(function()
+                    local i = 1
+                    while i <= #descendants do
+                        if jobGen ~= mapPerfJobGeneration then
+                            return
+                        end
+                        local n = math.min(i + MAP_PERF_DESC_BATCH - 1, #descendants)
+                        for j = i, n do
+                            tallyInstance(descendants[j])
+                        end
+                        i = n + 1
+                        if i <= #descendants then
+                            RunService.Heartbeat:Wait()
+                        end
+                    end
+                    finalizeAnalyzerResults()
+                end)
             end)
             if not ok then
                 mountNotify({ Title = "FPS Analyzer", Content = "Scan failed: " .. tostring(err), Icon = "x" })
