@@ -2144,6 +2144,251 @@ do
         end,
     })
 
+    MainTab:CreateSection("Auto Feed")
+
+    local AUTO_FEED_NONE = "(None)"
+    local autoFeedFoodIdValue = ""
+    local autoFeedAmountValue = "1"
+    local autoFeedOptionToUid: { [string]: string } = {}
+    local selectedAutoFeedUid: string? = nil
+    local selectedAutoFeedOption: string? = nil
+    local AutoFeedSlimeDropdown: any = nil
+    local autoFeedEnabled = false
+    local autoFeedLoopToken = 0
+    local AUTO_FEED_INTERVAL_SEC = 2.5
+
+    local function mainFeedSlimeSlotDisplayName(slot: Instance): string
+        local direct = slot:FindFirstChild("SlimeName", true)
+        if direct and direct:IsA("TextLabel") then
+            local t = formatGuiInstanceTextForDisplay(direct)
+            if t then
+                return t
+            end
+        end
+        local best = ""
+        for _, d in ipairs(slot:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                local t = formatGuiInstanceTextForDisplay(d)
+                if t and #t > #best then
+                    best = t
+                end
+            end
+        end
+        if best ~= "" then
+            return best
+        end
+        return slot.Name
+    end
+
+    -- Matches live UI: …PlayerGui.Root.Inventory.PageItemsContent.ItemsInventoryPage.ChooseSlimeView.SlimeSelectionPanel.FeedableSlimesList
+    local FEEDABLE_SLIMES_LIST_PATH = {
+        "Root",
+        "Inventory",
+        "PageItemsContent",
+        "ItemsInventoryPage",
+        "ChooseSlimeView",
+        "SlimeSelectionPanel",
+        "FeedableSlimesList",
+    }
+
+    local function mainResolveSlimeUidFromSlotRoot(slot: Instance): string?
+        local u = lootUidFromInstance(slot)
+        if u then
+            return u
+        end
+        for _, desc in ipairs(slot:GetDescendants()) do
+            u = lootUidFromInstance(desc)
+            if u then
+                return u
+            end
+        end
+        return nil
+    end
+
+    local function mainFindFeedableSlimesList(): ScrollingFrame?
+        local lp = Players.LocalPlayer
+        local pg = lp and lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local cur: Instance? = pg
+        for _, seg in ipairs(FEEDABLE_SLIMES_LIST_PATH) do
+            local nextInst = cur and cur:FindFirstChild(seg)
+            if not nextInst then
+                cur = nil
+                break
+            end
+            cur = nextInst
+        end
+        if cur and cur:IsA("ScrollingFrame") then
+            return cur
+        end
+        local d = pg:FindFirstChild("FeedableSlimesList", true)
+        if d and d:IsA("ScrollingFrame") then
+            return d
+        end
+        return nil
+    end
+
+    local function mainScanFeedableSlimeOptions(): { string }
+        table.clear(autoFeedOptionToUid)
+        local list = mainFindFeedableSlimesList()
+        if not list then
+            return { AUTO_FEED_NONE }
+        end
+        local skipClass: { [string]: boolean } = {
+            UIGridLayout = true,
+            UIListLayout = true,
+            UITableLayout = true,
+        }
+        local opts: { string } = { AUTO_FEED_NONE }
+        for _, ch in ipairs(list:GetChildren()) do
+            local slot: Instance? = nil
+            if ch:IsA("Frame") and ch.Name == "FeedTargetSlot" then
+                slot = ch
+            elseif ch:IsA("GuiObject") and not skipClass[ch.ClassName] then
+                slot = ch
+            end
+            if slot then
+                local uid = mainResolveSlimeUidFromSlotRoot(slot)
+                if uid then
+                    local label = mainFeedSlimeSlotDisplayName(slot)
+                    local option = ('%s  [%s]'):format(label, uid)
+                    if #option > 190 then
+                        option = string.sub(option, 1, 187) .. "..."
+                    end
+                    if not autoFeedOptionToUid[option] then
+                        autoFeedOptionToUid[option] = uid
+                        table.insert(opts, option)
+                    end
+                end
+            end
+        end
+        if #opts == 1 then
+            return { AUTO_FEED_NONE }
+        end
+        return opts
+    end
+
+    local function mainAutoFeedParseAmount(): number
+        local n = tonumber(autoFeedAmountValue)
+        if type(n) ~= "number" or n ~= n then
+            return 1
+        end
+        return math.clamp(math.floor(n), 1, 9999)
+    end
+
+    local function refreshAutoFeedSlimeDropdown(showNotify: boolean)
+        local opts = mainScanFeedableSlimeOptions()
+        if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Refresh then
+            AutoFeedSlimeDropdown:Refresh(opts)
+        end
+        if selectedAutoFeedOption and not table.find(opts, selectedAutoFeedOption) then
+            selectedAutoFeedOption = nil
+            selectedAutoFeedUid = nil
+            if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Select then
+                AutoFeedSlimeDropdown:Select(nil)
+            end
+            if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Set then
+                AutoFeedSlimeDropdown:Set({ AUTO_FEED_NONE })
+            end
+        end
+        if showNotify then
+            mountNotify({
+                Title = "Auto Feed",
+                Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ").") or "No slimes in FeedableSlimesList — open Backpack → Items and select a food.",
+            })
+        end
+    end
+
+    MainTab:CreateParagraph({
+        Title = "How Auto Feed works",
+        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on.",
+    })
+
+    MainTab:CreateInput({
+        Name = "Food item id",
+        PlaceholderText = "e.g. consumable id string from game definitions",
+        Flag = "main_auto_feed_food_id",
+        CurrentValue = autoFeedFoodIdValue,
+        Callback = function(value)
+            autoFeedFoodIdValue = type(value) == "string" and value or ""
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Feed amount",
+        PlaceholderText = "1",
+        Flag = "main_auto_feed_amount",
+        CurrentValue = autoFeedAmountValue,
+        Callback = function(value)
+            autoFeedAmountValue = type(value) == "string" and value or "1"
+        end,
+    })
+
+    AutoFeedSlimeDropdown = MainTab:CreateDropdown({
+        Name = "Slime (from FeedableSlimesList)",
+        Options = mainScanFeedableSlimeOptions(),
+        CurrentOption = { AUTO_FEED_NONE },
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            selectedAutoFeedOption = if type(picked) == "string" then picked else nil
+            if not selectedAutoFeedOption or selectedAutoFeedOption == AUTO_FEED_NONE then
+                selectedAutoFeedUid = nil
+                return
+            end
+            selectedAutoFeedUid = autoFeedOptionToUid[selectedAutoFeedOption]
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "Refresh slime list",
+        Callback = function()
+            refreshAutoFeedSlimeDropdown(true)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Feed",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoFeedEnabled = enabled == true
+            autoFeedLoopToken = autoFeedLoopToken + 1
+            local myToken = autoFeedLoopToken
+
+            if not autoFeedEnabled then
+                return
+            end
+
+            refreshAutoFeedSlimeDropdown(false)
+
+            task.spawn(function()
+                while myToken == autoFeedLoopToken and autoFeedEnabled do
+                    local foodId = string.gsub(autoFeedFoodIdValue, "^%s+", "")
+                    foodId = string.gsub(foodId, "%s+$", "")
+                    if foodId == "" then
+                        task.wait(AUTO_FEED_INTERVAL_SEC)
+                    elseif not selectedAutoFeedUid then
+                        task.wait(AUTO_FEED_INTERVAL_SEC)
+                    else
+                        local inv = findNetworkerServiceRemotesFolder("InventoryService")
+                        local rf = inv and inv:FindFirstChild("RemoteFunction")
+                        if not rf or not rf:IsA("RemoteFunction") then
+                            task.wait(AUTO_FEED_INTERVAL_SEC)
+                        else
+                            local amt = mainAutoFeedParseAmount()
+                            pcall(function()
+                                (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, selectedAutoFeedUid, amt)
+                            end)
+                            task.wait(AUTO_FEED_INTERVAL_SEC)
+                        end
+                    end
+                end
+            end)
+        end,
+    })
+
     MainTab:CreateSection("Auto Equip Slimes")
 
     local autoEquipBestEnabled = false
