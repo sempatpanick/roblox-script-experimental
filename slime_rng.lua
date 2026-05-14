@@ -2171,6 +2171,8 @@ do
     local autoFeedEnabled = false
     local autoFeedLoopToken = 0
     local AUTO_FEED_INTERVAL_SEC = 2.5
+    local lastMainAutoFeedHoverSlot: Frame? = nil
+    local feedHoverSlotConns: { RBXScriptConnection } = {}
 
     local function mainFeedSlimeSlotDisplayName(slot: Instance): string
         local direct = slot:FindFirstChild("SlimeName", true)
@@ -2243,6 +2245,210 @@ do
             return d
         end
         return nil
+    end
+
+    local function mainDisconnectFeedHoverTrackers()
+        for _, c in ipairs(feedHoverSlotConns) do
+            c:Disconnect()
+        end
+        table.clear(feedHoverSlotConns)
+    end
+
+    local function mainBindFeedSlotHoverTrackers()
+        mainDisconnectFeedHoverTrackers()
+        local list = mainFindFeedableSlimesList()
+        if not list then
+            lastMainAutoFeedHoverSlot = nil
+            return
+        end
+        table.insert(feedHoverSlotConns, list.MouseLeave:Connect(function()
+            lastMainAutoFeedHoverSlot = nil
+        end))
+        for _, ch in ipairs(list:GetChildren()) do
+            if ch:IsA("Frame") and ch.Name == "FeedTargetSlot" then
+                local slotFrame = ch :: Frame
+                local function onEnter()
+                    lastMainAutoFeedHoverSlot = slotFrame
+                end
+                local function hookGui(g: GuiObject)
+                    table.insert(feedHoverSlotConns, g.MouseEnter:Connect(onEnter))
+                end
+                hookGui(slotFrame)
+                for _, d in ipairs(slotFrame:GetDescendants()) do
+                    if d:IsA("GuiObject") then
+                        hookGui(d :: GuiObject)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Hover popover for feed slots often lives under SlimeSelectionPanel (or top-layer GUI) but *outside* FeedableSlimesList.
+    local function mainGuiAncestorChainVisibleGui(g: GuiObject): boolean
+        local cur: Instance? = g
+        while cur and cur ~= game do
+            if cur:IsA("GuiObject") and not (cur :: GuiObject).Visible then
+                return false
+            end
+            cur = cur.Parent
+        end
+        return true
+    end
+
+    local function mainHoveredFeedTargetSlotAndList(): (Frame?, ScrollingFrame?)
+        local list = mainFindFeedableSlimesList()
+        if not list then
+            return nil, nil
+        end
+        local GuiService = game:GetService("GuiService")
+        local pos = UserInputService:GetMouseLocation()
+        local insetY = GuiService:GetGuiInset().Y
+        local points = {
+            Vector2.new(pos.X, pos.Y),
+            Vector2.new(pos.X, pos.Y - insetY),
+        }
+        for _, pt in ipairs(points) do
+            local ok, hits = pcall(function()
+                return GuiService:GetGuiObjectsAtPosition(pt.X, pt.Y)
+            end)
+            if ok and type(hits) == "table" then
+                for _, hit in ipairs(hits) do
+                    local el: Instance? = hit
+                    while el do
+                        if el.Name == "FeedTargetSlot" and el:IsA("Frame") and el:IsDescendantOf(list) then
+                            return el :: Frame, list
+                        end
+                        el = el.Parent
+                    end
+                end
+            end
+        end
+        return nil, list
+    end
+
+    local function mainTrimGuiText(s: string): string
+        local t = string.gsub(s or "", "^%s+", "")
+        t = string.gsub(t, "%s+$", "")
+        t = string.gsub(t, "\r\n", " ")
+        t = string.gsub(t, "\n", " ")
+        return t
+    end
+
+    local function mainGuiInstanceTextContent(d: Instance): string
+        if d:IsA("TextLabel") then
+            return (d :: TextLabel).Text
+        end
+        if d:IsA("TextButton") then
+            return (d :: TextButton).Text
+        end
+        if d:IsA("TextBox") then
+            return (d :: TextBox).Text
+        end
+        return ""
+    end
+
+    local function mainExtractUuidFromBlob(s: string): string?
+        local m = string.match(
+            s,
+            "(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)"
+        )
+        if m and looksLikeLootUid(m) then
+            return m
+        end
+        return nil
+    end
+
+    local function mainCollectTextRowsOutsideList(root: Instance, list: Instance): { { y: number, x: number, t: string } }
+        local rows: { { y: number, x: number, t: string } } = {}
+        local seen: { [string]: boolean } = {}
+        for _, d in ipairs(root:GetDescendants()) do
+            if not d:IsDescendantOf(list) then
+                if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                    local g = d :: GuiObject
+                    if mainGuiAncestorChainVisibleGui(g) then
+                        local raw = mainGuiInstanceTextContent(d)
+                        local t = mainTrimGuiText(raw)
+                        if t ~= "" and not seen[t] then
+                            seen[t] = true
+                            local y = g.AbsolutePosition.Y
+                            local x = g.AbsolutePosition.X
+                            table.insert(rows, { y = y, x = x, t = t })
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.y ~= b.y then
+                return a.y < b.y
+            end
+            return a.x < b.x
+        end)
+        return rows
+    end
+
+    local function mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list: Instance, root: Instance): { { y: number, x: number, t: string } }
+        local GuiService = game:GetService("GuiService")
+        local pos = UserInputService:GetMouseLocation()
+        local insetY = GuiService:GetGuiInset().Y
+        local points = {
+            Vector2.new(pos.X, pos.Y),
+            Vector2.new(pos.X, pos.Y - insetY),
+        }
+        local rows: { { y: number, x: number, t: string } } = {}
+        local seen: { [string]: boolean } = {}
+        for _, pt in ipairs(points) do
+            local ok, hits = pcall(function()
+                return GuiService:GetGuiObjectsAtPosition(pt.X, pt.Y)
+            end)
+            if ok and type(hits) == "table" then
+                for _, hit in ipairs(hits) do
+                    if not hit:IsDescendantOf(list) and hit:IsDescendantOf(root) then
+                        local scan = { hit }
+                        for _, d in ipairs(hit:GetDescendants()) do
+                            table.insert(scan, d)
+                        end
+                        for _, d in ipairs(scan) do
+                            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                                local g = d :: GuiObject
+                                if mainGuiAncestorChainVisibleGui(g) then
+                                    local t = mainTrimGuiText(mainGuiInstanceTextContent(d))
+                                    if t ~= "" and not seen[t] then
+                                        seen[t] = true
+                                        table.insert(rows, {
+                                            y = g.AbsolutePosition.Y,
+                                            x = g.AbsolutePosition.X,
+                                            t = t,
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.y ~= b.y then
+                return a.y < b.y
+            end
+            return a.x < b.x
+        end)
+        return rows
+    end
+
+    local function mainMergeManyRowTables(parts: { { { y: number, x: number, t: string } } }): string
+        local seen: { [string]: boolean } = {}
+        local out: { string } = {}
+        for _, rows in ipairs(parts) do
+            for _, r in ipairs(rows) do
+                if not seen[r.t] then
+                    seen[r.t] = true
+                    table.insert(out, r.t)
+                end
+            end
+        end
+        return table.concat(out, "\n")
     end
 
     local function mainScanFeedableSlimeOptions(): { string }
@@ -2330,11 +2536,12 @@ do
                 Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ").") or "No slimes in FeedableSlimesList — open Backpack → Items and select a food.",
             })
         end
+        mainBindFeedSlotHoverTrackers()
     end
 
     MainTab:CreateParagraph({
         Title = "How Auto Feed works",
-        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. If rows show “no uid in UI”, paste the slime’s UUID into Slime UID (from another screen that lists it, a remote logger, or a StringValue under the slot if the game adds one later).",
+        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. Use “Copy hover slime details” while pointing at a row to grab the hover popover text (and UUID if shown). If rows show “no uid in UI”, paste the slime’s UUID into Slime UID or use that button when the popover includes it.",
     })
 
     MainTab:CreateInput({
@@ -2357,7 +2564,7 @@ do
         end,
     })
 
-    MainTab:CreateInput({
+    local AutoFeedManualSlimeUidInput = MainTab:CreateInput({
         Name = "Slime UID (optional override)",
         PlaceholderText = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         Flag = "main_auto_feed_slime_uid_manual",
@@ -2389,6 +2596,65 @@ do
             refreshAutoFeedSlimeDropdown(true)
         end,
     })
+
+    MainTab:CreateButton({
+        Name = "Copy hover slime details / UID",
+        Callback = function()
+            task.spawn(function()
+                local list = mainFindFeedableSlimesList()
+                if not list then
+                    mountNotify({
+                        Title = "Auto Feed",
+                        Content = "FeedableSlimesList not found — open Backpack → Items and choose food first.",
+                    })
+                    return
+                end
+                local slot = lastMainAutoFeedHoverSlot
+                if slot and not slot:IsDescendantOf(list) then
+                    slot = nil
+                end
+                if not slot then
+                    local hitSlot = select(1, mainHoveredFeedTargetSlotAndList())
+                    slot = hitSlot
+                end
+                local root: Instance? = list.Parent and list.Parent.Parent or list.Parent
+                if not root then
+                    mountNotify({ Title = "Auto Feed", Content = "Could not resolve ChooseSlimeView (parent of SlimeSelectionPanel)." })
+                    return
+                end
+                local rPre = mainCollectTextRowsOutsideList(root, list)
+                task.wait(0.07)
+                local rPost = mainCollectTextRowsOutsideList(root, list)
+                local rHit = mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list, root)
+                local blob = mainMergeManyRowTables({ rPre, rPost, rHit })
+                if blob == "" then
+                    mountNotify({
+                        Title = "Auto Feed",
+                        Content = "No visible popover text found — hover a FeedTargetSlot row, then click again (or expand Objects tree under ChooseSlimeView).",
+                    })
+                    return
+                end
+                local paste = setclipboard or toclipboard
+                if paste then
+                    paste(blob)
+                end
+                local uuid = mainExtractUuidFromBlob(blob)
+                if uuid and AutoFeedManualSlimeUidInput and AutoFeedManualSlimeUidInput.Set then
+                    AutoFeedManualSlimeUidInput:Set(uuid)
+                end
+                local tail = if uuid then " UUID set in Slime UID field."
+                    elseif paste then " Copied to clipboard."
+                    else " (clipboard not available here)."
+                local tip = if slot then "" else " (tip: hover a slot row before clicking for best capture)"
+                mountNotify({
+                    Title = "Auto Feed",
+                    Content = "Captured hover detail (" .. tostring(#blob) .. " chars)." .. tail .. tip,
+                })
+            end)
+        end,
+    })
+
+    task.defer(mainBindFeedSlotHoverTrackers)
 
     MainTab:CreateToggle({
         Name = "Auto Feed",
