@@ -1724,7 +1724,7 @@ do
 
     local LootCollectedParagraph = MainTab:CreateParagraph({
         Title = "Collected loot",
-        Content = "(None yet — after LootService confirms lootRemoved for each UID.)",
+        Content = "None",
     })
 
     local function findNetworkerServiceRemotesFolder(serviceFolderName: string): Instance?
