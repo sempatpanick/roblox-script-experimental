@@ -58,7 +58,7 @@ end
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Slime RNG",
     LoadingTitle = "sempatpanick",
-    LoadingSubtitle = "Others",
+    LoadingSubtitle = "Slime RNG",
     Icon = 4483362458,
     ConfigurationSaving = {
         Enabled = false,
@@ -1708,29 +1708,105 @@ do
 
     local autoCollectLootEnabled = false
     local autoCollectLootLoopToken = 0
-    local lootProcessQueue: { Instance } = {}
+    type LootQueueEntry = { uid: string, label: string }
+    local lootProcessQueue: { LootQueueEntry } = {}
     local lootChildAddedConn: RBXScriptConnection? = nil
     local lootFolderChildAddedConn: RBXScriptConnection? = nil
+    local lootFolderDescendantAddedConn: RBXScriptConnection? = nil
     local lootFolderDestroyingConn: RBXScriptConnection? = nil
     local lastBoundLootFolder: Folder? = nil
+    local lootServiceEventConn: RBXScriptConnection? = nil
+    local lootPendingAck: { [string]: boolean } = {}
     local collectedLootLines: { string } = {}
     local COLLECTED_LOOT_MAX_LINES = 50
+    -- `Packages._Index` folder name for leifstout_networker (change when the place bumps Wally version).
+    local LEIFSTOUT_NETWORKER_INDEX_FOLDER = "leifstout_networker@0.3.1"
 
     local LootCollectedParagraph = MainTab:CreateParagraph({
         Title = "Collected loot",
-        Content = "(None yet — names from Root.LootBillboard.TextLabel when available.)",
+        Content = "(None yet — after LootService confirms lootRemoved for each UID.)",
     })
 
-    local function lootEnqueue(inst: Instance)
-        if not inst or not inst.Parent then
-            return
+    local function findLootServiceRemotesFolder(): Instance?
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+        if not packages then
+            return nil
         end
-        for _, v in ipairs(lootProcessQueue) do
-            if v == inst then
-                return
+        local idx = packages:FindFirstChild("_Index")
+        if not idx then
+            return nil
+        end
+        local pkg = idx:FindFirstChild(LEIFSTOUT_NETWORKER_INDEX_FOLDER)
+        if not pkg then
+            return nil
+        end
+        local net = pkg:FindFirstChild("networker")
+        if not net then
+            return nil
+        end
+        local rem = net:FindFirstChild("_remotes")
+        if not rem then
+            return nil
+        end
+        local ls = rem:FindFirstChild("LootService")
+        if not ls then
+            return nil
+        end
+        return ls
+    end
+
+    local function disconnectLootRemoteListener()
+        if lootServiceEventConn then
+            lootServiceEventConn:Disconnect()
+            lootServiceEventConn = nil
+        end
+        table.clear(lootPendingAck)
+    end
+
+    local function ensureLootRemoteListener(): boolean
+        if lootServiceEventConn then
+            return true
+        end
+        local fold = findLootServiceRemotesFolder()
+        if not fold then
+            return false
+        end
+        local ev = fold:FindFirstChild("RemoteEvent")
+        if not ev or not ev:IsA("RemoteEvent") then
+            return false
+        end
+        lootServiceEventConn = ev.OnClientEvent:Connect(function(a1, a2)
+            if a1 == "lootRemoved" and type(a2) == "string" then
+                lootPendingAck[a2] = true
+            end
+        end)
+        return true
+    end
+
+    local function looksLikeLootUid(s: string): boolean
+        if #s ~= 36 then
+            return false
+        end
+        return string.match(s, "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
+    end
+
+    local function lootUidFromInstance(child: Instance): string?
+        if looksLikeLootUid(child.Name) then
+            return child.Name
+        end
+        for _, attrName in ipairs({ "Uid", "uid", "UID", "Id", "id" }) do
+            local v = child:GetAttribute(attrName)
+            if type(v) == "string" and looksLikeLootUid(v) then
+                return v
             end
         end
-        table.insert(lootProcessQueue, inst)
+        for _, childName in ipairs({ "Uid", "uid", "UID", "Id" }) do
+            local sv = child:FindFirstChild(childName)
+            if sv and sv:IsA("StringValue") and looksLikeLootUid(sv.Value) then
+                return sv.Value
+            end
+        end
+        return nil
     end
 
     local function lootGetBillboardTextLabel(lootTop: Instance): TextLabel?
@@ -1767,22 +1843,24 @@ do
         return lootTop.Name
     end
 
-    local function lootAnchorPosition(lootTop: Instance): Vector3?
-        local root = lootTop:FindFirstChild("Root")
-        local scope: Instance = root or lootTop
-        if scope:IsA("BasePart") then
-            return scope.Position
-        end
-        if scope:IsA("Model") then
-            if scope.PrimaryPart then
-                return scope.PrimaryPart.Position
+    local function lootEnqueueEntry(uid: string, label: string)
+        for _, e in ipairs(lootProcessQueue) do
+            if e.uid == uid then
+                return
             end
         end
-        local part = scope:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.Position
+        table.insert(lootProcessQueue, { uid = uid, label = label })
+    end
+
+    local function lootEnqueueChild(child: Instance)
+        if not child or not child.Parent then
+            return
         end
-        return nil
+        local uid = lootUidFromInstance(child)
+        if not uid then
+            return
+        end
+        lootEnqueueEntry(uid, lootDisplayName(child))
     end
 
     local function pushCollectedLootLine(displayName: string)
@@ -1800,6 +1878,10 @@ do
         if lootFolderChildAddedConn then
             lootFolderChildAddedConn:Disconnect()
             lootFolderChildAddedConn = nil
+        end
+        if lootFolderDescendantAddedConn then
+            lootFolderDescendantAddedConn:Disconnect()
+            lootFolderDescendantAddedConn = nil
         end
         if lootFolderDestroyingConn then
             lootFolderDestroyingConn:Disconnect()
@@ -1837,7 +1919,12 @@ do
         lastBoundLootFolder = folder
         lootFolderChildAddedConn = folder.ChildAdded:Connect(function(child)
             if autoCollectLootEnabled then
-                lootEnqueue(child)
+                lootEnqueueChild(child)
+            end
+        end)
+        lootFolderDescendantAddedConn = folder.DescendantAdded:Connect(function(inst)
+            if autoCollectLootEnabled and looksLikeLootUid(inst.Name) then
+                lootEnqueueChild(inst)
             end
         end)
         lootFolderDestroyingConn = folder.Destroying:Connect(function()
@@ -1848,8 +1935,8 @@ do
             task.defer(attachLootListenerToWorkspaceLoot)
         end)
         if autoCollectLootEnabled then
-            for _, c in ipairs(folder:GetChildren()) do
-                lootEnqueue(c)
+            for _, c in ipairs(folder:GetDescendants()) do
+                lootEnqueueChild(c)
             end
         end
     end
@@ -1861,13 +1948,13 @@ do
         if not folder or not folder:IsA("Folder") then
             return
         end
-        for _, child in ipairs(folder:GetChildren()) do
-            lootEnqueue(child)
+        for _, child in ipairs(folder:GetDescendants()) do
+            lootEnqueueChild(child)
         end
     end
 
     MainTab:CreateToggle({
-        Name = "Auto Collect",
+        Name = "Auto Collect Loot",
         CurrentValue = false,
         Callback = function(enabled)
             autoCollectLootEnabled = enabled == true
@@ -1876,7 +1963,16 @@ do
 
             if not autoCollectLootEnabled then
                 lootProcessQueue = {}
+                disconnectLootRemoteListener()
                 return
+            end
+
+            if not ensureLootRemoteListener() then
+                mountNotify({
+                    Title = "Auto Collect Loot",
+                    Content = "LootService remotes not found under ReplicatedStorage.Packages._Index (leifstout_networker@…).",
+                    Icon = "x",
+                })
             end
 
             local folder = Workspace:FindFirstChild("Loot")
@@ -1893,33 +1989,49 @@ do
 
             task.spawn(function()
                 while myToken == autoCollectLootLoopToken and autoCollectLootEnabled do
-                    local lp = Players.LocalPlayer
-                    local character = lp.Character
-                    local hrp = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-                    if not hrp then
-                        task.wait(0.35)
-                    elseif #lootProcessQueue == 0 then
+                    if #lootProcessQueue == 0 then
                         task.wait(0.2)
                     else
-                        local lootTop = table.remove(lootProcessQueue, 1) :: Instance?
-                        if lootTop and lootTop.Parent then
-                            local displayName = lootDisplayName(lootTop)
-                            local targetPos = lootAnchorPosition(lootTop)
-                            if targetPos then
-                                local savedCf = hrp.CFrame
-                                hrp.AssemblyLinearVelocity = Vector3.zero
-                                hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                                task.wait(0.08)
-                                mainTryProximityInteractOnInstance(lootTop)
-                                task.wait(0.12)
-                                if hrp.Parent then
-                                    hrp.AssemblyLinearVelocity = Vector3.zero
-                                    hrp.CFrame = savedCf
+                        local entry = lootProcessQueue[1]
+                        local fold = findLootServiceRemotesFolder()
+                        local rf = fold and fold:FindFirstChild("RemoteFunction")
+                        if not fold or not rf or not rf:IsA("RemoteFunction") then
+                            ensureLootRemoteListener()
+                            task.wait(0.35)
+                        else
+                            table.remove(lootProcessQueue, 1)
+                            lootPendingAck[entry.uid] = nil
+                            pcall(function()
+                                (rf :: RemoteFunction):InvokeServer("requestCollect", entry.uid)
+                            end)
+                            local deadline = os.clock() + 6
+                            local confirmed = false
+                            while os.clock() < deadline do
+                                if myToken ~= autoCollectLootLoopToken or not autoCollectLootEnabled then
+                                    break
                                 end
-                                pushCollectedLootLine(displayName)
+                                if lootPendingAck[entry.uid] then
+                                    lootPendingAck[entry.uid] = nil
+                                    confirmed = true
+                                    break
+                                end
+                                task.wait(0.05)
                             end
+                            if confirmed then
+                                pushCollectedLootLine(entry.label)
+                            else
+                                local lootFolder = Workspace:FindFirstChild("Loot")
+                                if lootFolder and lootFolder:IsA("Folder") then
+                                    for _, ch in ipairs(lootFolder:GetChildren()) do
+                                        if lootUidFromInstance(ch) == entry.uid then
+                                            lootEnqueueEntry(entry.uid, entry.label)
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                            task.wait(0.1)
                         end
-                        task.wait(0.15)
                     end
                 end
             end)
