@@ -2426,6 +2426,18 @@ do
         end,
     })
 
+    ObjectsTab:CreateButton({
+        Name = "Clear overflow paragraphs",
+        Ext = true,
+        Callback = function()
+            clearObjectsTabOverflowParagraphs(rsChildrenOverflowParagraphs)
+            clearObjectsTabOverflowParagraphs(plrsChildrenOverflowParagraphs)
+            clearObjectsTabOverflowParagraphs(lpChildrenOverflowParagraphs)
+            clearObjectsTabOverflowParagraphs(wsChildrenOverflowParagraphs)
+            mountNotify({ Title = "Objects", Content = "Removed extra child-list paragraphs (part 2+).", Icon = "check" })
+        end,
+    })
+
 end
 
 -- */  Avatar Tab  /* --
