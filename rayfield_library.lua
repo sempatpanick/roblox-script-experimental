@@ -2634,6 +2634,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 				Paragraph.Content.Text = NewParagraphSettings.Content
 			end
 
+			function ParagraphValue:Destroy()
+				pcall(function()
+					Paragraph:Destroy()
+				end)
+			end
+
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
 				Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
 				Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
