@@ -911,74 +911,6 @@ local Notifications = Rayfield.Notifications
 local keybindConnections = {} -- For storing keybind connections to disconnect when Rayfield is destroyed
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
-local topbarHeight = 45
-local defaultExpandedWindowSize = useMobileSizing and Vector2.new(500, 275) or Vector2.new(500, 475)
-local expandedWindowSize = defaultExpandedWindowSize
-local minimisedWindowWidth = 495
-local hiddenWindowWidth = 470
-local resizeEnabled = false
-local resizeMinSize = Vector2.new(420, useMobileSizing and 240 or 320)
-local resizeMaxSize = Vector2.new(900, 700)
-local resizeHandle
-local resizeInputChangedConnection
-local resizeInputEndedConnection
-local paragraphLayoutEntries = {}
-local paragraphLayoutConnection
-local paragraphLayoutPending = false
-
-local function parseWindowSizeSetting(value, fallback)
-	if typeof(value) == "Vector2" then
-		return Vector2.new(value.X, value.Y)
-	end
-	if type(value) == "table" then
-		local x = tonumber(value.X or value.x or value.Width or value.width or value[1])
-		local y = tonumber(value.Y or value.y or value.Height or value.height or value[2])
-		if x and y then
-			return Vector2.new(x, y)
-		end
-	end
-	return Vector2.new(fallback.X, fallback.Y)
-end
-
-local function clampWindowSize(size)
-	local clampedX = math.clamp(size.X, resizeMinSize.X, resizeMaxSize.X)
-	local clampedY = math.clamp(size.Y, resizeMinSize.Y, resizeMaxSize.Y)
-	return Vector2.new(clampedX, clampedY)
-end
-
-local function setExpandedWindowSize(size)
-	expandedWindowSize = clampWindowSize(size)
-	minimisedWindowWidth = math.max(expandedWindowSize.X - 5, resizeMinSize.X)
-	hiddenWindowWidth = math.max(expandedWindowSize.X - 30, resizeMinSize.X)
-end
-
-local function runParagraphLayoutUpdates()
-	paragraphLayoutPending = false
-	for idx = #paragraphLayoutEntries, 1, -1 do
-		local entry = paragraphLayoutEntries[idx]
-		if not entry.Element.Parent then
-			table.remove(paragraphLayoutEntries, idx)
-		else
-			entry.Update()
-		end
-	end
-end
-
-local function requestParagraphLayoutUpdates()
-	if paragraphLayoutPending then
-		return
-	end
-	paragraphLayoutPending = true
-	task.defer(runParagraphLayoutUpdates)
-end
-
-local function registerParagraphLayout(paragraph, updateFn)
-	table.insert(paragraphLayoutEntries, {Element = paragraph, Update = updateFn})
-	if not paragraphLayoutConnection then
-		paragraphLayoutConnection = Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(requestParagraphLayoutUpdates)
-	end
-	requestParagraphLayoutUpdates()
-end
 
 local function ChangeTheme(Theme)
 	if typeof(Theme) == 'string' then
@@ -1076,10 +1008,6 @@ local function resolveIcon(icon)
 	if not icon or icon == 0 then
 		return "", nil, nil
 	end
-	-- Empty string is truthy in Lua; without this branch, getIcon("") errors when the Lucide atlas is loaded.
-	if type(icon) == "string" and #icon == 0 then
-		return "", nil, nil
-	end
 
 	if isCustomAsset(icon) then
 		return icon, nil, nil
@@ -1101,8 +1029,6 @@ end
 local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
 	local dragging = false
 	local relative = nil
-	local lastObjectPosition = nil
-	local lastDragBarPosition = nil
 
 	local offset = Vector2.zero
 	local screenGui = object:FindFirstAncestorWhichIsA("ScreenGui")
@@ -1158,33 +1084,14 @@ local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
 	local renderStepped = RunService.RenderStepped:Connect(function()
 		if dragging and not Hidden then
 			local position = UserInputService:GetMouseLocation() + relative + offset
-			local objectPosition = UDim2.fromOffset(position.X, position.Y)
-			local dragBarPosition = nil
-			if tapticOffset then
-				local dragBarY = position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1])
-				dragBarPosition = UDim2.fromOffset(position.X, dragBarY)
-			end
-
 			if enableTaptic and tapticOffset then
-				if objectPosition ~= lastObjectPosition then
-					object.Position = objectPosition
-					lastObjectPosition = objectPosition
-				end
-				if dragBarPosition ~= lastDragBarPosition then
-					dragObject.Parent.Position = dragBarPosition
-					lastDragBarPosition = dragBarPosition
-				end
+				TweenService:Create(object, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y)}):Play()
+				TweenService:Create(dragObject.Parent, TweenInfo.new(0.05, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))}):Play()
 			else
 				if dragBar and tapticOffset then
-					if dragBarPosition ~= lastDragBarPosition then
-						dragBar.Position = dragBarPosition
-						lastDragBarPosition = dragBarPosition
-					end
+					dragBar.Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))
 				end
-				if objectPosition ~= lastObjectPosition then
-					object.Position = objectPosition
-					lastObjectPosition = objectPosition
-				end
+				object.Position = UDim2.fromOffset(position.X, position.Y)
 			end
 		end
 	end)
@@ -1452,9 +1359,12 @@ local function setElementsVisible(show)
 						elseif element.Name == 'Divider' then
 							TweenService:Create(element.Divider, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and 0.85 or 1}):Play()
 						else
-							TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and 0 or 1}):Play()
-							TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = show and 0 or 1}):Play()
-							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and 0 or 1}):Play()
+							local bgTarget = element:GetAttribute("BackgroundTransparencyTarget") or 0
+							local strokeTarget = element:GetAttribute("UIStrokeTransparencyTarget") or 0
+							local titleTarget = element:GetAttribute("TitleTextTransparencyTarget") or 0
+							TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and bgTarget or 1}):Play()
+							TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = show and strokeTarget or 1}):Play()
+							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and titleTarget or 1}):Play()
 						end
 						for _, child in ipairs(element:GetChildren()) do
 							if child.ClassName == "Frame" or child.ClassName == "TextLabel" or child.ClassName == "TextBox" or child.ClassName == "ImageButton" or child.ClassName == "ImageLabel" then
@@ -1515,8 +1425,8 @@ local function Hide(notify: boolean?)
 		end
 	end
 
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(hiddenWindowWidth, 0)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(hiddenWindowWidth, topbarHeight)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 0)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 45)}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
@@ -1542,7 +1452,6 @@ local function Hide(notify: boolean?)
 	setTabButtonsVisible(false)
 
 	if dragInteract then dragInteract.Visible = false end
-	if resizeHandle then resizeHandle.Visible = false end
 
 	setElementsVisible(false)
 
@@ -1560,8 +1469,8 @@ local function Maximise()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
 	TabList.Visible = true
 	task.wait(0.2)
 
@@ -1574,7 +1483,6 @@ local function Maximise()
 	setTabButtonsVisible(true)
 
 	task.wait(0.5)
-	if resizeHandle then resizeHandle.Visible = resizeEnabled end
 	Debounce = false
 end
 
@@ -1583,8 +1491,8 @@ local function Unhide()
 	Debounce = true
 	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Main.Visible = true
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
+	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
@@ -1609,7 +1517,6 @@ local function Unhide()
 	dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset)
 
 	dragInteract.Visible = true
-	if resizeHandle then resizeHandle.Visible = resizeEnabled end
 
 	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
 		if TopbarButton.ClassName == "ImageButton" then
@@ -1650,9 +1557,8 @@ local function Minimise()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(minimisedWindowWidth, topbarHeight)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.fromOffset(minimisedWindowWidth, topbarHeight)}):Play()
-	if resizeHandle then resizeHandle.Visible = false end
+	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
 
 	task.wait(0.3)
 
@@ -1802,15 +1708,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 
-	resizeEnabled = Settings.Resizable == true
-	resizeMinSize = parseWindowSizeSetting(Settings.MinSize or Settings.MinimumSize, Vector2.new(420, useMobileSizing and 240 or 320))
-	resizeMaxSize = parseWindowSizeSetting(Settings.MaxSize or Settings.MaximumSize, Vector2.new(900, 700))
-	resizeMaxSize = Vector2.new(
-		math.max(resizeMaxSize.X, resizeMinSize.X),
-		math.max(resizeMaxSize.Y, resizeMinSize.Y)
-	)
-	setExpandedWindowSize(parseWindowSizeSetting(Settings.Size or Settings.WindowSize, defaultExpandedWindowSize))
-
 	ensureFolder(RayfieldFolder)
 
 	local Passthrough = false
@@ -1910,76 +1807,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	makeDraggable(Main, Topbar, false, {dragOffset, dragOffsetMobile})
 	if dragBar then dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset) makeDraggable(Main, dragInteract, true, {dragOffset, dragOffsetMobile}) end
-
-	if resizeInputChangedConnection then
-		resizeInputChangedConnection:Disconnect()
-		resizeInputChangedConnection = nil
-	end
-	if resizeInputEndedConnection then
-		resizeInputEndedConnection:Disconnect()
-		resizeInputEndedConnection = nil
-	end
-	if resizeHandle then
-		resizeHandle:Destroy()
-		resizeHandle = nil
-	end
-
-	if resizeEnabled then
-		local handle = Instance.new("Frame")
-		handle.Name = "ResizeHandle"
-		handle.Size = UDim2.fromOffset(14, 14)
-		handle.Position = UDim2.new(1, -18, 1, -18)
-		handle.BackgroundColor3 = SelectedTheme.ElementStroke
-		handle.BackgroundTransparency = 0.2
-		handle.BorderSizePixel = 0
-		handle.ZIndex = Topbar.ZIndex + 2
-		handle.Parent = Main
-		local handleCorner = Instance.new("UICorner")
-		handleCorner.CornerRadius = UDim.new(1, 0)
-		handleCorner.Parent = handle
-		local handleInput = Instance.new("TextButton")
-		handleInput.Name = "Interact"
-		handleInput.Text = ""
-		handleInput.AutoButtonColor = false
-		handleInput.BackgroundTransparency = 1
-		handleInput.Size = UDim2.fromScale(1, 1)
-		handleInput.ZIndex = handle.ZIndex + 1
-		handleInput.Parent = handle
-
-		resizeHandle = handle
-
-		local resizing = false
-		local startMouse = Vector2.zero
-		local startSize = expandedWindowSize
-
-		handleInput.InputBegan:Connect(function(input)
-			if Hidden or Minimised then return end
-			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
-				return
-			end
-			resizing = true
-			startMouse = UserInputService:GetMouseLocation()
-			startSize = expandedWindowSize
-		end)
-
-		resizeInputEndedConnection = UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				resizing = false
-			end
-		end)
-
-		resizeInputChangedConnection = UserInputService.InputChanged:Connect(function(input)
-			if not resizing then return end
-			if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
-				return
-			end
-			local mousePos = UserInputService:GetMouseLocation()
-			local delta = mousePos - startMouse
-			setExpandedWindowSize(startSize + Vector2.new(delta.X, delta.Y))
-			Main.Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)
-			Topbar.Size = UDim2.fromOffset(expandedWindowSize.X, topbarHeight)
-		end)
-	end
 
 	for _, TabButton in ipairs(TabList:GetChildren()) do
 		if TabButton.ClassName == "Frame" and TabButton.Name ~= "Placeholder" then
@@ -2210,6 +2037,9 @@ function RayfieldLibrary:CreateWindow(Settings)
 	Elements.Template.Visible = false
 
 	Elements.UIPageLayout.FillDirection = Enum.FillDirection.Horizontal
+	Elements.UIPageLayout.ScrollWheelInputEnabled = false
+	Elements.UIPageLayout.GamepadInputEnabled = false
+	Elements.UIPageLayout.TouchInputEnabled = false
 	TabList.Template.Visible = false
 
 	-- Tab
@@ -2251,7 +2081,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		TabPage.Name = Name
 		TabPage.Visible = true
 
-		TabPage.LayoutOrder = #Elements:GetChildren() or Ext and 10000
+		TabPage.LayoutOrder = Ext and 10000 or #Elements:GetChildren()
 
 		for _, TemplateElement in ipairs(TabPage:GetChildren()) do
 			if TemplateElement.ClassName == "Frame" and TemplateElement.Name ~= "Placeholder" then
@@ -2738,10 +2568,14 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Label.UIStroke.Transparency = 1
 			Label.Title.TextTransparency = 1
 
+			Label:SetAttribute("BackgroundTransparencyTarget", Color and 0.8 or 0)
+			Label:SetAttribute("UIStrokeTransparencyTarget", Color and 0.7 or 0)
+			Label:SetAttribute("TitleTextTransparencyTarget", Color and 0.2 or 0)
+
 			TweenService:Create(Label, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = Color and 0.8 or 0}):Play()
 			TweenService:Create(Label.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = Color and 0.7 or 0}):Play()
 			TweenService:Create(Label.Icon, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-			TweenService:Create(Label.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = Color and 0.2 or 0}):Play()	
+			TweenService:Create(Label.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = Color and 0.2 or 0}):Play()
 
 			function LabelValue:Set(NewLabel, Icon, Color)
 				Label.Title.Text = NewLabel
@@ -2779,38 +2613,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			local Paragraph = Elements.Template.Paragraph:Clone()
 			Paragraph.Title.Text = ParagraphSettings.Title
 			Paragraph.Content.Text = ParagraphSettings.Content
-			Paragraph.Title.AnchorPoint = Vector2.new(0, 0)
-			Paragraph.Title.TextXAlignment = Enum.TextXAlignment.Left
-			Paragraph.Content.TextWrapped = true
-			Paragraph.Content.AnchorPoint = Vector2.new(0, 0)
-			Paragraph.Content.TextXAlignment = Enum.TextXAlignment.Left
-			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
-			Paragraph.Title.Position = UDim2.new(0, 12, 0, 9)
-			Paragraph.Title.Size = UDim2.new(1, -24, 0, 16)
-			Paragraph.Content.Position = UDim2.new(0, 12, 0, 29)
 			Paragraph.Visible = true
 			Paragraph.Parent = TabPage
-
-			local function updateParagraphLayout()
-				if not Paragraph.Parent then
-					return
-				end
-
-				local contentWidth = math.max(Paragraph.AbsoluteSize.X - 24, 120)
-				if Paragraph.Content.AbsoluteSize.X ~= contentWidth then
-					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, 1000)
-				end
-				local contentHeight = math.max(Paragraph.Content.TextBounds.Y, 14)
-				if Paragraph.Content.AbsoluteSize.Y ~= contentHeight then
-					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, contentHeight)
-				end
-				local paragraphHeight = contentHeight + 45
-				if Paragraph.AbsoluteSize.Y ~= paragraphHeight then
-					Paragraph.Size = UDim2.new(1, -10, 0, paragraphHeight)
-				end
-			end
-
-			registerParagraphLayout(Paragraph, updateParagraphLayout)
 
 			Paragraph.BackgroundTransparency = 1
 			Paragraph.UIStroke.Transparency = 1
@@ -2828,7 +2632,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 			function ParagraphValue:Set(NewParagraphSettings)
 				Paragraph.Title.Text = NewParagraphSettings.Title
 				Paragraph.Content.Text = NewParagraphSettings.Content
-				requestParagraphLayoutUpdates()
 			end
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
@@ -2837,167 +2640,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			return ParagraphValue
-		end
-
-		-- Image (ImageLabel inside a paragraph-style card; supports rbxthumb://, rbxassetid numbers, Lucide names, rbxasset://)
-		function Tab:CreateImage(ImageSettings)
-			local ImageValue = {}
-			local imagePixelSize = tonumber(ImageSettings.ImageSize) or 128
-			if imagePixelSize < 32 then
-				imagePixelSize = 32
-			elseif imagePixelSize > 256 then
-				imagePixelSize = 256
-			end
-
-			local Paragraph = Elements.Template.Paragraph:Clone()
-			Paragraph.Name = ImageSettings.Name or "Image"
-			Paragraph.Title.Text = ImageSettings.Title or "Image"
-			Paragraph.Content.Text = ImageSettings.Description or ""
-			Paragraph.Title.AnchorPoint = Vector2.new(0, 0)
-			Paragraph.Title.TextXAlignment = Enum.TextXAlignment.Left
-			Paragraph.Content.TextWrapped = true
-			Paragraph.Content.AnchorPoint = Vector2.new(0, 0)
-			Paragraph.Content.TextXAlignment = Enum.TextXAlignment.Left
-			Paragraph.Content.TextYAlignment = Enum.TextYAlignment.Top
-			Paragraph.Title.Position = UDim2.new(0, 12, 0, 9)
-			Paragraph.Title.Size = UDim2.new(1, -24, 0, 16)
-			Paragraph.Visible = true
-			Paragraph.Parent = TabPage
-
-			local imgHolder = Instance.new("Frame")
-			imgHolder.Name = "ImageHolder"
-			imgHolder.BackgroundTransparency = 1
-			imgHolder.BorderSizePixel = 0
-			imgHolder.ClipsDescendants = false
-			imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
-			imgHolder.Position = UDim2.new(0, 12, 0, 29)
-			imgHolder.Parent = Paragraph
-
-			local imgLabel = Instance.new("ImageLabel")
-			imgLabel.Name = "Image"
-			imgLabel.BackgroundTransparency = 0.15
-			imgLabel.BackgroundColor3 = SelectedTheme.InputBackground
-			imgLabel.BorderSizePixel = 0
-			imgLabel.ScaleType = Enum.ScaleType.Fit
-			imgLabel.Size = UDim2.fromOffset(imagePixelSize, imagePixelSize)
-			local xOff = math.floor(-imagePixelSize / 2)
-			imgLabel.Position = UDim2.new(0.5, xOff, 0, 0)
-			imgLabel.Parent = imgHolder
-
-			local imgCorner = Instance.new("UICorner")
-			imgCorner.CornerRadius = UDim.new(0, 8)
-			imgCorner.Parent = imgLabel
-
-			local function applyImageSource(src: any)
-				local uri, ro, rs = resolveIcon(src)
-				if uri == nil or uri == "" then
-					imgLabel.Image = ""
-					imgHolder.Visible = false
-					imgLabel.ImageRectOffset = Vector2.zero
-					imgLabel.ImageRectSize = Vector2.zero
-					Paragraph.Content.Position = UDim2.new(0, 12, 0, 29)
-					return false
-				end
-				imgLabel.Image = uri
-				if ro then
-					imgLabel.ImageRectOffset = ro
-				else
-					imgLabel.ImageRectOffset = Vector2.zero
-				end
-				if rs then
-					imgLabel.ImageRectSize = rs
-				else
-					imgLabel.ImageRectSize = Vector2.zero
-				end
-				imgHolder.Visible = true
-				imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
-				Paragraph.Content.Position = UDim2.new(0, 12, 0, 29 + imagePixelSize + 8)
-				return true
-			end
-
-			applyImageSource(ImageSettings.Image)
-
-			local function updateImageBlockLayout()
-				if not Paragraph.Parent then
-					return
-				end
-				local hasImageRow = imgHolder.Visible
-				local imageRowHeight = hasImageRow and imagePixelSize or 0
-				local gapAfterImage = hasImageRow and 8 or 0
-				local contentTop = 29 + imageRowHeight + gapAfterImage
-				Paragraph.Content.Position = UDim2.new(0, 12, 0, contentTop)
-
-				local contentWidth = math.max(Paragraph.AbsoluteSize.X - 24, 120)
-				if Paragraph.Content.AbsoluteSize.X ~= contentWidth then
-					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, 1000)
-				end
-				local contentHeight = math.max(Paragraph.Content.TextBounds.Y, 14)
-				if Paragraph.Content.Text == "" then
-					contentHeight = 0
-				end
-				if Paragraph.Content.AbsoluteSize.Y ~= contentHeight then
-					Paragraph.Content.Size = UDim2.fromOffset(contentWidth, math.max(contentHeight, 1))
-				end
-				local bottomPad = 12
-				local paragraphHeight = contentTop + contentHeight + bottomPad
-				if Paragraph.AbsoluteSize.Y ~= paragraphHeight then
-					Paragraph.Size = UDim2.new(1, -10, 0, paragraphHeight)
-				end
-			end
-
-			registerParagraphLayout(Paragraph, updateImageBlockLayout)
-
-			Paragraph.BackgroundTransparency = 1
-			Paragraph.UIStroke.Transparency = 1
-			Paragraph.Title.TextTransparency = 1
-			Paragraph.Content.TextTransparency = 1
-			imgLabel.ImageTransparency = 1
-
-			Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-			Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-
-			TweenService:Create(Paragraph, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
-			TweenService:Create(Paragraph.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { Transparency = 0 }):Play()
-			TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
-			TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
-			TweenService:Create(imgLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
-
-			function ImageValue:Set(newSettings: any)
-				if newSettings.Title ~= nil then
-					Paragraph.Title.Text = newSettings.Title
-				end
-				if newSettings.Description ~= nil then
-					Paragraph.Content.Text = newSettings.Description
-				end
-				if newSettings.ImageSize ~= nil then
-					local n = tonumber(newSettings.ImageSize)
-					if n then
-						imagePixelSize = math.clamp(n, 32, 256)
-						imgHolder.Size = UDim2.new(1, -24, 0, imagePixelSize)
-						imgLabel.Size = UDim2.fromOffset(imagePixelSize, imagePixelSize)
-						local xOff2 = math.floor(-imagePixelSize / 2)
-						imgLabel.Position = UDim2.new(0.5, xOff2, 0, 0)
-					end
-				end
-				if newSettings.Image ~= nil then
-					applyImageSource(newSettings.Image)
-				end
-				requestParagraphLayoutUpdates()
-			end
-
-			function ImageValue:Destroy()
-				pcall(function()
-					Paragraph:Destroy()
-				end)
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
-				Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-				Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-				imgLabel.BackgroundColor3 = SelectedTheme.InputBackground
-			end)
-
-			return ImageValue
 		end
 
 		-- Input
@@ -3076,10 +2718,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
-			function InputSettings:GetValue()
-				return Input.InputFrame.InputBox.Text
-			end
-
 			if Settings.ConfigurationSaving then
 				if Settings.ConfigurationSaving.Enabled and InputSettings.Flag then
 					RayfieldLibrary.Flags[InputSettings.Flag] = InputSettings
@@ -3096,8 +2734,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 		-- Dropdown
 		function Tab:CreateDropdown(DropdownSettings)
-			local dropdownExpandedHeight = (DropdownSettings.Search and 206) or 180
-
 			local Dropdown = Elements.Template.Dropdown:Clone()
 			if string.find(DropdownSettings.Name,"closed") then
 				Dropdown.Name = "Dropdown"
@@ -3156,58 +2792,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
-			local function applyDropdownSearchFilter()
-				if not DropdownSettings.Search then
-					return
-				end
-				local sb = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
-				if not (sb and sb:IsA("TextBox")) then
-					return
-				end
-				local q = string.lower(sb.Text)
-				for _, ch in ipairs(Dropdown.List:GetChildren()) do
-					if ch.ClassName == "Frame" and ch.Name ~= "Placeholder" then
-						local nm = string.lower(tostring(ch.Name))
-						ch.Visible = (q == "") or (string.find(nm, q, 1, true) ~= nil)
-					end
-				end
-			end
-
-			if DropdownSettings.Search then
-				local sb = Instance.new("TextBox")
-				sb.Name = "RayfieldDropdownSearch"
-				sb.Size = UDim2.new(1, -12, 0, 24)
-				sb.LayoutOrder = -1000
-				sb.ZIndex = 55
-				sb.Font = Enum.Font.Gotham
-				sb.TextSize = 14
-				sb.TextXAlignment = Enum.TextXAlignment.Left
-				sb.ClearTextOnFocus = false
-				sb.Text = ""
-				sb.PlaceholderText = "Search..."
-				sb.TextColor3 = SelectedTheme.TextColor
-				sb.PlaceholderColor3 = SelectedTheme.TextColor
-				sb.TextTransparency = 0.2
-				sb.BackgroundColor3 = SelectedTheme.InputBackground
-				sb.BackgroundTransparency = 0
-				sb.BorderSizePixel = 0
-				local sbStroke = Instance.new("UIStroke")
-				sbStroke.Color = SelectedTheme.InputStroke
-				sbStroke.Parent = sb
-				sb.Parent = Dropdown.List
-				sb.Visible = false
-				local pad = Instance.new("UIPadding")
-				pad.PaddingLeft = UDim.new(0, 8)
-				pad.Parent = sb
-				sb:GetPropertyChangedSignal("Text"):Connect(applyDropdownSearchFilter)
-				Rayfield.Main:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
-					sb.BackgroundColor3 = SelectedTheme.InputBackground
-					sbStroke.Color = SelectedTheme.InputStroke
-					sb.TextColor3 = SelectedTheme.TextColor
-					sb.PlaceholderColor3 = SelectedTheme.TextColor
-				end)
-			end
-
 			Dropdown.Toggle.Rotation = 180
 
 			Dropdown.Interact.MouseButton1Click:Connect(function()
@@ -3231,24 +2815,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
 					task.wait(0.35)
 					Dropdown.List.Visible = false
-					local sbClose = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
-					if sbClose and sbClose:IsA("TextBox") then
-						sbClose.Visible = false
-						sbClose.Text = ""
-					end
-					applyDropdownSearchFilter()
 					Debounce = false
 				else
-					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, dropdownExpandedHeight)}):Play()
+					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 180)}):Play()
 					Dropdown.List.Visible = true
 					TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 0.7}):Play()
 					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 0}):Play()	
-					local sbOpen = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
-					if sbOpen and sbOpen:IsA("TextBox") then
-						sbOpen.Visible = true
-						sbOpen.Text = ""
-					end
-					applyDropdownSearchFilter()
 					for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
 						if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
 							if DropdownOpt.Name ~= Dropdown.Selected.Text then
@@ -3371,12 +2943,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 							TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
 							task.wait(0.35)
 							Dropdown.List.Visible = false
-							local sbPick = Dropdown.List:FindFirstChild("RayfieldDropdownSearch")
-							if sbPick and sbPick:IsA("TextBox") then
-								sbPick.Visible = false
-								sbPick.Text = ""
-							end
-							applyDropdownSearchFilter()
 						end
 						Debounce = false
 						if not DropdownSettings.Ext then
@@ -3390,7 +2956,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 			SetDropdownOptions()
-			applyDropdownSearchFilter()
 
 			for _, droption in ipairs(Dropdown.List:GetChildren()) do
 				if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
@@ -3409,7 +2974,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 					end)
 				end
 			end
-			applyDropdownSearchFilter()
 
 			function DropdownSettings:Set(NewOption)
 				DropdownSettings.CurrentOption = NewOption
@@ -3419,8 +2983,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 
 				if not DropdownSettings.MultipleOptions then
-					local pick = DropdownSettings.CurrentOption[1]
-					DropdownSettings.CurrentOption = pick ~= nil and { pick } or {}
+					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]}
 				end
 
 				if DropdownSettings.MultipleOptions then
@@ -3432,7 +2995,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 						Dropdown.Selected.Text = "Various"
 					end
 				else
-					Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] or "None"
+					Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
 				end
 
 
@@ -3460,11 +3023,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 						end
 					end
 				end
-				applyDropdownSearchFilter()
 				--SaveConfiguration()
 			end
 
-			function DropdownSettings:Refresh(optionsTable: { any }) -- updates a dropdown with new options from optionsTable
+			function DropdownSettings:Refresh(optionsTable: table) -- updates a dropdown with new options from optionsTable
 				DropdownSettings.Options = optionsTable
 				for _, option in Dropdown.List:GetChildren() do
 					if option.ClassName == "Frame" and option.Name ~= "Placeholder" then
@@ -3472,7 +3034,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 					end
 				end
 				SetDropdownOptions()
-				applyDropdownSearchFilter()
 
 				-- Apply selected/unselected background colors to new options
 				for _, droption in ipairs(Dropdown.List:GetChildren()) do
@@ -3497,7 +3058,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 						end
 					end
 				end
-				applyDropdownSearchFilter()
 			end
 
 			if Settings.ConfigurationSaving then
@@ -4016,7 +3576,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	task.wait(0.1)
-	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(expandedWindowSize.X, expandedWindowSize.Y)}):Play()
+	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 
 	Topbar.BackgroundTransparency = 1
@@ -4053,9 +3613,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	if dragBar then
 		TweenService:Create(dragBarCosmetic, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-	end
-	if resizeHandle then
-		resizeHandle.Visible = resizeEnabled
 	end
 
 	function Window.ModifyTheme(NewTheme)
