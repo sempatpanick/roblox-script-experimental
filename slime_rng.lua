@@ -1727,7 +1727,7 @@ do
         Content = "(None yet — after LootService confirms lootRemoved for each UID.)",
     })
 
-    local function findLootServiceRemotesFolder(): Instance?
+    local function findNetworkerServiceRemotesFolder(serviceFolderName: string): Instance?
         local packages = ReplicatedStorage:FindFirstChild("Packages")
         if not packages then
             return nil
@@ -1748,11 +1748,15 @@ do
         if not rem then
             return nil
         end
-        local ls = rem:FindFirstChild("LootService")
-        if not ls then
+        local svc = rem:FindFirstChild(serviceFolderName)
+        if not svc then
             return nil
         end
-        return ls
+        return svc
+    end
+
+    local function findLootServiceRemotesFolder(): Instance?
+        return findNetworkerServiceRemotesFolder("LootService")
     end
 
     local function disconnectLootRemoteListener()
@@ -2132,6 +2136,39 @@ do
                             end
                         end
                     end
+                end
+            end)
+        end,
+    })
+
+    MainTab:CreateSection("Auto Equip Slimes")
+
+    local autoEquipBestEnabled = false
+    local autoEquipBestLoopToken = 0
+    local AUTO_EQUIP_BEST_INTERVAL_SEC = 30
+
+    MainTab:CreateToggle({
+        Name = "Auto Equip Best",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoEquipBestEnabled = enabled == true
+            autoEquipBestLoopToken = autoEquipBestLoopToken + 1
+            local myToken = autoEquipBestLoopToken
+
+            if not autoEquipBestEnabled then
+                return
+            end
+
+            task.spawn(function()
+                while myToken == autoEquipBestLoopToken and autoEquipBestEnabled do
+                    local inv = findNetworkerServiceRemotesFolder("InventoryService")
+                    local rf = inv and inv:FindFirstChild("RemoteFunction")
+                    if inv and rf and rf:IsA("RemoteFunction") then
+                        pcall(function()
+                            (rf :: RemoteFunction):InvokeServer("requestEquipBest")
+                        end)
+                    end
+                    task.wait(AUTO_EQUIP_BEST_INTERVAL_SEC)
                 end
             end)
         end,
