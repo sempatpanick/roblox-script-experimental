@@ -8,6 +8,7 @@ local games = {
     [76964310785698] = baseURL .. "/mount_yahayuk.lua",
     [118098747383977] = baseURL .. "/mancing_indo.lua",
     [78404864377525] = baseURL .. "/mancing_indo_galatama.lua",
+    [92416421522960] = baseURL .. "/slime_rng.lua",
 }
 
 local fallbackScriptURL = baseURL .. "/others.lua"
