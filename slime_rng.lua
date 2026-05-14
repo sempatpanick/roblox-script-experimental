@@ -2785,12 +2785,14 @@ do
     local function clearObjectsTabOverflowParagraphs(refs: { any })
         for i = #refs, 1, -1 do
             local p = refs[i]
-            if p and p.Destroy then
+            if p then
                 pcall(function()
-                    p:Destroy()
+                    if type(p.Destroy) == "function" then
+                        p:Destroy()
+                    end
                 end)
             end
-            refs[i] = nil
+            table.remove(refs, i)
         end
     end
 
