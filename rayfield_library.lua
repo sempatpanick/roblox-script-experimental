@@ -2736,6 +2736,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		function Tab:CreateDropdown(DropdownSettings)
 			local Dropdown = Elements.Template.Dropdown:Clone()
 			local searchBox: TextBox? = nil
+			local searchRow: Frame? = nil
 
 			local function isDropdownOptionRow(inst: Instance): boolean
 				return inst:IsA("Frame") and inst.Name ~= "Placeholder" and not inst:GetAttribute("RayfieldSearch")
@@ -2765,6 +2766,18 @@ function RayfieldLibrary:CreateWindow(Settings)
 						ch.Visible = true
 					end
 				end
+			end
+
+			local function layoutDropdownSearchRow()
+				if not searchRow then
+					return
+				end
+				local list = Dropdown.List
+				local w = list.AbsoluteSize.X
+				if w < 8 then
+					return
+				end
+				searchRow.Size = UDim2.new(0, w, 0, 36)
 			end
 
 			if string.find(DropdownSettings.Name,"closed") then
@@ -2825,18 +2838,31 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end
 
 			if DropdownSettings.Search then
-				local searchRow = Instance.new("Frame")
+				searchRow = Instance.new("Frame")
 				searchRow.Name = "SearchRow"
 				searchRow:SetAttribute("RayfieldSearch", true)
 				searchRow.BackgroundTransparency = 1
-				searchRow.Size = UDim2.new(1, 0, 0, 36)
+				searchRow.BorderSizePixel = 0
+				searchRow.LayoutOrder = -1000
+				searchRow.Size = UDim2.new(0, 200, 0, 36)
 				searchRow.ZIndex = 50
 				searchRow.Parent = Dropdown.List
 
+				local searchRowMin = Instance.new("UISizeConstraint")
+				searchRowMin.MinSize = Vector2.new(120, 28)
+				searchRowMin.Parent = searchRow
+
+				local rowPad = Instance.new("UIPadding")
+				rowPad.PaddingLeft = UDim.new(0, 8)
+				rowPad.PaddingRight = UDim.new(0, 8)
+				rowPad.PaddingTop = UDim.new(0, 5)
+				rowPad.PaddingBottom = UDim.new(0, 5)
+				rowPad.Parent = searchRow
+
 				local sb = Instance.new("TextBox")
 				sb.Name = "SearchBox"
-				sb.Size = UDim2.new(1, -16, 0, 26)
-				sb.Position = UDim2.new(0, 8, 0.5, -13)
+				sb.Size = UDim2.new(1, 0, 1, 0)
+				sb.Position = UDim2.new(0, 0, 0, 0)
 				sb.BackgroundColor3 = SelectedTheme.InputBackground
 				sb.TextColor3 = SelectedTheme.TextColor
 				sb.PlaceholderColor3 = SelectedTheme.PlaceholderColor
@@ -2872,6 +2898,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 				sb.TextTransparency = 1
 				sb.BackgroundTransparency = 1
 				searchStroke.Transparency = 1
+
+				Dropdown.List:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutDropdownSearchRow)
 			end
 
 			Dropdown.Toggle.Rotation = 180
@@ -2936,6 +2964,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 						end
 					end
 					applyDropdownSearchFilter()
+					task.defer(function()
+						layoutDropdownSearchRow()
+						task.defer(layoutDropdownSearchRow)
+					end)
 				end
 			end)
 
@@ -3075,6 +3107,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				applyDropdownSearchFilter()
 			end
 			SetDropdownOptions()
+			task.defer(layoutDropdownSearchRow)
 
 			for _, droption in ipairs(Dropdown.List:GetChildren()) do
 				if isDropdownOptionRow(droption) then
@@ -3166,6 +3199,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 
 				applyDropdownSearchFilter()
+				task.defer(layoutDropdownSearchRow)
 
 				-- If the dropdown is currently open, make new options visible immediately
 				if Dropdown.List.Visible then
