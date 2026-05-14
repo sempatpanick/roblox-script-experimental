@@ -3817,521 +3817,6 @@ do
 
 end
 
--- */  Avatar Tab  /* --
-do
-    local AvatarTab = Window:CreateTab("Avatar", 7076763398)
-
-    AvatarTab:CreateSection("Look Up Player")
-
-    local avatarLookupInputValue = ""
-    local AvatarLookupInput = AvatarTab:CreateInput({
-        Name = "Username / Player Id",
-        PlaceholderText = "e.g. Roblox or 261",
-        Ext = true,
-        CurrentValue = avatarLookupInputValue,
-        Callback = function(value)
-            avatarLookupInputValue = value
-        end,
-    })
-
-    local AvatarPreviewImage
-    local AvatarDetailsParagraph
-    local AvatarOutfitParagraph
-    local lastAvatarLookupUserId: number? = nil
-    local activeAvatarOverlayModel: Model? = nil
-    local activeAvatarOverlayRenderConn: RBXScriptConnection? = nil
-
-    local function trimLookupText(s: string): string
-        local t = string.gsub(s or "", "^%s+", "")
-        t = string.gsub(t, "%s+$", "")
-        return t
-    end
-
-    local function resolveUserIdFromLookupInput(raw: string): (number?, string?)
-        local s = trimLookupText(raw)
-        if s == "" then
-            return nil, "empty"
-        end
-        if string.match(s, "^%d+$") then
-            local n = tonumber(s)
-            if n and n > 0 and n == math.floor(n) then
-                return n, nil
-            end
-            return nil, "invalid"
-        end
-        local ok, uid = pcall(function()
-            return Players:GetUserIdFromNameAsync(s)
-        end)
-        if ok and type(uid) == "number" and uid > 0 then
-            return uid, nil
-        end
-        return nil, "notfound"
-    end
-
-    local function fetchUserFields(userId: number): (string?, string?, string?)
-        local ok, infos = pcall(function()
-            return UserService:GetUserInfosByUserIdsAsync({ userId })
-        end)
-        if ok and type(infos) == "table" and infos[1] then
-            local row = infos[1]
-            local disp = row.DisplayName
-            local uname = row.Username
-            if type(disp) == "string" and type(uname) == "string" then
-                return disp, uname, nil
-            end
-        end
-        local ok2, nameFromId = pcall(function()
-            return Players:GetNameFromUserIdAsync(userId)
-        end)
-        if ok2 and type(nameFromId) == "string" and nameFromId ~= "" then
-            return nameFromId, nameFromId, "partial"
-        end
-        return nil, nil, "profile"
-    end
-
-    local OUTFIT_TEXT_MAX_CHARS = 10000
-
-    local function readHumanoidDescriptionProp(hd: HumanoidDescription, propName: string): any
-        local ok, v = pcall(function()
-            return (hd :: any)[propName]
-        end)
-        if ok then
-            return v
-        end
-        return nil
-    end
-
-    local function formatHumanoidDescriptionOutfit(hd: HumanoidDescription): string
-        local lines: { string } = {}
-
-        local function pushLine(s: string)
-            table.insert(lines, s)
-        end
-
-        local function pushAssetIdLine(label: string, id: any)
-            if type(id) == "number" and id > 0 then
-                pushLine(label .. ": " .. tostring(math.floor(id)))
-            end
-        end
-
-        local function pushNonEmptyStringLine(label: string, s: any)
-            if type(s) ~= "string" then
-                return
-            end
-            local t = trimLookupText(s)
-            if t == "" then
-                return
-            end
-            pushLine(label .. ": " .. t)
-        end
-
-        pushLine("— Body meshes (classic / R15 asset ids) —")
-        for _, limb in ipairs({ "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg" }) do
-            pushAssetIdLine(limb, readHumanoidDescriptionProp(hd, limb))
-        end
-        pushAssetIdLine("Face (decal id)", readHumanoidDescriptionProp(hd, "Face"))
-
-        pushLine("")
-        pushLine("— Body colors (BrickColor) —")
-        for _, colorName in ipairs({
-            "HeadColor",
-            "TorsoColor",
-            "LeftArmColor",
-            "RightArmColor",
-            "LeftLegColor",
-            "RightLegColor",
-        }) do
-            local bc = readHumanoidDescriptionProp(hd, colorName)
-            if bc ~= nil then
-                local okS, txt = pcall(function()
-                    return tostring(bc)
-                end)
-                if okS and txt and txt ~= "" then
-                    pushLine(colorName .. ": " .. txt)
-                end
-            end
-        end
-
-        pushLine("")
-        pushLine("— Scales —")
-        local scaleProps = {
-            "BodyTypeScale",
-            "ProportionScale",
-            "HeightScale",
-            "WidthScale",
-            "DepthScale",
-            "HeadScale",
-        }
-        for _, pname in ipairs(scaleProps) do
-            local v = readHumanoidDescriptionProp(hd, pname)
-            if type(v) == "number" then
-                pushLine(pname .. ": " .. string.format("%.4g", v))
-            end
-        end
-
-        local staticFace = readHumanoidDescriptionProp(hd, "StaticFacialAnimation")
-        if type(staticFace) == "boolean" then
-            pushLine("StaticFacialAnimation: " .. tostring(staticFace))
-        end
-
-        pushLine("")
-        pushLine("— Clothing templates —")
-        pushAssetIdLine("Shirt", readHumanoidDescriptionProp(hd, "Shirt"))
-        pushAssetIdLine("Pants", readHumanoidDescriptionProp(hd, "Pants"))
-        pushAssetIdLine("GraphicTShirt", readHumanoidDescriptionProp(hd, "GraphicTShirt"))
-
-        pushLine("")
-        pushLine("— Rigid accessory slots (comma-separated asset ids) —")
-        for _, slot in ipairs({
-            "HatAccessory",
-            "HairAccessory",
-            "FaceAccessory",
-            "NeckAccessory",
-            "ShouldersAccessory",
-            "FrontAccessory",
-            "BackAccessory",
-            "WaistAccessory",
-        }) do
-            pushNonEmptyStringLine(slot, readHumanoidDescriptionProp(hd, slot))
-        end
-
-        local okAcc, accList = pcall(function()
-            return hd:GetAccessories(true)
-        end)
-        if okAcc and type(accList) == "table" and #accList > 0 then
-            pushLine("")
-            pushLine("— GetAccessories(true): layered + rigid —")
-            local maxAcc = math.min(#accList, 48)
-            for i = 1, maxAcc do
-                local ad = accList[i]
-                if type(ad) == "userdata" or type(ad) == "table" then
-                    local aid = (ad :: any).AssetId
-                    local aty = (ad :: any).AccessoryType
-                    local lay = (ad :: any).IsLayered
-                    pushLine(
-                        string.format(
-                            "  #%d id=%s type=%s layered=%s",
-                            i,
-                            tostring(aid),
-                            tostring(aty),
-                            tostring(lay)
-                        )
-                    )
-                end
-            end
-            if #accList > maxAcc then
-                pushLine("  ... +" .. tostring(#accList - maxAcc) .. " more")
-            end
-        end
-
-        pushLine("")
-        pushLine("— Default movement / mood animations (asset ids) —")
-        for _, aname in ipairs({
-            "IdleAnimation",
-            "RunAnimation",
-            "WalkAnimation",
-            "JumpAnimation",
-            "SwimAnimation",
-            "ClimbAnimation",
-            "FallAnimation",
-            "MoodAnimation",
-        }) do
-            pushAssetIdLine(aname, readHumanoidDescriptionProp(hd, aname))
-        end
-
-        local okEm, emotes = pcall(function()
-            return hd:GetEmotes()
-        end)
-        if okEm and type(emotes) == "table" and next(emotes) ~= nil then
-            pushLine("")
-            pushLine("— Saved emotes (name = animation asset id) —")
-            local n = 0
-            for name, assetId in pairs(emotes) do
-                n = n + 1
-                if n > 36 then
-                    pushLine("  ... (more emotes not shown)")
-                    break
-                end
-                pushLine("  " .. tostring(name) .. " = " .. tostring(assetId))
-            end
-        end
-
-        local okEq, equipped = pcall(function()
-            return hd:GetEquippedEmotes()
-        end)
-        if okEq and type(equipped) == "table" and #equipped > 0 then
-            pushLine("")
-            pushLine("— Equipped emote slots —")
-            for i, slot in ipairs(equipped) do
-                if i > 8 then
-                    pushLine("  ...")
-                    break
-                end
-                if type(slot) == "table" then
-                    pushLine(
-                        "  slot "
-                            .. tostring((slot :: any).Slot)
-                            .. " → "
-                            .. tostring((slot :: any).Name)
-                    )
-                else
-                    pushLine("  " .. tostring(slot))
-                end
-            end
-        end
-
-        local body = table.concat(lines, "\n")
-        if #body > OUTFIT_TEXT_MAX_CHARS then
-            body = string.sub(body, 1, OUTFIT_TEXT_MAX_CHARS)
-                .. "\n\n... (truncated; HumanoidDescription dump capped at "
-                .. tostring(OUTFIT_TEXT_MAX_CHARS)
-                .. " chars)"
-        end
-        return body
-    end
-
-    local function destroyActiveAvatarOverlay()
-        if activeAvatarOverlayRenderConn then
-            activeAvatarOverlayRenderConn:Disconnect()
-            activeAvatarOverlayRenderConn = nil
-        end
-        if activeAvatarOverlayModel then
-            pcall(function()
-                activeAvatarOverlayModel:Destroy()
-            end)
-            activeAvatarOverlayModel = nil
-        end
-    end
-
-    local function setDescendantNonInteractive(inst: Instance)
-        if inst:IsA("BasePart") then
-            inst.CanCollide = false
-            inst.CanTouch = false
-            inst.CanQuery = false
-            inst.Massless = true
-            inst.CastShadow = false
-        elseif inst:IsA("TouchTransmitter") then
-            inst:Destroy()
-        end
-    end
-
-    local function collectMotorsByName(root: Instance): { [string]: Motor6D }
-        local out: { [string]: Motor6D } = {}
-        for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("Motor6D") then
-                out[d.Name] = d
-            end
-        end
-        return out
-    end
-
-    local function buildAvatarOverlayFromUserId(userId: number): (Model?, string?)
-        local localCharacter = Players.LocalPlayer.Character
-        local localHumanoid = localCharacter and localCharacter:FindFirstChildOfClass("Humanoid")
-        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-        if not (localCharacter and localHumanoid and localRoot and localRoot:IsA("BasePart")) then
-            return nil, "Local character is not ready."
-        end
-
-        local okModel, overlayModel = pcall(function()
-            return Players:CreateHumanoidModelFromUserId(userId)
-        end)
-        if not okModel or not overlayModel then
-            return nil, "Could not create overlay model from user id."
-        end
-
-        local overlayHumanoid = overlayModel:FindFirstChildOfClass("Humanoid")
-        local overlayRoot = overlayModel:FindFirstChild("HumanoidRootPart")
-        if not (overlayHumanoid and overlayRoot and overlayRoot:IsA("BasePart")) then
-            pcall(function()
-                overlayModel:Destroy()
-            end)
-            return nil, "Overlay model is missing humanoid root."
-        end
-
-        overlayModel.Name = "AvatarCopyOverlay_" .. tostring(userId)
-        overlayModel.Parent = Workspace
-        overlayModel:PivotTo(localRoot.CFrame)
-
-        for _, d in ipairs(overlayModel:GetDescendants()) do
-            if d:IsA("Script") or d:IsA("LocalScript") then
-                pcall(function()
-                    d:Destroy()
-                end)
-            else
-                setDescendantNonInteractive(d)
-            end
-        end
-
-        overlayHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-        overlayHumanoid.HealthDisplayDistance = 0
-        overlayHumanoid.NameDisplayDistance = 0
-        overlayHumanoid.BreakJointsOnDeath = false
-
-        local rootWeld = Instance.new("WeldConstraint")
-        rootWeld.Name = "AvatarCopyFollowWeld"
-        rootWeld.Part0 = localRoot
-        rootWeld.Part1 = overlayRoot
-        rootWeld.Parent = overlayRoot
-
-        local srcMotors = collectMotorsByName(localCharacter)
-        local dstMotors = collectMotorsByName(overlayModel)
-
-        activeAvatarOverlayRenderConn = RunService.RenderStepped:Connect(function()
-            if not (localRoot.Parent and overlayRoot.Parent and overlayModel.Parent) then
-                destroyActiveAvatarOverlay()
-                return
-            end
-            for motorName, srcMotor in pairs(srcMotors) do
-                local dstMotor = dstMotors[motorName]
-                if dstMotor and srcMotor.Parent and dstMotor.Parent then
-                    dstMotor.Transform = srcMotor.Transform
-                end
-            end
-        end)
-
-        return overlayModel, nil
-    end
-
-    AvatarTab:CreateButton({
-        Name = "Search",
-        Callback = function()
-            local raw = AvatarLookupInput and AvatarLookupInput.GetValue and AvatarLookupInput:GetValue()
-                or avatarLookupInputValue
-            local userId, err = resolveUserIdFromLookupInput(raw)
-            if err == "empty" then
-                lastAvatarLookupUserId = nil
-                mountNotify({ Title = "Avatar lookup", Content = "Enter a username or user id.", Icon = "x" })
-                AvatarOutfitParagraph:Set({
-                    Title = "Outfit, body & animations",
-                    Content = "Run Search after entering a username or user id.",
-                })
-                return
-            end
-            if not userId then
-                lastAvatarLookupUserId = nil
-                mountNotify({
-                    Title = "Avatar lookup",
-                    Content = "Could not resolve that username or id.",
-                    Icon = "x",
-                })
-                AvatarOutfitParagraph:Set({
-                    Title = "Outfit, body & animations",
-                    Content = "No HumanoidDescription loaded (lookup failed).",
-                })
-                return
-            end
-            lastAvatarLookupUserId = userId
-            local displayName, username, fetchErr = fetchUserFields(userId)
-            if not username then
-                mountNotify({
-                    Title = "Avatar lookup",
-                    Content = "User id "
-                        .. tostring(userId)
-                        .. " exists but profile details could not be loaded.",
-                    Icon = "x",
-                })
-                AvatarPreviewImage:Set({
-                    Image = "",
-                    Description = "Profile unavailable for this id.",
-                })
-                AvatarDetailsParagraph:Set({
-                    Title = "Player details",
-                    Content = "User ID: " .. tostring(userId),
-                })
-                AvatarOutfitParagraph:Set({
-                    Title = "Outfit, body & animations",
-                    Content = "Outfit data not loaded.",
-                })
-                return
-            end
-            local thumb = string.format(
-                "rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150",
-                userId
-            )
-            AvatarPreviewImage:Set({
-                Image = thumb,
-                Title = "Avatar",
-                Description = "",
-                ImageSize = 150,
-            })
-            local detailLines = {
-                "Display name: " .. (displayName or username),
-                "Username: " .. username,
-                "User ID: " .. tostring(userId),
-            }
-            if fetchErr == "partial" then
-                table.insert(detailLines, "(Display name from username fallback)")
-            end
-            AvatarDetailsParagraph:Set({
-                Title = "Player details",
-                Content = table.concat(detailLines, "\n"),
-            })
-
-            local outfitContent = "Outfit / body data could not be loaded."
-            local okHd, hd = pcall(function()
-                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
-            end)
-            if okHd and hd then
-                outfitContent = formatHumanoidDescriptionOutfit(hd)
-            end
-            AvatarOutfitParagraph:Set({
-                Title = "Outfit, body & animations",
-                Content = outfitContent,
-            })
-        end,
-    })
-
-    AvatarPreviewImage = AvatarTab:CreateImage({
-        Name = "AvatarPreview",
-        Title = "Avatar",
-        Image = "",
-        ImageSize = 150,
-        Description = "Results appear after Search.",
-    })
-
-    AvatarDetailsParagraph = AvatarTab:CreateParagraph({
-        Title = "Player details",
-        Content = "Enter a Roblox username or numeric user id, then tap Search.\n\nNote: lookup uses account username, not always the same as display name search on the website.",
-    })
-
-    AvatarOutfitParagraph = AvatarTab:CreateParagraph({
-        Title = "Outfit, body & animations",
-        Content = "After Search, this shows HumanoidDescription: body part and face ids, body colors, scales, shirt / pants / t-shirt, rigid accessory strings, GetAccessories(true), default animations, emotes, and equipped emote slots.",
-    })
-
-    AvatarTab:CreateButton({
-        Name = "Copy Avatar",
-        Callback = function()
-            if not lastAvatarLookupUserId then
-                mountNotify({
-                    Title = "Copy Avatar",
-                    Content = "Search a username or user id first.",
-                    Icon = "x",
-                })
-                return
-            end
-
-            destroyActiveAvatarOverlay()
-            local overlay, copyErr = buildAvatarOverlayFromUserId(lastAvatarLookupUserId)
-            if not overlay then
-                mountNotify({
-                    Title = "Copy Avatar",
-                    Content = copyErr or "Failed to copy avatar.",
-                    Icon = "x",
-                })
-                return
-            end
-            activeAvatarOverlayModel = overlay
-            mountNotify({
-                Title = "Copy Avatar",
-                Content = "Avatar overlay copied and mirroring live pose.",
-                Icon = "check",
-            })
-        end,
-    })
-end
-
 -- */  Config Tab  /* --
 do
     local ConfigTab = Window:CreateTab("Config", 4483362458)
@@ -4917,4 +4402,519 @@ do
         task.wait(0.45)
         runStartupAutoLoadProfile()
     end)
+end
+
+-- */  Avatar Tab  /* --
+do
+    local AvatarTab = Window:CreateTab("Avatar", 7076763398)
+
+    AvatarTab:CreateSection("Look Up Player")
+
+    local avatarLookupInputValue = ""
+    local AvatarLookupInput = AvatarTab:CreateInput({
+        Name = "Username / Player Id",
+        PlaceholderText = "e.g. Roblox or 261",
+        Ext = true,
+        CurrentValue = avatarLookupInputValue,
+        Callback = function(value)
+            avatarLookupInputValue = value
+        end,
+    })
+
+    local AvatarPreviewImage
+    local AvatarDetailsParagraph
+    local AvatarOutfitParagraph
+    local lastAvatarLookupUserId: number? = nil
+    local activeAvatarOverlayModel: Model? = nil
+    local activeAvatarOverlayRenderConn: RBXScriptConnection? = nil
+
+    local function trimLookupText(s: string): string
+        local t = string.gsub(s or "", "^%s+", "")
+        t = string.gsub(t, "%s+$", "")
+        return t
+    end
+
+    local function resolveUserIdFromLookupInput(raw: string): (number?, string?)
+        local s = trimLookupText(raw)
+        if s == "" then
+            return nil, "empty"
+        end
+        if string.match(s, "^%d+$") then
+            local n = tonumber(s)
+            if n and n > 0 and n == math.floor(n) then
+                return n, nil
+            end
+            return nil, "invalid"
+        end
+        local ok, uid = pcall(function()
+            return Players:GetUserIdFromNameAsync(s)
+        end)
+        if ok and type(uid) == "number" and uid > 0 then
+            return uid, nil
+        end
+        return nil, "notfound"
+    end
+
+    local function fetchUserFields(userId: number): (string?, string?, string?)
+        local ok, infos = pcall(function()
+            return UserService:GetUserInfosByUserIdsAsync({ userId })
+        end)
+        if ok and type(infos) == "table" and infos[1] then
+            local row = infos[1]
+            local disp = row.DisplayName
+            local uname = row.Username
+            if type(disp) == "string" and type(uname) == "string" then
+                return disp, uname, nil
+            end
+        end
+        local ok2, nameFromId = pcall(function()
+            return Players:GetNameFromUserIdAsync(userId)
+        end)
+        if ok2 and type(nameFromId) == "string" and nameFromId ~= "" then
+            return nameFromId, nameFromId, "partial"
+        end
+        return nil, nil, "profile"
+    end
+
+    local OUTFIT_TEXT_MAX_CHARS = 10000
+
+    local function readHumanoidDescriptionProp(hd: HumanoidDescription, propName: string): any
+        local ok, v = pcall(function()
+            return (hd :: any)[propName]
+        end)
+        if ok then
+            return v
+        end
+        return nil
+    end
+
+    local function formatHumanoidDescriptionOutfit(hd: HumanoidDescription): string
+        local lines: { string } = {}
+
+        local function pushLine(s: string)
+            table.insert(lines, s)
+        end
+
+        local function pushAssetIdLine(label: string, id: any)
+            if type(id) == "number" and id > 0 then
+                pushLine(label .. ": " .. tostring(math.floor(id)))
+            end
+        end
+
+        local function pushNonEmptyStringLine(label: string, s: any)
+            if type(s) ~= "string" then
+                return
+            end
+            local t = trimLookupText(s)
+            if t == "" then
+                return
+            end
+            pushLine(label .. ": " .. t)
+        end
+
+        pushLine("— Body meshes (classic / R15 asset ids) —")
+        for _, limb in ipairs({ "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg" }) do
+            pushAssetIdLine(limb, readHumanoidDescriptionProp(hd, limb))
+        end
+        pushAssetIdLine("Face (decal id)", readHumanoidDescriptionProp(hd, "Face"))
+
+        pushLine("")
+        pushLine("— Body colors (BrickColor) —")
+        for _, colorName in ipairs({
+            "HeadColor",
+            "TorsoColor",
+            "LeftArmColor",
+            "RightArmColor",
+            "LeftLegColor",
+            "RightLegColor",
+        }) do
+            local bc = readHumanoidDescriptionProp(hd, colorName)
+            if bc ~= nil then
+                local okS, txt = pcall(function()
+                    return tostring(bc)
+                end)
+                if okS and txt and txt ~= "" then
+                    pushLine(colorName .. ": " .. txt)
+                end
+            end
+        end
+
+        pushLine("")
+        pushLine("— Scales —")
+        local scaleProps = {
+            "BodyTypeScale",
+            "ProportionScale",
+            "HeightScale",
+            "WidthScale",
+            "DepthScale",
+            "HeadScale",
+        }
+        for _, pname in ipairs(scaleProps) do
+            local v = readHumanoidDescriptionProp(hd, pname)
+            if type(v) == "number" then
+                pushLine(pname .. ": " .. string.format("%.4g", v))
+            end
+        end
+
+        local staticFace = readHumanoidDescriptionProp(hd, "StaticFacialAnimation")
+        if type(staticFace) == "boolean" then
+            pushLine("StaticFacialAnimation: " .. tostring(staticFace))
+        end
+
+        pushLine("")
+        pushLine("— Clothing templates —")
+        pushAssetIdLine("Shirt", readHumanoidDescriptionProp(hd, "Shirt"))
+        pushAssetIdLine("Pants", readHumanoidDescriptionProp(hd, "Pants"))
+        pushAssetIdLine("GraphicTShirt", readHumanoidDescriptionProp(hd, "GraphicTShirt"))
+
+        pushLine("")
+        pushLine("— Rigid accessory slots (comma-separated asset ids) —")
+        for _, slot in ipairs({
+            "HatAccessory",
+            "HairAccessory",
+            "FaceAccessory",
+            "NeckAccessory",
+            "ShouldersAccessory",
+            "FrontAccessory",
+            "BackAccessory",
+            "WaistAccessory",
+        }) do
+            pushNonEmptyStringLine(slot, readHumanoidDescriptionProp(hd, slot))
+        end
+
+        local okAcc, accList = pcall(function()
+            return hd:GetAccessories(true)
+        end)
+        if okAcc and type(accList) == "table" and #accList > 0 then
+            pushLine("")
+            pushLine("— GetAccessories(true): layered + rigid —")
+            local maxAcc = math.min(#accList, 48)
+            for i = 1, maxAcc do
+                local ad = accList[i]
+                if type(ad) == "userdata" or type(ad) == "table" then
+                    local aid = (ad :: any).AssetId
+                    local aty = (ad :: any).AccessoryType
+                    local lay = (ad :: any).IsLayered
+                    pushLine(
+                        string.format(
+                            "  #%d id=%s type=%s layered=%s",
+                            i,
+                            tostring(aid),
+                            tostring(aty),
+                            tostring(lay)
+                        )
+                    )
+                end
+            end
+            if #accList > maxAcc then
+                pushLine("  ... +" .. tostring(#accList - maxAcc) .. " more")
+            end
+        end
+
+        pushLine("")
+        pushLine("— Default movement / mood animations (asset ids) —")
+        for _, aname in ipairs({
+            "IdleAnimation",
+            "RunAnimation",
+            "WalkAnimation",
+            "JumpAnimation",
+            "SwimAnimation",
+            "ClimbAnimation",
+            "FallAnimation",
+            "MoodAnimation",
+        }) do
+            pushAssetIdLine(aname, readHumanoidDescriptionProp(hd, aname))
+        end
+
+        local okEm, emotes = pcall(function()
+            return hd:GetEmotes()
+        end)
+        if okEm and type(emotes) == "table" and next(emotes) ~= nil then
+            pushLine("")
+            pushLine("— Saved emotes (name = animation asset id) —")
+            local n = 0
+            for name, assetId in pairs(emotes) do
+                n = n + 1
+                if n > 36 then
+                    pushLine("  ... (more emotes not shown)")
+                    break
+                end
+                pushLine("  " .. tostring(name) .. " = " .. tostring(assetId))
+            end
+        end
+
+        local okEq, equipped = pcall(function()
+            return hd:GetEquippedEmotes()
+        end)
+        if okEq and type(equipped) == "table" and #equipped > 0 then
+            pushLine("")
+            pushLine("— Equipped emote slots —")
+            for i, slot in ipairs(equipped) do
+                if i > 8 then
+                    pushLine("  ...")
+                    break
+                end
+                if type(slot) == "table" then
+                    pushLine(
+                        "  slot "
+                            .. tostring((slot :: any).Slot)
+                            .. " → "
+                            .. tostring((slot :: any).Name)
+                    )
+                else
+                    pushLine("  " .. tostring(slot))
+                end
+            end
+        end
+
+        local body = table.concat(lines, "\n")
+        if #body > OUTFIT_TEXT_MAX_CHARS then
+            body = string.sub(body, 1, OUTFIT_TEXT_MAX_CHARS)
+                .. "\n\n... (truncated; HumanoidDescription dump capped at "
+                .. tostring(OUTFIT_TEXT_MAX_CHARS)
+                .. " chars)"
+        end
+        return body
+    end
+
+    local function destroyActiveAvatarOverlay()
+        if activeAvatarOverlayRenderConn then
+            activeAvatarOverlayRenderConn:Disconnect()
+            activeAvatarOverlayRenderConn = nil
+        end
+        if activeAvatarOverlayModel then
+            pcall(function()
+                activeAvatarOverlayModel:Destroy()
+            end)
+            activeAvatarOverlayModel = nil
+        end
+    end
+
+    local function setDescendantNonInteractive(inst: Instance)
+        if inst:IsA("BasePart") then
+            inst.CanCollide = false
+            inst.CanTouch = false
+            inst.CanQuery = false
+            inst.Massless = true
+            inst.CastShadow = false
+        elseif inst:IsA("TouchTransmitter") then
+            inst:Destroy()
+        end
+    end
+
+    local function collectMotorsByName(root: Instance): { [string]: Motor6D }
+        local out: { [string]: Motor6D } = {}
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("Motor6D") then
+                out[d.Name] = d
+            end
+        end
+        return out
+    end
+
+    local function buildAvatarOverlayFromUserId(userId: number): (Model?, string?)
+        local localCharacter = Players.LocalPlayer.Character
+        local localHumanoid = localCharacter and localCharacter:FindFirstChildOfClass("Humanoid")
+        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+        if not (localCharacter and localHumanoid and localRoot and localRoot:IsA("BasePart")) then
+            return nil, "Local character is not ready."
+        end
+
+        local okModel, overlayModel = pcall(function()
+            return Players:CreateHumanoidModelFromUserId(userId)
+        end)
+        if not okModel or not overlayModel then
+            return nil, "Could not create overlay model from user id."
+        end
+
+        local overlayHumanoid = overlayModel:FindFirstChildOfClass("Humanoid")
+        local overlayRoot = overlayModel:FindFirstChild("HumanoidRootPart")
+        if not (overlayHumanoid and overlayRoot and overlayRoot:IsA("BasePart")) then
+            pcall(function()
+                overlayModel:Destroy()
+            end)
+            return nil, "Overlay model is missing humanoid root."
+        end
+
+        overlayModel.Name = "AvatarCopyOverlay_" .. tostring(userId)
+        overlayModel.Parent = Workspace
+        overlayModel:PivotTo(localRoot.CFrame)
+
+        for _, d in ipairs(overlayModel:GetDescendants()) do
+            if d:IsA("Script") or d:IsA("LocalScript") then
+                pcall(function()
+                    d:Destroy()
+                end)
+            else
+                setDescendantNonInteractive(d)
+            end
+        end
+
+        overlayHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        overlayHumanoid.HealthDisplayDistance = 0
+        overlayHumanoid.NameDisplayDistance = 0
+        overlayHumanoid.BreakJointsOnDeath = false
+
+        local rootWeld = Instance.new("WeldConstraint")
+        rootWeld.Name = "AvatarCopyFollowWeld"
+        rootWeld.Part0 = localRoot
+        rootWeld.Part1 = overlayRoot
+        rootWeld.Parent = overlayRoot
+
+        local srcMotors = collectMotorsByName(localCharacter)
+        local dstMotors = collectMotorsByName(overlayModel)
+
+        activeAvatarOverlayRenderConn = RunService.RenderStepped:Connect(function()
+            if not (localRoot.Parent and overlayRoot.Parent and overlayModel.Parent) then
+                destroyActiveAvatarOverlay()
+                return
+            end
+            for motorName, srcMotor in pairs(srcMotors) do
+                local dstMotor = dstMotors[motorName]
+                if dstMotor and srcMotor.Parent and dstMotor.Parent then
+                    dstMotor.Transform = srcMotor.Transform
+                end
+            end
+        end)
+
+        return overlayModel, nil
+    end
+
+    AvatarTab:CreateButton({
+        Name = "Search",
+        Callback = function()
+            local raw = AvatarLookupInput and AvatarLookupInput.GetValue and AvatarLookupInput:GetValue()
+                or avatarLookupInputValue
+            local userId, err = resolveUserIdFromLookupInput(raw)
+            if err == "empty" then
+                lastAvatarLookupUserId = nil
+                mountNotify({ Title = "Avatar lookup", Content = "Enter a username or user id.", Icon = "x" })
+                AvatarOutfitParagraph:Set({
+                    Title = "Outfit, body & animations",
+                    Content = "Run Search after entering a username or user id.",
+                })
+                return
+            end
+            if not userId then
+                lastAvatarLookupUserId = nil
+                mountNotify({
+                    Title = "Avatar lookup",
+                    Content = "Could not resolve that username or id.",
+                    Icon = "x",
+                })
+                AvatarOutfitParagraph:Set({
+                    Title = "Outfit, body & animations",
+                    Content = "No HumanoidDescription loaded (lookup failed).",
+                })
+                return
+            end
+            lastAvatarLookupUserId = userId
+            local displayName, username, fetchErr = fetchUserFields(userId)
+            if not username then
+                mountNotify({
+                    Title = "Avatar lookup",
+                    Content = "User id "
+                        .. tostring(userId)
+                        .. " exists but profile details could not be loaded.",
+                    Icon = "x",
+                })
+                AvatarPreviewImage:Set({
+                    Image = "",
+                    Description = "Profile unavailable for this id.",
+                })
+                AvatarDetailsParagraph:Set({
+                    Title = "Player details",
+                    Content = "User ID: " .. tostring(userId),
+                })
+                AvatarOutfitParagraph:Set({
+                    Title = "Outfit, body & animations",
+                    Content = "Outfit data not loaded.",
+                })
+                return
+            end
+            local thumb = string.format(
+                "rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150",
+                userId
+            )
+            AvatarPreviewImage:Set({
+                Image = thumb,
+                Title = "Avatar",
+                Description = "",
+                ImageSize = 150,
+            })
+            local detailLines = {
+                "Display name: " .. (displayName or username),
+                "Username: " .. username,
+                "User ID: " .. tostring(userId),
+            }
+            if fetchErr == "partial" then
+                table.insert(detailLines, "(Display name from username fallback)")
+            end
+            AvatarDetailsParagraph:Set({
+                Title = "Player details",
+                Content = table.concat(detailLines, "\n"),
+            })
+
+            local outfitContent = "Outfit / body data could not be loaded."
+            local okHd, hd = pcall(function()
+                return Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end)
+            if okHd and hd then
+                outfitContent = formatHumanoidDescriptionOutfit(hd)
+            end
+            AvatarOutfitParagraph:Set({
+                Title = "Outfit, body & animations",
+                Content = outfitContent,
+            })
+        end,
+    })
+
+    AvatarPreviewImage = AvatarTab:CreateImage({
+        Name = "AvatarPreview",
+        Title = "Avatar",
+        Image = "",
+        ImageSize = 150,
+        Description = "Results appear after Search.",
+    })
+
+    AvatarDetailsParagraph = AvatarTab:CreateParagraph({
+        Title = "Player details",
+        Content = "Enter a Roblox username or numeric user id, then tap Search.\n\nNote: lookup uses account username, not always the same as display name search on the website.",
+    })
+
+    AvatarOutfitParagraph = AvatarTab:CreateParagraph({
+        Title = "Outfit, body & animations",
+        Content = "After Search, this shows HumanoidDescription: body part and face ids, body colors, scales, shirt / pants / t-shirt, rigid accessory strings, GetAccessories(true), default animations, emotes, and equipped emote slots.",
+    })
+
+    AvatarTab:CreateButton({
+        Name = "Copy Avatar",
+        Callback = function()
+            if not lastAvatarLookupUserId then
+                mountNotify({
+                    Title = "Copy Avatar",
+                    Content = "Search a username or user id first.",
+                    Icon = "x",
+                })
+                return
+            end
+
+            destroyActiveAvatarOverlay()
+            local overlay, copyErr = buildAvatarOverlayFromUserId(lastAvatarLookupUserId)
+            if not overlay then
+                mountNotify({
+                    Title = "Copy Avatar",
+                    Content = copyErr or "Failed to copy avatar.",
+                    Icon = "x",
+                })
+                return
+            end
+            activeAvatarOverlayModel = overlay
+            mountNotify({
+                Title = "Copy Avatar",
+                Content = "Avatar overlay copied and mirroring live pose.",
+                Icon = "check",
+            })
+        end,
+    })
 end
