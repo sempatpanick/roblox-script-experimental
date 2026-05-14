@@ -2461,6 +2461,10 @@ do
     if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
         syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
     end
+    ObjectsTab:CreateParagraph({
+        Title = "Why some rows have no nested lines",
+        Content = "Indented children only continue under ClassNames enabled in the dropdown (IsA match). Defaults include Frame and ScreenGui but not ImageLabel or ImageButton, so those nodes appear as one line until you enable those types—on purpose, so large PlayerGui dumps stay smaller.",
+    })
     ObjectsTab:CreateSection("ReplicatedStorage")
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph

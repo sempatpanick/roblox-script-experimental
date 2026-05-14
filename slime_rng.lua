@@ -1810,6 +1810,20 @@ do
                 return sv.Value
             end
         end
+        -- Some UIs only store the id on arbitrary StringValues / custom attributes (not named "Uid").
+        local okAttrs, attrs = pcall(function()
+            return (child :: any).GetAttributes and (child :: any):GetAttributes()
+        end)
+        if okAttrs and type(attrs) == "table" then
+            for _, v in pairs(attrs) do
+                if type(v) == "string" and looksLikeLootUid(v) then
+                    return v
+                end
+            end
+        end
+        if child:IsA("StringValue") and looksLikeLootUid(child.Value) then
+            return child.Value
+        end
         return nil
     end
 
@@ -2149,6 +2163,7 @@ do
     local AUTO_FEED_NONE = "(None)"
     local autoFeedFoodIdValue = ""
     local autoFeedAmountValue = "1"
+    local autoFeedManualSlimeUidValue = ""
     local autoFeedOptionToUid: { [string]: string } = {}
     local selectedAutoFeedUid: string? = nil
     local selectedAutoFeedOption: string? = nil
@@ -2242,6 +2257,7 @@ do
             UITableLayout = true,
         }
         local opts: { string } = { AUTO_FEED_NONE }
+        local row = 0
         for _, ch in ipairs(list:GetChildren()) do
             local slot: Instance? = nil
             if ch:IsA("Frame") and ch.Name == "FeedTargetSlot" then
@@ -2250,17 +2266,23 @@ do
                 slot = ch
             end
             if slot then
+                row = row + 1
                 local uid = mainResolveSlimeUidFromSlotRoot(slot)
+                local label = mainFeedSlimeSlotDisplayName(slot)
+                local option: string
                 if uid then
-                    local label = mainFeedSlimeSlotDisplayName(slot)
-                    local option = ('%s  [%s]'):format(label, uid)
-                    if #option > 190 then
-                        option = string.sub(option, 1, 187) .. "..."
-                    end
-                    if not autoFeedOptionToUid[option] then
+                    option = ('%s  [%s]'):format(label, uid)
+                else
+                    option = ('#%d  %s  (no uid in UI — use manual Slime UID)'):format(row, label)
+                end
+                if #option > 190 then
+                    option = string.sub(option, 1, 187) .. "..."
+                end
+                if not autoFeedOptionToUid[option] then
+                    if uid then
                         autoFeedOptionToUid[option] = uid
-                        table.insert(opts, option)
                     end
+                    table.insert(opts, option)
                 end
             end
         end
@@ -2268,6 +2290,15 @@ do
             return { AUTO_FEED_NONE }
         end
         return opts
+    end
+
+    local function mainAutoFeedResolveActiveUid(): string?
+        local manual = string.gsub(autoFeedManualSlimeUidValue or "", "^%s+", "")
+        manual = string.gsub(manual, "%s+$", "")
+        if manual ~= "" and looksLikeLootUid(manual) then
+            return manual
+        end
+        return selectedAutoFeedUid
     end
 
     local function mainAutoFeedParseAmount(): number
@@ -2303,7 +2334,7 @@ do
 
     MainTab:CreateParagraph({
         Title = "How Auto Feed works",
-        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on.",
+        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. If rows show “no uid in UI”, paste the slime’s UUID into Slime UID (from another screen that lists it, a remote logger, or a StringValue under the slot if the game adds one later).",
     })
 
     MainTab:CreateInput({
@@ -2323,6 +2354,16 @@ do
         CurrentValue = autoFeedAmountValue,
         Callback = function(value)
             autoFeedAmountValue = type(value) == "string" and value or "1"
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Slime UID (optional override)",
+        PlaceholderText = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        Flag = "main_auto_feed_slime_uid_manual",
+        CurrentValue = autoFeedManualSlimeUidValue,
+        Callback = function(value)
+            autoFeedManualSlimeUidValue = type(value) == "string" and value or ""
         end,
     })
 
@@ -2369,19 +2410,22 @@ do
                     foodId = string.gsub(foodId, "%s+$", "")
                     if foodId == "" then
                         task.wait(AUTO_FEED_INTERVAL_SEC)
-                    elseif not selectedAutoFeedUid then
-                        task.wait(AUTO_FEED_INTERVAL_SEC)
                     else
-                        local inv = findNetworkerServiceRemotesFolder("InventoryService")
-                        local rf = inv and inv:FindFirstChild("RemoteFunction")
-                        if not rf or not rf:IsA("RemoteFunction") then
+                        local useUid = mainAutoFeedResolveActiveUid()
+                        if not useUid then
                             task.wait(AUTO_FEED_INTERVAL_SEC)
                         else
-                            local amt = mainAutoFeedParseAmount()
-                            pcall(function()
-                                (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, selectedAutoFeedUid, amt)
-                            end)
-                            task.wait(AUTO_FEED_INTERVAL_SEC)
+                            local inv = findNetworkerServiceRemotesFolder("InventoryService")
+                            local rf = inv and inv:FindFirstChild("RemoteFunction")
+                            if not rf or not rf:IsA("RemoteFunction") then
+                                task.wait(AUTO_FEED_INTERVAL_SEC)
+                            else
+                                local amt = mainAutoFeedParseAmount()
+                                pcall(function()
+                                    (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, amt)
+                                end)
+                                task.wait(AUTO_FEED_INTERVAL_SEC)
+                            end
                         end
                     end
                 end
@@ -2703,6 +2747,7 @@ do
         "TextLabel",
         "Tool",
         "TrussPart",
+        "UIScale",
         "UnionOperation",
         "VehicleSeat",
         "WedgePart",
@@ -2999,6 +3044,10 @@ do
     if ObjectsNestClassesDropdown and ObjectsNestClassesDropdown.Value ~= nil then
         syncObjectsNestExpandClassSetFromDropdownValue(ObjectsNestClassesDropdown.Value)
     end
+    ObjectsTab:CreateParagraph({
+        Title = "Why some rows have no nested lines",
+        Content = "Indented children only continue under ClassNames enabled in the dropdown (IsA match). Defaults include Frame and ScreenGui but not ImageLabel or ImageButton, so those nodes appear as one line until you enable those types—on purpose, so large PlayerGui dumps stay smaller.",
+    })
     ObjectsTab:CreateSection("ReplicatedStorage")
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
