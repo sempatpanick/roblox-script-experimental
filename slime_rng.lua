@@ -1814,19 +1814,22 @@ do
     end
 
     local function lootGetBillboardTextLabel(lootTop: Instance): TextLabel?
-        local root = lootTop:FindFirstChild("Root")
-        if not root then
-            return nil
+        for _, inst in ipairs(lootTop:GetDescendants()) do
+            if inst.Name == "Root" then
+                local bb = inst:FindFirstChild("LootBillboard")
+                if bb then
+                    local tl = bb:FindFirstChild("TextLabel")
+                    if tl and tl:IsA("TextLabel") then
+                        return tl
+                    end
+                    local any = bb:FindFirstChildWhichIsA("TextLabel", false)
+                    if any then
+                        return any
+                    end
+                end
+            end
         end
-        local bb = root:FindFirstChild("LootBillboard")
-        if not bb then
-            return nil
-        end
-        local tl = bb:FindFirstChild("TextLabel")
-        if tl and tl:IsA("TextLabel") then
-            return tl
-        end
-        return bb:FindFirstChildWhichIsA("TextLabel", false)
+        return nil
     end
 
     local function lootDisplayName(lootTop: Instance): string
