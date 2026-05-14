@@ -2451,6 +2451,112 @@ do
         return table.concat(out, "\n")
     end
 
+    -- Slime RNG (Vide): `Source.Features.App.Components.SlimeHoverInfo` mounts under PlayerGui → ScreenGui "Root".
+    -- Overlay uses named rows: SlimeName, Odds, Rarity, Damage, Health, Level (see place rbxlx).
+    local SLIME_HOVER_ROW_NAMES: { [string]: boolean } = {
+        SlimeName = true,
+        Odds = true,
+        Rarity = true,
+        Damage = true,
+        Health = true,
+        Level = true,
+    }
+
+    local function mainFindPlayerGuiRootScreen(): Instance?
+        local lp = Players.LocalPlayer
+        local pg = lp and lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        return pg:FindFirstChild("Root", true)
+    end
+
+    local function mainIsSlimeHoverInfoVidePanel(node: Instance): boolean
+        if not node:IsA("GuiObject") then
+            return false
+        end
+        if node:FindFirstChild("Odds", true) == nil then
+            return false
+        end
+        if node:FindFirstChild("Rarity", true) == nil then
+            return false
+        end
+        if node:FindFirstChild("Damage", true) == nil then
+            return false
+        end
+        if node:FindFirstChild("SlimeName", true) == nil then
+            return false
+        end
+        return true
+    end
+
+    local function mainFindSlimeHoverInfoRootGui(): GuiObject?
+        local rootScreen = mainFindPlayerGuiRootScreen()
+        if not rootScreen then
+            return nil
+        end
+        local list = mainFindFeedableSlimesList()
+        local best: GuiObject? = nil
+        for _, desc in ipairs(rootScreen:GetDescendants()) do
+            if desc.Name == "SlimeName" and (desc:IsA("TextLabel") or desc:IsA("TextButton")) then
+                if list and desc:IsDescendantOf(list) then
+                    -- slot row labels inside FeedableSlimesList, not the global hover card
+                else
+                    local p: Instance? = desc
+                    while p and p ~= rootScreen do
+                        if mainIsSlimeHoverInfoVidePanel(p) then
+                            best = p :: GuiObject
+                        end
+                        p = p.Parent
+                    end
+                end
+            end
+        end
+        return best
+    end
+
+    local function mainCollectTextRowsUnderInstance(subtree: Instance): { { y: number, x: number, t: string } }
+        local rows: { { y: number, x: number, t: string } } = {}
+        local seen: { [string]: boolean } = {}
+        for _, d in ipairs(subtree:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                local g = d :: GuiObject
+                if mainGuiAncestorChainVisibleGui(g) then
+                    local raw = mainGuiInstanceTextContent(d)
+                    local t = mainTrimGuiText(raw)
+                    if t ~= "" then
+                        if SLIME_HOVER_ROW_NAMES[d.Name] then
+                            t = d.Name .. ": " .. t
+                        end
+                        if not seen[t] then
+                            seen[t] = true
+                            table.insert(rows, {
+                                y = g.AbsolutePosition.Y,
+                                x = g.AbsolutePosition.X,
+                                t = t,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.y ~= b.y then
+                return a.y < b.y
+            end
+            return a.x < b.x
+        end)
+        return rows
+    end
+
+    local function mainCollectSlimeHoverInfoRowsSnapshot(): { { y: number, x: number, t: string } }
+        local hover = mainFindSlimeHoverInfoRootGui()
+        if not hover then
+            return {}
+        end
+        return mainCollectTextRowsUnderInstance(hover)
+    end
+
     local function mainScanFeedableSlimeOptions(): { string }
         table.clear(autoFeedOptionToUid)
         local list = mainFindFeedableSlimesList()
@@ -2541,7 +2647,7 @@ do
 
     MainTab:CreateParagraph({
         Title = "How Auto Feed works",
-        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. Use “Copy hover slime details” while pointing at a row to grab the hover popover text (and UUID if shown). If rows show “no uid in UI”, paste the slime’s UUID into Slime UID or use that button when the popover includes it.",
+        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. “Copy hover slime details” reads the Vide SlimeHoverInfo card under PlayerGui → Root (SlimeName, Odds, Rarity, Damage, Health, Level) plus any ChooseSlimeView text, copies to clipboard, and fills Slime UID if a UUID appears in the text. If rows show “no uid in UI”, paste a UUID into Slime UID or capture from text that includes it.",
     })
 
     MainTab:CreateInput({
@@ -2602,35 +2708,26 @@ do
         Callback = function()
             task.spawn(function()
                 local list = mainFindFeedableSlimesList()
-                if not list then
-                    mountNotify({
-                        Title = "Auto Feed",
-                        Content = "FeedableSlimesList not found — open Backpack → Items and choose food first.",
-                    })
-                    return
+                local root: Instance? = if list then (list.Parent and list.Parent.Parent or list.Parent) else nil
+                local rPre: { { y: number, x: number, t: string } } = {}
+                local rPost: { { y: number, x: number, t: string } } = {}
+                local rHit: { { y: number, x: number, t: string } } = {}
+                if list and root then
+                    rPre = mainCollectTextRowsOutsideList(root, list)
                 end
-                local slot = lastMainAutoFeedHoverSlot
-                if slot and not slot:IsDescendantOf(list) then
-                    slot = nil
-                end
-                if not slot then
-                    local hitSlot = select(1, mainHoveredFeedTargetSlotAndList())
-                    slot = hitSlot
-                end
-                local root: Instance? = list.Parent and list.Parent.Parent or list.Parent
-                if not root then
-                    mountNotify({ Title = "Auto Feed", Content = "Could not resolve ChooseSlimeView (parent of SlimeSelectionPanel)." })
-                    return
-                end
-                local rPre = mainCollectTextRowsOutsideList(root, list)
                 task.wait(0.07)
-                local rPost = mainCollectTextRowsOutsideList(root, list)
-                local rHit = mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list, root)
-                local blob = mainMergeManyRowTables({ rPre, rPost, rHit })
+                if list and root then
+                    rPost = mainCollectTextRowsOutsideList(root, list)
+                    rHit = mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list, root)
+                end
+                local rHoverA = mainCollectSlimeHoverInfoRowsSnapshot()
+                task.wait(0.05)
+                local rHoverB = mainCollectSlimeHoverInfoRowsSnapshot()
+                local blob = mainMergeManyRowTables({ rPre, rPost, rHit, rHoverA, rHoverB })
                 if blob == "" then
                     mountNotify({
                         Title = "Auto Feed",
-                        Content = "No visible popover text found — hover a FeedTargetSlot row, then click again (or expand Objects tree under ChooseSlimeView).",
+                        Content = "No text captured — hover a slime so the SlimeHoverInfo card (or ChooseSlimeView popover) is visible, then click again.",
                     })
                     return
                 end
@@ -2645,10 +2742,17 @@ do
                 local tail = if uuid then " UUID set in Slime UID field."
                     elseif paste then " Copied to clipboard."
                     else " (clipboard not available here)."
-                local tip = if slot then "" else " (tip: hover a slot row before clicking for best capture)"
+                local slot = lastMainAutoFeedHoverSlot
+                if list and slot and not slot:IsDescendantOf(list) then
+                    slot = nil
+                end
+                if not slot then
+                    slot = select(1, mainHoveredFeedTargetSlotAndList())
+                end
+                local tip = if slot then "" else " (tip: hover a feed slot for inventory context)"
                 mountNotify({
                     Title = "Auto Feed",
-                    Content = "Captured hover detail (" .. tostring(#blob) .. " chars)." .. tail .. tip,
+                    Content = "Captured detail (" .. tostring(#blob) .. " chars)." .. tail .. tip,
                 })
             end)
         end,
