@@ -2886,6 +2886,97 @@ do
         return values
     end
 
+    local function buildInstancePathUnderAncestor(inst: Instance, ancestor: Instance): string
+        if not ancestor or not inst then
+            return inst and inst.Name or ""
+        end
+        if not inst:IsDescendantOf(ancestor) then
+            return inst.Name
+        end
+        local parts = {}
+        local cur: Instance? = inst
+        while cur and cur ~= ancestor do
+            table.insert(parts, 1, cur.Name)
+            cur = cur.Parent
+        end
+        return table.concat(parts, ".")
+    end
+
+    local function runObjectsTabFindInstanceByName(
+        root: Instance?,
+        primaryParagraph: any,
+        overflowParagraphRefs: { any },
+        emptyPlaceholder: string,
+        queryRaw: string,
+        underDescription: string
+    )
+        if not root then
+            mountNotify({ Title = underDescription, Content = "Root not available.", Icon = "x" })
+            return
+        end
+        local raw = tostring(queryRaw or "")
+        local q = string.gsub(string.gsub(raw, "^%s+", ""), "%s+$", "")
+        if q == "" then
+            mountNotify({
+                Title = "Find (" .. underDescription .. ")",
+                Content = "Enter text to match Instance.Name.",
+                Icon = "x",
+            })
+            return
+        end
+        local ql = string.lower(q)
+        local matches: { Instance } = {}
+        for _, d in ipairs(root:GetDescendants()) do
+            if string.find(string.lower(d.Name), ql, 1, true) then
+                table.insert(matches, d)
+            end
+        end
+        table.sort(matches, function(a, b)
+            return string.lower(buildInstancePathUnderAncestor(a, root))
+                < string.lower(buildInstancePathUnderAncestor(b, root))
+        end)
+        if #matches == 0 then
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                primaryParagraph,
+                overflowParagraphRefs,
+                "No matches for \"" .. q .. "\" under " .. underDescription .. ".",
+                NESTED_CHILDREN_TITLE,
+                emptyPlaceholder
+            )
+            mountNotify({
+                Title = "Find (" .. underDescription .. ")",
+                Content = "No matching instances.",
+                Icon = "x",
+            })
+            return
+        end
+        local pathLines: { string } = {}
+        for _, m in ipairs(matches) do
+            table.insert(pathLines, buildInstancePathUnderAncestor(m, root))
+        end
+        local pathsBlock = (#matches == 1) and ("Found:\n" .. pathLines[1])
+            or ("Matches (" .. tostring(#matches) .. "):\n" .. table.concat(pathLines, "\n"))
+        local target = matches[1]
+        local tree = buildNestedObjectChildrenListText(target)
+        local note = (#matches > 1) and "\n\n(Showing nested children for the first match; narrow the name to disambiguate.)\n\n" or "\n\n"
+        local combined = pathsBlock .. note .. tree
+        setNestedChildrenParagraphsWithOverflow(
+            ObjectsTab,
+            primaryParagraph,
+            overflowParagraphRefs,
+            combined,
+            NESTED_CHILDREN_TITLE,
+            emptyPlaceholder
+        )
+        mountNotify({
+            Title = "Find (" .. underDescription .. ")",
+            Content = (#matches == 1) and "1 match."
+                or (tostring(#matches) .. " matches; nested tree is for the first."),
+            Icon = "check",
+        })
+    end
+
     ObjectsTab:CreateSection("Show Children")
     local ObjectsNestClassesDropdown
     do
@@ -2910,6 +3001,7 @@ do
     local ReplicatedStorageDropdown
     local ReplicatedStorageChildrenParagraph
     local rsChildrenOverflowParagraphs = {}
+    local rsFindByNameQuery = ""
 
     local rsTitleList = {}
     local rsTitleToInstance = {}
@@ -2976,10 +3068,36 @@ do
         end,
     })
 
+    ObjectsTab:CreateInput({
+        Name = "Find instance by name (under ReplicatedStorage)",
+        PlaceholderText = "Substring match on Instance.Name",
+        Ext = true,
+        CurrentValue = rsFindByNameQuery,
+        Callback = function(value)
+            rsFindByNameQuery = value
+        end,
+    })
+
+    ObjectsTab:CreateButton({
+        Name = "Find",
+        Ext = true,
+        Callback = function()
+            runObjectsTabFindInstanceByName(
+                ReplicatedStorage,
+                ReplicatedStorageChildrenParagraph,
+                rsChildrenOverflowParagraphs,
+                "Select an object above to list its children",
+                rsFindByNameQuery,
+                "ReplicatedStorage"
+            )
+        end,
+    })
+
     ObjectsTab:CreateSection("Players")
     local PlayersServiceDropdown
     local PlayersServiceChildrenParagraph
     local plrsChildrenOverflowParagraphs = {}
+    local plrsFindByNameQuery = ""
 
     local plrsTitleList = {}
     local plrsTitleToInstance = {}
@@ -3046,10 +3164,36 @@ do
         end,
     })
 
+    ObjectsTab:CreateInput({
+        Name = "Find instance by name (under Players)",
+        PlaceholderText = "Substring match on Instance.Name",
+        Ext = true,
+        CurrentValue = plrsFindByNameQuery,
+        Callback = function(value)
+            plrsFindByNameQuery = value
+        end,
+    })
+
+    ObjectsTab:CreateButton({
+        Name = "Find",
+        Ext = true,
+        Callback = function()
+            runObjectsTabFindInstanceByName(
+                Players,
+                PlayersServiceChildrenParagraph,
+                plrsChildrenOverflowParagraphs,
+                "Select a player above to list their children",
+                plrsFindByNameQuery,
+                "Players"
+            )
+        end,
+    })
+
     ObjectsTab:CreateSection("Local Player")
     local LocalPlayerDropdown
     local LocalPlayerChildrenParagraph
     local lpChildrenOverflowParagraphs = {}
+    local localPlayerFindByNameQuery = ""
 
     local lpTitleList = {}
     local lpTitleToInstance = {}
@@ -3117,10 +3261,36 @@ do
         end,
     })
 
+    ObjectsTab:CreateInput({
+        Name = "Find instance by name (under LocalPlayer)",
+        PlaceholderText = "Substring match on Instance.Name",
+        Ext = true,
+        CurrentValue = localPlayerFindByNameQuery,
+        Callback = function(value)
+            localPlayerFindByNameQuery = value
+        end,
+    })
+
+    ObjectsTab:CreateButton({
+        Name = "Find",
+        Ext = true,
+        Callback = function()
+            runObjectsTabFindInstanceByName(
+                Players.LocalPlayer,
+                LocalPlayerChildrenParagraph,
+                lpChildrenOverflowParagraphs,
+                "Select an object above to list its children",
+                localPlayerFindByNameQuery,
+                "LocalPlayer"
+            )
+        end,
+    })
+
     ObjectsTab:CreateSection("Workspace")
     local WorkspaceDropdown
     local WorkspaceChildrenParagraph
     local wsChildrenOverflowParagraphs = {}
+    local wsFindByNameQuery = ""
 
     local wsTitleList = {}
     local wsTitleToInstance = {}
@@ -3184,6 +3354,31 @@ do
         Ext = true,
         Callback = function()
             refreshWorkspaceList()
+        end,
+    })
+
+    ObjectsTab:CreateInput({
+        Name = "Find instance by name (under Workspace)",
+        PlaceholderText = "Substring match on Instance.Name",
+        Ext = true,
+        CurrentValue = wsFindByNameQuery,
+        Callback = function(value)
+            wsFindByNameQuery = value
+        end,
+    })
+
+    ObjectsTab:CreateButton({
+        Name = "Find",
+        Ext = true,
+        Callback = function()
+            runObjectsTabFindInstanceByName(
+                Workspace,
+                WorkspaceChildrenParagraph,
+                wsChildrenOverflowParagraphs,
+                "Select an object above to list its children",
+                wsFindByNameQuery,
+                "Workspace"
+            )
         end,
     })
 
