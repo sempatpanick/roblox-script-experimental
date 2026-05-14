@@ -2074,7 +2074,7 @@ do
             return nil
         end
         for _, inst in ipairs(zones:GetDescendants()) do
-            if inst:IsA("MeshPart") and inst.Name == "Recipe" then
+            if inst:IsA("MeshPart") and string.sub(inst.Name, 1, 6) == "Recipe" then
                 local prompt = inst:FindFirstChildWhichIsA("ProximityPrompt", true)
                 if prompt and prompt:IsA("ProximityPrompt") then
                     if prompt.Enabled and recipeMeshIsShowing(inst) then
