@@ -249,6 +249,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Anti AFK",
+        Flag = "lp_anti_afk",
         CurrentValue = true,
         Callback = function(enabled)
             if enabled then
@@ -261,6 +262,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Infinite Jump",
+        Flag = "lp_infinite_jump",
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -282,6 +284,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "No Clip",
+        Flag = "lp_no_clip",
         Callback = function(enabled)
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
@@ -304,6 +307,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Fly",
+        Flag = "lp_fly",
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -416,6 +420,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Free Camera",
+        Flag = "lp_free_camera",
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -428,6 +433,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Camera Penetrate",
+        Flag = "lp_camera_penetrate",
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
             local lp = Players.LocalPlayer
@@ -473,11 +479,12 @@ do
     end
 
     local currentWalkSpeed = getCurrentCharacterWalkSpeed()
-    local walkSpeedCurrentValue = tostring(currentWalkSpeed or defaultWalkSpeed)
+    local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
 
     local WalkSpeedInput = LocalPlayerTab:CreateInput({
         Name = "Speed",
         PlaceholderText = "e.g. 16 or 100",
+        Flag = "lp_walk_speed",
         CurrentValue = walkSpeedValue,
         Callback = function(value)
             walkSpeedValue = value
@@ -508,6 +515,7 @@ do
     end
     LocalPlayerTab:CreateButton({
         Name = "Get Current Walk Speed",
+        Flag = "lp_walk_speed_get",
         Callback = function()
             syncWalkSpeedInputFromCharacter(true)
         end
@@ -517,6 +525,7 @@ do
     syncWalkSpeedInputFromCharacter(false)
     LocalPlayerTab:CreateButton({
         Name = "Apply",
+        Flag = "lp_walk_speed_apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -535,6 +544,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Reset",
+        Flag = "lp_walk_speed_reset",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -572,6 +582,7 @@ do
     local JumpHeightInput = LocalPlayerTab:CreateInput({
         Name = "Height",
         PlaceholderText = "e.g. 7.2 or 50",
+        Flag = "lp_jump_height",
         CurrentValue = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
@@ -602,6 +613,7 @@ do
     end
     LocalPlayerTab:CreateButton({
         Name = "Get Current Jump Height",
+        Flag = "lp_jump_height_get",
         Callback = function()
             syncJumpHeightInputFromCharacter(true)
         end
@@ -611,6 +623,7 @@ do
     syncJumpHeightInputFromCharacter(false)
     LocalPlayerTab:CreateButton({
         Name = "Apply",
+        Flag = "lp_jump_height_apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -912,6 +925,7 @@ do
     LocalPlayerTab:CreateInput({
         Name = "ESP Max Distance",
         PlaceholderText = "0 = unlimited, e.g. 10000",
+        Flag = "lp_esp_max_distance",
         CurrentValue = tostring(espMaxDistance),
         Callback = function(value)
             local n = tonumber(value)
@@ -968,6 +982,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Names",
+        Flag = "lp_esp_player_names",
         CurrentValue = false,
         Callback = function(enabled)
             espNamesEnabled = enabled
@@ -977,6 +992,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Distance",
+        Flag = "lp_esp_player_distance",
         CurrentValue = false,
         Callback = function(enabled)
             espDistanceEnabled = enabled
@@ -986,6 +1002,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Character",
+        Flag = "lp_esp_player_character",
         CurrentValue = false,
         Callback = function(enabled)
             espCharacterEnabled = enabled
@@ -995,6 +1012,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Lines",
+        Flag = "lp_esp_player_lines",
         CurrentValue = false,
         Callback = function(enabled)
             espLinesEnabled = enabled
@@ -1004,6 +1022,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP All Object",
+        Flag = "lp_esp_all_objects",
         CurrentValue = false,
         Callback = function(enabled)
             espAllObjectsEnabled = enabled
@@ -1335,6 +1354,7 @@ do
 
     PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
         Name = "Player",
+        Flag = "lp_players_info_player",
         Options = infoPlayerDisplayNames,
         CurrentOption = {}, Search = true,
         Callback = function(value)
@@ -1357,12 +1377,14 @@ do
 
     LocalPlayerTab:CreateButton({
         Name = "Refresh list",
+        Flag = "lp_players_info_refresh_list",
         Callback = function()
             refreshPlayersInfoList(true)
         end,
     })
     LocalPlayerTab:CreateButton({
         Name = "Refresh details",
+        Flag = "lp_players_info_refresh_details",
         Callback = function()
             if not selectedInfoPlayer then
                 mountNotify({ Title = "Players Info", Content = "Select a player first" })
@@ -1425,6 +1447,7 @@ do
 
     CarryPlayerDropdown = LocalPlayerTab:CreateDropdown({
         Name = "Player",
+        Flag = "lp_carry_player",
         Options = carryDropdownOptions(),
         CurrentOption = { CARRY_NONE },
         Search = true,
@@ -1440,6 +1463,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Carry nearby selected player",
+        Flag = "lp_carry_nearby",
         CurrentValue = false,
         Callback = function(enabled)
             carryEnabled = enabled == true
@@ -1493,6 +1517,7 @@ do
     LocalPlayerTab:CreateSection("Server")
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
+        Flag = "lp_server_rejoin",
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
             local placeId = game.PlaceId
@@ -1518,6 +1543,7 @@ do
 
     LocalPlayerTab:CreateButton({
         Name = "Copy game ID",
+        Flag = "lp_server_copy_placeid",
         Callback = function()
             local paste = setclipboard or toclipboard
             if not paste then
@@ -1626,6 +1652,7 @@ do
     LocalPlayerTab:CreateSection("Animation")
     LocalPlayerTab:CreateDropdown({
         Name = "Animation list",
+        Flag = "lp_animation_list",
         Options = animationOptions,
         CurrentOption = { selectedAnimationName },
         Search = false,
@@ -1636,6 +1663,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Animate",
+        Flag = "lp_animation_play",
         Callback = function()
             if selectedAnimationName == "Hair Grab (R6)" then
                 playHairGrabAnimationR6()
@@ -1646,6 +1674,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Clear Console",
+        Flag = "lp_console_clear",
         Callback = function()
             local cleared = false
             local clearFn = rawget(_G, "clearconsole") or rawget(_G, "rconsoleclear")
@@ -1976,6 +2005,7 @@ do
 
     MainTab:CreateToggle({
         Name = "Auto Collect Loot",
+        Flag = "main_auto_collect_loot",
         CurrentValue = false,
         Callback = function(enabled)
             autoCollectLootEnabled = enabled == true
@@ -2102,6 +2132,7 @@ do
 
     MainTab:CreateToggle({
         Name = "Auto Collect",
+        Flag = "main_auto_collect_recipe",
         CurrentValue = false,
         Callback = function(enabled)
             autoCollectRecipeEnabled = enabled == true
@@ -2682,6 +2713,7 @@ do
 
     AutoFeedSlimeDropdown = MainTab:CreateDropdown({
         Name = "Slime (from FeedableSlimesList)",
+        Flag = "main_auto_feed_slime_dropdown",
         Options = mainScanFeedableSlimeOptions(),
         CurrentOption = { AUTO_FEED_NONE },
         Search = true,
@@ -2698,6 +2730,7 @@ do
 
     MainTab:CreateButton({
         Name = "Refresh slime list",
+        Flag = "main_auto_feed_refresh_slimes",
         Callback = function()
             refreshAutoFeedSlimeDropdown(true)
         end,
@@ -2705,6 +2738,7 @@ do
 
     MainTab:CreateButton({
         Name = "Copy hover slime details / UID",
+        Flag = "main_auto_feed_copy_hover",
         Callback = function()
             task.spawn(function()
                 local list = mainFindFeedableSlimesList()
@@ -2762,6 +2796,7 @@ do
 
     MainTab:CreateToggle({
         Name = "Auto Feed",
+        Flag = "main_auto_feed_enabled",
         CurrentValue = false,
         Callback = function(enabled)
             autoFeedEnabled = enabled == true
@@ -2811,6 +2846,7 @@ do
 
     MainTab:CreateToggle({
         Name = "Auto Equip Best",
+        Flag = "main_auto_equip_best",
         CurrentValue = false,
         Callback = function(enabled)
             autoEquipBestEnabled = enabled == true
@@ -2893,6 +2929,7 @@ do
 
     TeleportTab:CreateButton({
         Name = "Get Current Location",
+        Flag = "tp_get_current_location",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -2924,6 +2961,7 @@ do
     })
     TeleportTab:CreateButton({
         Name = "Teleport",
+        Flag = "tp_teleport_to_coords",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -2951,6 +2989,7 @@ do
     TeleportTab:CreateInput({
         Name = "Tween Duration",
         PlaceholderText = "e.g. 5",
+        Flag = "tp_tween_duration",
         CurrentValue = tweenDurationValue,
         Callback = function(value)
             tweenDurationValue = value
@@ -2959,6 +2998,7 @@ do
 
     TeleportTab:CreateButton({
         Name = "Tween to Location",
+        Flag = "tp_tween_to_location",
         Callback = function()
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -3021,6 +3061,7 @@ do
 
     PlayerTeleportDropdown = TeleportTab:CreateDropdown({
         Name = "Player",
+        Flag = "tp_player_dropdown",
         Options = playerDisplayNames,
         CurrentOption = {},
         Callback = function(value)
@@ -3037,12 +3078,14 @@ do
 
     TeleportTab:CreateButton({
         Name = "Refresh",
+        Flag = "tp_players_refresh",
         Callback = function()
             refreshPlayerList(true)
         end
     })
     TeleportTab:CreateButton({
         Name = "Teleport",
+        Flag = "tp_teleport_to_player",
         Callback = function()
             if not selectedTeleportPlayer then
                 mountNotify({ Title = "Teleport", Content = "Select a player first" })
