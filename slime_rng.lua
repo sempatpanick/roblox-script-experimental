@@ -2205,29 +2205,6 @@ do
     local lastMainAutoFeedHoverSlot: Frame? = nil
     local feedHoverSlotConns: { RBXScriptConnection } = {}
 
-    local function mainFeedSlimeSlotDisplayName(slot: Instance): string
-        local direct = slot:FindFirstChild("SlimeName", true)
-        if direct and direct:IsA("TextLabel") then
-            local t = formatGuiInstanceTextForDisplay(direct)
-            if t then
-                return t
-            end
-        end
-        local best = ""
-        for _, d in ipairs(slot:GetDescendants()) do
-            if d:IsA("TextLabel") then
-                local t = formatGuiInstanceTextForDisplay(d)
-                if t and #t > #best then
-                    best = t
-                end
-            end
-        end
-        if best ~= "" then
-            return best
-        end
-        return slot.Name
-    end
-
     -- Matches live UI: …PlayerGui.Root.Inventory.PageItemsContent.ItemsInventoryPage.ChooseSlimeView.SlimeSelectionPanel.FeedableSlimesList
     local FEEDABLE_SLIMES_LIST_PATH = {
         "Root",
@@ -2238,20 +2215,6 @@ do
         "SlimeSelectionPanel",
         "FeedableSlimesList",
     }
-
-    local function mainResolveSlimeUidFromSlotRoot(slot: Instance): string?
-        local u = lootUidFromInstance(slot)
-        if u then
-            return u
-        end
-        for _, desc in ipairs(slot:GetDescendants()) do
-            u = lootUidFromInstance(desc)
-            if u then
-                return u
-            end
-        end
-        return nil
-    end
 
     local function mainFindFeedableSlimesList(): ScrollingFrame?
         local lp = Players.LocalPlayer
@@ -2376,6 +2339,120 @@ do
             return (d :: TextBox).Text
         end
         return ""
+    end
+
+    local ODDS_SUFFIX_MULT: { [string]: number } = {
+        K = 1e3,
+        M = 1e6,
+        B = 1e9,
+        T = 1e12,
+        Qd = 1e15,
+        Qa = 1e18,
+        Qi = 1e21,
+        Sx = 1e24,
+        Sp = 1e27,
+        Oc = 1e30,
+        No = 1e33,
+        De = 1e36,
+    }
+
+    local function mainOddsSuffixMultiplier(suf: string): number
+        if suf == "" then
+            return 1
+        end
+        local lower = string.lower(suf)
+        for key, mult in pairs(ODDS_SUFFIX_MULT) do
+            if string.lower(key) == lower then
+                return mult
+            end
+        end
+        return 1
+    end
+
+    -- "1 / 119B" → numeric denominator for sort (higher = rarer).
+    local function mainParseOddsSortKey(oddsText: string): number
+        local t = mainTrimGuiText(oddsText or "")
+        if t == "" then
+            return 0
+        end
+        local rhs = string.match(t, "1%s*/%s*(.+)")
+        if not rhs then
+            rhs = t
+        end
+        rhs = mainTrimGuiText(rhs)
+        local numStr, suf = string.match(rhs, "^([%d%.]+)%s*([%a]*)$")
+        if not numStr then
+            return 0
+        end
+        local n = tonumber(numStr)
+        if type(n) ~= "number" or n ~= n then
+            return 0
+        end
+        return n * mainOddsSuffixMultiplier(suf or "")
+    end
+
+    local function mainFindWorkspaceSlimesFolders(): { Instance }
+        local out: { Instance } = {}
+        for _, ch in ipairs(Workspace:GetChildren()) do
+            if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
+                local slimes = ch:FindFirstChild("Slimes")
+                if slimes then
+                    table.insert(out, slimes)
+                end
+            end
+        end
+        return out
+    end
+
+    local function mainGuiTextFromContentChild(content: Instance, childName: string): string
+        local node = content:FindFirstChild(childName)
+        if not node then
+            return ""
+        end
+        if node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox") then
+            local fromFmt = formatGuiInstanceTextForDisplay(node)
+            if fromFmt then
+                return mainTrimGuiText(fromFmt)
+            end
+            return mainTrimGuiText(mainGuiInstanceTextContent(node))
+        end
+        local tl = node:FindFirstChildWhichIsA("TextLabel", true)
+        if tl then
+            local fromFmt = formatGuiInstanceTextForDisplay(tl)
+            if fromFmt then
+                return mainTrimGuiText(fromFmt)
+            end
+            return mainTrimGuiText(mainGuiInstanceTextContent(tl))
+        end
+        return ""
+    end
+
+    local function mainSlimeBillboardNameAndOdds(slime: Instance): (string, string)
+        local bb = slime:FindFirstChild("SlimeInfoBillboard", true)
+        if not bb then
+            return "", ""
+        end
+        local content = bb:FindFirstChild("Content")
+        if not content then
+            return "", ""
+        end
+        local name = mainGuiTextFromContentChild(content, "Name")
+        local odds = ""
+        local oddsFolder = content:FindFirstChild("Odds")
+        if oddsFolder then
+            local tl = oddsFolder:FindFirstChild("TextLabel")
+            if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
+                local fromFmt = formatGuiInstanceTextForDisplay(tl)
+                odds = mainTrimGuiText(fromFmt or mainGuiInstanceTextContent(tl))
+            else
+                local any = oddsFolder:FindFirstChildWhichIsA("TextLabel", true)
+                if any then
+                    local fromFmt = formatGuiInstanceTextForDisplay(any)
+                    odds = mainTrimGuiText(fromFmt or mainGuiInstanceTextContent(any))
+                end
+            end
+        end
+        return name, odds
     end
 
     local function mainExtractUuidFromBlob(s: string): string?
@@ -2590,43 +2667,55 @@ do
 
     local function mainScanFeedableSlimeOptions(): { string }
         table.clear(autoFeedOptionToUid)
-        local list = mainFindFeedableSlimesList()
-        if not list then
+        local slimeFolders = mainFindWorkspaceSlimesFolders()
+        if #slimeFolders == 0 then
             return { AUTO_FEED_NONE }
         end
-        local skipClass: { [string]: boolean } = {
-            UIGridLayout = true,
-            UIListLayout = true,
-            UITableLayout = true,
-        }
-        local opts: { string } = { AUTO_FEED_NONE }
-        local row = 0
-        for _, ch in ipairs(list:GetChildren()) do
-            local slot: Instance? = nil
-            if ch:IsA("Frame") and ch.Name == "FeedTargetSlot" then
-                slot = ch
-            elseif ch:IsA("GuiObject") and not skipClass[ch.ClassName] then
-                slot = ch
+        type SlimeFeedRow = { uid: string, name: string, odds: string, sortKey: number }
+        local rows: { SlimeFeedRow } = {}
+        local seenUid: { [string]: boolean } = {}
+        for _, folder in ipairs(slimeFolders) do
+            for _, slime in ipairs(folder:GetChildren()) do
+                local uid = lootUidFromInstance(slime) or slime.Name
+                if uid == "" or seenUid[uid] then
+                    continue
+                end
+                seenUid[uid] = true
+                local name, odds = mainSlimeBillboardNameAndOdds(slime)
+                if name == "" then
+                    name = slime.Name
+                end
+                table.insert(rows, {
+                    uid = uid,
+                    name = name,
+                    odds = odds,
+                    sortKey = mainParseOddsSortKey(odds),
+                })
             end
-            if slot then
-                row = row + 1
-                local uid = mainResolveSlimeUidFromSlotRoot(slot)
-                local label = mainFeedSlimeSlotDisplayName(slot)
-                local option: string
-                if uid then
-                    option = ('%s  [%s]'):format(label, uid)
-                else
-                    option = ('#%d  %s  (no uid in UI — use manual Slime UID)'):format(row, label)
-                end
-                if #option > 190 then
-                    option = string.sub(option, 1, 187) .. "..."
-                end
-                if not autoFeedOptionToUid[option] then
-                    if uid then
-                        autoFeedOptionToUid[option] = uid
-                    end
-                    table.insert(opts, option)
-                end
+        end
+        table.sort(rows, function(a, b)
+            if a.sortKey ~= b.sortKey then
+                return a.sortKey > b.sortKey
+            end
+            if a.name ~= b.name then
+                return a.name < b.name
+            end
+            return a.uid < b.uid
+        end)
+        local opts: { string } = { AUTO_FEED_NONE }
+        for _, row in ipairs(rows) do
+            local option: string
+            if row.odds ~= "" then
+                option = ('%s  %s  [%s]'):format(row.name, row.odds, row.uid)
+            else
+                option = ('%s  [%s]'):format(row.name, row.uid)
+            end
+            if #option > 190 then
+                option = string.sub(option, 1, 187) .. "..."
+            end
+            if not autoFeedOptionToUid[option] then
+                autoFeedOptionToUid[option] = row.uid
+                table.insert(opts, option)
             end
         end
         if #opts == 1 then
@@ -2670,7 +2759,7 @@ do
         if showNotify then
             mountNotify({
                 Title = "Auto Feed",
-                Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ").") or "No slimes in FeedableSlimesList — open Backpack → Items and select a food.",
+                Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ", sorted rarest first).") or 'No slimes under Workspace → Gameplay* → Slimes (with SlimeInfoBillboard).',
             })
         end
         mainBindFeedSlotHoverTrackers()
@@ -2678,7 +2767,7 @@ do
 
     MainTab:CreateParagraph({
         Title = "How Auto Feed works",
-        Content = "Open Backpack → Items, tap a food so SlimeSelectionPanel shows. Refresh loads rows from FeedableSlimesList. Enter the food consumable id (same id the game uses for that item), then toggle on. “Copy hover slime details” reads the Vide SlimeHoverInfo card under PlayerGui → Root (SlimeName, Odds, Rarity, Damage, Health, Level) plus any ChooseSlimeView text, copies to clipboard, and fills Slime UID if a UUID appears in the text. If rows show “no uid in UI”, paste a UUID into Slime UID or capture from text that includes it.",
+        Content = "Refresh loads slimes from Workspace → Gameplay* → Slimes (instance name = id). Name and odds come from SlimeInfoBillboard → Content → Name and Content → Odds → TextLabel; the list is sorted rarest first (e.g. 1 / 2.08Qd above 1 / 119B). Enter the food consumable id, pick a slime, then toggle on. Slime UID overrides the dropdown. “Copy hover slime details” still reads the SlimeHoverInfo card in PlayerGui when feeding from inventory UI.",
     })
 
     MainTab:CreateInput({
@@ -2712,7 +2801,7 @@ do
     })
 
     AutoFeedSlimeDropdown = MainTab:CreateDropdown({
-        Name = "Slime (from FeedableSlimesList)",
+        Name = "Slime (Workspace Gameplay → Slimes)",
         Flag = "main_auto_feed_slime_dropdown",
         Options = mainScanFeedableSlimeOptions(),
         CurrentOption = { AUTO_FEED_NONE },
