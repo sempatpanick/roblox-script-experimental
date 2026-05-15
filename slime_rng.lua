@@ -2192,9 +2192,27 @@ do
     MainTab:CreateSection("Auto Feed")
 
     local AUTO_FEED_NONE = "(None)"
-    local autoFeedFoodIdValue = ""
-    local autoFeedAmountValue = "1"
-    local autoFeedManualSlimeUidValue = ""
+    local AUTO_FEED_SYSTEM_FOODS: { { id: string, name: string, xp: number } } = {
+        { id = "apple", name = "Cheese", xp = 75 },
+        { id = "carrot", name = "Egg", xp = 100 },
+        { id = "cherries", name = "Fries", xp = 125 },
+        { id = "grapes", name = "Taco", xp = 150 },
+        { id = "banana", name = "Hotdog", xp = 175 },
+        { id = "watermelon", name = "Burger", xp = 200 },
+        { id = "pizza", name = "Pizza", xp = 225 },
+        { id = "chicken", name = "Chicken", xp = 250 },
+        { id = "drumstick", name = "Drumstick", xp = 275 },
+    }
+    local AUTO_FEED_FOOD_BY_ID: { [string]: { id: string, name: string, xp: number } } = {}
+    for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
+        AUTO_FEED_FOOD_BY_ID[food.id] = food
+    end
+    local autoFeedFoodOptionToId: { [string]: string } = {}
+    local selectedAutoFeedFoodIds: { string } = {}
+    local AutoFeedFoodDropdown: any = nil
+    local autoFeedFoodCycleIndex = 0
+    local lastConsumablesList: Instance? = nil
+    local consumablesListConns: { RBXScriptConnection } = {}
     local autoFeedOptionToUid: { [string]: string } = {}
     local selectedAutoFeedUid: string? = nil
     local selectedAutoFeedOption: string? = nil
@@ -2202,123 +2220,6 @@ do
     local autoFeedEnabled = false
     local autoFeedLoopToken = 0
     local AUTO_FEED_INTERVAL_SEC = 2.5
-    local lastMainAutoFeedHoverSlot: Frame? = nil
-    local feedHoverSlotConns: { RBXScriptConnection } = {}
-
-    -- Matches live UI: …PlayerGui.Root.Inventory.PageItemsContent.ItemsInventoryPage.ChooseSlimeView.SlimeSelectionPanel.FeedableSlimesList
-    local FEEDABLE_SLIMES_LIST_PATH = {
-        "Root",
-        "Inventory",
-        "PageItemsContent",
-        "ItemsInventoryPage",
-        "ChooseSlimeView",
-        "SlimeSelectionPanel",
-        "FeedableSlimesList",
-    }
-
-    local function mainFindFeedableSlimesList(): ScrollingFrame?
-        local lp = Players.LocalPlayer
-        local pg = lp and lp:FindFirstChild("PlayerGui")
-        if not pg then
-            return nil
-        end
-        local cur: Instance? = pg
-        for _, seg in ipairs(FEEDABLE_SLIMES_LIST_PATH) do
-            local nextInst = cur and cur:FindFirstChild(seg)
-            if not nextInst then
-                cur = nil
-                break
-            end
-            cur = nextInst
-        end
-        if cur and cur:IsA("ScrollingFrame") then
-            return cur
-        end
-        local d = pg:FindFirstChild("FeedableSlimesList", true)
-        if d and d:IsA("ScrollingFrame") then
-            return d
-        end
-        return nil
-    end
-
-    local function mainDisconnectFeedHoverTrackers()
-        for _, c in ipairs(feedHoverSlotConns) do
-            c:Disconnect()
-        end
-        table.clear(feedHoverSlotConns)
-    end
-
-    local function mainBindFeedSlotHoverTrackers()
-        mainDisconnectFeedHoverTrackers()
-        local list = mainFindFeedableSlimesList()
-        if not list then
-            lastMainAutoFeedHoverSlot = nil
-            return
-        end
-        table.insert(feedHoverSlotConns, list.MouseLeave:Connect(function()
-            lastMainAutoFeedHoverSlot = nil
-        end))
-        for _, ch in ipairs(list:GetChildren()) do
-            if ch:IsA("Frame") and ch.Name == "FeedTargetSlot" then
-                local slotFrame = ch :: Frame
-                local function onEnter()
-                    lastMainAutoFeedHoverSlot = slotFrame
-                end
-                local function hookGui(g: GuiObject)
-                    table.insert(feedHoverSlotConns, g.MouseEnter:Connect(onEnter))
-                end
-                hookGui(slotFrame)
-                for _, d in ipairs(slotFrame:GetDescendants()) do
-                    if d:IsA("GuiObject") then
-                        hookGui(d :: GuiObject)
-                    end
-                end
-            end
-        end
-    end
-
-    -- Hover popover for feed slots often lives under SlimeSelectionPanel (or top-layer GUI) but *outside* FeedableSlimesList.
-    local function mainGuiAncestorChainVisibleGui(g: GuiObject): boolean
-        local cur: Instance? = g
-        while cur and cur ~= game do
-            if cur:IsA("GuiObject") and not (cur :: GuiObject).Visible then
-                return false
-            end
-            cur = cur.Parent
-        end
-        return true
-    end
-
-    local function mainHoveredFeedTargetSlotAndList(): (Frame?, ScrollingFrame?)
-        local list = mainFindFeedableSlimesList()
-        if not list then
-            return nil, nil
-        end
-        local GuiService = game:GetService("GuiService")
-        local pos = UserInputService:GetMouseLocation()
-        local insetY = GuiService:GetGuiInset().Y
-        local points = {
-            Vector2.new(pos.X, pos.Y),
-            Vector2.new(pos.X, pos.Y - insetY),
-        }
-        for _, pt in ipairs(points) do
-            local ok, hits = pcall(function()
-                return GuiService:GetGuiObjectsAtPosition(pt.X, pt.Y)
-            end)
-            if ok and type(hits) == "table" then
-                for _, hit in ipairs(hits) do
-                    local el: Instance? = hit
-                    while el do
-                        if el.Name == "FeedTargetSlot" and el:IsA("Frame") and el:IsDescendantOf(list) then
-                            return el :: Frame, list
-                        end
-                        el = el.Parent
-                    end
-                end
-            end
-        end
-        return nil, list
-    end
 
     local function mainTrimGuiText(s: string): string
         local t = string.gsub(s or "", "^%s+", "")
@@ -2339,6 +2240,229 @@ do
             return (d :: TextBox).Text
         end
         return ""
+    end
+
+    -- …PlayerGui.Root.Inventory…DefaultItemsView.ConsumablesPanel.ConsumablesList
+    local CONSUMABLES_LIST_PATH = {
+        "Root",
+        "Inventory",
+        "PageItemsContent",
+        "ItemsInventoryPage",
+        "DefaultItemsView",
+        "ConsumablesPanel",
+        "ConsumablesList",
+    }
+
+    local function mainFindConsumablesList(): Instance?
+        local lp = Players.LocalPlayer
+        local pg = lp and lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local cur: Instance? = pg
+        for _, seg in ipairs(CONSUMABLES_LIST_PATH) do
+            local nextInst = cur and cur:FindFirstChild(seg)
+            if not nextInst then
+                cur = nil
+                break
+            end
+            cur = nextInst
+        end
+        if cur then
+            return cur
+        end
+        return pg:FindFirstChild("ConsumablesList", true)
+    end
+
+    local function mainParseConsumableAmountText(s: string): number
+        local t = mainTrimGuiText(s or "")
+        local n = string.match(t, "[xX](%d+)")
+        if n then
+            return tonumber(n) or 0
+        end
+        n = string.match(t, "(%d+)")
+        return tonumber(n) or 0
+    end
+
+    local function mainScanOwnedFoodByDisplayName(): { [string]: number }
+        local out: { [string]: number } = {}
+        local list = mainFindConsumablesList()
+        if not list then
+            return out
+        end
+        for _, ch in ipairs(list:GetChildren()) do
+            if ch:IsA("GuiObject") and string.match(ch.Name, "ItemButton$") then
+                local displayName = ""
+                local nameFrame = ch:FindFirstChild("TextLabelFrame")
+                if nameFrame then
+                    local tl = nameFrame:FindFirstChild("TextLabel")
+                    if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
+                        displayName = mainTrimGuiText(mainGuiInstanceTextContent(tl))
+                    end
+                end
+                local amt = 0
+                local amtFrame = ch:FindFirstChild("Amount")
+                if amtFrame then
+                    local atl = amtFrame:FindFirstChild("TextLabel")
+                    if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
+                        amt = mainParseConsumableAmountText(mainGuiInstanceTextContent(atl))
+                    end
+                end
+                if displayName ~= "" then
+                    out[displayName] = (out[displayName] or 0) + amt
+                end
+            end
+        end
+        return out
+    end
+
+    local function mainFoodDropdownOptionLabel(displayName: string, xp: number, count: number): string
+        if count > 0 then
+            return ('%s  %d XP  x%d'):format(displayName, xp, count)
+        end
+        return ('%s  %d XP  x0'):format(displayName, xp)
+    end
+
+    local function mainBuildFoodDropdownOptions(): { string }
+        local owned = mainScanOwnedFoodByDisplayName()
+        table.clear(autoFeedFoodOptionToId)
+        local foods: { { id: string, name: string, xp: number } } = {}
+        for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
+            table.insert(foods, food)
+        end
+        table.sort(foods, function(a, b)
+            if a.xp ~= b.xp then
+                return a.xp > b.xp
+            end
+            return a.name < b.name
+        end)
+        local opts: { string } = {}
+        for _, food in ipairs(foods) do
+            local count = owned[food.name] or 0
+            local option = mainFoodDropdownOptionLabel(food.name, food.xp, count)
+            autoFeedFoodOptionToId[option] = food.id
+            table.insert(opts, option)
+        end
+        return opts
+    end
+
+    local function mainFoodDropdownOptionsForIds(ids: { string }): { string }
+        local opts = mainBuildFoodDropdownOptions()
+        local picked: { string } = {}
+        for _, opt in ipairs(opts) do
+            local id = autoFeedFoodOptionToId[opt]
+            if id and table.find(ids, id) then
+                table.insert(picked, opt)
+            end
+        end
+        return picked
+    end
+
+    local function mainDisconnectConsumablesListeners()
+        for _, c in ipairs(consumablesListConns) do
+            c:Disconnect()
+        end
+        table.clear(consumablesListConns)
+        lastConsumablesList = nil
+    end
+
+    local function refreshAutoFeedFoodDropdown(showNotify: boolean)
+        local prevIds: { string } = {}
+        for _, id in ipairs(selectedAutoFeedFoodIds) do
+            table.insert(prevIds, id)
+        end
+        local opts = mainBuildFoodDropdownOptions()
+        local newSelection = mainFoodDropdownOptionsForIds(prevIds)
+        if AutoFeedFoodDropdown and AutoFeedFoodDropdown.Refresh then
+            AutoFeedFoodDropdown:Refresh(opts)
+        end
+        selectedAutoFeedFoodIds = {}
+        for _, opt in ipairs(newSelection) do
+            local id = autoFeedFoodOptionToId[opt]
+            if id then
+                table.insert(selectedAutoFeedFoodIds, id)
+            end
+        end
+        if AutoFeedFoodDropdown and AutoFeedFoodDropdown.Set then
+            AutoFeedFoodDropdown:Set(newSelection)
+        end
+        if showNotify then
+            mountNotify({
+                Title = "Auto Feed",
+                Content = "Food list updated (" .. tostring(#opts) .. " types, amounts from inventory).",
+            })
+        end
+    end
+
+    local function mainHookConsumableItemButton(btn: Instance)
+        local amtFrame = btn:FindFirstChild("Amount")
+        if not amtFrame then
+            return
+        end
+        local atl = amtFrame:FindFirstChild("TextLabel")
+        if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
+            table.insert(consumablesListConns, atl:GetPropertyChangedSignal("Text"):Connect(function()
+                refreshAutoFeedFoodDropdown(false)
+            end))
+        end
+    end
+
+    local function mainBindConsumablesListeners()
+        mainDisconnectConsumablesListeners()
+        local list = mainFindConsumablesList()
+        if not list then
+            return
+        end
+        lastConsumablesList = list
+        local function bump()
+            refreshAutoFeedFoodDropdown(false)
+        end
+        table.insert(consumablesListConns, list.ChildAdded:Connect(function(ch)
+            mainHookConsumableItemButton(ch)
+            bump()
+        end))
+        table.insert(consumablesListConns, list.ChildRemoved:Connect(bump))
+        for _, ch in ipairs(list:GetChildren()) do
+            mainHookConsumableItemButton(ch)
+        end
+    end
+
+    local function mainEnsureConsumablesWatch()
+        local list = mainFindConsumablesList()
+        if list and list ~= lastConsumablesList then
+            mainBindConsumablesListeners()
+            refreshAutoFeedFoodDropdown(false)
+        end
+    end
+
+    local function mainAutoFeedActiveFoodIds(): { string }
+        local owned = mainScanOwnedFoodByDisplayName()
+        local out: { string } = {}
+        for _, id in ipairs(selectedAutoFeedFoodIds) do
+            local def = AUTO_FEED_FOOD_BY_ID[id]
+            if def and (owned[def.name] or 0) > 0 then
+                table.insert(out, id)
+            end
+        end
+        return out
+    end
+
+    local function mainAutoFeedNextFoodId(): string?
+        local ids = mainAutoFeedActiveFoodIds()
+        if #ids == 0 then
+            return nil
+        end
+        autoFeedFoodCycleIndex = (autoFeedFoodCycleIndex % #ids) + 1
+        return ids[autoFeedFoodCycleIndex]
+    end
+
+    local function mainAutoFeedOwnedAmountForFoodId(foodId: string): number
+        local def = AUTO_FEED_FOOD_BY_ID[foodId]
+        if not def then
+            return 0
+        end
+        local owned = mainScanOwnedFoodByDisplayName()
+        return math.clamp(math.floor(owned[def.name] or 0), 0, 9999)
     end
 
     local ODDS_SUFFIX_MULT: { [string]: number } = {
@@ -2455,214 +2579,8 @@ do
         return name, odds
     end
 
-    local function mainExtractUuidFromBlob(s: string): string?
-        local m = string.match(
-            s,
-            "(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)"
-        )
-        if m and looksLikeLootUid(m) then
-            return m
-        end
-        return nil
-    end
-
-    local function mainCollectTextRowsOutsideList(root: Instance, list: Instance): { { y: number, x: number, t: string } }
-        local rows: { { y: number, x: number, t: string } } = {}
-        local seen: { [string]: boolean } = {}
-        for _, d in ipairs(root:GetDescendants()) do
-            if not d:IsDescendantOf(list) then
-                if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-                    local g = d :: GuiObject
-                    if mainGuiAncestorChainVisibleGui(g) then
-                        local raw = mainGuiInstanceTextContent(d)
-                        local t = mainTrimGuiText(raw)
-                        if t ~= "" and not seen[t] then
-                            seen[t] = true
-                            local y = g.AbsolutePosition.Y
-                            local x = g.AbsolutePosition.X
-                            table.insert(rows, { y = y, x = x, t = t })
-                        end
-                    end
-                end
-            end
-        end
-        table.sort(rows, function(a, b)
-            if a.y ~= b.y then
-                return a.y < b.y
-            end
-            return a.x < b.x
-        end)
-        return rows
-    end
-
-    local function mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list: Instance, root: Instance): { { y: number, x: number, t: string } }
-        local GuiService = game:GetService("GuiService")
-        local pos = UserInputService:GetMouseLocation()
-        local insetY = GuiService:GetGuiInset().Y
-        local points = {
-            Vector2.new(pos.X, pos.Y),
-            Vector2.new(pos.X, pos.Y - insetY),
-        }
-        local rows: { { y: number, x: number, t: string } } = {}
-        local seen: { [string]: boolean } = {}
-        for _, pt in ipairs(points) do
-            local ok, hits = pcall(function()
-                return GuiService:GetGuiObjectsAtPosition(pt.X, pt.Y)
-            end)
-            if ok and type(hits) == "table" then
-                for _, hit in ipairs(hits) do
-                    if not hit:IsDescendantOf(list) and hit:IsDescendantOf(root) then
-                        local scan = { hit }
-                        for _, d in ipairs(hit:GetDescendants()) do
-                            table.insert(scan, d)
-                        end
-                        for _, d in ipairs(scan) do
-                            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-                                local g = d :: GuiObject
-                                if mainGuiAncestorChainVisibleGui(g) then
-                                    local t = mainTrimGuiText(mainGuiInstanceTextContent(d))
-                                    if t ~= "" and not seen[t] then
-                                        seen[t] = true
-                                        table.insert(rows, {
-                                            y = g.AbsolutePosition.Y,
-                                            x = g.AbsolutePosition.X,
-                                            t = t,
-                                        })
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        table.sort(rows, function(a, b)
-            if a.y ~= b.y then
-                return a.y < b.y
-            end
-            return a.x < b.x
-        end)
-        return rows
-    end
-
-    local function mainMergeManyRowTables(parts: { { { y: number, x: number, t: string } } }): string
-        local seen: { [string]: boolean } = {}
-        local out: { string } = {}
-        for _, rows in ipairs(parts) do
-            for _, r in ipairs(rows) do
-                if not seen[r.t] then
-                    seen[r.t] = true
-                    table.insert(out, r.t)
-                end
-            end
-        end
-        return table.concat(out, "\n")
-    end
-
-    -- Slime RNG (Vide): `Source.Features.App.Components.SlimeHoverInfo` mounts under PlayerGui → ScreenGui "Root".
-    -- Overlay uses named rows: SlimeName, Odds, Rarity, Damage, Health, Level (see place rbxlx).
-    local SLIME_HOVER_ROW_NAMES: { [string]: boolean } = {
-        SlimeName = true,
-        Odds = true,
-        Rarity = true,
-        Damage = true,
-        Health = true,
-        Level = true,
-    }
-
-    local function mainFindPlayerGuiRootScreen(): Instance?
-        local lp = Players.LocalPlayer
-        local pg = lp and lp:FindFirstChild("PlayerGui")
-        if not pg then
-            return nil
-        end
-        return pg:FindFirstChild("Root", true)
-    end
-
-    local function mainIsSlimeHoverInfoVidePanel(node: Instance): boolean
-        if not node:IsA("GuiObject") then
-            return false
-        end
-        if node:FindFirstChild("Odds", true) == nil then
-            return false
-        end
-        if node:FindFirstChild("Rarity", true) == nil then
-            return false
-        end
-        if node:FindFirstChild("Damage", true) == nil then
-            return false
-        end
-        if node:FindFirstChild("SlimeName", true) == nil then
-            return false
-        end
-        return true
-    end
-
-    local function mainFindSlimeHoverInfoRootGui(): GuiObject?
-        local rootScreen = mainFindPlayerGuiRootScreen()
-        if not rootScreen then
-            return nil
-        end
-        local list = mainFindFeedableSlimesList()
-        local best: GuiObject? = nil
-        for _, desc in ipairs(rootScreen:GetDescendants()) do
-            if desc.Name == "SlimeName" and (desc:IsA("TextLabel") or desc:IsA("TextButton")) then
-                if list and desc:IsDescendantOf(list) then
-                    -- slot row labels inside FeedableSlimesList, not the global hover card
-                else
-                    local p: Instance? = desc
-                    while p and p ~= rootScreen do
-                        if mainIsSlimeHoverInfoVidePanel(p) then
-                            best = p :: GuiObject
-                        end
-                        p = p.Parent
-                    end
-                end
-            end
-        end
-        return best
-    end
-
-    local function mainCollectTextRowsUnderInstance(subtree: Instance): { { y: number, x: number, t: string } }
-        local rows: { { y: number, x: number, t: string } } = {}
-        local seen: { [string]: boolean } = {}
-        for _, d in ipairs(subtree:GetDescendants()) do
-            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-                local g = d :: GuiObject
-                if mainGuiAncestorChainVisibleGui(g) then
-                    local raw = mainGuiInstanceTextContent(d)
-                    local t = mainTrimGuiText(raw)
-                    if t ~= "" then
-                        if SLIME_HOVER_ROW_NAMES[d.Name] then
-                            t = d.Name .. ": " .. t
-                        end
-                        if not seen[t] then
-                            seen[t] = true
-                            table.insert(rows, {
-                                y = g.AbsolutePosition.Y,
-                                x = g.AbsolutePosition.X,
-                                t = t,
-                            })
-                        end
-                    end
-                end
-            end
-        end
-        table.sort(rows, function(a, b)
-            if a.y ~= b.y then
-                return a.y < b.y
-            end
-            return a.x < b.x
-        end)
-        return rows
-    end
-
-    local function mainCollectSlimeHoverInfoRowsSnapshot(): { { y: number, x: number, t: string } }
-        local hover = mainFindSlimeHoverInfoRootGui()
-        if not hover then
-            return {}
-        end
-        return mainCollectTextRowsUnderInstance(hover)
+    local function mainNormalizeWorkspaceSlimeUid(uid: string): string
+        return string.gsub(uid, "#%d+$", "")
     end
 
     local function mainScanFeedableSlimeOptions(): { string }
@@ -2676,7 +2594,7 @@ do
         local seenUid: { [string]: boolean } = {}
         for _, folder in ipairs(slimeFolders) do
             for _, slime in ipairs(folder:GetChildren()) do
-                local uid = lootUidFromInstance(slime) or slime.Name
+                local uid = mainNormalizeWorkspaceSlimeUid(lootUidFromInstance(slime) or slime.Name)
                 if uid == "" or seenUid[uid] then
                     continue
                 end
@@ -2706,9 +2624,9 @@ do
         for _, row in ipairs(rows) do
             local option: string
             if row.odds ~= "" then
-                option = ('%s  %s  [%s]'):format(row.name, row.odds, row.uid)
+                option = ('%s  %s'):format(row.name, row.odds)
             else
-                option = ('%s  [%s]'):format(row.name, row.uid)
+                option = ('%s'):format(row.name)
             end
             if #option > 190 then
                 option = string.sub(option, 1, 187) .. "..."
@@ -2722,23 +2640,6 @@ do
             return { AUTO_FEED_NONE }
         end
         return opts
-    end
-
-    local function mainAutoFeedResolveActiveUid(): string?
-        local manual = string.gsub(autoFeedManualSlimeUidValue or "", "^%s+", "")
-        manual = string.gsub(manual, "%s+$", "")
-        if manual ~= "" and looksLikeLootUid(manual) then
-            return manual
-        end
-        return selectedAutoFeedUid
-    end
-
-    local function mainAutoFeedParseAmount(): number
-        local n = tonumber(autoFeedAmountValue)
-        if type(n) ~= "number" or n ~= n then
-            return 1
-        end
-        return math.clamp(math.floor(n), 1, 9999)
     end
 
     local function refreshAutoFeedSlimeDropdown(showNotify: boolean)
@@ -2762,46 +2663,37 @@ do
                 Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ", sorted rarest first).") or 'No slimes under Workspace → Gameplay* → Slimes (with SlimeInfoBillboard).',
             })
         end
-        mainBindFeedSlotHoverTrackers()
     end
 
-    MainTab:CreateParagraph({
-        Title = "How Auto Feed works",
-        Content = "Refresh loads slimes from Workspace → Gameplay* → Slimes (instance name = id). Name and odds come from SlimeInfoBillboard → Content → Name and Content → Odds → TextLabel; the list is sorted rarest first (e.g. 1 / 2.08Qd above 1 / 119B). Enter the food consumable id, pick a slime, then toggle on. Slime UID overrides the dropdown. “Copy hover slime details” still reads the SlimeHoverInfo card in PlayerGui when feeding from inventory UI.",
-    })
-
-    MainTab:CreateInput({
-        Name = "Food item id",
-        PlaceholderText = "e.g. consumable id string from game definitions",
-        Flag = "main_auto_feed_food_id",
-        CurrentValue = autoFeedFoodIdValue,
+    AutoFeedFoodDropdown = MainTab:CreateDropdown({
+        Name = "Foods",
+        Flag = "main_auto_feed_food_dropdown",
+        Options = mainBuildFoodDropdownOptions(),
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
         Callback = function(value)
-            autoFeedFoodIdValue = type(value) == "string" and value or ""
-        end,
-    })
-
-    MainTab:CreateInput({
-        Name = "Feed amount",
-        PlaceholderText = "1",
-        Flag = "main_auto_feed_amount",
-        CurrentValue = autoFeedAmountValue,
-        Callback = function(value)
-            autoFeedAmountValue = type(value) == "string" and value or "1"
-        end,
-    })
-
-    local AutoFeedManualSlimeUidInput = MainTab:CreateInput({
-        Name = "Slime UID (optional override)",
-        PlaceholderText = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        Flag = "main_auto_feed_slime_uid_manual",
-        CurrentValue = autoFeedManualSlimeUidValue,
-        Callback = function(value)
-            autoFeedManualSlimeUidValue = type(value) == "string" and value or ""
+            selectedAutoFeedFoodIds = {}
+            if type(value) == "table" then
+                for _, opt in ipairs(value) do
+                    if type(opt) == "string" then
+                        local id = autoFeedFoodOptionToId[opt]
+                        if id and not table.find(selectedAutoFeedFoodIds, id) then
+                            table.insert(selectedAutoFeedFoodIds, id)
+                        end
+                    end
+                end
+            elseif type(value) == "string" then
+                local id = autoFeedFoodOptionToId[value]
+                if id then
+                    selectedAutoFeedFoodIds = { id }
+                end
+            end
         end,
     })
 
     AutoFeedSlimeDropdown = MainTab:CreateDropdown({
-        Name = "Slime (Workspace Gameplay → Slimes)",
+        Name = "Slime",
         Flag = "main_auto_feed_slime_dropdown",
         Options = mainScanFeedableSlimeOptions(),
         CurrentOption = { AUTO_FEED_NONE },
@@ -2825,63 +2717,20 @@ do
         end,
     })
 
-    MainTab:CreateButton({
-        Name = "Copy hover slime details / UID",
-        Flag = "main_auto_feed_copy_hover",
-        Callback = function()
-            task.spawn(function()
-                local list = mainFindFeedableSlimesList()
-                local root: Instance? = if list then (list.Parent and list.Parent.Parent or list.Parent) else nil
-                local rPre: { { y: number, x: number, t: string } } = {}
-                local rPost: { { y: number, x: number, t: string } } = {}
-                local rHit: { { y: number, x: number, t: string } } = {}
-                if list and root then
-                    rPre = mainCollectTextRowsOutsideList(root, list)
-                end
-                task.wait(0.07)
-                if list and root then
-                    rPost = mainCollectTextRowsOutsideList(root, list)
-                    rHit = mainCollectTextFromMouseGuiHitsUnderRootOutsideList(list, root)
-                end
-                local rHoverA = mainCollectSlimeHoverInfoRowsSnapshot()
-                task.wait(0.05)
-                local rHoverB = mainCollectSlimeHoverInfoRowsSnapshot()
-                local blob = mainMergeManyRowTables({ rPre, rPost, rHit, rHoverA, rHoverB })
-                if blob == "" then
-                    mountNotify({
-                        Title = "Auto Feed",
-                        Content = "No text captured — hover a slime so the SlimeHoverInfo card (or ChooseSlimeView popover) is visible, then click again.",
-                    })
-                    return
-                end
-                local paste = setclipboard or toclipboard
-                if paste then
-                    paste(blob)
-                end
-                local uuid = mainExtractUuidFromBlob(blob)
-                if uuid and AutoFeedManualSlimeUidInput and AutoFeedManualSlimeUidInput.Set then
-                    AutoFeedManualSlimeUidInput:Set(uuid)
-                end
-                local tail = if uuid then " UUID set in Slime UID field."
-                    elseif paste then " Copied to clipboard."
-                    else " (clipboard not available here)."
-                local slot = lastMainAutoFeedHoverSlot
-                if list and slot and not slot:IsDescendantOf(list) then
-                    slot = nil
-                end
-                if not slot then
-                    slot = select(1, mainHoveredFeedTargetSlotAndList())
-                end
-                local tip = if slot then "" else " (tip: hover a feed slot for inventory context)"
-                mountNotify({
-                    Title = "Auto Feed",
-                    Content = "Captured detail (" .. tostring(#blob) .. " chars)." .. tail .. tip,
-                })
-            end)
-        end,
-    })
+    task.defer(function()
+        mainEnsureConsumablesWatch()
+        refreshAutoFeedFoodDropdown(false)
+    end)
 
-    task.defer(mainBindFeedSlotHoverTrackers)
+    local lpForConsumables = Players.LocalPlayer
+    if lpForConsumables then
+        local pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
+        if pgWatch then
+            pgWatch.DescendantAdded:Connect(function()
+                mainEnsureConsumablesWatch()
+            end)
+        end
+    end
 
     MainTab:CreateToggle({
         Name = "Auto Feed",
@@ -2896,16 +2745,17 @@ do
                 return
             end
 
+            mainEnsureConsumablesWatch()
+            refreshAutoFeedFoodDropdown(false)
             refreshAutoFeedSlimeDropdown(false)
 
             task.spawn(function()
                 while myToken == autoFeedLoopToken and autoFeedEnabled do
-                    local foodId = string.gsub(autoFeedFoodIdValue, "^%s+", "")
-                    foodId = string.gsub(foodId, "%s+$", "")
-                    if foodId == "" then
+                    local foodId = mainAutoFeedNextFoodId()
+                    if not foodId then
                         task.wait(AUTO_FEED_INTERVAL_SEC)
                     else
-                        local useUid = mainAutoFeedResolveActiveUid()
+                        local useUid = selectedAutoFeedUid
                         if not useUid then
                             task.wait(AUTO_FEED_INTERVAL_SEC)
                         else
@@ -2914,10 +2764,11 @@ do
                             if not rf or not rf:IsA("RemoteFunction") then
                                 task.wait(AUTO_FEED_INTERVAL_SEC)
                             else
-                                local amt = mainAutoFeedParseAmount()
-                                pcall(function()
-                                    (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, amt)
-                                end)
+                                if mainAutoFeedOwnedAmountForFoodId(foodId) > 0 then
+                                    pcall(function()
+                                        (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, 1)
+                                    end)
+                                end
                                 task.wait(AUTO_FEED_INTERVAL_SEC)
                             end
                         end
