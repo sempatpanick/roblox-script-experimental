@@ -3651,7 +3651,7 @@ do
     local giftDoneRemote = ReplicatedStorage.Remotes.TutorialRemotes.GiftPurchaseDone
     local giftNotificationRemote = ReplicatedStorage.Remotes.TutorialRemotes.Notification
     local GIFT_NOTIFY_TIMEOUT = 15
-    local GIFT_ALL_DELAY_SECONDS = 5
+    local GIFT_ALL_DELAY_SECONDS = 10
 
     local function listenGiftPassNotification(targetPlayer, onMessage)
         local targetName = targetPlayer.DisplayName or targetPlayer.Name
