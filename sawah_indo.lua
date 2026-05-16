@@ -11,6 +11,8 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
+local CoreGui = cloneref(game:GetService("CoreGui"))
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local RayfieldLibrary
 
@@ -51,6 +53,160 @@ local function rayfieldDropdownFirst(valueOrTable)
         return valueOrTable[1]
     end
     return valueOrTable
+end
+
+local function getExecutorFireSignal()
+    local fire = rawget(_G, "firesignal")
+    if type(fire) == "function" then
+        return fire
+    end
+    local syn = rawget(_G, "syn")
+    if type(syn) == "table" and type(syn.fire_signal) == "function" then
+        return syn.fire_signal
+    end
+    local getgenv = rawget(_G, "getgenv")
+    if type(getgenv) == "function" then
+        local g = getgenv()
+        if type(g) == "table" then
+            fire = rawget(g, "firesignal")
+            if type(fire) == "function" then
+                return fire
+            end
+        end
+    end
+    return nil
+end
+
+local function getExecutorGetConnections()
+    local getconns = rawget(_G, "getconnections")
+    if type(getconns) == "function" then
+        return getconns
+    end
+    local syn = rawget(_G, "syn")
+    if type(syn) == "table" and type(syn.getconnections) == "function" then
+        return syn.getconnections
+    end
+    local getgenv = rawget(_G, "getgenv")
+    if type(getgenv) == "function" then
+        local g = getgenv()
+        if type(g) == "table" then
+            getconns = rawget(g, "getconnections")
+            if type(getconns) == "function" then
+                return getconns
+            end
+        end
+    end
+    return nil
+end
+
+local function activateGuiButton(button: GuiButton): boolean
+    if not button or not button:IsA("GuiButton") then
+        return false
+    end
+    local fireSignal = getExecutorFireSignal()
+    if fireSignal then
+        local ok = pcall(function()
+            fireSignal(button.MouseButton1Click)
+        end)
+        if ok then
+            return true
+        end
+    end
+    local getconns = getExecutorGetConnections()
+    if getconns then
+        local ok = pcall(function()
+            for _, conn in ipairs(getconns(button.MouseButton1Click)) do
+                if conn.Enabled then
+                    conn:Fire()
+                end
+            end
+        end)
+        if ok then
+            return true
+        end
+    end
+    pcall(function()
+        if button.Activate then
+            button:Activate()
+        end
+    end)
+    if VirtualInputManager then
+        pcall(function()
+            local pos = button.AbsolutePosition + (button.AbsoluteSize / 2)
+            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+            task.wait()
+            VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+        end)
+    end
+    return true
+end
+
+local PURCHASE_PROMPT_CLOSE_NAMES = { "CloseButton", "closeButton", "Close", "Exit", "Dismiss", "CancelButton" }
+
+local function findPurchasePromptCloseButton(root: Instance): GuiButton?
+    for _, name in ipairs(PURCHASE_PROMPT_CLOSE_NAMES) do
+        local btn = root:FindFirstChild(name, true)
+        if btn and btn:IsA("GuiButton") and btn.Visible then
+            return btn
+        end
+    end
+    for _, desc in ipairs(root:GetDescendants()) do
+        if desc:IsA("GuiButton") and desc.Visible then
+            local n = string.lower(desc.Name)
+            if string.find(n, "close", 1, true) or n == "x" then
+                return desc
+            end
+        end
+    end
+    return nil
+end
+
+local function tryClosePurchasePromptInstance(promptRoot: Instance): boolean
+    if not (promptRoot:IsA("GuiObject") and promptRoot.Visible) then
+        return false
+    end
+    local closeBtn = findPurchasePromptCloseButton(promptRoot)
+    if closeBtn then
+        activateGuiButton(closeBtn)
+        task.wait(0.12)
+        if not promptRoot.Parent or not promptRoot.Visible then
+            return true
+        end
+    end
+    pcall(function()
+        promptRoot.Visible = false
+        promptRoot:Destroy()
+    end)
+    return true
+end
+
+-- Dismiss Roblox CoreGui "Buy Robux and item" / gift purchase overlay (executor).
+local function forceCloseRobloxPurchasePrompt(timeoutSeconds: number?): boolean
+    local waitSeconds: number = timeoutSeconds or 6
+    local robloxPrompt = CoreGui:FindFirstChild("RobloxPromptGui")
+    if not robloxPrompt then
+        local ok, found = pcall(function()
+            return CoreGui:WaitForChild("RobloxPromptGui", waitSeconds)
+        end)
+        if not ok or not found then
+            return false
+        end
+        robloxPrompt = found
+    end
+    local overlay = robloxPrompt:FindFirstChild("promptOverlay")
+    if not overlay then
+        return false
+    end
+    local deadline = os.clock() + waitSeconds
+    while os.clock() < deadline do
+        for _, child in ipairs(overlay:GetChildren()) do
+            if tryClosePurchasePromptInstance(child) then
+                return true
+            end
+        end
+        task.wait(0.1)
+    end
+    return false
 end
 
 -- */  Window  /* --
@@ -3331,6 +3487,356 @@ do
             end)
         end
     })
+
+    -- */  Gift Game Pass Section  /* --
+    ShopTab:CreateSection("Gift Game Pass")
+
+    local giftPassCatalog = {}
+    local giftPassDisplayOptions = {}
+    local giftPassByDisplayOption = {}
+    local selectedGiftPlayer = nil
+    local selectedGiftPass = nil
+    local giftPlayerList = {}
+    local giftPlayerDisplayNames = {}
+    local GiftPlayerDropdown
+    local GiftPassDropdown
+    local GiftPassDescParagraph
+
+    local GIFT_PASSES = {
+        { Name = "DoublePanen", Icon = "\240\159\140\190", Price = 50, GamepassId = 1711326948, GiftProductId = 3534985546, Category = "Farming", SortOrder = 1, Giftable = true, displayName = "2x Harvest", description = "Get 2x harvest every time!" },
+        { Name = "FastGrow", Icon = "\226\154\161", Price = 75, GamepassId = 1711410899, GiftProductId = 3542169435, Category = "Farming", SortOrder = 2, Giftable = true, displayName = "Fast Grow", description = "Crops grow 50% faster!" },
+        { Name = "ExtraSlots", Icon = "\240\159\147\166", Price = 99, GamepassId = 1709346337, GiftProductId = 3542169045, Category = "Farming", SortOrder = 3, Giftable = true, displayName = "Extra Slots", description = "Max crops from 15 to 25!" },
+        { Name = "DoubleSell", Icon = "\240\159\146\176", Price = 99, GamepassId = 1710868999, GiftProductId = 3542168668, Category = "Farming", SortOrder = 4, Giftable = true, displayName = "2x Sell", description = "Sell price doubled!" },
+        { Name = "DoubleXP", Icon = "\226\173\144", Price = 150, GamepassId = 1710737068, GiftProductId = 3542168280, Category = "Boost", SortOrder = 5, Giftable = true, displayName = "2x XP", description = "All XP (plant, harvest, sell) 2x!" },
+        { Name = "RainLover", Icon = "\240\159\140\167\239\184\143", Price = 150, GamepassId = 1710551126, GiftProductId = 3542167872, Category = "Boost", SortOrder = 6, Giftable = true, displayName = "Rain Lover", description = "During rain, 3x growth boost!" },
+        { Name = "AutoHarvest", Icon = "\240\159\164\150", Price = 249, GamepassId = 1708014472, GiftProductId = 3542161637, Category = "Boost", SortOrder = 7, Giftable = true, displayName = "Auto Harvest", description = "Ripe crops auto-harvested!" },
+        { Name = "Boombox", Icon = "\240\159\147\187", Price = 199, GamepassId = 1709724203, GiftProductId = 3542161296, Category = "Fun", SortOrder = 8, Giftable = true, displayName = "Boombox", description = "Play your favorite music! (Tool)" },
+        { Name = "VIP", Icon = "\240\159\145\145", Price = 499, GamepassId = 1708374413, GiftProductId = 3542160882, Category = "Premium", SortOrder = 9, Giftable = true, displayName = "VIP Farmer", description = "2x Harvest + 2x Sell + 2x XP + [VIP] Chat Tag" },
+        { Name = "AutoFeedChicken", Icon = "\240\159\144\148", Price = 299, GamepassId = 1748076024, GiftProductId = 3556635500, Category = "Farming", SortOrder = 10, Giftable = true, displayName = "Auto Feed Chicken", description = "Hungry chickens auto-fed with Rice!" },
+        { Name = "AutoFeedCow", Icon = "\240\159\144\132", Price = 299, GamepassId = 1748361543, GiftProductId = 3556635493, Category = "Farming", SortOrder = 11, Giftable = true, displayName = "Auto Feed Cow", description = "Hungry cows auto-fed with Corn!" },
+        { Name = "AutoCollectEgg", Icon = "\240\159\165\154", Price = 199, GamepassId = 1748245629, GiftProductId = 3556635498, Category = "Farming", SortOrder = 12, Giftable = true, displayName = "Auto Collect Egg", description = "Ready eggs auto-collected!" },
+        { Name = "AutoCollectMilk", Icon = "\240\159\165\155", Price = 199, GamepassId = 1748782304, GiftProductId = 3556635499, Category = "Farming", SortOrder = 13, Giftable = true, displayName = "Auto Collect Milk", description = "Ready milk auto-collected!" },
+    }
+
+    local function giftPassDisplayLabel(pass)
+        return (pass.Icon or "") .. " " .. (pass.displayName or pass.Name)
+    end
+
+    local function rebuildGiftPassOptions()
+        giftPassCatalog = {}
+        giftPassDisplayOptions = {}
+        giftPassByDisplayOption = {}
+        for _, entry in ipairs(GIFT_PASSES) do
+            if entry.Giftable ~= false then
+                table.insert(giftPassCatalog, entry)
+            end
+        end
+        table.sort(giftPassCatalog, function(a, b)
+            return (a.SortOrder or 0) < (b.SortOrder or 0)
+        end)
+        for _, pass in ipairs(giftPassCatalog) do
+            local label = giftPassDisplayLabel(pass)
+            table.insert(giftPassDisplayOptions, label)
+            giftPassByDisplayOption[label] = pass
+        end
+        if GiftPassDropdown and GiftPassDropdown.Refresh then
+            GiftPassDropdown:Refresh(giftPassDisplayOptions)
+        end
+    end
+
+    local function updateGiftPassDescription()
+        if not (GiftPassDescParagraph and GiftPassDescParagraph.Set) then
+            return
+        end
+        if selectedGiftPass then
+            GiftPassDescParagraph:Set({
+                Title = selectedGiftPass.displayName,
+                Content = selectedGiftPass.description,
+            })
+        else
+            GiftPassDescParagraph:Set({
+                Title = "Description",
+                Content = "Select a game pass.",
+            })
+        end
+    end
+
+    local function giftPlayerDropdownLabel(player)
+        if not player then
+            return ""
+        end
+        local displayName = player.DisplayName
+        local username = player.Name
+        if displayName and displayName ~= "" and displayName ~= username then
+            return string.format("%s (%s)", displayName, username)
+        end
+        return username
+    end
+
+    local function refreshGiftPlayerList(showNotify)
+        giftPlayerList = {}
+        giftPlayerDisplayNames = {}
+        local localPlayer = Players.LocalPlayer
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= localPlayer and player.ClassName == "Player" then
+                table.insert(giftPlayerList, player)
+            end
+        end
+        table.sort(giftPlayerList, function(a, b)
+            local na = string.lower(giftPlayerDropdownLabel(a))
+            local nb = string.lower(giftPlayerDropdownLabel(b))
+            return na < nb
+        end)
+        for _, player in ipairs(giftPlayerList) do
+            table.insert(giftPlayerDisplayNames, giftPlayerDropdownLabel(player))
+        end
+        if GiftPlayerDropdown and GiftPlayerDropdown.Refresh then
+            GiftPlayerDropdown:Refresh(giftPlayerDisplayNames)
+        end
+        if selectedGiftPlayer and not table.find(giftPlayerList, selectedGiftPlayer) then
+            selectedGiftPlayer = nil
+            if GiftPlayerDropdown and GiftPlayerDropdown.Select then GiftPlayerDropdown:Select(nil) end
+            if GiftPlayerDropdown and GiftPlayerDropdown.Set then GiftPlayerDropdown:Set({}) end
+        end
+        if showNotify then
+            mountNotify({ Title = "Gift Game Pass", Content = "Player list refreshed (" .. #giftPlayerList .. ")" })
+        end
+    end
+
+    rebuildGiftPassOptions()
+    refreshGiftPlayerList(false)
+
+    GiftPlayerDropdown = ShopTab:CreateDropdown({
+        Name = "Player",
+        Options = giftPlayerDisplayNames,
+        CurrentOption = {},
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            selectedGiftPlayer = nil
+            if picked then
+                local idx = table.find(giftPlayerDisplayNames, picked)
+                if idx and giftPlayerList[idx] then
+                    selectedGiftPlayer = giftPlayerList[idx]
+                end
+            end
+        end,
+    })
+
+    GiftPassDropdown = ShopTab:CreateDropdown({
+        Name = "Passes",
+        Options = giftPassDisplayOptions,
+        CurrentOption = {},
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            selectedGiftPass = picked and giftPassByDisplayOption[picked] or nil
+            updateGiftPassDescription()
+        end,
+    })
+
+    GiftPassDescParagraph = ShopTab:CreateParagraph({
+        Title = "Description",
+        Content = "Select a game pass.",
+    })
+
+    ShopTab:CreateButton({
+        Name = "Refresh Players",
+        Callback = function()
+            refreshGiftPlayerList(true)
+        end,
+    })
+
+    local requestGiftRemote = ReplicatedStorage.Remotes.TutorialRemotes.RequestGift
+    local giftDoneRemote = ReplicatedStorage.Remotes.TutorialRemotes.GiftPurchaseDone
+    local giftNotificationRemote = ReplicatedStorage.Remotes.TutorialRemotes.Notification
+    local GIFT_NOTIFY_TIMEOUT = 15
+    local GIFT_ALL_DELAY_SECONDS = 5
+
+    local function listenGiftPassNotification(targetPlayer, onMessage)
+        local targetName = targetPlayer.DisplayName or targetPlayer.Name
+        local received = false
+        local conn
+        conn = giftNotificationRemote.OnClientEvent:Connect(function(message)
+            if received or type(message) ~= "string" then
+                return
+            end
+            if not string.find(message, "sent to", 1, true) then
+                return
+            end
+            if targetName ~= "" and not string.find(message, targetName, 1, true) then
+                return
+            end
+            received = true
+            if conn then
+                conn:Disconnect()
+                conn = nil
+            end
+            onMessage(message)
+        end)
+        task.delay(GIFT_NOTIFY_TIMEOUT, function()
+            if conn then
+                conn:Disconnect()
+                conn = nil
+            end
+        end)
+    end
+
+    local function giftPassToPlayer(targetPlayer, pass, showSuccessNotify)
+        local result = requestGiftRemote:InvokeServer("PROMPT_GIFT", targetPlayer.UserId, pass.Name)
+        local expected = type(result) == "table" and result or select(1, result)
+
+        task.spawn(function()
+            task.wait(0.2)
+            forceCloseRobloxPurchasePrompt(8)
+        end)
+
+        if not (expected and expected.Success) then
+            return false, (expected and expected.Message) or "Could not start gift prompt"
+        end
+
+        if showSuccessNotify then
+            listenGiftPassNotification(targetPlayer, function(message)
+                mountNotify({
+                    Title = "Gift Game Pass",
+                    Content = message,
+                    Icon = "check",
+                })
+            end)
+        end
+
+        giftDoneRemote:FireServer(pass.GiftProductId, true)
+        return true
+    end
+
+    ShopTab:CreateButton({
+        Name = "Gift Passes",
+        Callback = function()
+            if not selectedGiftPlayer then
+                mountNotify({ Title = "Gift Game Pass", Content = "Select a player first" })
+                return
+            end
+            if not selectedGiftPass then
+                mountNotify({ Title = "Gift Game Pass", Content = "Select a game pass first" })
+                return
+            end
+            local ok, err = giftPassToPlayer(selectedGiftPlayer, selectedGiftPass, true)
+            if not ok then
+                mountNotify({
+                    Title = "Gift Game Pass",
+                    Content = err,
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    ShopTab:CreateButton({
+        Name = "Gift All Passes to Player",
+        Callback = function()
+            if not selectedGiftPlayer then
+                mountNotify({ Title = "Gift Game Pass", Content = "Select a player first" })
+                return
+            end
+            local targetPlayer = selectedGiftPlayer
+            local targetLabel = giftPlayerDropdownLabel(targetPlayer)
+            task.spawn(function()
+                local sent = 0
+                local skipped = 0
+                for _, pass in ipairs(giftPassCatalog) do
+                    if not targetPlayer.Parent then
+                        break
+                    end
+                    local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                    if ok then
+                        sent = sent + 1
+                    else
+                        skipped = skipped + 1
+                        mountNotify({
+                            Title = "Gift All",
+                            Content = (pass.displayName or pass.Name) .. ": " .. tostring(err),
+                            Icon = "x",
+                        })
+                    end
+                    task.wait(GIFT_ALL_DELAY_SECONDS)
+                end
+                mountNotify({
+                    Title = "Gift All",
+                    Content = string.format(
+                        "Finished for %s: %d sent, %d skipped (of %d)",
+                        targetLabel,
+                        sent,
+                        skipped,
+                        #giftPassCatalog
+                    ),
+                    Icon = sent > 0 and "check" or "x",
+                })
+            end)
+        end,
+    })
+
+    ShopTab:CreateButton({
+        Name = "Gift Passes to All Players",
+        Callback = function()
+            if not selectedGiftPass then
+                mountNotify({ Title = "Gift Game Pass", Content = "Select a game pass first" })
+                return
+            end
+            local pass = selectedGiftPass
+            local passLabel = pass.displayName or pass.Name
+            task.spawn(function()
+                refreshGiftPlayerList(false)
+                local sent = 0
+                local skipped = 0
+                local total = #giftPlayerList
+                if total == 0 then
+                    mountNotify({ Title = "Gift to All", Content = "No other players in server", Icon = "x" })
+                    return
+                end
+                for _, targetPlayer in ipairs(giftPlayerList) do
+                    if not targetPlayer.Parent then
+                        skipped = skipped + 1
+                    else
+                        local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                        if ok then
+                            sent = sent + 1
+                        else
+                            skipped = skipped + 1
+                            mountNotify({
+                                Title = "Gift to All",
+                                Content = giftPlayerDropdownLabel(targetPlayer) .. ": " .. tostring(err),
+                                Icon = "x",
+                            })
+                        end
+                    end
+                    task.wait(GIFT_ALL_DELAY_SECONDS)
+                end
+                mountNotify({
+                    Title = "Gift to All",
+                    Content = string.format(
+                        "%s: %d sent, %d skipped (of %d players)",
+                        passLabel,
+                        sent,
+                        skipped,
+                        total
+                    ),
+                    Icon = sent > 0 and "check" or "x",
+                })
+            end)
+        end,
+    })
+
+    Players.PlayerAdded:Connect(function(player)
+        if player ~= Players.LocalPlayer then
+            refreshGiftPlayerList(false)
+        end
+    end)
+    Players.PlayerRemoving:Connect(function(player)
+        if player == selectedGiftPlayer then
+            selectedGiftPlayer = nil
+        end
+        refreshGiftPlayerList(false)
+    end)
 end
 -- */  Objects Tab  /* --
 do
