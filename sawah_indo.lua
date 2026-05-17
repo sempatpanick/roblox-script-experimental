@@ -2392,30 +2392,35 @@ do
         end,
     })
 
-    FarmTab:CreateInput({
+    FarmTab:CreateSlider({
         Name = "Heart scale",
-        PlaceholderText = "Heart curve size",
-        CurrentValue = tostring(farmHeartCurveScale),
+        Range = { 0.1, 2 },
+        Increment = 0.05,
+        CurrentValue = farmHeartCurveScale,
         Callback = function(value)
-            farmHeartCurveScale = tonumber(value) or farmHeartCurveScale
+            farmHeartCurveScale = value
         end,
     })
 
-    FarmTab:CreateInput({
+    FarmTab:CreateSlider({
         Name = "Circle radius",
-        PlaceholderText = "Circle distance from center",
-        CurrentValue = tostring(farmCircleRadius),
+        Range = { 1, 25 },
+        Increment = 0.5,
+        Suffix = "studs",
+        CurrentValue = farmCircleRadius,
         Callback = function(value)
-            farmCircleRadius = tonumber(value) or farmCircleRadius
+            farmCircleRadius = value
         end,
     })
 
-    FarmTab:CreateInput({
+    FarmTab:CreateSlider({
         Name = "Random radius",
-        PlaceholderText = "Max random distance from center",
-        CurrentValue = tostring(farmRandomRadius),
+        Range = { 1, 25 },
+        Increment = 0.5,
+        Suffix = "studs",
+        CurrentValue = farmRandomRadius,
         Callback = function(value)
-            farmRandomRadius = tonumber(value) or farmRandomRadius
+            farmRandomRadius = value
         end,
     })
 
