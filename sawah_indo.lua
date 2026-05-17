@@ -2027,6 +2027,10 @@ do
         return list
     end
 
+    local function isMaximumCropsNotification(message)
+        return type(message) == "string" and message:match("^Maximum %d+ crops!$") ~= nil
+    end
+
     do
         local activeCrops = Workspace:FindFirstChild("ActiveCrops")
         if activeCrops then
@@ -2212,7 +2216,7 @@ do
 
             local stopRequested = false
             local connection = NotificationEvent.OnClientEvent:Connect(function(message)
-                if message == "Maximum 15 crops!" then
+                if isMaximumCropsNotification(message) then
                     stopRequested = true
                 end
             end)
@@ -2261,7 +2265,7 @@ do
             local gotMaxCrops = false
 
             autoFarmConnection = NotificationEvent.OnClientEvent:Connect(function(message)
-                if message == "Maximum 15 crops!" then
+                if isMaximumCropsNotification(message) then
                     gotMaxCrops = true
                 end
             end)
@@ -2300,16 +2304,12 @@ do
                             task.wait(0.5)
                         end
                     end
-                    local cropCount = #getAllCropsByLocalPlayer()
-                    if cropCount >= 15 then
-                        task.wait(1)
-                    else
-                        PlantCropEvent:FireServer(position)
-                        task.wait(1)
-                    end
                     if gotMaxCrops then
                         gotMaxCrops = false
                         task.wait(9)
+                    else
+                        PlantCropEvent:FireServer(position)
+                        task.wait(1)
                     end
                 end
             end)
