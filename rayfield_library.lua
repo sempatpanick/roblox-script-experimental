@@ -3570,9 +3570,13 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
 			Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
 
-			TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
+			if SliderSettings.Visible == false then
+				Slider.Visible = false
+			else
+				TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+				TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+				TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			end
 
 			Slider.Main.Progress.Size =	UDim2.new(0, Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)
 
@@ -3671,6 +3675,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 					end
 				end)
 			end)
+
+			function SliderSettings:SetVisible(Value)
+				Slider.Visible = Value == true
+			end
 
 			function SliderSettings:Set(NewVal)
 				local NewVal = math.clamp(NewVal, SliderSettings.Range[1], SliderSettings.Range[2])
