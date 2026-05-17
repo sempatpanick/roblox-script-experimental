@@ -2027,8 +2027,18 @@ do
         return list
     end
 
+    local function parseMaxCropsFromNotification(message)
+        if type(message) ~= "string" then return nil end
+        local maxCount = message:match("^Maximum (%d+) crops!$")
+        return maxCount and tonumber(maxCount) or nil
+    end
+
     local function isMaximumCropsNotification(message)
-        return type(message) == "string" and message:match("^Maximum %d+ crops!$") ~= nil
+        return parseMaxCropsFromNotification(message) ~= nil
+    end
+
+    local function countLocalPlayerActiveCrops()
+        return #refreshAllCropsByLocalPlayer()
     end
 
     do
@@ -2262,11 +2272,12 @@ do
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
             local position = getFarmPosition()
-            local gotMaxCrops = false
+            local cropMaxCount = nil
 
             autoFarmConnection = NotificationEvent.OnClientEvent:Connect(function(message)
-                if isMaximumCropsNotification(message) then
-                    gotMaxCrops = true
+                local maxFromNotify = parseMaxCropsFromNotification(message)
+                if maxFromNotify then
+                    cropMaxCount = maxFromNotify
                 end
             end)
 
@@ -2304,9 +2315,10 @@ do
                             task.wait(0.5)
                         end
                     end
-                    if gotMaxCrops then
-                        gotMaxCrops = false
-                        task.wait(9)
+
+                    local activeCropCount = countLocalPlayerActiveCrops()
+                    if cropMaxCount and activeCropCount >= cropMaxCount then
+                        task.wait(1)
                     else
                         PlantCropEvent:FireServer(position)
                         task.wait(1)
