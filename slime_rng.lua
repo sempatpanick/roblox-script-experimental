@@ -54,6 +54,23 @@ local function rayfieldDropdownFirst(valueOrTable)
     return valueOrTable
 end
 
+local function clearRayfieldDropdown(dropdown)
+    if not dropdown then
+        return
+    end
+    if dropdown.Set then
+        local ok = pcall(function()
+            dropdown:Set({})
+        end)
+        if ok then
+            return
+        end
+    end
+    if type(dropdown.CurrentOption) == "table" then
+        table.clear(dropdown.CurrentOption)
+    end
+end
+
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Slime RNG",
@@ -1747,15 +1764,22 @@ do
     local lootPendingAck: { [string]: boolean } = {}
     local collectedLootLines: { string } = {}
     local COLLECTED_LOOT_MAX_LINES = 50
-    -- `Packages._Index` folder name for leifstout_networker (change when the place bumps Wally version).
-    local LEIFSTOUT_NETWORKER_INDEX_FOLDER = "leifstout_networker@0.3.1"
+    -- `Packages._Index` leifstout_networker versions (newest first for generic remotes).
+    local LEIFSTOUT_NETWORKER_VERSIONS: { string } = {
+        "leifstout_networker@0.3.1",
+        "leifstout_networker@0.2.1",
+    }
+    -- DataService `specialRollProgression` is only fired on this package version.
+    local LEIFSTOUT_NETWORKER_DATA_SERVICE_VERSION = "leifstout_networker@0.2.1"
+    -- RollService `requestSetSpecialRollPaused` must use this package version.
+    local LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION = "leifstout_networker@0.3.1"
 
     local LootCollectedParagraph = MainTab:CreateParagraph({
         Title = "Collected loot",
         Content = "None",
     })
 
-    local function findNetworkerServiceRemotesFolder(serviceFolderName: string): Instance?
+    local function getNetworkerRemotesRoot(indexFolderName: string): Instance?
         local packages = ReplicatedStorage:FindFirstChild("Packages")
         if not packages then
             return nil
@@ -1764,7 +1788,7 @@ do
         if not idx then
             return nil
         end
-        local pkg = idx:FindFirstChild(LEIFSTOUT_NETWORKER_INDEX_FOLDER)
+        local pkg = idx:FindFirstChild(indexFolderName)
         if not pkg then
             return nil
         end
@@ -1776,11 +1800,54 @@ do
         if not rem then
             return nil
         end
-        local svc = rem:FindFirstChild(serviceFolderName)
+        return rem
+    end
+
+    local function findNetworkerServiceRemotesFolder(serviceFolderName: string, indexFolderName: string?): Instance?
+        local versions: { string }
+        if indexFolderName then
+            versions = { indexFolderName }
+        else
+            versions = LEIFSTOUT_NETWORKER_VERSIONS
+        end
+        for _, folderName in ipairs(versions) do
+            local rem = getNetworkerRemotesRoot(folderName)
+            if rem then
+                local svc = rem:FindFirstChild(serviceFolderName)
+                if svc then
+                    return svc
+                end
+            end
+        end
+        return nil
+    end
+
+    local function findNetworkerRemoteInService(
+        serviceFolderName: string,
+        remoteChildName: string,
+        remoteClass: string,
+        indexFolderName: string?
+    ): Instance?
+        local svc = findNetworkerServiceRemotesFolder(serviceFolderName, indexFolderName)
         if not svc then
             return nil
         end
-        return svc
+        local remote = svc:FindFirstChild(remoteChildName)
+        if remote and remote:IsA(remoteClass) then
+            return remote
+        end
+        return nil
+    end
+
+    local function resolveNetworkerRemoteFunction(
+        serviceFolderName: string,
+        indexFolderName: string?
+    ): RemoteFunction?
+        local rf = findNetworkerRemoteInService(serviceFolderName, "RemoteFunction", "RemoteFunction", indexFolderName)
+        if rf and rf:IsA("RemoteFunction") then
+            return rf
+        end
+        return nil
     end
 
     local function findLootServiceRemotesFolder(): Instance?
@@ -2467,19 +2534,7 @@ do
         end
     end)
 
-    local slimeGunTryFireRemote: RemoteFunction? = nil
-    do
-        local packages = ReplicatedStorage:FindFirstChild("Packages")
-        local idx = packages and packages:FindFirstChild("_Index")
-        local pkg = idx and idx:FindFirstChild(LEIFSTOUT_NETWORKER_INDEX_FOLDER)
-        local net = pkg and pkg:FindFirstChild("networker")
-        local rem = net and net:FindFirstChild("_remotes")
-        local svc = rem and rem:FindFirstChild("SlimeGunService")
-        local rf = svc and svc:FindFirstChild("RemoteFunction")
-        if rf and rf:IsA("RemoteFunction") then
-            slimeGunTryFireRemote = rf
-        end
-    end
+    local slimeGunTryFireRemote: RemoteFunction? = resolveNetworkerRemoteFunction("SlimeGunService")
 
     local function mainTryFireSlimeGun(uid: number)
         if not slimeGunTryFireRemote then
@@ -2528,6 +2583,342 @@ do
                     end
                 end
             end)
+        end,
+    })
+
+    MainTab:CreateSection("Auto Adjust Special Roll")
+
+    local SPECIAL_ROLL_TIER_ORDER: { string } = { "void", "galaxy", "diamond", "golden" }
+
+    type SpecialRollTierSnapshot = {
+        paused: boolean,
+        rollsUntilNext: number,
+    }
+
+    local specialRollProgressionByTier: { [string]: SpecialRollTierSnapshot } = {}
+    local specialRollDisplayToTier: { [string]: string } = {}
+    local selectedSpecialRollTierKeys: { string } = {}
+    local specialRollDropdownSeededAll = false
+    local autoAdjustSpecialRollEnabled = false
+    local specialRollPauseInvokePending: { [string]: boolean } = {}
+    local specialRollParagraphRefreshScheduled = false
+    local SpecialRollDropdown: any = nil
+
+    local function specialRollTierDisplayName(tierKey: string): string
+        return string.sub(tierKey, 1, 1):upper() .. string.sub(tierKey, 2)
+    end
+
+    local function specialRollParseTierEntry(entry: any): SpecialRollTierSnapshot?
+        if type(entry) ~= "table" then
+            return nil
+        end
+        local rolls = entry.rollsUntilNext
+        if type(rolls) ~= "number" then
+            rolls = tonumber(rolls) or 0
+        end
+        return {
+            paused = entry.paused == true,
+            rollsUntilNext = math.max(0, math.floor(rolls)),
+        }
+    end
+
+    local SpecialRollParagraph = MainTab:CreateParagraph({
+        Title = "Special rolls",
+        Content = 'Waiting for DataService "specialRollProgression" event…\n\nSelected: (None)',
+    })
+
+    local function buildSpecialRollSelectedLine(): string
+        local names: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                table.insert(names, specialRollTierDisplayName(tier))
+            end
+        end
+        if #names == 0 then
+            return "Selected: (None)"
+        end
+        return "Selected: " .. table.concat(names, ", ")
+    end
+
+    local function buildSpecialRollParagraphBody(): string
+        local selectedLine = buildSpecialRollSelectedLine()
+        local progressionLines: { string } = {}
+        local anyProgression = false
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            local st = specialRollProgressionByTier[tier]
+            if st then
+                anyProgression = true
+                table.insert(
+                    progressionLines,
+                    ("%s: rolls=%d paused=%s"):format(
+                        specialRollTierDisplayName(tier),
+                        st.rollsUntilNext,
+                        st.paused and "true" or "false"
+                    )
+                )
+            end
+        end
+        if not anyProgression then
+            return ('Waiting for DataService "specialRollProgression" event…\n\n%s'):format(selectedLine)
+        end
+        return table.concat(progressionLines, "\n") .. "\n\n" .. selectedLine
+    end
+
+    local function refreshSpecialRollParagraph()
+        if SpecialRollParagraph and SpecialRollParagraph.Set then
+            SpecialRollParagraph:Set({
+                Title = "Special rolls",
+                Content = buildSpecialRollParagraphBody(),
+            })
+        end
+    end
+
+    local function scheduleRefreshSpecialRollParagraph()
+        if specialRollParagraphRefreshScheduled then
+            return
+        end
+        specialRollParagraphRefreshScheduled = true
+        task.defer(function()
+            specialRollParagraphRefreshScheduled = false
+            refreshSpecialRollParagraph()
+        end)
+    end
+
+    local function specialRollSetSelectedTierKeysFromDisplayOptions(value: any)
+        table.clear(selectedSpecialRollTierKeys)
+        local function addDisplay(opt: string)
+            local tier = specialRollDisplayToTier[opt]
+            if tier and not table.find(selectedSpecialRollTierKeys, tier) then
+                table.insert(selectedSpecialRollTierKeys, tier)
+            end
+        end
+        if type(value) == "table" then
+            for _, opt in ipairs(value) do
+                if type(opt) == "string" then
+                    addDisplay(opt)
+                end
+            end
+        elseif type(value) == "string" then
+            addDisplay(value)
+        end
+        refreshSpecialRollParagraph()
+    end
+
+    local function refreshSpecialRollDropdownFromProgression()
+        table.clear(specialRollDisplayToTier)
+        local opts: { string } = {}
+        local tierKeysAvailable: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if specialRollProgressionByTier[tier] then
+                local display = specialRollTierDisplayName(tier)
+                specialRollDisplayToTier[display] = tier
+                table.insert(opts, display)
+                table.insert(tierKeysAvailable, tier)
+            end
+        end
+        if SpecialRollDropdown and SpecialRollDropdown.Refresh then
+            SpecialRollDropdown:Refresh(opts)
+        end
+        if #opts == 0 then
+            table.clear(selectedSpecialRollTierKeys)
+            refreshSpecialRollParagraph()
+            return
+        end
+        if not specialRollDropdownSeededAll then
+            selectedSpecialRollTierKeys = table.clone(tierKeysAvailable)
+            specialRollDropdownSeededAll = true
+            if SpecialRollDropdown and SpecialRollDropdown.Set then
+                SpecialRollDropdown:Set(opts)
+            end
+            refreshSpecialRollParagraph()
+            return
+        end
+        local kept: { string } = {}
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            if specialRollProgressionByTier[tier] and not table.find(kept, tier) then
+                table.insert(kept, tier)
+            end
+        end
+        if #kept == 0 then
+            kept = table.clone(tierKeysAvailable)
+        end
+        selectedSpecialRollTierKeys = kept
+        local displaySelected: { string } = {}
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            table.insert(displaySelected, specialRollTierDisplayName(tier))
+        end
+        if SpecialRollDropdown and SpecialRollDropdown.Set then
+            SpecialRollDropdown:Set(displaySelected)
+        end
+        refreshSpecialRollParagraph()
+    end
+
+    local rollSetSpecialPausedRemote: RemoteFunction? = nil
+    local dataServiceProgressRemoteEvent: RemoteEvent? = nil
+
+    local function getRollSetSpecialPausedRemote(): RemoteFunction?
+        if rollSetSpecialPausedRemote and rollSetSpecialPausedRemote.Parent then
+            return rollSetSpecialPausedRemote
+        end
+        rollSetSpecialPausedRemote =
+            resolveNetworkerRemoteFunction("RollService", LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
+        if rollSetSpecialPausedRemote then
+            return rollSetSpecialPausedRemote
+        end
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+            or ReplicatedStorage:WaitForChild("Packages", 12)
+        if not packages then
+            return nil
+        end
+        local idx = packages:FindFirstChild("_Index") or packages:WaitForChild("_Index", 12)
+        if not idx then
+            return nil
+        end
+        local pkg = idx:FindFirstChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
+            or idx:WaitForChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION, 12)
+        if not pkg then
+            return nil
+        end
+        local net = pkg:FindFirstChild("networker") or pkg:WaitForChild("networker", 12)
+        local rem = net and (net:FindFirstChild("_remotes") or net:WaitForChild("_remotes", 12))
+        local rollSvc = rem and rem:FindFirstChild("RollService")
+        local rollRf = rollSvc and rollSvc:FindFirstChild("RemoteFunction")
+        if rollRf and rollRf:IsA("RemoteFunction") then
+            rollSetSpecialPausedRemote = rollRf
+        end
+        return rollSetSpecialPausedRemote
+    end
+
+    do
+        local dataEv = findNetworkerRemoteInService(
+            "DataService",
+            "RemoteEvent",
+            "RemoteEvent",
+            LEIFSTOUT_NETWORKER_DATA_SERVICE_VERSION
+        )
+        if dataEv and dataEv:IsA("RemoteEvent") then
+            dataServiceProgressRemoteEvent = dataEv
+        end
+    end
+
+    local function mainRequestSetSpecialRollPaused(tierKey: string, pausedFlag: boolean): boolean
+        local rf = getRollSetSpecialPausedRemote()
+        if not rf then
+            return false
+        end
+        local ok = pcall(function()
+            rf:InvokeServer("requestSetSpecialRollPaused", tierKey, pausedFlag)
+        end)
+        return ok == true
+    end
+
+    local function mainSelectedSpecialRollTiersAtOneRoll(): { string }
+        local toPause: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.rollsUntilNext == 1 and not st.paused then
+                    table.insert(toPause, tier)
+                end
+            end
+        end
+        return toPause
+    end
+
+    local function runAutoAdjustSpecialRollPass()
+        if not autoAdjustSpecialRollEnabled or #selectedSpecialRollTierKeys == 0 then
+            return
+        end
+        local toPause = mainSelectedSpecialRollTiersAtOneRoll()
+        for _, tier in ipairs(toPause) do
+            if not specialRollPauseInvokePending[tier] then
+                if mainRequestSetSpecialRollPaused(tier, false) then
+                    specialRollPauseInvokePending[tier] = true
+                end
+            end
+        end
+        for tier, _ in pairs(specialRollPauseInvokePending) do
+            local st = specialRollProgressionByTier[tier]
+            if not st or st.rollsUntilNext ~= 1 or st.paused then
+                specialRollPauseInvokePending[tier] = nil
+            end
+        end
+    end
+
+    local function specialRollApplyProgressionPayload(payload: any)
+        if type(payload) ~= "table" then
+            return
+        end
+        local tiersBefore: { [string]: boolean } = {}
+        for tier, _ in pairs(specialRollProgressionByTier) do
+            tiersBefore[tier] = true
+        end
+        local changed = false
+        local dropdownOptionsChanged = false
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            local parsed = specialRollParseTierEntry(payload[tier])
+            if parsed then
+                specialRollProgressionByTier[tier] = parsed
+                changed = true
+                if not tiersBefore[tier] then
+                    dropdownOptionsChanged = true
+                end
+            end
+        end
+        if not changed then
+            return
+        end
+        scheduleRefreshSpecialRollParagraph()
+        if dropdownOptionsChanged then
+            refreshSpecialRollDropdownFromProgression()
+        end
+    end
+
+    if dataServiceProgressRemoteEvent then
+        dataServiceProgressRemoteEvent.OnClientEvent:Connect(function(a1, a2, a3)
+            if a1 == 1 and a2 == "specialRollProgression" then
+                specialRollApplyProgressionPayload(a3)
+                runAutoAdjustSpecialRollPass()
+            end
+        end)
+    end
+
+    SpecialRollDropdown = MainTab:CreateDropdown({
+        Name = "Special Roll",
+        Flag = "main_auto_adjust_special_roll_dropdown",
+        Options = {},
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
+        Callback = function(value)
+            specialRollSetSelectedTierKeysFromDisplayOptions(value)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Adjust",
+        Flag = "main_auto_adjust_special_roll",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoAdjustSpecialRollEnabled = enabled == true
+
+            if not autoAdjustSpecialRollEnabled then
+                table.clear(specialRollPauseInvokePending)
+                return
+            end
+
+            if not getRollSetSpecialPausedRemote() then
+                mountNotify({
+                    Title = "Auto Adjust Special Roll",
+                    Content = "RollService RemoteFunction not found under "
+                        .. LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
+                        .. ".",
+                    Icon = "x",
+                })
+                return
+            end
+
+            runAutoAdjustSpecialRollPass()
         end,
     })
 
@@ -4399,21 +4790,11 @@ do
         end
         if autoLoadPickerSelection and not table.find(savedConfigList, autoLoadPickerSelection) then
             autoLoadPickerSelection = nil
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                AutoLoadSavedDropdown:Select(nil)
-            end
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set({})
-            end
+            clearRayfieldDropdown(AutoLoadSavedDropdown)
         end
         if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
             selectedSavedConfigName = nil
-            if SavedConfigsDropdown and SavedConfigsDropdown.Select then
-                SavedConfigsDropdown:Select(nil)
-            end
-            if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                SavedConfigsDropdown:Set({})
-            end
+            clearRayfieldDropdown(SavedConfigsDropdown)
         end
         if showNotify then
             mountNotify({
@@ -4624,20 +5005,10 @@ do
                 if readAutoLoadPersistedName() == name then
                     writeAutoLoadPersistedName("")
                     autoLoadPickerSelection = nil
-                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                        AutoLoadSavedDropdown:Select(nil)
-                    end
-                    if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                        AutoLoadSavedDropdown:Set({})
-                    end
+                    clearRayfieldDropdown(AutoLoadSavedDropdown)
                 end
                 selectedSavedConfigName = nil
-                if SavedConfigsDropdown and SavedConfigsDropdown.Select then
-                    SavedConfigsDropdown:Select(nil)
-                end
-                if SavedConfigsDropdown and SavedConfigsDropdown.Set then
-                    SavedConfigsDropdown:Set({})
-                end
+                clearRayfieldDropdown(SavedConfigsDropdown)
                 if sanitizeConfigName(configMgmtName) == name then
                     configMgmtName = ""
                     if ConfigNameInput and ConfigNameInput.Set then
@@ -4716,12 +5087,7 @@ do
         Callback = function()
             writeAutoLoadPersistedName("")
             autoLoadPickerSelection = nil
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Select then
-                AutoLoadSavedDropdown:Select(nil)
-            end
-            if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Set then
-                AutoLoadSavedDropdown:Set({})
-            end
+            clearRayfieldDropdown(AutoLoadSavedDropdown)
             mountNotify({
                 Title = "Auto Load",
                 Content = "Auto-load on startup disabled",
