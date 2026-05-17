@@ -2188,6 +2188,349 @@ do
         end,
     })
 
+    MainTab:CreateSection("Auto Gun")
+
+    local autoGunShotDelaySec = 0.1
+    local autoGunEnabled = false
+    local autoGunLoopToken = 0
+    local autoGunEnemyListenerConns: { RBXScriptConnection } = {}
+    local autoGunEnemyRefreshScheduled = false
+
+    local EnemiesListParagraph = MainTab:CreateParagraph({
+        Title = "Enemies",
+        Content = 'No enemies under Workspace → Gameplay* → Enemies.',
+    })
+
+    local function mainFindWorkspaceEnemiesFolders(): { Instance }
+        local out: { Instance } = {}
+        for _, ch in ipairs(Workspace:GetChildren()) do
+            if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
+                local enemies = ch:FindFirstChild("Enemies")
+                if enemies then
+                    table.insert(out, enemies)
+                end
+            end
+        end
+        return out
+    end
+
+    local function mainEnemyNumericUid(enemy: Instance): number?
+        local fromName = tonumber(enemy.Name)
+        if fromName then
+            return fromName
+        end
+        for _, attrName in ipairs({ "Uid", "uid", "UID", "Id", "id" }) do
+            local v = enemy:GetAttribute(attrName)
+            if type(v) == "number" then
+                return v
+            end
+            if type(v) == "string" then
+                local n = tonumber(v)
+                if n then
+                    return n
+                end
+            end
+        end
+        for _, childName in ipairs({ "Uid", "uid", "UID", "Id", "id" }) do
+            local sv = enemy:FindFirstChild(childName)
+            if sv then
+                if sv:IsA("IntValue") or sv:IsA("NumberValue") then
+                    return (sv :: any).Value
+                end
+                if sv:IsA("StringValue") then
+                    local n = tonumber((sv :: StringValue).Value)
+                    if n then
+                        return n
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function mainEnemyGuiTextFromNode(node: Instance?): string
+        if not node then
+            return ""
+        end
+        local function textFromGui(inst: Instance): string
+            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                local fromFmt = formatGuiInstanceTextForDisplay(inst)
+                if fromFmt and fromFmt ~= "" then
+                    return fromFmt
+                end
+                if inst:IsA("TextLabel") then
+                    return (inst :: TextLabel).Text
+                end
+                if inst:IsA("TextButton") then
+                    return (inst :: TextButton).Text
+                end
+                return (inst :: TextBox).Text
+            end
+            return ""
+        end
+        local direct = textFromGui(node)
+        if direct ~= "" then
+            return direct
+        end
+        local tl = node:FindFirstChildWhichIsA("TextLabel", true)
+        if tl then
+            return textFromGui(tl)
+        end
+        return ""
+    end
+
+    local function mainEnemyHpDisplay(enemy: Instance): string
+        local bb = enemy:FindFirstChild("HealthBarBillboardGui", true)
+        if not bb then
+            return "?"
+        end
+        local hpNode = bb:FindFirstChild("Hp", true)
+        if not hpNode then
+            return "?"
+        end
+        local hp = mainEnemyGuiTextFromNode(hpNode)
+        return hp ~= "" and hp or "?"
+    end
+
+    local function mainEnemyMutationLabel(enemy: Instance): string?
+        local bb = enemy:FindFirstChild("MutationBillboard", true)
+        if not bb then
+            return nil
+        end
+        local labelNode = bb:FindFirstChild("MutationLabel", true)
+        if not labelNode then
+            return nil
+        end
+        local text = mainEnemyGuiTextFromNode(labelNode)
+        if text == "" then
+            return nil
+        end
+        return text
+    end
+
+    local MUTATION_SHOT_PRIORITY_NAMES: { string } = {
+        "Inverted",
+        "Shiny",
+        "HUGE",
+        "Big",
+    }
+
+    local function mainMutationNameMatches(a: string, b: string): boolean
+        return string.lower(a) == string.lower(b)
+    end
+
+    -- 1–4 named mutations, 5 = other mutation, 6 = no MutationBillboard / no label.
+    local function mainEnemyMutationShotPriority(mutation: string?): number
+        if not mutation or mutation == "" then
+            return 6
+        end
+        for i, priorityName in ipairs(MUTATION_SHOT_PRIORITY_NAMES) do
+            if mainMutationNameMatches(mutation, priorityName) then
+                return i
+            end
+        end
+        return 5
+    end
+
+    type EnemyListRow = {
+        uid: number,
+        hp: string,
+        mutation: string?,
+        shotPriority: number,
+        listOrder: number,
+    }
+
+    local function mainCollectEnemyListRows(): { EnemyListRow }
+        local rows: { EnemyListRow } = {}
+        local seenUid: { [number]: boolean } = {}
+        local listOrder = 0
+        for _, folder in ipairs(mainFindWorkspaceEnemiesFolders()) do
+            for _, enemy in ipairs(folder:GetChildren()) do
+                local uid = mainEnemyNumericUid(enemy)
+                if uid and not seenUid[uid] then
+                    seenUid[uid] = true
+                    listOrder = listOrder + 1
+                    local mutation = mainEnemyMutationLabel(enemy)
+                    table.insert(rows, {
+                        uid = uid,
+                        hp = mainEnemyHpDisplay(enemy),
+                        mutation = mutation,
+                        shotPriority = mainEnemyMutationShotPriority(mutation),
+                        listOrder = listOrder,
+                    })
+                end
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.shotPriority ~= b.shotPriority then
+                return a.shotPriority < b.shotPriority
+            end
+            if a.listOrder ~= b.listOrder then
+                return a.listOrder < b.listOrder
+            end
+            return a.uid < b.uid
+        end)
+        return rows
+    end
+
+    local function mainFormatEnemyListLine(row: EnemyListRow): string
+        if row.mutation and row.mutation ~= "" then
+            return ("%d - %s (%s)"):format(row.uid, row.hp, row.mutation)
+        end
+        return ("%d - %s"):format(row.uid, row.hp)
+    end
+
+    local function mainPickAutoShotEnemyUid(): number?
+        local rows = mainCollectEnemyListRows()
+        local first = rows[1]
+        if first then
+            return first.uid
+        end
+        return nil
+    end
+
+    local function mainBuildEnemiesListParagraphBody(): string
+        local enemyFolders = mainFindWorkspaceEnemiesFolders()
+        if #enemyFolders == 0 then
+            return 'No enemies under Workspace → Gameplay* → Enemies.'
+        end
+        local rows = mainCollectEnemyListRows()
+        if #rows == 0 then
+            return "Enemies folder(s) found, but no numeric enemy uids yet."
+        end
+        local lines: { string } = {}
+        for _, row in ipairs(rows) do
+            table.insert(lines, mainFormatEnemyListLine(row))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function refreshEnemiesListParagraph()
+        if EnemiesListParagraph and EnemiesListParagraph.Set then
+            EnemiesListParagraph:Set({
+                Title = "Enemies",
+                Content = mainBuildEnemiesListParagraphBody(),
+            })
+        end
+    end
+
+    local function disconnectAutoGunEnemyListeners()
+        for _, conn in ipairs(autoGunEnemyListenerConns) do
+            conn:Disconnect()
+        end
+        table.clear(autoGunEnemyListenerConns)
+    end
+
+    local function scheduleRefreshEnemiesListParagraph()
+        if autoGunEnemyRefreshScheduled then
+            return
+        end
+        autoGunEnemyRefreshScheduled = true
+        task.defer(function()
+            autoGunEnemyRefreshScheduled = false
+            refreshEnemiesListParagraph()
+        end)
+    end
+
+    local function bindAutoGunEnemyListeners()
+        disconnectAutoGunEnemyListeners()
+        local function hookFolder(folder: Instance)
+            table.insert(autoGunEnemyListenerConns, folder.ChildAdded:Connect(scheduleRefreshEnemiesListParagraph))
+            table.insert(autoGunEnemyListenerConns, folder.ChildRemoved:Connect(scheduleRefreshEnemiesListParagraph))
+            for _, enemy in ipairs(folder:GetChildren()) do
+                table.insert(
+                    autoGunEnemyListenerConns,
+                    enemy.DescendantAdded:Connect(scheduleRefreshEnemiesListParagraph)
+                )
+            end
+        end
+        for _, folder in ipairs(mainFindWorkspaceEnemiesFolders()) do
+            hookFolder(folder)
+        end
+        table.insert(autoGunEnemyListenerConns, Workspace.ChildAdded:Connect(function(child)
+            if string.sub(child.Name, 1, #"Gameplay") == "Gameplay" then
+                local enemies = child:WaitForChild("Enemies", 8)
+                if enemies then
+                    hookFolder(enemies)
+                    scheduleRefreshEnemiesListParagraph()
+                end
+            end
+        end))
+    end
+
+    bindAutoGunEnemyListeners()
+    refreshEnemiesListParagraph()
+    task.spawn(function()
+        while true do
+            task.wait(1.25)
+            refreshEnemiesListParagraph()
+        end
+    end)
+
+    local slimeGunTryFireRemote: RemoteFunction? = nil
+    do
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+        local idx = packages and packages:FindFirstChild("_Index")
+        local pkg = idx and idx:FindFirstChild(LEIFSTOUT_NETWORKER_INDEX_FOLDER)
+        local net = pkg and pkg:FindFirstChild("networker")
+        local rem = net and net:FindFirstChild("_remotes")
+        local svc = rem and rem:FindFirstChild("SlimeGunService")
+        local rf = svc and svc:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            slimeGunTryFireRemote = rf
+        end
+    end
+
+    local function mainTryFireSlimeGun(uid: number)
+        if not slimeGunTryFireRemote then
+            return
+        end
+        pcall(function()
+            slimeGunTryFireRemote:InvokeServer("tryFireSlimeGun", uid)
+        end)
+    end
+
+    MainTab:CreateSlider({
+        Name = "Shot interval",
+        Flag = "main_auto_gun_shot_interval",
+        Range = { 0.001, 2 },
+        Increment = 0.05,
+        Suffix = "sec",
+        CurrentValue = autoGunShotDelaySec,
+        Callback = function(value)
+            if type(value) == "number" and value == value then
+                autoGunShotDelaySec = math.clamp(value, 0.05, 3)
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Shot",
+        Flag = "main_auto_gun_shot",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoGunEnabled = enabled == true
+            autoGunLoopToken = autoGunLoopToken + 1
+            local myToken = autoGunLoopToken
+
+            if not autoGunEnabled then
+                return
+            end
+
+            task.spawn(function()
+                while myToken == autoGunLoopToken and autoGunEnabled do
+                    local uid = mainPickAutoShotEnemyUid()
+                    if not uid then
+                        task.wait(math.max(autoGunShotDelaySec, 0.35))
+                    else
+                        mainTryFireSlimeGun(uid)
+                        task.wait(autoGunShotDelaySec)
+                    end
+                end
+            end)
+        end,
+    })
+
     MainTab:CreateSection("Auto Feed")
 
     local AUTO_FEED_NONE = "(None)"
@@ -2471,12 +2814,21 @@ do
         T = 1e12,
         Qd = 1e15,
         Qn = 1e18,
-        Qi = 1e21,
-        Sx = 1e24,
-        Sp = 1e27,
-        Oc = 1e30,
-        No = 1e33,
-        De = 1e36,
+        Sx = 1e21,
+        Sp = 1e24,
+        O = 1e27,
+        N = 1e30,
+        De = 1e33,
+        Ud = 1e36,
+        Dd = 1e39,
+        TdD = 1e42,
+        QdD = 1e45,
+        QnD = 1e48,
+        SxD = 1e51,
+        SpD = 1e54,
+        OcD = 1e57,
+        NvD = 1e60,
+   
     }
 
     local function mainOddsSuffixMultiplier(suf: string): number
