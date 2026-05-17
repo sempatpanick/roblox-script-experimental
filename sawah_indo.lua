@@ -2064,6 +2064,7 @@ do
     end
 
     FarmTab:CreateSection("Section")
+    local farmPositionParagraph
     FarmTab:CreateButton({
         Name = "Set current position as farm position",
         Callback = function()
@@ -2083,11 +2084,11 @@ do
                     local footYOffset = (humanoid and (humanoid.HipHeight + rootPart.Size.Y * 0.5) or 3)
                     farmPosition = origin - Vector3.new(0, footYOffset, 0)
                 end
-                local text = farmPositionLabelText()
-                if FarmPositionLabel and FarmPositionLabel.Set then
-                    FarmTab:Set(text)
-                elseif FarmPositionLabel and FarmPositionLabel.SetTitle then
-                    FarmTab:SetTitle(text)
+                if farmPositionParagraph and farmPositionParagraph.Set then
+                    farmPositionParagraph:Set({
+                        Title = "Farm position",
+                        Content = farmPositionLabelText(),
+                    })
                 end
                 mountNotify({
                     Title = "Farm position",
@@ -2100,6 +2101,10 @@ do
                 })
             end
         end,
+    })
+    farmPositionParagraph = FarmTab:CreateParagraph({
+        Title = "Farm position",
+        Content = farmPositionLabelText(),
     })
     local function getBackpackToolsForPlants()
         local tools = {}
