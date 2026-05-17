@@ -3570,31 +3570,9 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
 			Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
 
-			local function applySliderAppearance(show, animate)
-				if not show then
-					Slider.BackgroundTransparency = 1
-					Slider.UIStroke.Transparency = 1
-					Slider.Title.TextTransparency = 1
-					return
-				end
-				local tweenInfo = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
-				if animate then
-					TweenService:Create(Slider, tweenInfo, { BackgroundTransparency = 0 }):Play()
-					TweenService:Create(Slider.UIStroke, tweenInfo, { Transparency = 0 }):Play()
-					TweenService:Create(Slider.Title, tweenInfo, { TextTransparency = 0 }):Play()
-				else
-					Slider.BackgroundTransparency = 0
-					Slider.UIStroke.Transparency = 0
-					Slider.Title.TextTransparency = 0
-				end
-			end
-
-			if SliderSettings.Visible == false then
-				Slider.Visible = false
-				applySliderAppearance(false, false)
-			else
-				applySliderAppearance(true, true)
-			end
+			TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+			TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
 			Slider.Main.Progress.Size =	UDim2.new(0, Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)
 
@@ -3694,12 +3672,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end)
 			end)
 
-			function SliderSettings:SetVisible(Value)
-				local show = Value == true
-				Slider.Visible = show
-				applySliderAppearance(show, true)
-			end
-
 			function SliderSettings:Set(NewVal)
 				local NewVal = math.clamp(NewVal, SliderSettings.Range[1], SliderSettings.Range[2])
 
@@ -3726,6 +3698,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				if not SliderSettings.Ext then
 					SaveConfiguration()
 				end
+			end
+
+			function SliderSettings:SetVisible(visible)
+				Slider.Visible = visible == true
 			end
 
 			if Settings.ConfigurationSaving then
