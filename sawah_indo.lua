@@ -2042,15 +2042,24 @@ do
     end
 
     -- Farm layout styles (add new curves to FarmStyleBuilders + FARM_STYLE_OPTIONS).
-    local FARM_STYLE_OPTIONS = { "Default", "Heart", "Circle" }
-    local FARM_HEART_CURVE_SCALE = 0.3
-    local FARM_CIRCLE_RADIUS = 4
+    local FARM_STYLE_OPTIONS = { "Default", "Random", "Heart", "Circle" }
+    local farmHeartCurveScale = 0.3
+    local farmCircleRadius = 4
+    local farmRandomRadius = 4
 
     local function heartCurveOffsetXZ(t)
         local sinT = math.sin(t)
         local x = 16 * sinT * sinT * sinT
         local z = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
-        return x * FARM_HEART_CURVE_SCALE, z * FARM_HEART_CURVE_SCALE
+        return x * farmHeartCurveScale, z * farmHeartCurveScale
+    end
+
+    local function seededFarmRandom(center, count)
+        local seed = math.floor(center.X * 10000 + center.Z * 10000 + count * 9973) % 2147483646
+        if seed < 1 then
+            seed = 1
+        end
+        return Random.new(seed)
     end
 
     local FarmStyleBuilders = {
@@ -2058,6 +2067,25 @@ do
             local positions = table.create(count)
             for i = 1, count do
                 positions[i] = center
+            end
+            return positions
+        end,
+        Random = function(center, count)
+            local positions = table.create(count)
+            if count <= 0 then
+                return positions
+            end
+            if count == 1 then
+                positions[1] = center
+                return positions
+            end
+            local rng = seededFarmRandom(center, count)
+            for i = 1, count do
+                local angle = rng:NextNumber(0, math.pi * 2)
+                local dist = math.sqrt(rng:NextNumber()) * farmRandomRadius
+                local offsetX = math.cos(angle) * dist
+                local offsetZ = math.sin(angle) * dist
+                positions[i] = Vector3.new(center.X + offsetX, center.Y, center.Z + offsetZ)
             end
             return positions
         end,
@@ -2088,8 +2116,8 @@ do
             end
             for i = 1, count do
                 local t = (i - 1) / count * 2 * math.pi
-                local offsetX = math.cos(t) * FARM_CIRCLE_RADIUS
-                local offsetZ = math.sin(t) * FARM_CIRCLE_RADIUS
+                local offsetX = math.cos(t) * farmCircleRadius
+                local offsetZ = math.sin(t) * farmCircleRadius
                 positions[i] = Vector3.new(center.X + offsetX, center.Y, center.Z + offsetZ)
             end
             return positions
@@ -2361,6 +2389,33 @@ do
             if picked then
                 selectedFarmStyle = picked
             end
+        end,
+    })
+
+    FarmTab:CreateInput({
+        Name = "Heart scale",
+        PlaceholderText = "Heart curve size",
+        CurrentValue = tostring(farmHeartCurveScale),
+        Callback = function(value)
+            farmHeartCurveScale = tonumber(value) or farmHeartCurveScale
+        end,
+    })
+
+    FarmTab:CreateInput({
+        Name = "Circle radius",
+        PlaceholderText = "Circle distance from center",
+        CurrentValue = tostring(farmCircleRadius),
+        Callback = function(value)
+            farmCircleRadius = tonumber(value) or farmCircleRadius
+        end,
+    })
+
+    FarmTab:CreateInput({
+        Name = "Random radius",
+        PlaceholderText = "Max random distance from center",
+        CurrentValue = tostring(farmRandomRadius),
+        Callback = function(value)
+            farmRandomRadius = tonumber(value) or farmRandomRadius
         end,
     })
 
