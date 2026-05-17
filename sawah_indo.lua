@@ -3492,161 +3492,106 @@ do
             end)
         end
     })
-    -- */  Sell Section  /* --
-    ShopTab:CreateSection("Sell")
-    local sellItems = {}
-    local sellItemData = {}
-    local selectedSellItems = {}
+    -- */  Auto Sell Crops Section  /* --
+    ShopTab:CreateSection("Auto Sell Crops")
+    local autoSellCropsItems = {}
+    local autoSellCropsItemData = {}
+    local selectedAutoSellCropsItems = {}
 
-    ShopTab:CreateSection("Selected: (none)")
-    local SellDropdown = ShopTab:CreateDropdown({
-        Name = "Item",
-        Options = sellItems,
-        CurrentOption = {},
-        Multi = true,
-        Callback = function(selected)
-            selectedSellItems = type(selected) == "table" and selected or (selected and { selected } or {})
-            local text = #selectedSellItems == 0 and "(none)" or table.concat(selectedSellItems, ", ")
-            if SelectedLabel and SelectedLabel.Set then
-                ShopTab:Set("Selected: " .. text)
-            elseif SelectedLabel and SelectedLabel.SetTitle then
-                ShopTab:SetTitle("Selected: " .. text)
+    local function autoSellCropsOwnedParagraphText()
+        local lines = {}
+        for _, item in ipairs(autoSellCropsItemData) do
+            local owned = type(item.Owned) == "number" and item.Owned or 0
+            if owned > 0 then
+                local name = item.DisplayName or item.Name or tostring(item)
+                table.insert(lines, name .. " (x" .. tostring(owned) .. ")")
             end
         end
-    })
+        if #lines == 0 then
+            return "No owned crops."
+        end
+        return table.concat(lines, "\n")
+    end
 
-    ShopTab:CreateButton({
-        Name = "Refresh",
-        Callback = function()
-            local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
-            local Result = Event:InvokeServer("GET_LIST")
-            local ExpectedResult = type(Result) == "table" and Result or (select(1, Result))
-            if ExpectedResult and ExpectedResult.Items and type(ExpectedResult.Items) == "table" then
-                sellItemData = {}
-                sellItems = {}
-                for _, item in ipairs(ExpectedResult.Items) do
-                    local owned = type(item.Owned) == "number" and item.Owned or 0
-                    if owned > 0 then
-                        table.insert(sellItemData, item)
-                        table.insert(sellItems, (item.DisplayName or item.Name or tostring(item)) .. " (x" .. tostring(owned) .. ")")
-                    end
-                end
-                SellDropdown:Refresh(sellItems)
-            end
-            mountNotify({
-                Title = "Sell",
-                Content = ExpectedResult and ExpectedResult.Success and ("List refreshed" .. (ExpectedResult.Coins and (" â€¢ Coins: " .. tostring(ExpectedResult.Coins)) or "")) or "List refreshed",
+    local autoSellCropsOwnedParagraph
+    local function updateAutoSellCropsOwnedParagraph()
+        if autoSellCropsOwnedParagraph and autoSellCropsOwnedParagraph.Set then
+            autoSellCropsOwnedParagraph:Set({
+                Title = "Owned Crops",
+                Content = autoSellCropsOwnedParagraphText(),
             })
         end
-    })
-    ShopTab:CreateButton({
-        Name = "Sell",
-        Callback = function()
-            if not selectedSellItems or #selectedSellItems == 0 then
-                mountNotify({ Title = "Sell", Content = "No item selected" })
-                return
-            end
-            local selectedDataList = {}
-            for _, item in ipairs(sellItemData) do
-                local owned = type(item.Owned) == "number" and item.Owned or 0
-                local displayStr = (item.DisplayName or item.Name or tostring(item)) .. " (x" .. tostring(owned) .. ")"
-                for _, sel in ipairs(selectedSellItems) do
-                    if displayStr == sel then
-                        table.insert(selectedDataList, item)
-                        break
-                    end
-                end
-            end
+    end
 
-            local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
-            for i, item in ipairs(selectedDataList) do
-                local name = item.Name
-                local qty = type(item.Owned) == "number" and item.Owned or 0
-                local Result = Event:InvokeServer("SELL", name, qty)
-                local ExpectedResult = type(Result) == "table" and Result or (select(1, Result))
-                if ExpectedResult and ExpectedResult.Message then
-                    mountNotify({
-                        Title = "Sell",
-                        Content = ExpectedResult.Message,
-                        Icon = ExpectedResult.Success and "check" or "x",
-                    })
-                    if ExpectedResult.Success then
-                        local owned = type(item.Owned) == "number" and item.Owned or 0
-                        local displayStr = (item.DisplayName or item.Name or tostring(item)) .. " (x" .. tostring(owned) .. ")"
-                        for j = #sellItems, 1, -1 do
-                            if sellItems[j] == displayStr then
-                                table.remove(sellItems, j)
-                                break
-                            end
-                        end
-                        for j = #sellItemData, 1, -1 do
-                            if sellItemData[j].Name == item.Name then
-                                table.remove(sellItemData, j)
-                                break
-                            end
-                        end
-                        for j = #selectedSellItems, 1, -1 do
-                            if selectedSellItems[j] == displayStr then
-                                table.remove(selectedSellItems, j)
-                                break
-                            end
-                        end
-                        SellDropdown:Refresh(sellItems)
-                        if SellDropdown.Select then
-                            SellDropdown:Select(selectedSellItems)
-                        end
-                        local text = #selectedSellItems == 0 and "(none)" or table.concat(selectedSellItems, ", ")
-                        if SelectedLabel and SelectedLabel.Set then
-                            ShopTab:Set("Selected: " .. text)
-                        elseif SelectedLabel and SelectedLabel.SetTitle then
-                            ShopTab:SetTitle("Selected: " .. text)
-                        end
-                    end
-                end
-                if i < #selectedDataList then
-                    task.wait(1)
-                end
-            end
-        end
+    autoSellCropsOwnedParagraph = ShopTab:CreateParagraph({
+        Title = "Owned Crops",
+        Content = "(tap Refresh to load)",
     })
-    -- */  Auto Sell Section  /* --
-    ShopTab:CreateSection("Auto Sell")
-    local autoSellItems = {}
-    local autoSellItemData = {}
-    local selectedAutoSellItems = {}
+
     ShopTab:CreateSection("Selected: (none)")
-    local AutoSellDropdown = ShopTab:CreateDropdown({
-        Name = "Item",
-        Options = autoSellItems,
+    local AutoSellCropsDropdown
+    local function updateAutoSellCropsSelectedSection()
+        local text = #selectedAutoSellCropsItems == 0 and "(none)" or table.concat(selectedAutoSellCropsItems, ", ")
+        if ShopTab.Set then
+            ShopTab:Set("Selected: " .. text)
+        elseif ShopTab.SetTitle then
+            ShopTab:SetTitle("Selected: " .. text)
+        end
+    end
+
+    local function syncSelectedAutoSellCropsItemsFromDropdown(value)
+        if type(value) == "table" then
+            selectedAutoSellCropsItems = {}
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" and table.find(autoSellCropsItems, name) then
+                    table.insert(selectedAutoSellCropsItems, name)
+                end
+            end
+        elseif type(value) == "string" and value ~= "" and table.find(autoSellCropsItems, value) then
+            selectedAutoSellCropsItems = { value }
+        else
+            selectedAutoSellCropsItems = {}
+        end
+        updateAutoSellCropsSelectedSection()
+    end
+
+    local function applyAutoSellCropsDropdownSelection()
+        local kept = {}
+        for _, name in ipairs(selectedAutoSellCropsItems) do
+            if table.find(autoSellCropsItems, name) then
+                table.insert(kept, name)
+            end
+        end
+        selectedAutoSellCropsItems = kept
+        if AutoSellCropsDropdown and AutoSellCropsDropdown.Set then
+            AutoSellCropsDropdown:Set(kept)
+        end
+        updateAutoSellCropsSelectedSection()
+    end
+
+    AutoSellCropsDropdown = ShopTab:CreateDropdown({
+        Name = "Crop",
+        Options = autoSellCropsItems,
         CurrentOption = {},
-        Multi = true,
-        Callback = function(selected)
-            selectedAutoSellItems = type(selected) == "table" and selected or (selected and { selected } or {})
-            local parts = {}
-            for _, s in ipairs(selectedAutoSellItems) do
-                parts[#parts + 1] = s:match("^(.+) %(x%d+%)$") or s
-            end
-            local text = #parts == 0 and "(none)" or table.concat(parts, ", ")
-            if AutoSellSelectedLabel and AutoSellSelectedLabel.Set then
-                ShopTab:Set("Selected: " .. text)
-            elseif AutoSellSelectedLabel and AutoSellSelectedLabel.SetTitle then
-                ShopTab:SetTitle("Selected: " .. text)
-            end
+        MultipleOptions = true,
+        Callback = function(value)
+            syncSelectedAutoSellCropsItemsFromDropdown(value)
         end
     })
 
-    local function getAutoSellItemBaseName(item)
+    local function getAutoSellCropsItemBaseName(item)
         return item.DisplayName or item.Name or tostring(item)
     end
 
-    -- Reusable refresh: updates autoSellItemData and autoSellItems. Returns true if refresh succeeded.
-    local function refreshAutoSellList(showNotify)
+    -- Reusable refresh: updates autoSellCropsItemData and autoSellCropsItems. Returns true if refresh succeeded.
+    local function refreshAutoSellCropsList(showNotify)
         local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
         local Result = Event:InvokeServer("GET_LIST")
         local ExpectedResult = type(Result) == "table" and Result or (select(1, Result))
         if not (ExpectedResult and ExpectedResult.Items and type(ExpectedResult.Items) == "table") then
             if showNotify then
-                mountNotify({ Title = "Auto Sell", Content = "List refreshed" })
+                mountNotify({ Title = "Auto Sell Crops", Content = "List refreshed" })
             end
             return false
         end
@@ -3656,7 +3601,7 @@ do
                 refreshByName[item.Name] = item
             end
         end
-        for _, item in ipairs(autoSellItemData) do
+        for _, item in ipairs(autoSellCropsItemData) do
             local fromRefresh = item.Name and refreshByName[item.Name]
             if fromRefresh then
                 item.Owned = type(fromRefresh.Owned) == "number" and fromRefresh.Owned or 0
@@ -3665,20 +3610,22 @@ do
             end
         end
         local existingNames = {}
-        for _, item in ipairs(autoSellItemData) do
+        for _, item in ipairs(autoSellCropsItemData) do
             existingNames[item.Name] = true
         end
         for _, item in ipairs(ExpectedResult.Items) do
             if item.Name and not existingNames[item.Name] then
                 existingNames[item.Name] = true
-                table.insert(autoSellItemData, item)
-                table.insert(autoSellItems, getAutoSellItemBaseName(item))
+                table.insert(autoSellCropsItemData, item)
+                table.insert(autoSellCropsItems, getAutoSellCropsItemBaseName(item))
             end
         end
-        AutoSellDropdown:Refresh(autoSellItems)
+        AutoSellCropsDropdown:Refresh(autoSellCropsItems)
+        applyAutoSellCropsDropdownSelection()
+        updateAutoSellCropsOwnedParagraph()
         if showNotify then
             mountNotify({
-                Title = "Auto Sell",
+                Title = "Auto Sell Crops",
                 Content = ExpectedResult and ExpectedResult.Success and ("List refreshed" .. (ExpectedResult.Coins and (" â€¢ Coins: " .. tostring(ExpectedResult.Coins)) or "")) or "List refreshed",
             })
         end
@@ -3688,35 +3635,34 @@ do
     ShopTab:CreateButton({
         Name = "Refresh",
         Callback = function()
-            refreshAutoSellList(true)
+            refreshAutoSellCropsList(true)
         end
     })
-    local autoSellDelaySeconds = "1"
-    local autoSellRunning = false
+    local autoSellCropsDelaySeconds = "1"
+    local autoSellCropsRunning = false
 
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
-        PlaceholderText = "Seconds between auto sell actions",
-        CurrentValue = autoSellDelaySeconds,
+        PlaceholderText = "Seconds between auto sell crop actions",
+        CurrentValue = autoSellCropsDelaySeconds,
         Callback = function(value)
-            autoSellDelaySeconds = value
+            autoSellCropsDelaySeconds = value
         end
     })
 
     ShopTab:CreateToggle({
-        Name = "Auto Sell",
+        Name = "Auto Sell Crops",
         Callback = function(enabled)
-            autoSellRunning = enabled
+            autoSellCropsRunning = enabled
             if not enabled then return end
             task.spawn(function()
                 local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
-                while autoSellRunning do
-                    refreshAutoSellList(false)
+                while autoSellCropsRunning do
+                    refreshAutoSellCropsList(false)
                     local toSell = {}
-                    for _, displayStr in ipairs(selectedAutoSellItems) do
-                        local baseName = displayStr:match("^(.+) %(x%d+%)$") or displayStr
-                        for _, item in ipairs(autoSellItemData) do
-                            if getAutoSellItemBaseName(item) == baseName then
+                    for _, displayStr in ipairs(selectedAutoSellCropsItems) do
+                        for _, item in ipairs(autoSellCropsItemData) do
+                            if getAutoSellCropsItemBaseName(item) == displayStr then
                                 local owned = type(item.Owned) == "number" and item.Owned or 0
                                 if owned > 0 then
                                     table.insert(toSell, { name = item.Name, owned = owned, item = item })
@@ -3726,31 +3672,32 @@ do
                         end
                     end
                     for _, entry in ipairs(toSell) do
-                        if not autoSellRunning then break end
+                        if not autoSellCropsRunning then break end
                         local Result = Event:InvokeServer("SELL", entry.name, entry.owned)
                         local ExpectedResult = type(Result) == "table" and Result or (select(1, Result))
                         local success = ExpectedResult and ExpectedResult.Success
                         local message = (ExpectedResult and ExpectedResult.Message) or (success and "Sold" or "Failed")
                         mountNotify({
-                            Title = "Auto Sell",
+                            Title = "Auto Sell Crops",
                             Content = message,
                             Icon = success and "check" or "x",
                         })
                         if ExpectedResult and ExpectedResult.Success and entry.item then
                             entry.item.Owned = 0
-                            for i, dataItem in ipairs(autoSellItemData) do
-                                if dataItem == entry.item and autoSellItems[i] then
-                                    autoSellItems[i] = getAutoSellItemBaseName(entry.item)
-                                    AutoSellDropdown:Refresh(autoSellItems)
+                            for i, dataItem in ipairs(autoSellCropsItemData) do
+                                if dataItem == entry.item and autoSellCropsItems[i] then
+                                    autoSellCropsItems[i] = getAutoSellCropsItemBaseName(entry.item)
+                                    AutoSellCropsDropdown:Refresh(autoSellCropsItems)
                                     break
                                 end
                             end
+                            updateAutoSellCropsOwnedParagraph()
                         end
-                        if autoSellRunning and entry ~= toSell[#toSell] then
+                        if autoSellCropsRunning and entry ~= toSell[#toSell] then
                             task.wait(1)
                         end
                     end
-                    local delay = math.max(0.1, tonumber(autoSellDelaySeconds) or 1)
+                    local delay = math.max(0.1, tonumber(autoSellCropsDelaySeconds) or 1)
                     task.wait(delay)
                 end
             end)
