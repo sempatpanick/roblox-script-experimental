@@ -2380,6 +2380,23 @@ do
         end
     })
 
+    local heartScaleSlider
+    local circleRadiusSlider
+    local randomRadiusSlider
+
+    local function updateFarmStyleSliderVisibility()
+        local style = normalizeFarmStyle(selectedFarmStyle)
+        if heartScaleSlider and heartScaleSlider.SetVisible then
+            heartScaleSlider:SetVisible(style == "Heart")
+        end
+        if circleRadiusSlider and circleRadiusSlider.SetVisible then
+            circleRadiusSlider:SetVisible(style == "Circle")
+        end
+        if randomRadiusSlider and randomRadiusSlider.SetVisible then
+            randomRadiusSlider:SetVisible(style == "Random")
+        end
+    end
+
     FarmTab:CreateDropdown({
         Name = "Farm Style",
         Options = FARM_STYLE_OPTIONS,
@@ -2388,11 +2405,12 @@ do
             local picked = rayfieldDropdownFirst(value)
             if picked then
                 selectedFarmStyle = picked
+                updateFarmStyleSliderVisibility()
             end
         end,
     })
 
-    FarmTab:CreateSlider({
+    heartScaleSlider = FarmTab:CreateSlider({
         Name = "Heart scale",
         Range = { 0.1, 2 },
         Increment = 0.05,
@@ -2402,7 +2420,7 @@ do
         end,
     })
 
-    FarmTab:CreateSlider({
+    circleRadiusSlider = FarmTab:CreateSlider({
         Name = "Circle radius",
         Range = { 1, 25 },
         Increment = 0.5,
@@ -2413,7 +2431,7 @@ do
         end,
     })
 
-    FarmTab:CreateSlider({
+    randomRadiusSlider = FarmTab:CreateSlider({
         Name = "Random radius",
         Range = { 1, 25 },
         Increment = 0.5,
@@ -2423,6 +2441,8 @@ do
             farmRandomRadius = value
         end,
     })
+
+    updateFarmStyleSliderVisibility()
 
     local function equipSelectedPlantForFarm()
         if not selectedPlant or selectedPlant == "" then
@@ -2538,7 +2558,6 @@ do
 
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
-            local center = getFarmPosition()
 
             autoFarmConnection = NotificationEvent.OnClientEvent:Connect(function(message)
                 local maxFromNotify = parseMaxCropsFromNotification(message)
@@ -2551,6 +2570,7 @@ do
                 while autoFarmRunning do
                     equipSelectedPlantForFarm()
 
+                    local center = getFarmPosition()
                     local plantPosition = findNextPlantPosition(selectedFarmStyle, center, farmCropMaxCount)
                     if not plantPosition then
                         task.wait(1)
