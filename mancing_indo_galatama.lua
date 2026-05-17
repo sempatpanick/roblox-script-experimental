@@ -1157,10 +1157,9 @@ do
         local dn = player.DisplayName
         table.insert(lines, "Display name: " .. ((dn and dn ~= "") and dn or "(same as username)"))
         table.insert(lines, "")
-        table.insert(lines, "LocalPlayer attributes:")
-        local localPlayer = Players.LocalPlayer
-        if localPlayer then
-            local attrs = localPlayer:GetAttributes()
+        table.insert(lines, "Player attributes:")
+        if player.Parent then
+            local attrs = player:GetAttributes()
             local attrRows = {}
             for key, val in pairs(attrs) do
                 table.insert(attrRows, {
@@ -1179,15 +1178,15 @@ do
                 end
             end
         else
-            table.insert(lines, "  (LocalPlayer not found)")
+            table.insert(lines, "  (player left)")
         end
         table.insert(lines, "")
-        table.insert(lines, "LocalPlayer properties:")
-        if localPlayer then
+        table.insert(lines, "Player properties:")
+        if player.Parent then
             local propRows = {}
-            for _, propName in ipairs(getReadablePropertyNames(localPlayer, PLAYER_INSPECT_PROPERTIES_FALLBACK)) do
+            for _, propName in ipairs(getReadablePropertyNames(player, PLAYER_INSPECT_PROPERTIES_FALLBACK)) do
                 local ok, val = pcall(function()
-                    return localPlayer[propName]
+                    return player[propName]
                 end)
                 if ok then
                     table.insert(propRows, {
@@ -1207,7 +1206,7 @@ do
                 end
             end
         else
-            table.insert(lines, "  (LocalPlayer not found)")
+            table.insert(lines, "  (player left)")
         end
         local character = player.Character
         if not character then
