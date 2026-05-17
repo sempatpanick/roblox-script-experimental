@@ -3704,6 +3704,297 @@ do
         end
     })
 
+    -- */  Auto Sell Fruit Section  /* --
+    ShopTab:CreateSection("Auto Sell Fruit")
+    local AUTO_SELL_FRUIT_TYPES = { "Sawit", "Durian", "Alpukat" }
+    local AUTO_SELL_FRUIT_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Celestial" }
+    local AUTO_SELL_FRUIT_RARITY_DEFAULT = { "Common", "Uncommon", "Rare" }
+    local autoSellFruitByType = {}
+    local selectedAutoSellFruitTypes = {}
+    local selectedAutoSellFruitRarities = { "Common", "Uncommon", "Rare" }
+
+    local function parseAutoSellFruitResult(result)
+        return type(result) == "table" and result or (select(1, result))
+    end
+
+    local function getAutoSellFruitRarity(fruit)
+        local rarity = fruit.RarityName or fruit.Rarity
+        if type(rarity) == "string" and rarity ~= "" then
+            return rarity
+        end
+        return nil
+    end
+
+    local function fruitMatchesAutoSellRarityFilter(fruit)
+        local rarity = getAutoSellFruitRarity(fruit)
+        return rarity ~= nil and table.find(selectedAutoSellFruitRarities, rarity) ~= nil
+    end
+
+    local function autoSellFruitOwnedParagraphText()
+        local lines = {}
+        for _, fruitType in ipairs(AUTO_SELL_FRUIT_TYPES) do
+            local data = autoSellFruitByType[fruitType]
+            local fruitList = data and data.FruitList
+            if type(fruitList) == "table" and #fruitList > 0 then
+                local count = type(data.FruitCount) == "number" and data.FruitCount or #fruitList
+                local header = (data.FruitDisplayName or fruitType) .. " (" .. tostring(count) .. ")"
+                table.insert(lines, header)
+                for _, fruit in ipairs(fruitList) do
+                    local rarity = fruit.RarityName or fruit.Rarity or "?"
+                    local weight = type(fruit.Weight) == "number" and fruit.Weight or 0
+                    local unit = fruit.WeightUnit or "kg"
+                    local price = type(fruit.Price) == "number" and fruit.Price or 0
+                    table.insert(lines, string.format("  %s %.0f%s — %s", rarity, weight, unit, tostring(price)))
+                end
+            end
+        end
+        if #lines == 0 then
+            return "No owned fruits."
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function autoSellFruitSelectedParagraphText()
+        local fruitText = #selectedAutoSellFruitTypes == 0 and "(none)" or table.concat(selectedAutoSellFruitTypes, ", ")
+        local rarityText = #selectedAutoSellFruitRarities == 0 and "(none)" or table.concat(selectedAutoSellFruitRarities, ", ")
+        return "Fruit: " .. fruitText .. "\nRarity: " .. rarityText
+    end
+
+    local autoSellFruitOwnedParagraph
+    local function updateAutoSellFruitOwnedParagraph()
+        if autoSellFruitOwnedParagraph and autoSellFruitOwnedParagraph.Set then
+            autoSellFruitOwnedParagraph:Set({
+                Title = "Owned Fruits",
+                Content = autoSellFruitOwnedParagraphText(),
+            })
+        end
+    end
+
+    local autoSellFruitSelectedParagraph
+    local function updateAutoSellFruitSelectedParagraph()
+        if autoSellFruitSelectedParagraph and autoSellFruitSelectedParagraph.Set then
+            autoSellFruitSelectedParagraph:Set({
+                Title = "Selected",
+                Content = autoSellFruitSelectedParagraphText(),
+            })
+        end
+    end
+
+    autoSellFruitOwnedParagraph = ShopTab:CreateParagraph({
+        Title = "Owned Fruits",
+        Content = "(tap Refresh to load)",
+    })
+
+    autoSellFruitSelectedParagraph = ShopTab:CreateParagraph({
+        Title = "Selected",
+        Content = autoSellFruitSelectedParagraphText(),
+    })
+
+    local AutoSellFruitDropdown
+    local function syncSelectedAutoSellFruitTypesFromDropdown(value)
+        if type(value) == "table" then
+            selectedAutoSellFruitTypes = {}
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" and table.find(AUTO_SELL_FRUIT_TYPES, name) then
+                    table.insert(selectedAutoSellFruitTypes, name)
+                end
+            end
+        elseif type(value) == "string" and value ~= "" and table.find(AUTO_SELL_FRUIT_TYPES, value) then
+            selectedAutoSellFruitTypes = { value }
+        else
+            selectedAutoSellFruitTypes = {}
+        end
+        updateAutoSellFruitSelectedParagraph()
+    end
+
+    local function applyAutoSellFruitDropdownSelection()
+        local kept = {}
+        for _, fruitType in ipairs(selectedAutoSellFruitTypes) do
+            if table.find(AUTO_SELL_FRUIT_TYPES, fruitType) then
+                table.insert(kept, fruitType)
+            end
+        end
+        selectedAutoSellFruitTypes = kept
+        if AutoSellFruitDropdown and AutoSellFruitDropdown.Set then
+            AutoSellFruitDropdown:Set(kept)
+        end
+        updateAutoSellFruitSelectedParagraph()
+    end
+
+    AutoSellFruitDropdown = ShopTab:CreateDropdown({
+        Name = "Fruit",
+        Options = AUTO_SELL_FRUIT_TYPES,
+        CurrentOption = {},
+        MultipleOptions = true,
+        Callback = function(value)
+            syncSelectedAutoSellFruitTypesFromDropdown(value)
+        end,
+    })
+
+    local AutoSellFruitRarityDropdown
+    local function syncSelectedAutoSellFruitRaritiesFromDropdown(value)
+        if type(value) == "table" then
+            selectedAutoSellFruitRarities = {}
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" and table.find(AUTO_SELL_FRUIT_RARITIES, name) then
+                    table.insert(selectedAutoSellFruitRarities, name)
+                end
+            end
+        elseif type(value) == "string" and value ~= "" and table.find(AUTO_SELL_FRUIT_RARITIES, value) then
+            selectedAutoSellFruitRarities = { value }
+        else
+            selectedAutoSellFruitRarities = {}
+        end
+        updateAutoSellFruitSelectedParagraph()
+    end
+
+    local function applyAutoSellFruitRarityDropdownSelection()
+        local kept = {}
+        for _, rarity in ipairs(selectedAutoSellFruitRarities) do
+            if table.find(AUTO_SELL_FRUIT_RARITIES, rarity) then
+                table.insert(kept, rarity)
+            end
+        end
+        selectedAutoSellFruitRarities = kept
+        if AutoSellFruitRarityDropdown and AutoSellFruitRarityDropdown.Set then
+            AutoSellFruitRarityDropdown:Set(kept)
+        end
+        updateAutoSellFruitSelectedParagraph()
+    end
+
+    AutoSellFruitRarityDropdown = ShopTab:CreateDropdown({
+        Name = "Rarity",
+        Options = AUTO_SELL_FRUIT_RARITIES,
+        CurrentOption = AUTO_SELL_FRUIT_RARITY_DEFAULT,
+        MultipleOptions = true,
+        Callback = function(value)
+            syncSelectedAutoSellFruitRaritiesFromDropdown(value)
+        end,
+    })
+    applyAutoSellFruitRarityDropdownSelection()
+
+    local function refreshAutoSellFruitList(showNotify, fruitTypesToFetch)
+        local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
+        local typesToFetch = fruitTypesToFetch or AUTO_SELL_FRUIT_TYPES
+        local lastCoins = nil
+        local anySuccess = false
+
+        for _, fruitType in ipairs(typesToFetch) do
+            local result = Event:InvokeServer("GET_FRUIT_LIST", fruitType)
+            local expected = parseAutoSellFruitResult(result)
+            if expected and expected.Success then
+                anySuccess = true
+                autoSellFruitByType[fruitType] = expected
+                if type(expected.Coins) == "number" then
+                    lastCoins = expected.Coins
+                end
+            elseif expected then
+                autoSellFruitByType[fruitType] = expected
+            else
+                autoSellFruitByType[fruitType] = { FruitType = fruitType, FruitList = {}, FruitCount = 0 }
+            end
+        end
+
+        updateAutoSellFruitOwnedParagraph()
+        applyAutoSellFruitDropdownSelection()
+
+        if showNotify then
+            local content = "Fruit list refreshed"
+            if lastCoins then
+                content = content .. " • Coins: " .. tostring(lastCoins)
+            end
+            mountNotify({ Title = "Auto Sell Fruit", Content = content })
+        end
+        return anySuccess
+    end
+
+    ShopTab:CreateButton({
+        Name = "Refresh",
+        Callback = function()
+            refreshAutoSellFruitList(true, AUTO_SELL_FRUIT_TYPES)
+        end,
+    })
+
+    local autoSellFruitDelaySeconds = "1"
+    local autoSellFruitRunning = false
+
+    ShopTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto sell fruit actions",
+        CurrentValue = autoSellFruitDelaySeconds,
+        Callback = function(value)
+            autoSellFruitDelaySeconds = value
+        end,
+    })
+
+    ShopTab:CreateToggle({
+        Name = "Auto Sell Fruit",
+        Callback = function(enabled)
+            autoSellFruitRunning = enabled
+            if not enabled then return end
+            task.spawn(function()
+                local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
+                while autoSellFruitRunning do
+                    if #selectedAutoSellFruitTypes == 0 or #selectedAutoSellFruitRarities == 0 then
+                        task.wait(math.max(0.1, tonumber(autoSellFruitDelaySeconds) or 1))
+                    else
+                        refreshAutoSellFruitList(false, selectedAutoSellFruitTypes)
+                        local toSell = {}
+                        for _, fruitType in ipairs(selectedAutoSellFruitTypes) do
+                            local data = autoSellFruitByType[fruitType]
+                            local fruitList = data and data.FruitList
+                            if type(fruitList) == "table" then
+                                for _, fruit in ipairs(fruitList) do
+                                    if type(fruit.Id) == "string" and fruit.Id ~= ""
+                                        and fruitMatchesAutoSellRarityFilter(fruit) then
+                                        table.insert(toSell, {
+                                            id = fruit.Id,
+                                            fruitType = fruitType,
+                                            fruit = fruit,
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                        for _, entry in ipairs(toSell) do
+                            if not autoSellFruitRunning then break end
+                            local result = Event:InvokeServer("SELL_FRUIT", entry.id, entry.fruitType)
+                            local expected = parseAutoSellFruitResult(result)
+                            local success = expected and expected.Success
+                            local message = (expected and expected.Message) or (success and "Sold" or "Failed")
+                            mountNotify({
+                                Title = "Auto Sell Fruit",
+                                Content = message,
+                                Icon = success and "check" or "x",
+                            })
+                            if success then
+                                local data = autoSellFruitByType[entry.fruitType]
+                                local fruitList = data and data.FruitList
+                                if type(fruitList) == "table" then
+                                    for i = #fruitList, 1, -1 do
+                                        if fruitList[i].Id == entry.id then
+                                            table.remove(fruitList, i)
+                                            break
+                                        end
+                                    end
+                                    data.FruitCount = #fruitList
+                                end
+                                updateAutoSellFruitOwnedParagraph()
+                            end
+                            if autoSellFruitRunning and entry ~= toSell[#toSell] then
+                                task.wait(1)
+                            end
+                        end
+                        local delay = math.max(0.1, tonumber(autoSellFruitDelaySeconds) or 1)
+                        task.wait(delay)
+                    end
+                end
+            end)
+        end,
+    })
+
     -- */  Gift Game Pass Section  /* --
     ShopTab:CreateSection("Gift Game Pass")
 
