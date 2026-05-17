@@ -3681,7 +3681,21 @@ do
         end)
     end
 
+    local function playerOwnsGiftPass(targetPlayer, pass)
+        return targetPlayer:GetAttribute("GP_" .. pass.Name) == true
+    end
+
     local function giftPassToPlayer(targetPlayer, pass, showSuccessNotify)
+        if playerOwnsGiftPass(targetPlayer, pass) then
+            local passLabel = pass.displayName or pass.Name
+            local playerLabel = giftPlayerDropdownLabel(targetPlayer)
+            mountNotify({
+                Title = "Gift Game Pass",
+                Content = string.format("%s already owns %s", playerLabel, passLabel),
+            })
+            return false, "ALREADY_OWNED"
+        end
+
         local result = requestGiftRemote:InvokeServer("PROMPT_GIFT", targetPlayer.UserId, pass.Name)
         local expected = type(result) == "table" and result or select(1, result)
 
@@ -3720,7 +3734,7 @@ do
                 return
             end
             local ok, err = giftPassToPlayer(selectedGiftPlayer, selectedGiftPass, true)
-            if not ok then
+            if not ok and err ~= "ALREADY_OWNED" then
                 mountNotify({
                     Title = "Gift Game Pass",
                     Content = err,
@@ -3751,11 +3765,13 @@ do
                         sent = sent + 1
                     else
                         skipped = skipped + 1
-                        mountNotify({
-                            Title = "Gift All",
-                            Content = (pass.displayName or pass.Name) .. ": " .. tostring(err),
-                            Icon = "x",
-                        })
+                        if err ~= "ALREADY_OWNED" then
+                            mountNotify({
+                                Title = "Gift All",
+                                Content = (pass.displayName or pass.Name) .. ": " .. tostring(err),
+                                Icon = "x",
+                            })
+                        end
                     end
                     task.wait(GIFT_ALL_DELAY_SECONDS)
                 end
@@ -3801,11 +3817,13 @@ do
                             sent = sent + 1
                         else
                             skipped = skipped + 1
-                            mountNotify({
-                                Title = "Gift to All",
-                                Content = giftPlayerDropdownLabel(targetPlayer) .. ": " .. tostring(err),
-                                Icon = "x",
-                            })
+                            if err ~= "ALREADY_OWNED" then
+                                mountNotify({
+                                    Title = "Gift to All",
+                                    Content = giftPlayerDropdownLabel(targetPlayer) .. ": " .. tostring(err),
+                                    Icon = "x",
+                                })
+                            end
                         end
                     end
                     task.wait(GIFT_ALL_DELAY_SECONDS)
