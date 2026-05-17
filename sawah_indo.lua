@@ -2041,30 +2041,157 @@ do
         return #refreshAllCropsByLocalPlayer()
     end
 
-    do
-        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
-        if activeCrops then
-            activeCrops.ChildAdded:Connect(function() refreshAllCropsByLocalPlayer() end)
-            activeCrops.ChildRemoved:Connect(function() refreshAllCropsByLocalPlayer() end)
+    -- Farm layout styles (add new curves to FarmStyleBuilders + FARM_STYLE_OPTIONS).
+    local FARM_STYLE_OPTIONS = { "Default", "Heart" }
+    local FARM_HEART_CURVE_SCALE = 0.3
+
+    local function heartCurveOffsetXZ(t)
+        local sinT = math.sin(t)
+        local x = 16 * sinT * sinT * sinT
+        local z = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+        return x * FARM_HEART_CURVE_SCALE, z * FARM_HEART_CURVE_SCALE
+    end
+
+    local FarmStyleBuilders = {
+        Default = function(center, count)
+            local positions = table.create(count)
+            for i = 1, count do
+                positions[i] = center
+            end
+            return positions
+        end,
+        Heart = function(center, count)
+            local positions = table.create(count)
+            if count <= 0 then
+                return positions
+            end
+            if count == 1 then
+                positions[1] = center
+                return positions
+            end
+            for i = 1, count do
+                local t = (i - 1) / count * 2 * math.pi
+                local offsetX, offsetZ = heartCurveOffsetXZ(t)
+                positions[i] = Vector3.new(center.X + offsetX, center.Y, center.Z + offsetZ)
+            end
+            return positions
+        end,
+    }
+
+    local function normalizeFarmStyle(styleName)
+        if styleName and FarmStyleBuilders[styleName] then
+            return styleName
         end
-        refreshAllCropsByLocalPlayer()
+        return "Default"
+    end
+
+    local function buildFarmStylePositions(styleName, center, count)
+        local builder = FarmStyleBuilders[normalizeFarmStyle(styleName)]
+        return builder(center, count)
+    end
+
+    local function getFarmSlotOccupancy(layout, crops)
+        local occupied = {}
+        for _, entry in ipairs(crops) do
+            local nearestIndex = nil
+            local nearestDistSq = math.huge
+            for slotIndex, slotPosition in ipairs(layout) do
+                local dx = entry.position.X - slotPosition.X
+                local dz = entry.position.Z - slotPosition.Z
+                local distSq = dx * dx + dz * dz
+                if distSq < nearestDistSq then
+                    nearestDistSq = distSq
+                    nearestIndex = slotIndex
+                end
+            end
+            if nearestIndex then
+                occupied[nearestIndex] = true
+            end
+        end
+        return occupied
+    end
+
+    local function isCurvedFarmStyle(styleName)
+        return normalizeFarmStyle(styleName) ~= "Default"
+    end
+
+    local function findNextPlantPosition(styleName, center, maxCount)
+        local style = normalizeFarmStyle(styleName)
+        local crops = refreshAllCropsByLocalPlayer()
+        if maxCount and #crops >= maxCount then
+            return nil
+        end
+        if style == "Default" or not maxCount then
+            return center
+        end
+        local layout = buildFarmStylePositions(style, center, maxCount)
+        local occupied = getFarmSlotOccupancy(layout, crops)
+        for slotIndex = 1, maxCount do
+            if not occupied[slotIndex] then
+                return layout[slotIndex]
+            end
+        end
+        local fallbackIndex = #crops + 1
+        if fallbackIndex <= maxCount then
+            return layout[fallbackIndex]
+        end
+        return nil
+    end
+
+    local function shouldContinuePlanting(styleName, plantedCount, quantity, maxCount)
+        local cropCount = countLocalPlayerActiveCrops()
+        if maxCount and cropCount >= maxCount then
+            return false
+        end
+        if isCurvedFarmStyle(styleName) and maxCount then
+            return cropCount < maxCount
+        end
+        return plantedCount < quantity
     end
 
     FarmTab:CreateSection("Plant Crops")
     -- Farm position: default until user sets current position
     local DEFAULT_FARM_POSITION = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
     local farmPosition = DEFAULT_FARM_POSITION
+    local farmCropMaxCount = nil
 
     local function getFarmPosition()
         return farmPosition
     end
 
-    local function farmPositionLabelText()
-        return string.format("Current farm position: %.1f, %.1f, %.1f", farmPosition.X, farmPosition.Y, farmPosition.Z)
+    local function farmInfoParagraphText()
+        local lines = {
+            string.format("Position: %.1f, %.1f, %.1f", farmPosition.X, farmPosition.Y, farmPosition.Z),
+        }
+        if farmCropMaxCount then
+            table.insert(lines, string.format("Max crops: %d", farmCropMaxCount))
+            table.insert(lines, string.format("Active crops: %d / %d", countLocalPlayerActiveCrops(), farmCropMaxCount))
+        else
+            table.insert(lines, "Max crops: (unknown)")
+            table.insert(lines, string.format("Active crops: %d", countLocalPlayerActiveCrops()))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local farmInfoParagraph
+    local function updateFarmInfoParagraph()
+        if farmInfoParagraph and farmInfoParagraph.Set then
+            farmInfoParagraph:Set({
+                Title = "Farm info",
+                Content = farmInfoParagraphText(),
+            })
+        end
+    end
+
+    local function setFarmCropMaxCount(maxCount)
+        if type(maxCount) ~= "number" or maxCount < 1 then
+            return
+        end
+        farmCropMaxCount = maxCount
+        updateFarmInfoParagraph()
     end
 
     FarmTab:CreateSection("Section")
-    local farmPositionParagraph
     FarmTab:CreateButton({
         Name = "Set current position as farm position",
         Callback = function()
@@ -2084,12 +2211,7 @@ do
                     local footYOffset = (humanoid and (humanoid.HipHeight + rootPart.Size.Y * 0.5) or 3)
                     farmPosition = origin - Vector3.new(0, footYOffset, 0)
                 end
-                if farmPositionParagraph and farmPositionParagraph.Set then
-                    farmPositionParagraph:Set({
-                        Title = "Farm position",
-                        Content = farmPositionLabelText(),
-                    })
-                end
+                updateFarmInfoParagraph()
                 mountNotify({
                     Title = "Farm position",
                     Content = string.format("Set to ground: %.1f, %.1f, %.1f", farmPosition.X, farmPosition.Y, farmPosition.Z),
@@ -2102,10 +2224,27 @@ do
             end
         end,
     })
-    farmPositionParagraph = FarmTab:CreateParagraph({
-        Title = "Farm position",
-        Content = farmPositionLabelText(),
+    farmInfoParagraph = FarmTab:CreateParagraph({
+        Title = "Farm info",
+        Content = farmInfoParagraphText(),
     })
+
+    do
+        local activeCrops = Workspace:FindFirstChild("ActiveCrops")
+        if activeCrops then
+            activeCrops.ChildAdded:Connect(function()
+                refreshAllCropsByLocalPlayer()
+                updateFarmInfoParagraph()
+            end)
+            activeCrops.ChildRemoved:Connect(function()
+                refreshAllCropsByLocalPlayer()
+                updateFarmInfoParagraph()
+            end)
+        end
+        refreshAllCropsByLocalPlayer()
+        updateFarmInfoParagraph()
+    end
+
     local function getBackpackToolsForPlants()
         local tools = {}
         local seen = {}
@@ -2184,6 +2323,7 @@ do
         end
     end
     local FarmQuantity = "1"
+    local selectedFarmStyle = "Default"
 
     FarmTab:CreateInput({
         Name = "Quantity",
@@ -2194,69 +2334,113 @@ do
         end
     })
 
+    FarmTab:CreateDropdown({
+        Name = "Farm Style",
+        Options = FARM_STYLE_OPTIONS,
+        CurrentOption = { selectedFarmStyle },
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if picked then
+                selectedFarmStyle = picked
+            end
+        end,
+    })
+
+    local function equipSelectedPlantForFarm()
+        if not selectedPlant or selectedPlant == "" then
+            return
+        end
+        local character = Players.LocalPlayer.Character
+        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+        if not character or not backpack then
+            return
+        end
+        local plantTool = backpack:FindFirstChild(selectedPlant) or character:FindFirstChild(selectedPlant)
+        if not plantTool or not plantTool:IsA("Tool") then
+            return
+        end
+        local currentTool = nil
+        for _, c in ipairs(character:GetChildren()) do
+            if c:IsA("Tool") then
+                currentTool = c
+                break
+            end
+        end
+        if currentTool == plantTool then
+            return
+        end
+        if currentTool then
+            currentTool.Parent = backpack
+            task.wait()
+        end
+        plantTool.Parent = character
+    end
+
+    local function teleportCharacterNear(position, maxDistance)
+        maxDistance = maxDistance or 5
+        local character = Players.LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if rootPart and (rootPart.Position - position).Magnitude > maxDistance then
+            rootPart.CFrame = CFrame.new(position)
+            task.wait(0.5)
+        end
+    end
+
     FarmTab:CreateButton({
         Name = "Start Farm",
         Callback = function()
-            if selectedPlant and selectedPlant ~= "" then
-                local character = Players.LocalPlayer.Character
-                local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
-                if character and backpack then
-                    local tool = backpack:FindFirstChild(selectedPlant)
-                    if not tool or not tool:IsA("Tool") then
-                        tool = character:FindFirstChild(selectedPlant)
-                    end
-                    if tool and tool:IsA("Tool") and tool.Parent == backpack then
-                        for _, c in ipairs(character:GetChildren()) do
-                            if c:IsA("Tool") then
-                                c.Parent = backpack
-                                break
-                            end
-                        end
-                        tool.Parent = character
-                    end
-                end
-            end
+            equipSelectedPlantForFarm()
 
             local qty = tonumber(FarmQuantity) or 1
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
-            local position = getFarmPosition()
+            local center = getFarmPosition()
+            local cropMaxCount = nil
+            local hitMaxCrops = false
 
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                rootPart.CFrame = CFrame.new(position)
-                task.wait(0.5)
-            end
+            teleportCharacterNear(center)
 
-            local stopRequested = false
             local connection = NotificationEvent.OnClientEvent:Connect(function(message)
-                if isMaximumCropsNotification(message) then
-                    stopRequested = true
+                local maxFromNotify = parseMaxCropsFromNotification(message)
+                if maxFromNotify then
+                    cropMaxCount = maxFromNotify
+                    setFarmCropMaxCount(maxFromNotify)
                 end
             end)
 
             local planted = 0
-            for i = 1, qty do
-                if stopRequested then break end
-                print("Planting crop " .. i .. " of " .. qty)
-                PlantCropEvent:FireServer(position)
-                planted = i
+            local safetyLimit = 500
+            while shouldContinuePlanting(selectedFarmStyle, planted, qty, cropMaxCount or farmCropMaxCount) and safetyLimit > 0 do
+                safetyLimit -= 1
+                local plantPosition = findNextPlantPosition(selectedFarmStyle, center, cropMaxCount or farmCropMaxCount)
+                if not plantPosition then
+                    local maxCount = cropMaxCount or farmCropMaxCount
+                    hitMaxCrops = maxCount ~= nil and countLocalPlayerActiveCrops() >= maxCount
+                    break
+                end
+                planted += 1
+                print("Planting crop " .. planted .. " (target " .. tostring(cropMaxCount or qty) .. ")")
+                teleportCharacterNear(plantPosition)
+                PlantCropEvent:FireServer(plantPosition)
                 task.wait(1)
             end
 
             connection:Disconnect()
 
+            local finalMaxCount = cropMaxCount or farmCropMaxCount
+            if finalMaxCount and countLocalPlayerActiveCrops() >= finalMaxCount then
+                hitMaxCrops = true
+            end
+
             mountNotify({
                 Title = "Farm",
-                Content = "Planted " .. tostring(planted) .. " crop(s)" .. (stopRequested and " (stopped: max crops)" or ""),
+                Content = "Planted " .. tostring(planted) .. " crop(s)" .. (hitMaxCrops and " (max crops reached)" or ""),
             })
         end
     })
     local autoFarmRunning = false
     local autoFarmConnection = nil
     local autoFarmTeleportEnabled = false
-
     FarmTab:CreateToggle({
         Name = "Teleport",
         Callback = function(enabled)
@@ -2276,56 +2460,27 @@ do
 
             local PlantCropEvent = ReplicatedStorage.Remotes.TutorialRemotes.PlantCrop
             local NotificationEvent = ReplicatedStorage.Remotes.TutorialRemotes.Notification
-            local position = getFarmPosition()
-            local cropMaxCount = nil
+            local center = getFarmPosition()
 
             autoFarmConnection = NotificationEvent.OnClientEvent:Connect(function(message)
                 local maxFromNotify = parseMaxCropsFromNotification(message)
                 if maxFromNotify then
-                    cropMaxCount = maxFromNotify
+                    setFarmCropMaxCount(maxFromNotify)
                 end
             end)
 
             task.spawn(function()
                 while autoFarmRunning do
-                    if selectedPlant and selectedPlant ~= "" then
-                        local character = Players.LocalPlayer.Character
-                        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
-                        if character and backpack then
-                            local plantTool = backpack:FindFirstChild(selectedPlant) or character:FindFirstChild(selectedPlant)
-                            if plantTool and plantTool:IsA("Tool") then
-                                local currentTool = nil
-                                for _, c in ipairs(character:GetChildren()) do
-                                    if c:IsA("Tool") then
-                                        currentTool = c
-                                        break
-                                    end
-                                end
-                                if currentTool ~= plantTool then
-                                    if currentTool then
-                                        currentTool.Parent = backpack
-                                        task.wait()
-                                    end
-                                    plantTool.Parent = character
-                                end
-                            end
-                        end
-                    end
+                    equipSelectedPlantForFarm()
 
-                    if autoFarmTeleportEnabled then
-                        local char = Players.LocalPlayer.Character
-                        local root = char and char:FindFirstChild("HumanoidRootPart")
-                        if root and (root.Position - position).Magnitude > 5 then
-                            root.CFrame = CFrame.new(position)
-                            task.wait(0.5)
-                        end
-                    end
-
-                    local activeCropCount = countLocalPlayerActiveCrops()
-                    if cropMaxCount and activeCropCount >= cropMaxCount then
+                    local plantPosition = findNextPlantPosition(selectedFarmStyle, center, farmCropMaxCount)
+                    if not plantPosition then
                         task.wait(1)
                     else
-                        PlantCropEvent:FireServer(position)
+                        if autoFarmTeleportEnabled then
+                            teleportCharacterNear(plantPosition)
+                        end
+                        PlantCropEvent:FireServer(plantPosition)
                         task.wait(1)
                     end
                 end
