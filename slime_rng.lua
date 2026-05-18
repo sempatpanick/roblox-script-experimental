@@ -1850,6 +1850,17 @@ do
         return nil
     end
 
+    local function resolveNetworkerRemoteEvent(
+        serviceFolderName: string,
+        indexFolderName: string?
+    ): RemoteEvent?
+        local ev = findNetworkerRemoteInService(serviceFolderName, "RemoteEvent", "RemoteEvent", indexFolderName)
+        if ev and ev:IsA("RemoteEvent") then
+            return ev
+        end
+        return nil
+    end
+
     local function findLootServiceRemotesFolder(): Instance?
         return findNetworkerServiceRemotesFolder("LootService")
     end
@@ -2268,15 +2279,31 @@ do
         Content = 'No enemies under Workspace → Gameplay* → Enemies.',
     })
 
-    local function mainFindWorkspaceEnemiesFolders(): { Instance }
-        local out: { Instance } = {}
+    type GameplayEnemiesEntry = {
+        gameplayName: string,
+        enemiesFolder: Instance,
+    }
+
+    local function mainFindWorkspaceGameplayEnemies(): { GameplayEnemiesEntry }
+        local out: { GameplayEnemiesEntry } = {}
         for _, ch in ipairs(Workspace:GetChildren()) do
             if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
                 local enemies = ch:FindFirstChild("Enemies")
                 if enemies then
-                    table.insert(out, enemies)
+                    table.insert(out, {
+                        gameplayName = ch.Name,
+                        enemiesFolder = enemies,
+                    })
                 end
             end
+        end
+        return out
+    end
+
+    local function mainFindWorkspaceEnemiesFolders(): { Instance }
+        local out: { Instance } = {}
+        for _, entry in ipairs(mainFindWorkspaceGameplayEnemies()) do
+            table.insert(out, entry.enemiesFolder)
         end
         return out
     end
@@ -2405,14 +2432,15 @@ do
         mutation: string?,
         shotPriority: number,
         listOrder: number,
+        gameplayName: string,
     }
 
     local function mainCollectEnemyListRows(): { EnemyListRow }
         local rows: { EnemyListRow } = {}
         local seenUid: { [number]: boolean } = {}
         local listOrder = 0
-        for _, folder in ipairs(mainFindWorkspaceEnemiesFolders()) do
-            for _, enemy in ipairs(folder:GetChildren()) do
+        for _, entry in ipairs(mainFindWorkspaceGameplayEnemies()) do
+            for _, enemy in ipairs(entry.enemiesFolder:GetChildren()) do
                 local uid = mainEnemyNumericUid(enemy)
                 if uid and not seenUid[uid] then
                     seenUid[uid] = true
@@ -2424,6 +2452,7 @@ do
                         mutation = mutation,
                         shotPriority = mainEnemyMutationShotPriority(mutation),
                         listOrder = listOrder,
+                        gameplayName = entry.gameplayName,
                     })
                 end
             end
@@ -2447,13 +2476,18 @@ do
         return ("%d - %s"):format(row.uid, row.hp)
     end
 
-    local function mainPickAutoShotEnemyUid(): number?
+    local function mainPickGameplayEnemyTarget(): (number?, string?)
         local rows = mainCollectEnemyListRows()
         local first = rows[1]
         if first then
-            return first.uid
+            return first.uid, first.gameplayName
         end
-        return nil
+        return nil, nil
+    end
+
+    local function mainPickGameplayEnemyUid(): number?
+        local uid = mainPickGameplayEnemyTarget()
+        return uid
     end
 
     local function mainBuildEnemiesListParagraphBody(): string
@@ -2574,12 +2608,85 @@ do
 
             task.spawn(function()
                 while myToken == autoGunLoopToken and autoGunEnabled do
-                    local uid = mainPickAutoShotEnemyUid()
+                    local uid = mainPickGameplayEnemyUid()
                     if not uid then
                         task.wait(math.max(autoGunShotDelaySec, 0.35))
                     else
                         mainTryFireSlimeGun(uid)
                         task.wait(autoGunShotDelaySec)
+                    end
+                end
+            end)
+        end,
+    })
+
+    MainTab:CreateSection("Burst Attack")
+
+    local burstAttackDamage = 8406
+    local burstAttackEnabled = false
+    local burstAttackLoopToken = 0
+    local burstAttackDelaySec = 0.1
+    local gameplayConfirmHitRemote: RemoteEvent? = nil
+    local gameplayConfirmHitRemoteServiceName: string? = nil
+
+    local function mainTryConfirmHit(damage: number, uid: number, gameplayServiceName: string?)
+        if not gameplayServiceName or gameplayServiceName == "" then
+            return
+        end
+        if gameplayConfirmHitRemoteServiceName ~= gameplayServiceName then
+            gameplayConfirmHitRemoteServiceName = gameplayServiceName
+            gameplayConfirmHitRemote = resolveNetworkerRemoteEvent(
+                gameplayServiceName,
+                LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
+            )
+        elseif not gameplayConfirmHitRemote or not gameplayConfirmHitRemote.Parent then
+            gameplayConfirmHitRemote = resolveNetworkerRemoteEvent(
+                gameplayServiceName,
+                LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
+            )
+        end
+        if not gameplayConfirmHitRemote then
+            return
+        end
+        pcall(function()
+            gameplayConfirmHitRemote:FireServer("confirmHit", damage, uid)
+        end)
+    end
+
+    MainTab:CreateInput({
+        Name = "Damage",
+        PlaceholderText = "e.g. 8406",
+        Flag = "slimeAttack",
+        CurrentValue = tostring(burstAttackDamage),
+        Callback = function(value)
+            local n = tonumber(value)
+            if n and n == n then
+                burstAttackDamage = math.floor(n)
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Attack",
+        Flag = "main_burst_attack",
+        CurrentValue = false,
+        Callback = function(enabled)
+            burstAttackEnabled = enabled == true
+            burstAttackLoopToken = burstAttackLoopToken + 1
+            local myToken = burstAttackLoopToken
+
+            if not burstAttackEnabled then
+                return
+            end
+
+            task.spawn(function()
+                while myToken == burstAttackLoopToken and burstAttackEnabled do
+                    local uid, gameplayName = mainPickGameplayEnemyTarget()
+                    if not uid or not gameplayName then
+                        task.wait(math.max(burstAttackDelaySec, 0.35))
+                    else
+                        mainTryConfirmHit(burstAttackDamage, uid, gameplayName)
+                        task.wait(burstAttackDelaySec)
                     end
                 end
             end)
