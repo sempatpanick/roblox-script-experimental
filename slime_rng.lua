@@ -2789,6 +2789,97 @@ do
         return false
     end
 
+    local rollServiceRemote: RemoteFunction? = nil
+
+    local function getRollServiceRemote(): RemoteFunction?
+        if rollServiceRemote and rollServiceRemote.Parent then
+            return rollServiceRemote
+        end
+        rollServiceRemote =
+            resolveNetworkerRemoteFunction("RollService", LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
+        if rollServiceRemote then
+            return rollServiceRemote
+        end
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+            or ReplicatedStorage:WaitForChild("Packages", 12)
+        if not packages then
+            return nil
+        end
+        local idx = packages:FindFirstChild("_Index") or packages:WaitForChild("_Index", 12)
+        if not idx then
+            return nil
+        end
+        local pkg = idx:FindFirstChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
+            or idx:WaitForChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION, 12)
+        if not pkg then
+            return nil
+        end
+        local net = pkg:FindFirstChild("networker") or pkg:WaitForChild("networker", 12)
+        local rem = net and (net:FindFirstChild("_remotes") or net:WaitForChild("_remotes", 12))
+        local rollSvc = rem and rem:FindFirstChild("RollService")
+        local rollRf = rollSvc and rollSvc:FindFirstChild("RemoteFunction")
+        if rollRf and rollRf:IsA("RemoteFunction") then
+            rollServiceRemote = rollRf
+        end
+        return rollServiceRemote
+    end
+
+    local function getRollSetSpecialPausedRemote(): RemoteFunction?
+        return getRollServiceRemote()
+    end
+
+    local function tryRequestRoll(): boolean
+        local rf = getRollServiceRemote()
+        if not rf then
+            return false
+        end
+        local ok = pcall(function()
+            rf:InvokeServer("requestRoll")
+        end)
+        return ok == true
+    end
+
+    MainTab:CreateSection("Auto Roll")
+
+    local autoRollEnabled = false
+    local autoRollLoopToken = 0
+    local autoRollDelaySec = 0.5
+
+    MainTab:CreateInput({
+        Name = "Delay",
+        PlaceholderText = "e.g. 0.5",
+        Flag = "main_auto_roll_delay",
+        CurrentValue = tostring(autoRollDelaySec),
+        Callback = function(value)
+            local n = tonumber(value)
+            if n and n == n then
+                autoRollDelaySec = math.clamp(n, 0.05, 60)
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Roll",
+        Flag = "main_auto_roll",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoRollEnabled = enabled == true
+            autoRollLoopToken = autoRollLoopToken + 1
+            local myToken = autoRollLoopToken
+
+            if not autoRollEnabled then
+                return
+            end
+
+            task.spawn(function()
+                while myToken == autoRollLoopToken and autoRollEnabled do
+                    tryRequestRoll()
+                    task.wait(autoRollDelaySec)
+                end
+            end)
+        end,
+    })
+
     MainTab:CreateSection("Special Roll")
 
     -- Highest → lowest priority (galaxy first).
@@ -3018,41 +3109,7 @@ do
         end
     end
 
-    local rollSetSpecialPausedRemote: RemoteFunction? = nil
     local dataServiceProgressRemoteEvent: RemoteEvent? = nil
-
-    local function getRollSetSpecialPausedRemote(): RemoteFunction?
-        if rollSetSpecialPausedRemote and rollSetSpecialPausedRemote.Parent then
-            return rollSetSpecialPausedRemote
-        end
-        rollSetSpecialPausedRemote =
-            resolveNetworkerRemoteFunction("RollService", LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
-        if rollSetSpecialPausedRemote then
-            return rollSetSpecialPausedRemote
-        end
-        local packages = ReplicatedStorage:FindFirstChild("Packages")
-            or ReplicatedStorage:WaitForChild("Packages", 12)
-        if not packages then
-            return nil
-        end
-        local idx = packages:FindFirstChild("_Index") or packages:WaitForChild("_Index", 12)
-        if not idx then
-            return nil
-        end
-        local pkg = idx:FindFirstChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
-            or idx:WaitForChild(LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION, 12)
-        if not pkg then
-            return nil
-        end
-        local net = pkg:FindFirstChild("networker") or pkg:WaitForChild("networker", 12)
-        local rem = net and (net:FindFirstChild("_remotes") or net:WaitForChild("_remotes", 12))
-        local rollSvc = rem and rem:FindFirstChild("RollService")
-        local rollRf = rollSvc and rollSvc:FindFirstChild("RemoteFunction")
-        if rollRf and rollRf:IsA("RemoteFunction") then
-            rollSetSpecialPausedRemote = rollRf
-        end
-        return rollSetSpecialPausedRemote
-    end
 
     local function mainRequestSetSpecialRollPaused(tierKey: string, pausedFlag: boolean): boolean
         local rf = getRollSetSpecialPausedRemote()
