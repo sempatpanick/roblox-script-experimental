@@ -4170,34 +4170,34 @@ do
     local UPGRADE_MUTATION_KINDS: { string } = { "big", "huge", "shiny", "inverted" }
     local UPGRADE_OWNED_DISPLAY_MAX = 40
 
-    local UpgradeUtilsParagraph = MainTab:CreateParagraph({
+    UpgradeUtilsParagraph = MainTab:CreateParagraph({
         Title = "UpgradeServiceUtils",
         Content = "Loading…",
     })
-    local UpgradeLuckRollsParagraph = MainTab:CreateParagraph({
+    UpgradeLuckRollsParagraph = MainTab:CreateParagraph({
         Title = "Luck roll cadence",
         Content = "Loading…",
     })
-    local UpgradeOwnedParagraph = MainTab:CreateParagraph({
+    UpgradeOwnedParagraph = MainTab:CreateParagraph({
         Title = "Owned upgrades",
         Content = "Waiting for upgrades data…",
     })
-    local UpgradeStatsParagraph = MainTab:CreateParagraph({
+    UpgradeStatsParagraph = MainTab:CreateParagraph({
         Title = "Computed stats",
         Content = "Loading…",
     })
 
-    local function setUpgradeParagraph(paragraph: any, title: string, content: string)
+    function setUpgradeParagraph(paragraph: any, title: string, content: string)
         if paragraph and paragraph.Set then
             paragraph:Set({ Title = title, Content = content })
         end
     end
 
-    local function formatUpgradePercentFromMultiplier(mult: number): string
+    function formatUpgradePercentFromMultiplier(mult: number): string
         return ("%d%%"):format(math.round((mult - 1) * 100))
     end
 
-    local function buildUpgradeUtilsParagraphBody(): string
+    function buildUpgradeUtilsParagraphBody(): string
         local loaded = tryLoadUpgradeServiceUtils()
         if not loaded then
             return upgradeUtilsLoadError or "Failed to load UpgradeServiceUtils."
