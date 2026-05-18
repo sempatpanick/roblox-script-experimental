@@ -3070,39 +3070,50 @@ do
         return true
     end
 
-    local function maxRemainingAmongSelectedSpecialTiers(): number?
-        local maxRemaining: number? = nil
+    local function allSelectedSpecialTiersAtOneAndPaused(): boolean
+        if not allSelectedSpecialTiersAtOneRemaining() then
+            return false
+        end
         for _, tier in ipairs(selectedSpecialRollTierKeys) do
             local st = specialRollProgressionByTier[tier]
-            if st and (maxRemaining == nil or st.rollsUntilNext > maxRemaining) then
-                maxRemaining = st.rollsUntilNext
+            if not st or not st.paused then
+                return false
             end
         end
-        return maxRemaining
+        return true
     end
 
-    -- Pause the highest-priority selected tier that is still on the slowest (max) countdown.
-    local function selectedSpecialTiersToPauseForCombine(): { string }
-        if allSelectedSpecialTiersAtOneRemaining() then
-            return {}
-        end
-        local maxRemaining = maxRemainingAmongSelectedSpecialTiers()
-        if maxRemaining == nil or maxRemaining <= 1 then
-            return {}
-        end
+    -- Highest-priority selected tier that is not paused yet (galaxy → void → diamond → golden).
+    local function highestSelectedSpecialTierNotPaused(): string?
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
-                if st and st.rollsUntilNext == maxRemaining and not st.paused then
-                    return { tier }
+                if st and not st.paused then
+                    return tier
                 end
             end
+        end
+        return nil
+    end
+
+    -- One step: pause only the current highest unpause tier when it hits 1 remaining.
+    local function selectedSpecialTiersToPauseForCombine(): { string }
+        if allSelectedSpecialTiersAtOneAndPaused() then
+            return {}
+        end
+        local focusTier = highestSelectedSpecialTierNotPaused()
+        if not focusTier then
+            return {}
+        end
+        local st = specialRollProgressionByTier[focusTier]
+        if st and st.rollsUntilNext == 1 and not st.paused then
+            return { focusTier }
         end
         return {}
     end
 
     local function selectedSpecialTiersToResumeForCombine(): { string }
-        if not allSelectedSpecialTiersAtOneRemaining() then
+        if not allSelectedSpecialTiersAtOneAndPaused() then
             return {}
         end
         local toResume: { string } = {}
@@ -3129,7 +3140,7 @@ do
             return
         end
 
-        if allSelectedSpecialTiersAtOneRemaining() then
+        if allSelectedSpecialTiersAtOneAndPaused() then
             for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
                 if not specialRollCombineInvokePending[tier] then
                     if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_RESUME) then
@@ -3153,13 +3164,15 @@ do
                 specialRollCombineInvokePending[tier] = nil
                 continue
             end
-            if allSelectedSpecialTiersAtOneRemaining() then
+            if allSelectedSpecialTiersAtOneAndPaused() then
                 if not st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
             else
                 local pauseTargets = selectedSpecialTiersToPauseForCombine()
                 if pauseTargets[1] ~= tier then
+                    specialRollCombineInvokePending[tier] = nil
+                elseif st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
             end
@@ -4202,7 +4215,7 @@ do
         return table.concat(lines, "\n")
     end
 
-    local function refreshUpgradeParagraphs()
+    function refreshUpgradeParagraphs()
         setUpgradeParagraph(UpgradeUtilsParagraph, "UpgradeServiceUtils", buildUpgradeUtilsParagraphBody())
         setUpgradeParagraph(UpgradeLuckRollsParagraph, "Luck roll cadence", buildUpgradeLuckRollsParagraphBody())
         setUpgradeParagraph(UpgradeOwnedParagraph, "Owned upgrades", buildUpgradeOwnedParagraphBody())
