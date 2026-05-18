@@ -3122,13 +3122,47 @@ do
         return count
     end
 
+    local function specialRollTierCadenceMax(tier: string): number?
+        if tryLoadUpgradeServiceUtils() and upgradeServiceUtils then
+            local everyN = luckRollCadenceEveryN(upgradeServiceUtils, tier, playerUpgradesSave)
+            if everyN then
+                return everyN
+            end
+        end
+        return nil
+    end
+
+    -- Do not pause a tier at 1 while a higher-priority selected tier is still
+    -- running above that tier's cadence max (e.g. void 150, diamond max 100).
+    local function shouldAutoCombinePauseTierAtOne(tier: string): boolean
+        local tierMax = specialRollTierCadenceMax(tier)
+        if not tierMax then
+            return true
+        end
+        for _, higherTier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if higherTier == tier then
+                break
+            end
+            if not table.find(selectedSpecialRollTierKeys, higherTier) then
+                continue
+            end
+            local st = specialRollProgressionByTier[higherTier]
+            if st and not st.paused and st.rollsUntilNext > 1 then
+                if st.rollsUntilNext > tierMax then
+                    return false
+                end
+            end
+        end
+        return true
+    end
+
     -- Selected tiers currently sitting at rollsUntilNext == 1 and not paused.
     local function selectedSpecialTiersAtOneNotPaused(): { string }
         local out: { string } = {}
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
-                if st and not st.paused and st.rollsUntilNext == 1 then
+                if st and not st.paused and st.rollsUntilNext == 1 and shouldAutoCombinePauseTierAtOne(tier) then
                     table.insert(out, tier)
                 end
             end
