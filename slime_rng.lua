@@ -2809,6 +2809,9 @@ do
             addDisplay(value)
         end
         refreshSpecialRollParagraph()
+        if autoAdjustSpecialRollEnabled then
+            runAutoAdjustSpecialRollPass()
+        end
     end
 
     local function refreshSpecialRollDropdownFromProgression()
@@ -2919,12 +2922,64 @@ do
         return ok == true
     end
 
-    local function mainSelectedSpecialRollTiersAtOneRoll(): { string }
-        local toPause: { string } = {}
+    -- Game API: true = pause, false = resume.
+    local SPECIAL_ROLL_REMOTE_PAUSE = true
+    local SPECIAL_ROLL_REMOTE_RESUME = false
+
+    local function pauseSelectedSpecialRollTiers(): (number, number)
+        local okCount = 0
+        local failCount = 0
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
-                if st and st.rollsUntilNext == 1 and not st.paused then
+                if st and not st.paused then
+                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_PAUSE) then
+                        okCount = okCount + 1
+                    else
+                        failCount = failCount + 1
+                    end
+                end
+            end
+        end
+        return okCount, failCount
+    end
+
+    local function maxRollsAmongSelectedSpecialRollTiers(): number?
+        local maxRolls: number? = nil
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if st then
+                if maxRolls == nil or st.rollsUntilNext > maxRolls then
+                    maxRolls = st.rollsUntilNext
+                end
+            end
+        end
+        return maxRolls
+    end
+
+    local function allSelectedSpecialRollTiersAtOneRoll(): boolean
+        if #selectedSpecialRollTierKeys == 0 then
+            return false
+        end
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if not st or st.rollsUntilNext ~= 1 then
+                return false
+            end
+        end
+        return true
+    end
+
+    -- Pause selected tiers that are closer to firing than the slowest selected tier.
+    local function tiersToPauseForSpecialRollSync(maxRolls: number): { string }
+        local toPause: { string } = {}
+        if maxRolls <= 1 then
+            return toPause
+        end
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.rollsUntilNext < maxRolls and not st.paused then
                     table.insert(toPause, tier)
                 end
             end
@@ -2932,21 +2987,61 @@ do
         return toPause
     end
 
-    local function runAutoAdjustSpecialRollPass()
-        if not autoAdjustSpecialRollEnabled or #selectedSpecialRollTierKeys == 0 then
-            return
+    local function tiersToResumeForSpecialRollSync(): { string }
+        if not allSelectedSpecialRollTiersAtOneRoll() then
+            return {}
         end
-        local toPause = mainSelectedSpecialRollTiersAtOneRoll()
-        for _, tier in ipairs(toPause) do
-            if not specialRollPauseInvokePending[tier] then
-                if mainRequestSetSpecialRollPaused(tier, false) then
-                    specialRollPauseInvokePending[tier] = true
+        local toResume: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.paused then
+                    table.insert(toResume, tier)
                 end
             end
         end
+        return toResume
+    end
+
+    local function runAutoAdjustSpecialRollPass()
+        if not autoAdjustSpecialRollEnabled or #selectedSpecialRollTierKeys < 2 then
+            return
+        end
+
+        local maxRolls = maxRollsAmongSelectedSpecialRollTiers()
+        if maxRolls == nil then
+            return
+        end
+
+        if allSelectedSpecialRollTiersAtOneRoll() then
+            for _, tier in ipairs(tiersToResumeForSpecialRollSync()) do
+                if not specialRollPauseInvokePending[tier] then
+                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_RESUME) then
+                        specialRollPauseInvokePending[tier] = true
+                    end
+                end
+            end
+        else
+            for _, tier in ipairs(tiersToPauseForSpecialRollSync(maxRolls)) do
+                if not specialRollPauseInvokePending[tier] then
+                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_PAUSE) then
+                        specialRollPauseInvokePending[tier] = true
+                    end
+                end
+            end
+        end
+
         for tier, _ in pairs(specialRollPauseInvokePending) do
             local st = specialRollProgressionByTier[tier]
-            if not st or st.rollsUntilNext ~= 1 or st.paused then
+            if not st then
+                specialRollPauseInvokePending[tier] = nil
+                continue
+            end
+            if allSelectedSpecialRollTiersAtOneRoll() then
+                if not st.paused then
+                    specialRollPauseInvokePending[tier] = nil
+                end
+            elseif st.paused or st.rollsUntilNext >= maxRolls then
                 specialRollPauseInvokePending[tier] = nil
             end
         end
@@ -3026,6 +3121,55 @@ do
             end
 
             runAutoAdjustSpecialRollPass()
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "Pause Selected Special Roll",
+        Flag = "main_pause_selected_special_roll",
+        Callback = function()
+            if #selectedSpecialRollTierKeys == 0 then
+                mountNotify({
+                    Title = "Auto Adjust Special Roll",
+                    Content = "Select at least one special roll tier.",
+                    Icon = "x",
+                })
+                return
+            end
+
+            if not getRollSetSpecialPausedRemote() then
+                mountNotify({
+                    Title = "Auto Adjust Special Roll",
+                    Content = "RollService RemoteFunction not found under "
+                        .. LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
+                        .. ".",
+                    Icon = "x",
+                })
+                return
+            end
+
+            local okCount, failCount = pauseSelectedSpecialRollTiers()
+            if okCount == 0 and failCount == 0 then
+                mountNotify({
+                    Title = "Auto Adjust Special Roll",
+                    Content = "Selected tiers are already paused or have no progression data yet.",
+                    Icon = "x",
+                })
+                return
+            end
+            if failCount > 0 then
+                mountNotify({
+                    Title = "Auto Adjust Special Roll",
+                    Content = ("Paused %d tier(s); %d request(s) failed."):format(okCount, failCount),
+                    Icon = "x",
+                })
+                return
+            end
+            mountNotify({
+                Title = "Auto Adjust Special Roll",
+                Content = ("Paused %d special roll tier(s)."):format(okCount),
+                Icon = "check",
+            })
         end,
     })
 
