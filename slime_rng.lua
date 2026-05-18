@@ -3070,19 +3070,6 @@ do
         return true
     end
 
-    local function allSelectedSpecialTiersAtOneAndPaused(): boolean
-        if not allSelectedSpecialTiersAtOneRemaining() then
-            return false
-        end
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            local st = specialRollProgressionByTier[tier]
-            if not st or not st.paused then
-                return false
-            end
-        end
-        return true
-    end
-
     -- Highest-priority selected tier that is not paused yet (galaxy → void → diamond → golden).
     local function highestSelectedSpecialTierNotPaused(): string?
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
@@ -3098,7 +3085,7 @@ do
 
     -- One step: pause only the current highest unpause tier when it hits 1 remaining.
     local function selectedSpecialTiersToPauseForCombine(): { string }
-        if allSelectedSpecialTiersAtOneAndPaused() then
+        if allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
         local focusTier = highestSelectedSpecialTierNotPaused()
@@ -3113,7 +3100,7 @@ do
     end
 
     local function selectedSpecialTiersToResumeForCombine(): { string }
-        if not allSelectedSpecialTiersAtOneAndPaused() then
+        if not allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
         local toResume: { string } = {}
@@ -3140,7 +3127,7 @@ do
             return
         end
 
-        if allSelectedSpecialTiersAtOneAndPaused() then
+        if allSelectedSpecialTiersAtOneRemaining() then
             for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
                 if not specialRollCombineInvokePending[tier] then
                     if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_RESUME) then
@@ -3164,7 +3151,7 @@ do
                 specialRollCombineInvokePending[tier] = nil
                 continue
             end
-            if allSelectedSpecialTiersAtOneAndPaused() then
+            if allSelectedSpecialTiersAtOneRemaining() then
                 if not st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
