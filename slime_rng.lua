@@ -2805,6 +2805,12 @@ do
     local specialRollDropdownSeededAll = false
     local specialRollParagraphRefreshScheduled = false
     local SpecialRollDropdown: any = nil
+    local autoCombineSpecialRollEnabled = false
+    local specialRollCombineInvokePending: { [string]: boolean } = {}
+    local runAutoCombineSpecialRollPass: () -> ()
+
+    -- High → low tier (void is highest).
+    local SPECIAL_ROLL_TIER_HIGH_TO_LOW: { string } = { "void", "galaxy", "diamond", "golden" }
 
     local function specialRollTierDisplayName(tierKey: string): string
         return string.sub(tierKey, 1, 1):upper() .. string.sub(tierKey, 2)
@@ -2917,6 +2923,7 @@ do
             addDisplay(value)
         end
         refreshSpecialRollParagraph()
+        runAutoCombineSpecialRollPass()
     end
 
     local function refreshSpecialRollDropdownFromProgression()
@@ -3029,6 +3036,7 @@ do
 
     -- Game API: true = pause, false = resume.
     local SPECIAL_ROLL_REMOTE_PAUSE = true
+    local SPECIAL_ROLL_REMOTE_RESUME = false
 
     local function pauseSelectedSpecialRollTiers(): (number, number)
         local okCount = 0
@@ -3046,6 +3054,111 @@ do
             end
         end
         return okCount, failCount
+    end
+
+    local function maxRemainingAmongSelectedSpecialTiers(): number?
+        local maxRemaining: number? = nil
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if st then
+                if maxRemaining == nil or st.rollsUntilNext > maxRemaining then
+                    maxRemaining = st.rollsUntilNext
+                end
+            end
+        end
+        return maxRemaining
+    end
+
+    local function allSelectedSpecialTiersAtOneRemaining(): boolean
+        if #selectedSpecialRollTierKeys < 2 then
+            return false
+        end
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if not st or st.rollsUntilNext ~= 1 then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function selectedSpecialTiersToPauseForCombine(maxRemaining: number): { string }
+        local toPause: { string } = {}
+        if maxRemaining <= 1 then
+            return toPause
+        end
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and not st.paused and st.rollsUntilNext < maxRemaining then
+                    table.insert(toPause, tier)
+                end
+            end
+        end
+        return toPause
+    end
+
+    local function selectedSpecialTiersToResumeForCombine(): { string }
+        if not allSelectedSpecialTiersAtOneRemaining() then
+            return {}
+        end
+        local toResume: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.paused then
+                    table.insert(toResume, tier)
+                end
+            end
+        end
+        return toResume
+    end
+
+    function runAutoCombineSpecialRollPass()
+        if not autoCombineSpecialRollEnabled or #selectedSpecialRollTierKeys < 2 then
+            return
+        end
+        if not getRollSetSpecialPausedRemote() then
+            return
+        end
+
+        local maxRemaining = maxRemainingAmongSelectedSpecialTiers()
+        if maxRemaining == nil then
+            return
+        end
+
+        if allSelectedSpecialTiersAtOneRemaining() then
+            for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
+                if not specialRollCombineInvokePending[tier] then
+                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_RESUME) then
+                        specialRollCombineInvokePending[tier] = true
+                    end
+                end
+            end
+        else
+            for _, tier in ipairs(selectedSpecialTiersToPauseForCombine(maxRemaining)) do
+                if not specialRollCombineInvokePending[tier] then
+                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_PAUSE) then
+                        specialRollCombineInvokePending[tier] = true
+                    end
+                end
+            end
+        end
+
+        for tier, _ in pairs(specialRollCombineInvokePending) do
+            local st = specialRollProgressionByTier[tier]
+            if not st then
+                specialRollCombineInvokePending[tier] = nil
+                continue
+            end
+            if allSelectedSpecialTiersAtOneRemaining() then
+                if not st.paused then
+                    specialRollCombineInvokePending[tier] = nil
+                end
+            elseif st.paused or st.rollsUntilNext >= maxRemaining then
+                specialRollCombineInvokePending[tier] = nil
+            end
+        end
     end
 
     local function specialRollApplyProgressionPayload(payload: any)
@@ -3075,6 +3188,7 @@ do
         if dropdownOptionsChanged then
             refreshSpecialRollDropdownFromProgression()
         end
+        runAutoCombineSpecialRollPass()
     end
 
     if dataServiceProgressRemoteEvent then
@@ -3143,6 +3257,42 @@ do
                 Content = ("Paused %d special roll tier(s)."):format(okCount),
                 Icon = "check",
             })
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Combine Special Roll",
+        Flag = "main_auto_combine_special_roll",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoCombineSpecialRollEnabled = enabled == true
+
+            if not autoCombineSpecialRollEnabled then
+                table.clear(specialRollCombineInvokePending)
+                return
+            end
+
+            if #selectedSpecialRollTierKeys < 2 then
+                mountNotify({
+                    Title = "Special Roll",
+                    Content = "Pick at least two tiers to combine.",
+                    Icon = "x",
+                })
+                return
+            end
+
+            if not getRollSetSpecialPausedRemote() then
+                mountNotify({
+                    Title = "Special Roll",
+                    Content = "RollService RemoteFunction not found under "
+                        .. LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
+                        .. ".",
+                    Icon = "x",
+                })
+                return
+            end
+
+            runAutoCombineSpecialRollPass()
         end,
     })
 
