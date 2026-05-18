@@ -3056,19 +3056,6 @@ do
         return okCount, failCount
     end
 
-    local function maxRemainingAmongSelectedSpecialTiers(): number?
-        local maxRemaining: number? = nil
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            local st = specialRollProgressionByTier[tier]
-            if st then
-                if maxRemaining == nil or st.rollsUntilNext > maxRemaining then
-                    maxRemaining = st.rollsUntilNext
-                end
-            end
-        end
-        return maxRemaining
-    end
-
     local function allSelectedSpecialTiersAtOneRemaining(): boolean
         if #selectedSpecialRollTierKeys < 2 then
             return false
@@ -3082,15 +3069,16 @@ do
         return true
     end
 
-    local function selectedSpecialTiersToPauseForCombine(maxRemaining: number): { string }
-        local toPause: { string } = {}
-        if maxRemaining <= 1 then
-            return toPause
+    -- Pause only when a tier hits 1 left and others are not all at 1 yet.
+    local function selectedSpecialTiersToPauseForCombine(): { string }
+        if allSelectedSpecialTiersAtOneRemaining() then
+            return {}
         end
+        local toPause: { string } = {}
         for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
-                if st and not st.paused and st.rollsUntilNext < maxRemaining then
+                if st and not st.paused and st.rollsUntilNext == 1 then
                     table.insert(toPause, tier)
                 end
             end
@@ -3122,11 +3110,6 @@ do
             return
         end
 
-        local maxRemaining = maxRemainingAmongSelectedSpecialTiers()
-        if maxRemaining == nil then
-            return
-        end
-
         if allSelectedSpecialTiersAtOneRemaining() then
             for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
                 if not specialRollCombineInvokePending[tier] then
@@ -3136,7 +3119,7 @@ do
                 end
             end
         else
-            for _, tier in ipairs(selectedSpecialTiersToPauseForCombine(maxRemaining)) do
+            for _, tier in ipairs(selectedSpecialTiersToPauseForCombine()) do
                 if not specialRollCombineInvokePending[tier] then
                     if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_PAUSE) then
                         specialRollCombineInvokePending[tier] = true
@@ -3155,7 +3138,7 @@ do
                 if not st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
-            elseif st.paused or st.rollsUntilNext >= maxRemaining then
+            elseif st.paused or st.rollsUntilNext ~= 1 then
                 specialRollCombineInvokePending[tier] = nil
             end
         end
