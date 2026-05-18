@@ -3070,6 +3070,17 @@ do
         return true
     end
 
+    -- Lowest-priority tier among current selection (golden last in galaxy → void → diamond → golden).
+    local function lowestSelectedSpecialRollTier(): string?
+        local lowest: string? = nil
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                lowest = tier
+            end
+        end
+        return lowest
+    end
+
     -- Highest-priority selected tier that is not paused yet (galaxy → void → diamond → golden).
     local function highestSelectedSpecialTierNotPaused(): string?
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
@@ -3083,13 +3094,14 @@ do
         return nil
     end
 
-    -- One step: pause only the current highest unpause tier when it hits 1 remaining.
+    -- Pause each higher tier at 1 in order; lowest selected tier stays running.
     local function selectedSpecialTiersToPauseForCombine(): { string }
         if allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
+        local lowestTier = lowestSelectedSpecialRollTier()
         local focusTier = highestSelectedSpecialTierNotPaused()
-        if not focusTier then
+        if not focusTier or focusTier == lowestTier then
             return {}
         end
         local st = specialRollProgressionByTier[focusTier]
