@@ -3108,21 +3108,87 @@ do
         return true
     end
 
-    -- Pause only when a tier hits 1 left and others are not all at 1 yet.
+    local SPECIAL_ROLL_TIER_RANK: { [string]: number } = {
+        golden = 1,
+        diamond = 2,
+        galaxy = 3,
+        void = 4,
+    }
+
+    local function specialRollTierRank(tier: string): number
+        return SPECIAL_ROLL_TIER_RANK[tier] or 0
+    end
+
+    local function maxRemainingAmongSelectedSpecialTiers(): number?
+        local maxRemaining: number? = nil
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if st then
+                if maxRemaining == nil or st.rollsUntilNext > maxRemaining then
+                    maxRemaining = st.rollsUntilNext
+                end
+            end
+        end
+        return maxRemaining
+    end
+
+    local function anySelectedLowerTierAtOne(thanTier: string): boolean
+        local thanRank = specialRollTierRank(thanTier)
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            if specialRollTierRank(tier) < thanRank then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.rollsUntilNext == 1 then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local function tierStillNeedsPauseForCombine(tier: string, maxRemaining: number): boolean
+        if allSelectedSpecialTiersAtOneRemaining() then
+            return false
+        end
+        local st = specialRollProgressionByTier[tier]
+        if not st or st.paused then
+            return false
+        end
+        if st.rollsUntilNext == 1 then
+            return true
+        end
+        if maxRemaining > 1 and st.rollsUntilNext < maxRemaining then
+            return true
+        end
+        if st.rollsUntilNext > 1 and anySelectedLowerTierAtOne(tier) then
+            return true
+        end
+        return false
+    end
+
+    -- Pause order: void → galaxy → diamond → golden. Higher tiers pause before lower.
     local function selectedSpecialTiersToPauseForCombine(): { string }
         if allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
-        local toPause: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
-            if table.find(selectedSpecialRollTierKeys, tier) then
-                local st = specialRollProgressionByTier[tier]
-                if st and not st.paused and st.rollsUntilNext == 1 then
-                    table.insert(toPause, tier)
-                end
+        local maxRemaining = maxRemainingAmongSelectedSpecialTiers()
+        if maxRemaining == nil then
+            return {}
+        end
+
+        local shouldPause: { [string]: boolean } = {}
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            if tierStillNeedsPauseForCombine(tier, maxRemaining) then
+                shouldPause[tier] = true
             end
         end
-        return toPause
+
+        local ordered: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+            if shouldPause[tier] then
+                table.insert(ordered, tier)
+            end
+        end
+        return ordered
     end
 
     local function selectedSpecialTiersToResumeForCombine(): { string }
@@ -3148,6 +3214,8 @@ do
         if not getRollSetSpecialPausedRemote() then
             return
         end
+
+        local maxRemaining = maxRemainingAmongSelectedSpecialTiers() or 0
 
         if allSelectedSpecialTiersAtOneRemaining() then
             for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
@@ -3177,7 +3245,7 @@ do
                 if not st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
-            elseif st.paused or st.rollsUntilNext ~= 1 then
+            elseif st.paused or not tierStillNeedsPauseForCombine(tier, maxRemaining) then
                 specialRollCombineInvokePending[tier] = nil
             end
         end
