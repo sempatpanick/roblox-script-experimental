@@ -1710,6 +1710,7 @@ end
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
+
     MainTab:CreateSection("Auto Collect Loot")
 
     local function mainTryProximityInteractOnInstance(root: Instance)
@@ -2693,9 +2694,105 @@ do
         end,
     })
 
-    MainTab:CreateSection("Auto Adjust Special Roll")
+    local upgradeServiceUtils: any = nil
+    local upgradeUtilsLoadError: string? = nil
+    local playerUpgradesSave: { [string]: any } = {}
+    local SPECIAL_ROLL_UPGRADE_KEY_BY_KIND: { [string]: string } = {
+        golden = "goldenRolls",
+        diamond = "diamondRolls",
+        void = "voidRolls",
+        galaxy = "galaxyRolls",
+    }
+    local UPGRADE_LUCK_ROLL_KINDS: { string } = { "golden", "diamond", "void", "galaxy" }
 
-    local SPECIAL_ROLL_TIER_ORDER: { string } = { "void", "galaxy", "diamond", "golden" }
+    local function cloneUpgradesTable(src: any): { [string]: any }
+        local out: { [string]: any } = {}
+        if type(src) ~= "table" then
+            return out
+        end
+        for k, v in pairs(src) do
+            if type(k) == "string" then
+                out[k] = v
+            end
+        end
+        return out
+    end
+
+    local function getDataServiceClient(): any?
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+        local dsMod = packages and packages:FindFirstChild("DataService")
+        if not dsMod or not dsMod:IsA("ModuleScript") then
+            return nil
+        end
+        local okPkg, ds = pcall(require, dsMod)
+        if not okPkg or type(ds) ~= "table" then
+            return nil
+        end
+        local client = ds.client
+        if type(client) ~= "table" or type(client.get) ~= "function" then
+            return nil
+        end
+        return client
+    end
+
+    local function tryLoadUpgradeServiceUtils(): boolean
+        if upgradeServiceUtils then
+            return true
+        end
+        local src = ReplicatedStorage:FindFirstChild("Source")
+        local upgradesFolder = src and src:FindFirstChild("Features")
+        upgradesFolder = upgradesFolder and upgradesFolder:FindFirstChild("Upgrades")
+        local mod = upgradesFolder and upgradesFolder:FindFirstChild("UpgradeServiceUtils")
+        if not mod or not mod:IsA("ModuleScript") then
+            upgradeUtilsLoadError = "UpgradeServiceUtils ModuleScript not found under ReplicatedStorage.Source.Features.Upgrades"
+            return false
+        end
+        local ok, result = pcall(require, mod)
+        if not ok or type(result) ~= "table" then
+            upgradeUtilsLoadError = tostring(result)
+            return false
+        end
+        upgradeServiceUtils = result
+        upgradeUtilsLoadError = nil
+        return true
+    end
+
+    local function luckRollCadenceEveryN(utils: any, kind: string, save: { [string]: any }): (number?, number)
+        local upgradeKey = SPECIAL_ROLL_UPGRADE_KEY_BY_KIND[kind]
+        if not upgradeKey then
+            return nil, 0
+        end
+        local lvl = utils.getUpgradeLevel(upgradeKey, save)
+        if lvl <= 0 then
+            return nil, lvl
+        end
+        local luckRolls = utils.enums and utils.enums.luckRolls
+        local cadence = luckRolls and luckRolls[kind]
+        if type(cadence) ~= "table" then
+            return nil, lvl
+        end
+        local everyN = cadence[math.min(lvl, 3)] or cadence[1]
+        return everyN, lvl
+    end
+
+    local function tryPullPlayerUpgradesFromDataService(): boolean
+        local client = getDataServiceClient()
+        if not client then
+            return false
+        end
+        local okGet, data = pcall(function()
+            return client:get("upgrades")
+        end)
+        if okGet and type(data) == "table" then
+            playerUpgradesSave = cloneUpgradesTable(data)
+            return true
+        end
+        return false
+    end
+
+    MainTab:CreateSection("Special Roll")
+
+    local SPECIAL_ROLL_TIER_ORDER: { string } = { "galaxy", "void", "diamond", "golden" }
 
     type SpecialRollTierSnapshot = {
         paused: boolean,
@@ -2706,8 +2803,6 @@ do
     local specialRollDisplayToTier: { [string]: string } = {}
     local selectedSpecialRollTierKeys: { string } = {}
     local specialRollDropdownSeededAll = false
-    local autoAdjustSpecialRollEnabled = false
-    local specialRollPauseInvokePending: { [string]: boolean } = {}
     local specialRollParagraphRefreshScheduled = false
     local SpecialRollDropdown: any = nil
 
@@ -2731,7 +2826,7 @@ do
 
     local SpecialRollParagraph = MainTab:CreateParagraph({
         Title = "Special rolls",
-        Content = 'Waiting for DataService "specialRollProgression" event…\n\nSelected: (None)',
+        Content = "—\n\nPick: none",
     })
 
     local function buildSpecialRollSelectedLine(): string
@@ -2742,9 +2837,28 @@ do
             end
         end
         if #names == 0 then
-            return "Selected: (None)"
+            return "Pick: none"
         end
-        return "Selected: " .. table.concat(names, ", ")
+        return "Pick: " .. table.concat(names, ", ")
+    end
+
+    local function formatSpecialRollTierLine(kind: string): string
+        local label = specialRollTierDisplayName(kind)
+        local prog = specialRollProgressionByTier[kind]
+        local left = if prog then tostring(prog.rollsUntilNext) else "—"
+        local pauseTag = if prog and prog.paused then " (paused)" else " (running)"
+
+        if tryLoadUpgradeServiceUtils() and upgradeServiceUtils then
+            local everyN = luckRollCadenceEveryN(upgradeServiceUtils, kind, playerUpgradesSave)
+            if everyN then
+                return ("%s: max = %d remaining = %s%s"):format(label, everyN, left, pauseTag)
+            end
+            return ("%s: locked%s"):format(label, pauseTag)
+        end
+        if prog then
+            return ("%s: %s%s"):format(label, left, pauseTag)
+        end
+        return ("%s: —"):format(label)
     end
 
     local function buildSpecialRollParagraphBody(): string
@@ -2752,26 +2866,20 @@ do
         local progressionLines: { string } = {}
         local anyProgression = false
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            local st = specialRollProgressionByTier[tier]
-            if st then
+            table.insert(progressionLines, formatSpecialRollTierLine(tier))
+            if specialRollProgressionByTier[tier] then
                 anyProgression = true
-                table.insert(
-                    progressionLines,
-                    ("%s: rolls=%d paused=%s"):format(
-                        specialRollTierDisplayName(tier),
-                        st.rollsUntilNext,
-                        st.paused and "true" or "false"
-                    )
-                )
             end
         end
+        local body = table.concat(progressionLines, "\n") .. "\n\n" .. selectedLine
         if not anyProgression then
-            return ('Waiting for DataService "specialRollProgression" event…\n\n%s'):format(selectedLine)
+            body = body .. "\n\n(no progression yet)"
         end
-        return table.concat(progressionLines, "\n") .. "\n\n" .. selectedLine
+        return body
     end
 
     local function refreshSpecialRollParagraph()
+        tryPullPlayerUpgradesFromDataService()
         if SpecialRollParagraph and SpecialRollParagraph.Set then
             SpecialRollParagraph:Set({
                 Title = "Special rolls",
@@ -2809,9 +2917,6 @@ do
             addDisplay(value)
         end
         refreshSpecialRollParagraph()
-        if autoAdjustSpecialRollEnabled then
-            runAutoAdjustSpecialRollPass()
-        end
     end
 
     local function refreshSpecialRollDropdownFromProgression()
@@ -2924,7 +3029,6 @@ do
 
     -- Game API: true = pause, false = resume.
     local SPECIAL_ROLL_REMOTE_PAUSE = true
-    local SPECIAL_ROLL_REMOTE_RESUME = false
 
     local function pauseSelectedSpecialRollTiers(): (number, number)
         local okCount = 0
@@ -2942,109 +3046,6 @@ do
             end
         end
         return okCount, failCount
-    end
-
-    local function maxRollsAmongSelectedSpecialRollTiers(): number?
-        local maxRolls: number? = nil
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            local st = specialRollProgressionByTier[tier]
-            if st then
-                if maxRolls == nil or st.rollsUntilNext > maxRolls then
-                    maxRolls = st.rollsUntilNext
-                end
-            end
-        end
-        return maxRolls
-    end
-
-    local function allSelectedSpecialRollTiersAtOneRoll(): boolean
-        if #selectedSpecialRollTierKeys == 0 then
-            return false
-        end
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            local st = specialRollProgressionByTier[tier]
-            if not st or st.rollsUntilNext ~= 1 then
-                return false
-            end
-        end
-        return true
-    end
-
-    -- Pause selected tiers that are closer to firing than the slowest selected tier.
-    local function tiersToPauseForSpecialRollSync(maxRolls: number): { string }
-        local toPause: { string } = {}
-        if maxRolls <= 1 then
-            return toPause
-        end
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            if table.find(selectedSpecialRollTierKeys, tier) then
-                local st = specialRollProgressionByTier[tier]
-                if st and st.rollsUntilNext < maxRolls and not st.paused then
-                    table.insert(toPause, tier)
-                end
-            end
-        end
-        return toPause
-    end
-
-    local function tiersToResumeForSpecialRollSync(): { string }
-        if not allSelectedSpecialRollTiersAtOneRoll() then
-            return {}
-        end
-        local toResume: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            if table.find(selectedSpecialRollTierKeys, tier) then
-                local st = specialRollProgressionByTier[tier]
-                if st and st.paused then
-                    table.insert(toResume, tier)
-                end
-            end
-        end
-        return toResume
-    end
-
-    local function runAutoAdjustSpecialRollPass()
-        if not autoAdjustSpecialRollEnabled or #selectedSpecialRollTierKeys < 2 then
-            return
-        end
-
-        local maxRolls = maxRollsAmongSelectedSpecialRollTiers()
-        if maxRolls == nil then
-            return
-        end
-
-        if allSelectedSpecialRollTiersAtOneRoll() then
-            for _, tier in ipairs(tiersToResumeForSpecialRollSync()) do
-                if not specialRollPauseInvokePending[tier] then
-                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_RESUME) then
-                        specialRollPauseInvokePending[tier] = true
-                    end
-                end
-            end
-        else
-            for _, tier in ipairs(tiersToPauseForSpecialRollSync(maxRolls)) do
-                if not specialRollPauseInvokePending[tier] then
-                    if mainRequestSetSpecialRollPaused(tier, SPECIAL_ROLL_REMOTE_PAUSE) then
-                        specialRollPauseInvokePending[tier] = true
-                    end
-                end
-            end
-        end
-
-        for tier, _ in pairs(specialRollPauseInvokePending) do
-            local st = specialRollProgressionByTier[tier]
-            if not st then
-                specialRollPauseInvokePending[tier] = nil
-                continue
-            end
-            if allSelectedSpecialRollTiersAtOneRoll() then
-                if not st.paused then
-                    specialRollPauseInvokePending[tier] = nil
-                end
-            elseif st.paused or st.rollsUntilNext >= maxRolls then
-                specialRollPauseInvokePending[tier] = nil
-            end
-        end
     end
 
     local function specialRollApplyProgressionPayload(payload: any)
@@ -3080,7 +3081,6 @@ do
         dataServiceProgressRemoteEvent.OnClientEvent:Connect(function(a1, a2, a3)
             if a1 == 1 and a2 == "specialRollProgression" then
                 specialRollApplyProgressionPayload(a3)
-                runAutoAdjustSpecialRollPass()
             end
         end)
     end
@@ -3097,40 +3097,13 @@ do
         end,
     })
 
-    MainTab:CreateToggle({
-        Name = "Auto Adjust",
-        Flag = "main_auto_adjust_special_roll",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoAdjustSpecialRollEnabled = enabled == true
-
-            if not autoAdjustSpecialRollEnabled then
-                table.clear(specialRollPauseInvokePending)
-                return
-            end
-
-            if not getRollSetSpecialPausedRemote() then
-                mountNotify({
-                    Title = "Auto Adjust Special Roll",
-                    Content = "RollService RemoteFunction not found under "
-                        .. LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
-                        .. ".",
-                    Icon = "x",
-                })
-                return
-            end
-
-            runAutoAdjustSpecialRollPass()
-        end,
-    })
-
     MainTab:CreateButton({
         Name = "Pause Selected Special Roll",
         Flag = "main_pause_selected_special_roll",
         Callback = function()
             if #selectedSpecialRollTierKeys == 0 then
                 mountNotify({
-                    Title = "Auto Adjust Special Roll",
+                    Title = "Special Roll",
                     Content = "Select at least one special roll tier.",
                     Icon = "x",
                 })
@@ -3139,7 +3112,7 @@ do
 
             if not getRollSetSpecialPausedRemote() then
                 mountNotify({
-                    Title = "Auto Adjust Special Roll",
+                    Title = "Special Roll",
                     Content = "RollService RemoteFunction not found under "
                         .. LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION
                         .. ".",
@@ -3151,7 +3124,7 @@ do
             local okCount, failCount = pauseSelectedSpecialRollTiers()
             if okCount == 0 and failCount == 0 then
                 mountNotify({
-                    Title = "Auto Adjust Special Roll",
+                    Title = "Special Roll",
                     Content = "Selected tiers are already paused or have no progression data yet.",
                     Icon = "x",
                 })
@@ -3159,14 +3132,14 @@ do
             end
             if failCount > 0 then
                 mountNotify({
-                    Title = "Auto Adjust Special Roll",
+                    Title = "Special Roll",
                     Content = ("Paused %d tier(s); %d request(s) failed."):format(okCount, failCount),
                     Icon = "x",
                 })
                 return
             end
             mountNotify({
-                Title = "Auto Adjust Special Roll",
+                Title = "Special Roll",
                 Content = ("Paused %d special roll tier(s)."):format(okCount),
                 Icon = "check",
             })
@@ -3804,6 +3777,245 @@ do
             end)
         end,
     })
+
+    MainTab:CreateSection("Upgrades")
+
+    local UPGRADE_LEVEL_STAT_KEYS: { string } = {
+        "rollSpeed",
+        "luck",
+        "walkSpeed",
+        "coinIncome",
+        "enemySpawnSpeed",
+        "slimeTargetRange",
+        "magnetRadius",
+        "goopDropRate",
+        "doubleGoop",
+        "overkill",
+        "slimeGunDamage",
+        "slimeGunFireRate",
+        "slimeGunRange",
+        "extraRollChance",
+        "bonusRolls",
+        "cloverRolls",
+    }
+    local UPGRADE_MUTATION_KINDS: { string } = { "big", "huge", "shiny", "inverted" }
+    local UPGRADE_OWNED_DISPLAY_MAX = 40
+
+    local UpgradeUtilsParagraph = MainTab:CreateParagraph({
+        Title = "UpgradeServiceUtils",
+        Content = "Loading…",
+    })
+    local UpgradeLuckRollsParagraph = MainTab:CreateParagraph({
+        Title = "Luck roll cadence",
+        Content = "Loading…",
+    })
+    local UpgradeOwnedParagraph = MainTab:CreateParagraph({
+        Title = "Owned upgrades",
+        Content = "Waiting for upgrades data…",
+    })
+    local UpgradeStatsParagraph = MainTab:CreateParagraph({
+        Title = "Computed stats",
+        Content = "Loading…",
+    })
+
+    local function setUpgradeParagraph(paragraph: any, title: string, content: string)
+        if paragraph and paragraph.Set then
+            paragraph:Set({ Title = title, Content = content })
+        end
+    end
+
+    local function tryPullSpecialRollProgressionFromDataService(): boolean
+        local client = getDataServiceClient()
+        if not client then
+            return false
+        end
+        local okGet, prog = pcall(function()
+            return client:get("specialRollProgression")
+        end)
+        if not okGet or type(prog) ~= "table" then
+            return false
+        end
+        local changed = false
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            local parsed = specialRollParseTierEntry(prog[tier])
+            if parsed then
+                specialRollProgressionByTier[tier] = parsed
+                changed = true
+            end
+        end
+        return changed
+    end
+
+    local function formatUpgradePercentFromMultiplier(mult: number): string
+        return ("%d%%"):format(math.round((mult - 1) * 100))
+    end
+
+    local function buildUpgradeUtilsParagraphBody(): string
+        local loaded = tryLoadUpgradeServiceUtils()
+        if not loaded then
+            return upgradeUtilsLoadError or "Failed to load UpgradeServiceUtils."
+        end
+        local saveKeyCount = 0
+        for _ in pairs(playerUpgradesSave) do
+            saveKeyCount = saveKeyCount + 1
+        end
+        local lines: { string } = {
+            "Module: loaded",
+            ("Keys in upgrades save: %d"):format(saveKeyCount),
+        }
+        local enums = upgradeServiceUtils.enums
+        if type(enums) == "table" and type(enums.levelBasedUpgrades) == "table" then
+            local statCount = 0
+            for _ in pairs(enums.levelBasedUpgrades) do
+                statCount = statCount + 1
+            end
+            table.insert(lines, ("Level-based stat tables: %d"):format(statCount))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function buildUpgradeLuckRollsParagraphBody(): string
+        if not tryLoadUpgradeServiceUtils() then
+            return upgradeUtilsLoadError or "UpgradeServiceUtils not loaded."
+        end
+        local enums = upgradeServiceUtils.enums
+        local luckRolls = enums and enums.luckRolls
+        if type(luckRolls) ~= "table" then
+            return "enums.luckRolls not available."
+        end
+        local lines: { string } = {}
+        for _, kind in ipairs(UPGRADE_LUCK_ROLL_KINDS) do
+            local cadence = luckRolls[kind]
+            if type(cadence) == "table" then
+                table.insert(
+                    lines,
+                    ("%s: every %s / %s / %s rolls (tiers 1–3)"):format(
+                        kind:sub(1, 1):upper() .. kind:sub(2),
+                        tostring(cadence[1] or "?"),
+                        tostring(cadence[2] or "?"),
+                        tostring(cadence[3] or "?")
+                    )
+                )
+            end
+        end
+        if #lines == 0 then
+            return "No luck roll cadence data."
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function buildUpgradeOwnedParagraphBody(): string
+        local keys: { string } = {}
+        for id, owned in pairs(playerUpgradesSave) do
+            if owned == true then
+                table.insert(keys, id)
+            end
+        end
+        table.sort(keys)
+        if #keys == 0 then
+            if next(playerUpgradesSave) == nil then
+                return 'No upgrades save yet. Listen for DataService (1, "upgrades", …) or open the upgrades UI in-game.'
+            end
+            return "No upgrade flags set to true in save table."
+        end
+        local lines: { string } = { ("Total owned: %d"):format(#keys) }
+        local show = math.min(#keys, UPGRADE_OWNED_DISPLAY_MAX)
+        for i = 1, show do
+            table.insert(lines, keys[i])
+        end
+        if #keys > show then
+            table.insert(lines, ("… and %d more"):format(#keys - show))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function buildUpgradeStatsParagraphBody(): string
+        if not tryLoadUpgradeServiceUtils() then
+            return upgradeUtilsLoadError or "UpgradeServiceUtils not loaded."
+        end
+        local utils = upgradeServiceUtils
+        local save = playerUpgradesSave
+        local lines: { string } = {}
+
+        for _, statKey in ipairs(UPGRADE_LEVEL_STAT_KEYS) do
+            local lvl = utils.getUpgradeLevel(statKey, save)
+            local val = utils.getUpgradeValue(statKey, lvl)
+            if type(val) == "number" then
+                if statKey == "extraRollChance" or statKey == "doubleGoop" or statKey == "goopDropRate" then
+                    table.insert(lines, ("%s: level %d → %d%%"):format(statKey, lvl, math.round(val * 100)))
+                elseif val >= 0.05 and val <= 50 and statKey ~= "magnetRadius" and statKey ~= "slimeGunRange" then
+                    table.insert(
+                        lines,
+                        ("%s: level %d → %s (%s)"):format(statKey, lvl, tostring(val), formatUpgradePercentFromMultiplier(val))
+                    )
+                else
+                    table.insert(lines, ("%s: level %d → %s"):format(statKey, lvl, tostring(val)))
+                end
+            end
+        end
+
+        if type(utils.getGoopDropRate) == "function" then
+            table.insert(lines, ("goopDropRate (computed): %d%%"):format(math.round(utils.getGoopDropRate(save) * 100)))
+        end
+        if type(utils.getDoubleGoopChance) == "function" then
+            table.insert(
+                lines,
+                ("doubleGoop (computed): %d%%"):format(math.round(utils.getDoubleGoopChance(save) * 100))
+            )
+        end
+
+        table.insert(lines, "")
+        table.insert(lines, "Mutations unlocked:")
+        for _, kind in ipairs(UPGRADE_MUTATION_KINDS) do
+            local unlocked = false
+            if type(utils.isMutationUnlocked) == "function" then
+                unlocked = utils.isMutationUnlocked(kind, save) == true
+            end
+            table.insert(lines, ("  %s: %s"):format(kind, unlocked and "yes" or "no"))
+        end
+
+        if type(utils.getUnlockedMutations) == "function" then
+            local muts = utils.getUnlockedMutations(save)
+            if type(muts) == "table" then
+                local names: { string } = {}
+                for name, on in pairs(muts) do
+                    if on == true then
+                        table.insert(names, tostring(name))
+                    end
+                end
+                table.sort(names)
+                if #names > 0 then
+                    table.insert(lines, "  active: " .. table.concat(names, ", "))
+                end
+            end
+        end
+
+        return table.concat(lines, "\n")
+    end
+
+    local function refreshUpgradeParagraphs()
+        setUpgradeParagraph(UpgradeUtilsParagraph, "UpgradeServiceUtils", buildUpgradeUtilsParagraphBody())
+        setUpgradeParagraph(UpgradeLuckRollsParagraph, "Luck roll cadence", buildUpgradeLuckRollsParagraphBody())
+        setUpgradeParagraph(UpgradeOwnedParagraph, "Owned upgrades", buildUpgradeOwnedParagraphBody())
+        setUpgradeParagraph(UpgradeStatsParagraph, "Computed stats", buildUpgradeStatsParagraphBody())
+    end
+
+    local function runUpgradesSectionRefresh()
+        tryLoadUpgradeServiceUtils()
+        tryPullPlayerUpgradesFromDataService()
+        tryPullSpecialRollProgressionFromDataService()
+        refreshUpgradeParagraphs()
+    end
+
+    MainTab:CreateButton({
+        Name = "Refresh upgrades",
+        Flag = "main_upgrades_refresh",
+        Callback = function()
+            runUpgradesSectionRefresh()
+        end,
+    })
+
+    task.defer(runUpgradesSectionRefresh)
 end
 
 -- */  Teleport Tab  /* --
@@ -4093,6 +4305,7 @@ do
         "TextLabel",
         "Tool",
         "TrussPart",
+        "UIGradient",
         "UIScale",
         "UnionOperation",
         "VehicleSeat",
