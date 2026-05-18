@@ -1706,6 +1706,215 @@ do
     })
 end
 
+local function mountItemsInventoryPageSection(
+    mainTab: any,
+    getDataServiceClientFn: () -> any?,
+    cloneTableFn: (any) -> { [string]: any }
+)
+    mainTab:CreateSection("Inventory (items page)")
+
+    local inv = {
+        itemUtils = nil :: any,
+        svcUtils = nil :: any,
+        itemErr = nil :: string?,
+        svcErr = nil :: string?,
+        boosts = {} :: any,
+        items = {} :: { [string]: any },
+        inventory = {} :: { [string]: any },
+        maxLines = 40,
+    }
+
+    local function requireInventoryMod(modName: string): boolean
+        if modName == "InventoryItemUtils" and inv.itemUtils then
+            return true
+        end
+        if modName == "InventoryServiceUtils" and inv.svcUtils then
+            return true
+        end
+        local src = ReplicatedStorage:FindFirstChild("Source")
+        local folder = src and src:FindFirstChild("Features")
+        folder = folder and folder:FindFirstChild("Inventory")
+        local mod = folder and folder:FindFirstChild(modName)
+        if not mod or not mod:IsA("ModuleScript") then
+            local msg = modName .. " not found under ReplicatedStorage.Source.Features.Inventory"
+            if modName == "InventoryItemUtils" then
+                inv.itemErr = msg
+            else
+                inv.svcErr = msg
+            end
+            return false
+        end
+        local ok, result = pcall(require, mod)
+        if not ok or type(result) ~= "table" then
+            local err = tostring(result)
+            if modName == "InventoryItemUtils" then
+                inv.itemErr = err
+            else
+                inv.svcErr = err
+            end
+            return false
+        end
+        if modName == "InventoryItemUtils" then
+            inv.itemUtils = result
+            inv.itemErr = nil
+        else
+            inv.svcUtils = result
+            inv.svcErr = nil
+        end
+        return true
+    end
+
+    local function pullInventoryData(): boolean
+        local client = getDataServiceClientFn()
+        if not client then
+            return false
+        end
+        local pulled = false
+        local okB, boosts = pcall(function()
+            return client:get("boosts")
+        end)
+        if okB and boosts ~= nil then
+            inv.boosts = boosts
+            pulled = true
+        end
+        local okI, items = pcall(function()
+            return client:get("items")
+        end)
+        if okI and type(items) == "table" then
+            inv.items = cloneTableFn(items)
+            pulled = true
+        end
+        local okV, save = pcall(function()
+            return client:get("inventory")
+        end)
+        if okV and type(save) == "table" then
+            inv.inventory = cloneTableFn(save)
+            pulled = true
+        end
+        return pulled
+    end
+
+    local function consumablesBody(): string
+        if not requireInventoryMod("InventoryItemUtils") then
+            return inv.itemErr or "Failed to load InventoryItemUtils."
+        end
+        local entries = inv.itemUtils.getConsumableEntries(inv.boosts, inv.items)
+        if type(entries) ~= "table" or next(entries) == nil then
+            if next(inv.items) == nil and (type(inv.boosts) ~= "table" or next(inv.boosts) == nil) then
+                return 'No items data yet. Refresh or open Inventory (DataService "items" / "boosts").'
+            end
+            return "No owned consumables in current snapshot."
+        end
+        local rows = {}
+        for id, entry in pairs(entries) do
+            if type(entry) == "table" and type(entry.definition) == "table" then
+                local def = entry.definition
+                table.insert(rows, {
+                    name = tostring(def.name or id),
+                    kind = tostring(def.kind or "?"),
+                    amount = tonumber(entry.amountOwned) or 0,
+                    order = tonumber(def.layoutOrder) or 0,
+                })
+            end
+        end
+        table.sort(rows, function(a, b)
+            return a.order ~= b.order and a.order < b.order or a.name < b.name
+        end)
+        local lines = { ("ConsumablesList (%d)"):format(#rows) }
+        local n = math.min(#rows, inv.maxLines)
+        for i = 1, n do
+            local r = rows[i]
+            table.insert(lines, ("  %s  [%s]  x%d"):format(r.name, r.kind, r.amount))
+        end
+        if #rows > n then
+            table.insert(lines, ("… and %d more"):format(#rows - n))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function slimesBody(): string
+        if not requireInventoryMod("InventoryServiceUtils") then
+            return inv.svcErr or "Failed to load InventoryServiceUtils."
+        end
+        local feedable = {}
+        for uid, value in pairs(inv.inventory) do
+            local count = if type(value) == "number" then value else 1
+            if count > 0 then
+                feedable[uid] = if type(value) == "number" then value else value
+            end
+        end
+        if next(feedable) == nil then
+            if next(inv.inventory) == nil then
+                return 'No inventory data yet. Refresh or open Inventory (DataService "inventory").'
+            end
+            return "No feedable slimes (count > 0)."
+        end
+        local rows = {}
+        for uid, value in pairs(feedable) do
+            local data = inv.svcUtils.getSlimeData(uid, value)
+            local lvl = if type(data) == "table" then tonumber(data.level) or 1 else 1
+            local sid = if type(data) == "table" then tostring(data.id or "?") else "?"
+            local order = 0
+            if type(data) == "table" and type(inv.svcUtils.getLayoutOrder) == "function" then
+                order = inv.svcUtils.getLayoutOrder(data)
+            end
+            local odds = ""
+            if type(data) == "table" and type(inv.svcUtils.getVisualOdds) == "function" then
+                local o = inv.svcUtils.getVisualOdds(data)
+                if type(o) == "number" and o > 0 then
+                    odds = ("1/%d"):format(math.max(1, math.round(1 / o)))
+                end
+            end
+            table.insert(rows, {
+                uid = uid,
+                id = sid,
+                lvl = lvl,
+                stack = if type(value) == "number" then value else nil,
+                odds = odds,
+                order = order,
+            })
+        end
+        table.sort(rows, function(a, b)
+            return a.order ~= b.order and a.order > b.order or a.uid < b.uid
+        end)
+        local lines = { ("FeedableSlimesList (%d)"):format(#rows) }
+        local n = math.min(#rows, inv.maxLines)
+        for i = 1, n do
+            local r = rows[i]
+            local stack = if r.stack and r.stack > 1 then ("  x%d"):format(r.stack) else ""
+            local odd = if r.odds ~= "" then ("  %s"):format(r.odds) else ""
+            table.insert(lines, ("  %s  Lv%d%s%s"):format(r.id, r.lvl, stack, odd))
+            table.insert(lines, ("    uid: %s"):format(#r.uid > 36 and string.sub(r.uid, 1, 33) .. "…" or r.uid))
+        end
+        if #rows > n then
+            table.insert(lines, ("… and %d more"):format(#rows - n))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local paraConsumables = mainTab:CreateParagraph({ Title = "ConsumablesList", Content = "Loading…" })
+    local paraSlimes = mainTab:CreateParagraph({ Title = "FeedableSlimesList", Content = "Loading…" })
+
+    local function refresh()
+        requireInventoryMod("InventoryItemUtils")
+        requireInventoryMod("InventoryServiceUtils")
+        pullInventoryData()
+        if paraConsumables and paraConsumables.Set then
+            paraConsumables:Set({ Title = "ConsumablesList", Content = consumablesBody() })
+        end
+        if paraSlimes and paraSlimes.Set then
+            paraSlimes:Set({ Title = "FeedableSlimesList", Content = slimesBody() })
+        end
+    end
+
+    mainTab:CreateButton({
+        Name = "Refresh inventory data",
+        Flag = "main_inventory_refresh",
+        Callback = refresh,
+    })
+    task.defer(refresh)
+end
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
@@ -4388,6 +4597,8 @@ do
     })
 
     task.defer(runUpgradesSectionRefresh)
+
+    mountItemsInventoryPageSection(MainTab, getDataServiceClient, cloneUpgradesTable)
 end
 
 -- */  Teleport Tab  /* --
