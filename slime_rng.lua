@@ -2833,27 +2833,47 @@ do
         if not rf then
             return false
         end
-        local ok = pcall(function()
-            rf:InvokeServer("requestRoll")
+        local ok, result = pcall(function()
+            return rf:InvokeServer("requestRoll")
         end)
-        return ok == true
+        if not ok then
+            return false
+        end
+        return result ~= nil
     end
 
     MainTab:CreateSection("Auto Roll")
 
     local autoRollEnabled = false
     local autoRollLoopToken = 0
-    local autoRollDelaySec = 0.5
+    local autoRollDelaySec = 2
+    local autoRollSuccessCount = 0
+    local autoRollFailedCount = 0
 
-    MainTab:CreateInput({
+    local AutoRollStatsParagraph = MainTab:CreateParagraph({
+        Title = "Roll stats",
+        Content = "Success: 0\nFailed: 0",
+    })
+
+    local function refreshAutoRollStatsParagraph()
+        if AutoRollStatsParagraph and AutoRollStatsParagraph.Set then
+            AutoRollStatsParagraph:Set({
+                Title = "Roll stats",
+                Content = ("Success: %d\nFailed: %d"):format(autoRollSuccessCount, autoRollFailedCount),
+            })
+        end
+    end
+
+    MainTab:CreateSlider({
         Name = "Delay",
-        PlaceholderText = "e.g. 0.5",
         Flag = "main_auto_roll_delay",
-        CurrentValue = tostring(autoRollDelaySec),
+        Range = { 2, 10 },
+        Increment = 0.1,
+        Suffix = "sec",
+        CurrentValue = autoRollDelaySec,
         Callback = function(value)
-            local n = tonumber(value)
-            if n and n == n then
-                autoRollDelaySec = math.clamp(n, 0.05, 60)
+            if type(value) == "number" and value == value then
+                autoRollDelaySec = math.clamp(value, 2, 10)
             end
         end,
     })
@@ -2873,7 +2893,12 @@ do
 
             task.spawn(function()
                 while myToken == autoRollLoopToken and autoRollEnabled do
-                    tryRequestRoll()
+                    if tryRequestRoll() then
+                        autoRollSuccessCount = autoRollSuccessCount + 1
+                    else
+                        autoRollFailedCount = autoRollFailedCount + 1
+                    end
+                    refreshAutoRollStatsParagraph()
                     task.wait(autoRollDelaySec)
                 end
             end)
