@@ -2867,7 +2867,7 @@ do
     MainTab:CreateSlider({
         Name = "Delay",
         Flag = "main_auto_roll_delay",
-        Range = { 2, 10 },
+        Range = { 1, 10 },
         Increment = 0.1,
         Suffix = "sec",
         CurrentValue = autoRollDelaySec,
