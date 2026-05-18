@@ -2957,8 +2957,12 @@ do
             specialRollPreviousSelectedSet[tier] = true
         end
 
+        table.clear(specialRollCombineInvokePending)
+
         refreshSpecialRollParagraph()
-        runAutoCombineSpecialRollPass()
+        if autoCombineSpecialRollEnabled then
+            runAutoCombineSpecialRollPass()
+        end
     end
 
     local function refreshSpecialRollDropdownFromProgression()
@@ -3009,6 +3013,9 @@ do
             SpecialRollDropdown:Set(displaySelected)
         end
         refreshSpecialRollParagraph()
+        if autoCombineSpecialRollEnabled then
+            runAutoCombineSpecialRollPass()
+        end
     end
 
     local rollSetSpecialPausedRemote: RemoteFunction? = nil
@@ -3189,6 +3196,10 @@ do
         end
 
         for tier, _ in pairs(specialRollCombineInvokePending) do
+            if not table.find(selectedSpecialRollTierKeys, tier) then
+                specialRollCombineInvokePending[tier] = nil
+                continue
+            end
             local st = specialRollProgressionByTier[tier]
             if not st then
                 specialRollCombineInvokePending[tier] = nil
