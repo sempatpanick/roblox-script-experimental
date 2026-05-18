@@ -2803,6 +2803,8 @@ do
     local specialRollProgressionByTier: { [string]: SpecialRollTierSnapshot } = {}
     local specialRollDisplayToTier: { [string]: string } = {}
     local selectedSpecialRollTierKeys: { string } = {}
+    local lastSelectedSpecialRollTier: string? = nil
+    local specialRollPreviousSelectedSet: { [string]: boolean } = {}
     local specialRollDropdownSeededAll = false
     local specialRollParagraphRefreshScheduled = false
     local SpecialRollDropdown: any = nil
@@ -2917,11 +2919,11 @@ do
     end
 
     local function specialRollSetSelectedTierKeysFromDisplayOptions(value: any)
-        table.clear(selectedSpecialRollTierKeys)
+        local nextKeys: { string } = {}
         local function addDisplay(opt: string)
             local tier = specialRollDisplayToTier[opt]
-            if tier and not table.find(selectedSpecialRollTierKeys, tier) then
-                table.insert(selectedSpecialRollTierKeys, tier)
+            if tier and not table.find(nextKeys, tier) then
+                table.insert(nextKeys, tier)
             end
         end
         if type(value) == "table" then
@@ -2933,6 +2935,29 @@ do
         elseif type(value) == "string" then
             addDisplay(value)
         end
+
+        for _, tier in ipairs(nextKeys) do
+            if not specialRollPreviousSelectedSet[tier] then
+                lastSelectedSpecialRollTier = tier
+            end
+        end
+        if #nextKeys == 1 then
+            lastSelectedSpecialRollTier = nextKeys[1]
+        elseif #nextKeys == 0 then
+            lastSelectedSpecialRollTier = nil
+        elseif lastSelectedSpecialRollTier and not table.find(nextKeys, lastSelectedSpecialRollTier) then
+            lastSelectedSpecialRollTier = nextKeys[#nextKeys]
+        end
+
+        table.clear(selectedSpecialRollTierKeys)
+        for _, tier in ipairs(nextKeys) do
+            table.insert(selectedSpecialRollTierKeys, tier)
+        end
+        table.clear(specialRollPreviousSelectedSet)
+        for _, tier in ipairs(nextKeys) do
+            specialRollPreviousSelectedSet[tier] = true
+        end
+
         refreshSpecialRollParagraph()
         runAutoCombineSpecialRollPass()
     end
@@ -2952,6 +2977,11 @@ do
         end
         if not specialRollDropdownSeededAll then
             selectedSpecialRollTierKeys = table.clone(tierKeysAvailable)
+            lastSelectedSpecialRollTier = tierKeysAvailable[#tierKeysAvailable]
+            table.clear(specialRollPreviousSelectedSet)
+            for _, tier in ipairs(selectedSpecialRollTierKeys) do
+                specialRollPreviousSelectedSet[tier] = true
+            end
             specialRollDropdownSeededAll = true
             if SpecialRollDropdown and SpecialRollDropdown.Set then
                 SpecialRollDropdown:Set(opts)
@@ -2969,6 +2999,9 @@ do
             kept = table.clone(tierKeysAvailable)
         end
         selectedSpecialRollTierKeys = kept
+        if lastSelectedSpecialRollTier and not table.find(selectedSpecialRollTierKeys, lastSelectedSpecialRollTier) then
+            lastSelectedSpecialRollTier = selectedSpecialRollTierKeys[#selectedSpecialRollTierKeys]
+        end
         local displaySelected: { string } = {}
         for _, tier in ipairs(selectedSpecialRollTierKeys) do
             table.insert(displaySelected, specialRollTierDisplayName(tier))
@@ -3070,21 +3103,22 @@ do
         return true
     end
 
-    -- Lowest-priority tier among current selection (golden last in galaxy → void → diamond → golden).
-    local function lowestSelectedSpecialRollTier(): string?
-        local lowest: string? = nil
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            if table.find(selectedSpecialRollTierKeys, tier) then
-                lowest = tier
-            end
+    -- Last tier picked in the dropdown; this one is never paused by combine.
+    local function specialRollTierThatStaysRunning(): string?
+        if lastSelectedSpecialRollTier and table.find(selectedSpecialRollTierKeys, lastSelectedSpecialRollTier) then
+            return lastSelectedSpecialRollTier
         end
-        return lowest
+        if #selectedSpecialRollTierKeys > 0 then
+            return selectedSpecialRollTierKeys[#selectedSpecialRollTierKeys]
+        end
+        return nil
     end
 
-    -- Highest-priority selected tier that is not paused yet (galaxy → void → diamond → golden).
-    local function highestSelectedSpecialTierNotPaused(): string?
+    -- Highest-priority selected tier to pause next (skips the last-picked tier).
+    local function highestSelectedSpecialTierNotPausedForCombine(): string?
+        local stayRunning = specialRollTierThatStaysRunning()
         for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            if table.find(selectedSpecialRollTierKeys, tier) then
+            if tier ~= stayRunning and table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
                 if st and not st.paused then
                     return tier
@@ -3094,14 +3128,12 @@ do
         return nil
     end
 
-    -- Pause each higher tier at 1 in order; lowest selected tier stays running.
     local function selectedSpecialTiersToPauseForCombine(): { string }
         if allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
-        local lowestTier = lowestSelectedSpecialRollTier()
-        local focusTier = highestSelectedSpecialTierNotPaused()
-        if not focusTier or focusTier == lowestTier then
+        local focusTier = highestSelectedSpecialTierNotPausedForCombine()
+        if not focusTier then
             return {}
         end
         local st = specialRollProgressionByTier[focusTier]
