@@ -4192,8 +4192,8 @@ do
         "bonusRolls",
         "cloverRolls",
     }
-    local UPGRADE_MUTATION_KINDS: { string } = { "big", "huge", "shiny", "inverted" }
-    local UPGRADE_OWNED_DISPLAY_MAX = 40
+    UPGRADE_MUTATION_KINDS = { "big", "huge", "shiny", "inverted" }
+    UPGRADE_OWNED_DISPLAY_MAX = 40
 
     UpgradeUtilsParagraph = MainTab:CreateParagraph({
         Title = "UpgradeServiceUtils",
