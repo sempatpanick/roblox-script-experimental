@@ -4157,7 +4157,7 @@ do
         return table.concat(lines, "\n")
     end
 
-    local function buildUpgradeOwnedParagraphBody(): string
+    function buildUpgradeOwnedParagraphBody(): string
         local keys: { string } = {}
         for id, owned in pairs(playerUpgradesSave) do
             if owned == true then
