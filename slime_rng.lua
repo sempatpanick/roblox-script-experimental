@@ -2792,6 +2792,9 @@ do
 
     MainTab:CreateSection("Special Roll")
 
+    -- Highest → lowest priority (galaxy first).
+    local SPECIAL_ROLL_TIER_ORDER: { string } = { "galaxy", "void", "diamond", "golden" }
+
     type SpecialRollTierSnapshot = {
         paused: boolean,
         rollsUntilNext: number,
@@ -2807,11 +2810,21 @@ do
     local specialRollCombineInvokePending: { [string]: boolean } = {}
     local runAutoCombineSpecialRollPass: () -> ()
 
-    -- High → low tier (void is highest).
-    local SPECIAL_ROLL_TIER_HIGH_TO_LOW: { string } = { "void", "galaxy", "diamond", "golden" }
-
     local function specialRollTierDisplayName(tierKey: string): string
         return string.sub(tierKey, 1, 1):upper() .. string.sub(tierKey, 2)
+    end
+
+    local function specialRollNormalizeTierKey(rawKey: any): string?
+        if type(rawKey) ~= "string" then
+            return nil
+        end
+        local lower = string.lower(rawKey)
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if lower == tier then
+                return tier
+            end
+        end
+        return nil
     end
 
     local function specialRollParseTierEntry(entry: any): SpecialRollTierSnapshot?
@@ -2835,7 +2848,7 @@ do
 
     local function buildSpecialRollSelectedLine(): string
         local names: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 table.insert(names, specialRollTierDisplayName(tier))
             end
@@ -2869,7 +2882,7 @@ do
         local selectedLine = buildSpecialRollSelectedLine()
         local progressionLines: { string } = {}
         local anyProgression = false
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             table.insert(progressionLines, formatSpecialRollTierLine(tier))
             if specialRollProgressionByTier[tier] then
                 anyProgression = true
@@ -2924,79 +2937,31 @@ do
         runAutoCombineSpecialRollPass()
     end
 
-    local function tryPullSpecialRollProgressionFromDataService(): boolean
-        local client = getDataServiceClient()
-        if not client then
-            return false
-        end
-        local okGet, prog = pcall(function()
-            return client:get("specialRollProgression")
-        end)
-        if not okGet or type(prog) ~= "table" then
-            return false
-        end
-        local changed = false
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
-            local entry = prog[tier]
-            if entry == nil and type(prog) == "table" then
-                for k, v in pairs(prog) do
-                    if type(k) == "string" and string.lower(k) == tier then
-                        entry = v
-                        break
-                    end
-                end
-            end
-            local parsed = specialRollParseTierEntry(entry)
-            if parsed then
-                specialRollProgressionByTier[tier] = parsed
-                changed = true
-            end
-        end
-        return changed
-    end
-
     local function refreshSpecialRollDropdownFromProgression()
         table.clear(specialRollDisplayToTier)
         local opts: { string } = {}
         local tierKeysAvailable: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             local display = specialRollTierDisplayName(tier)
             specialRollDisplayToTier[display] = tier
             table.insert(opts, display)
             table.insert(tierKeysAvailable, tier)
         end
-        if not SpecialRollDropdown then
-            return
-        end
-        if SpecialRollDropdown.Refresh then
+        if SpecialRollDropdown and SpecialRollDropdown.Refresh then
             SpecialRollDropdown:Refresh(opts)
         end
         if not specialRollDropdownSeededAll then
-            local initialSelected: { string } = {}
-            for _, tier in ipairs(tierKeysAvailable) do
-                if specialRollProgressionByTier[tier] then
-                    table.insert(initialSelected, tier)
-                end
-            end
-            if #initialSelected == 0 then
-                selectedSpecialRollTierKeys = table.clone(tierKeysAvailable)
-            else
-                selectedSpecialRollTierKeys = initialSelected
-            end
+            selectedSpecialRollTierKeys = table.clone(tierKeysAvailable)
             specialRollDropdownSeededAll = true
-            local displaySelected: { string } = {}
-            for _, tier in ipairs(selectedSpecialRollTierKeys) do
-                table.insert(displaySelected, specialRollTierDisplayName(tier))
-            end
-            if SpecialRollDropdown.Set then
-                SpecialRollDropdown:Set(displaySelected)
+            if SpecialRollDropdown and SpecialRollDropdown.Set then
+                SpecialRollDropdown:Set(opts)
             end
             refreshSpecialRollParagraph()
             return
         end
         local kept: { string } = {}
         for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            if specialRollDisplayToTier[specialRollTierDisplayName(tier)] and not table.find(kept, tier) then
+            if specialRollProgressionByTier[tier] and not table.find(kept, tier) then
                 table.insert(kept, tier)
             end
         end
@@ -3008,7 +2973,7 @@ do
         for _, tier in ipairs(selectedSpecialRollTierKeys) do
             table.insert(displaySelected, specialRollTierDisplayName(tier))
         end
-        if SpecialRollDropdown.Set then
+        if SpecialRollDropdown and SpecialRollDropdown.Set then
             SpecialRollDropdown:Set(displaySelected)
         end
         refreshSpecialRollParagraph()
@@ -3050,18 +3015,6 @@ do
         return rollSetSpecialPausedRemote
     end
 
-    do
-        local dataEv = findNetworkerRemoteInService(
-            "DataService",
-            "RemoteEvent",
-            "RemoteEvent",
-            LEIFSTOUT_NETWORKER_DATA_SERVICE_VERSION
-        )
-        if dataEv and dataEv:IsA("RemoteEvent") then
-            dataServiceProgressRemoteEvent = dataEv
-        end
-    end
-
     local function mainRequestSetSpecialRollPaused(tierKey: string, pausedFlag: boolean): boolean
         local rf = getRollSetSpecialPausedRemote()
         if not rf then
@@ -3080,7 +3033,7 @@ do
     local function pauseSelectedSpecialRollTiers(): (number, number)
         local okCount = 0
         local failCount = 0
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
                 if st and not st.paused then
@@ -3093,6 +3046,15 @@ do
             end
         end
         return okCount, failCount
+    end
+
+    local function anySelectedSpecialTierHasProgression(): boolean
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            if specialRollProgressionByTier[tier] then
+                return true
+            end
+        end
+        return false
     end
 
     local function allSelectedSpecialTiersAtOneRemaining(): boolean
@@ -3108,87 +3070,35 @@ do
         return true
     end
 
-    local SPECIAL_ROLL_TIER_RANK: { [string]: number } = {
-        golden = 1,
-        diamond = 2,
-        galaxy = 3,
-        void = 4,
-    }
-
-    local function specialRollTierRank(tier: string): number
-        return SPECIAL_ROLL_TIER_RANK[tier] or 0
-    end
-
     local function maxRemainingAmongSelectedSpecialTiers(): number?
         local maxRemaining: number? = nil
         for _, tier in ipairs(selectedSpecialRollTierKeys) do
             local st = specialRollProgressionByTier[tier]
-            if st then
-                if maxRemaining == nil or st.rollsUntilNext > maxRemaining then
-                    maxRemaining = st.rollsUntilNext
-                end
+            if st and (maxRemaining == nil or st.rollsUntilNext > maxRemaining) then
+                maxRemaining = st.rollsUntilNext
             end
         end
         return maxRemaining
     end
 
-    local function anySelectedLowerTierAtOne(thanTier: string): boolean
-        local thanRank = specialRollTierRank(thanTier)
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            if specialRollTierRank(tier) < thanRank then
-                local st = specialRollProgressionByTier[tier]
-                if st and st.rollsUntilNext == 1 then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    local function tierStillNeedsPauseForCombine(tier: string, maxRemaining: number): boolean
-        if allSelectedSpecialTiersAtOneRemaining() then
-            return false
-        end
-        local st = specialRollProgressionByTier[tier]
-        if not st or st.paused then
-            return false
-        end
-        if st.rollsUntilNext == 1 then
-            return true
-        end
-        if maxRemaining > 1 and st.rollsUntilNext < maxRemaining then
-            return true
-        end
-        if st.rollsUntilNext > 1 and anySelectedLowerTierAtOne(tier) then
-            return true
-        end
-        return false
-    end
-
-    -- Pause order: void → galaxy → diamond → golden. Higher tiers pause before lower.
+    -- Pause the highest-priority selected tier that is still on the slowest (max) countdown.
     local function selectedSpecialTiersToPauseForCombine(): { string }
         if allSelectedSpecialTiersAtOneRemaining() then
             return {}
         end
         local maxRemaining = maxRemainingAmongSelectedSpecialTiers()
-        if maxRemaining == nil then
+        if maxRemaining == nil or maxRemaining <= 1 then
             return {}
         end
-
-        local shouldPause: { [string]: boolean } = {}
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            if tierStillNeedsPauseForCombine(tier, maxRemaining) then
-                shouldPause[tier] = true
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                local st = specialRollProgressionByTier[tier]
+                if st and st.rollsUntilNext == maxRemaining and not st.paused then
+                    return { tier }
+                end
             end
         end
-
-        local ordered: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
-            if shouldPause[tier] then
-                table.insert(ordered, tier)
-            end
-        end
-        return ordered
+        return {}
     end
 
     local function selectedSpecialTiersToResumeForCombine(): { string }
@@ -3196,7 +3106,7 @@ do
             return {}
         end
         local toResume: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
             if table.find(selectedSpecialRollTierKeys, tier) then
                 local st = specialRollProgressionByTier[tier]
                 if st and st.paused then
@@ -3215,7 +3125,9 @@ do
             return
         end
 
-        local maxRemaining = maxRemainingAmongSelectedSpecialTiers() or 0
+        if not anySelectedSpecialTierHasProgression() then
+            return
+        end
 
         if allSelectedSpecialTiersAtOneRemaining() then
             for _, tier in ipairs(selectedSpecialTiersToResumeForCombine()) do
@@ -3245,23 +3157,13 @@ do
                 if not st.paused then
                     specialRollCombineInvokePending[tier] = nil
                 end
-            elseif st.paused or not tierStillNeedsPauseForCombine(tier, maxRemaining) then
-                specialRollCombineInvokePending[tier] = nil
+            else
+                local pauseTargets = selectedSpecialTiersToPauseForCombine()
+                if pauseTargets[1] ~= tier then
+                    specialRollCombineInvokePending[tier] = nil
+                end
             end
         end
-    end
-
-    local function specialRollPayloadEntryForTier(payload: { [string]: any }, tier: string): any
-        local entry = payload[tier]
-        if entry ~= nil then
-            return entry
-        end
-        for k, v in pairs(payload) do
-            if type(k) == "string" and string.lower(k) == tier then
-                return v
-            end
-        end
-        return nil
     end
 
     local function specialRollApplyProgressionPayload(payload: any)
@@ -3269,11 +3171,21 @@ do
             return
         end
         local changed = false
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
-            local parsed = specialRollParseTierEntry(specialRollPayloadEntryForTier(payload, tier))
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            local parsed = specialRollParseTierEntry(payload[tier])
             if parsed then
                 specialRollProgressionByTier[tier] = parsed
                 changed = true
+            end
+        end
+        for rawKey, entry in pairs(payload) do
+            local tier = specialRollNormalizeTierKey(rawKey)
+            if tier then
+                local parsed = specialRollParseTierEntry(entry)
+                if parsed then
+                    specialRollProgressionByTier[tier] = parsed
+                    changed = true
+                end
             end
         end
         if not changed then
@@ -3284,15 +3196,74 @@ do
         runAutoCombineSpecialRollPass()
     end
 
-    local specialRollDropdownDefaultOptions: { string } = {}
-    for _, tier in ipairs(SPECIAL_ROLL_TIER_HIGH_TO_LOW) do
-        table.insert(specialRollDropdownDefaultOptions, specialRollTierDisplayName(tier))
+    local specialRollDataServiceConn: RBXScriptConnection? = nil
+
+    local function specialRollProgressionEventMatches(a1: any, a2: any): boolean
+        local key = if type(a2) == "string" then a2 elseif type(a1) == "string" then a1 else nil
+        return key == "specialRollProgression"
+    end
+
+    local function specialRollExtractProgressionPayload(a1: any, a2: any, a3: any): any
+        if specialRollProgressionEventMatches(a1, a2) then
+            return a3
+        end
+        if type(a1) == "table" then
+            return a1
+        end
+        return nil
+    end
+
+    local function ensureSpecialRollDataServiceListener(): boolean
+        if specialRollDataServiceConn then
+            return dataServiceProgressRemoteEvent ~= nil
+        end
+        for _, version in ipairs(LEIFSTOUT_NETWORKER_VERSIONS) do
+            local dataEv = findNetworkerRemoteInService(
+                "DataService",
+                "RemoteEvent",
+                "RemoteEvent",
+                version
+            )
+            if dataEv and dataEv:IsA("RemoteEvent") then
+                dataServiceProgressRemoteEvent = dataEv
+                specialRollDataServiceConn = dataEv.OnClientEvent:Connect(function(a1, a2, a3)
+                    local payload = specialRollExtractProgressionPayload(a1, a2, a3)
+                    if payload then
+                        specialRollApplyProgressionPayload(payload)
+                    end
+                end)
+                return true
+            end
+        end
+        return false
+    end
+
+    local function tryPullSpecialRollProgressionFromDataService(): boolean
+        local client = getDataServiceClient()
+        if not client then
+            return false
+        end
+        local okGet, prog = pcall(function()
+            return client:get("specialRollProgression")
+        end)
+        if not okGet or type(prog) ~= "table" then
+            return false
+        end
+        specialRollApplyProgressionPayload(prog)
+        return true
+    end
+
+    local function bootstrapSpecialRollSection()
+        ensureSpecialRollDataServiceListener()
+        refreshSpecialRollDropdownFromProgression()
+        tryPullSpecialRollProgressionFromDataService()
+        refreshSpecialRollParagraph()
     end
 
     SpecialRollDropdown = MainTab:CreateDropdown({
         Name = "Special Roll",
         Flag = "main_auto_adjust_special_roll_dropdown",
-        Options = specialRollDropdownDefaultOptions,
+        Options = {},
         CurrentOption = {},
         MultipleOptions = true,
         Search = true,
@@ -3301,19 +3272,24 @@ do
         end,
     })
 
-    refreshSpecialRollDropdownFromProgression()
-
-    if dataServiceProgressRemoteEvent then
-        dataServiceProgressRemoteEvent.OnClientEvent:Connect(function(a1, a2, a3)
-            if a1 == 1 and a2 == "specialRollProgression" then
-                specialRollApplyProgressionPayload(a3)
-            end
-        end)
-    end
-
     task.defer(function()
-        tryPullSpecialRollProgressionFromDataService()
+        bootstrapSpecialRollSection()
+    end)
+
+    task.spawn(function()
+        for _ = 1, 60 do
+            if tryPullSpecialRollProgressionFromDataService() then
+                break
+            end
+            ensureSpecialRollDataServiceListener()
+            local packages = ReplicatedStorage:FindFirstChild("Packages")
+            if not packages then
+                packages = ReplicatedStorage:WaitForChild("Packages", 2)
+            end
+            task.wait(0.5)
+        end
         refreshSpecialRollDropdownFromProgression()
+        refreshSpecialRollParagraph()
     end)
 
     MainTab:CreateButton({
@@ -4233,7 +4209,7 @@ do
         setUpgradeParagraph(UpgradeStatsParagraph, "Computed stats", buildUpgradeStatsParagraphBody())
     end
 
-    local function runUpgradesSectionRefresh()
+    function runUpgradesSectionRefresh()
         tryLoadUpgradeServiceUtils()
         tryPullPlayerUpgradesFromDataService()
         tryPullSpecialRollProgressionFromDataService()
