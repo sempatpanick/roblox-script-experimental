@@ -4182,7 +4182,7 @@ do
         return table.concat(lines, "\n")
     end
 
-    local function buildUpgradeStatsParagraphBody(): string
+    function buildUpgradeStatsParagraphBody(): string
         if not tryLoadUpgradeServiceUtils() then
             return upgradeUtilsLoadError or "UpgradeServiceUtils not loaded."
         end
