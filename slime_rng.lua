@@ -4529,7 +4529,7 @@ do
 
     local lpForConsumables = Players.LocalPlayer
     if lpForConsumables then
-        local pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
+        pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
         if pgWatch then
             pgWatch.DescendantAdded:Connect(function()
                 mainEnsureConsumablesWatch()
