@@ -2033,10 +2033,6 @@ do
         return maxCount and tonumber(maxCount) or nil
     end
 
-    local function isMaximumCropsNotification(message)
-        return parseMaxCropsFromNotification(message) ~= nil
-    end
-
     local function countLocalPlayerActiveCrops()
         return #refreshAllCropsByLocalPlayer()
     end
@@ -3702,6 +3698,211 @@ do
                 end
             end)
         end
+    })
+
+    -- */  Auto Sell Egg Section  /* --
+    ShopTab:CreateSection("Auto Sell Egg")
+    local AUTO_SELL_EGG_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Celestial" }
+    local AUTO_SELL_EGG_RARITY_DEFAULT = { "Common", "Uncommon", "Rare" }
+    local autoSellEggData = {}
+    local selectedAutoSellEggRarities = { "Common", "Uncommon", "Rare" }
+
+    local function parseAutoSellEggResult(result)
+        return type(result) == "table" and result or (select(1, result))
+    end
+
+    local function getAutoSellEggRarity(egg)
+        local rarity = egg.RarityName or egg.Rarity
+        if type(rarity) == "string" and rarity ~= "" then
+            return rarity
+        end
+        return nil
+    end
+
+    local function eggMatchesAutoSellRarityFilter(egg)
+        local rarity = getAutoSellEggRarity(egg)
+        return rarity ~= nil and table.find(selectedAutoSellEggRarities, rarity) ~= nil
+    end
+
+    local function autoSellEggOwnedParagraphText()
+        local eggList = autoSellEggData.EggFruits
+        if type(eggList) ~= "table" or #eggList == 0 then
+            return "No owned eggs."
+        end
+        local lines = {}
+        local count = type(autoSellEggData.EggCount) == "number" and autoSellEggData.EggCount or #eggList
+        table.insert(lines, "Eggs (" .. tostring(count) .. ")")
+        for _, egg in ipairs(eggList) do
+            local rarity = egg.RarityName or egg.Rarity or "?"
+            local gram = type(egg.Gram) == "number" and egg.Gram or 0
+            local price = type(egg.Price) == "number" and egg.Price or 0
+            table.insert(lines, string.format("  %s %dg — %s", rarity, gram, tostring(price)))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local autoSellEggOwnedParagraph
+    local function updateAutoSellEggOwnedParagraph()
+        if autoSellEggOwnedParagraph and autoSellEggOwnedParagraph.Set then
+            autoSellEggOwnedParagraph:Set({
+                Title = "Owned Eggs",
+                Content = autoSellEggOwnedParagraphText(),
+            })
+        end
+    end
+
+    autoSellEggOwnedParagraph = ShopTab:CreateParagraph({
+        Title = "Owned Eggs",
+        Content = "(tap Refresh to load)",
+    })
+
+    local AutoSellEggRarityDropdown
+    local function syncSelectedAutoSellEggRaritiesFromDropdown(value)
+        if type(value) == "table" then
+            selectedAutoSellEggRarities = {}
+            for _, item in ipairs(value) do
+                local name = (type(item) == "table" and item.Title) or item
+                if type(name) == "string" and name ~= "" and table.find(AUTO_SELL_EGG_RARITIES, name) then
+                    table.insert(selectedAutoSellEggRarities, name)
+                end
+            end
+        elseif type(value) == "string" and value ~= "" and table.find(AUTO_SELL_EGG_RARITIES, value) then
+            selectedAutoSellEggRarities = { value }
+        else
+            selectedAutoSellEggRarities = {}
+        end
+    end
+
+    local function applyAutoSellEggRarityDropdownSelection()
+        local kept = {}
+        for _, rarity in ipairs(selectedAutoSellEggRarities) do
+            if table.find(AUTO_SELL_EGG_RARITIES, rarity) then
+                table.insert(kept, rarity)
+            end
+        end
+        selectedAutoSellEggRarities = kept
+        if AutoSellEggRarityDropdown and AutoSellEggRarityDropdown.Set then
+            AutoSellEggRarityDropdown:Set(kept)
+        end
+    end
+
+    AutoSellEggRarityDropdown = ShopTab:CreateDropdown({
+        Name = "Rarity",
+        Options = AUTO_SELL_EGG_RARITIES,
+        CurrentOption = AUTO_SELL_EGG_RARITY_DEFAULT,
+        MultipleOptions = true,
+        Callback = function(value)
+            syncSelectedAutoSellEggRaritiesFromDropdown(value)
+        end,
+    })
+    applyAutoSellEggRarityDropdownSelection()
+
+    local function refreshAutoSellEggList(showNotify)
+        local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
+        local result = Event:InvokeServer("GET_EGG_LIST")
+        local expected = parseAutoSellEggResult(result)
+        local anySuccess = false
+        local lastCoins = nil
+
+        if expected and expected.Success then
+            anySuccess = true
+            autoSellEggData = expected
+            if type(expected.Coins) == "number" then
+                lastCoins = expected.Coins
+            end
+        elseif expected then
+            autoSellEggData = expected
+        else
+            autoSellEggData = { EggFruits = {}, EggCount = 0 }
+        end
+
+        updateAutoSellEggOwnedParagraph()
+
+        if showNotify then
+            local content = "Egg list refreshed"
+            if lastCoins then
+                content = content .. " • Coins: " .. tostring(lastCoins)
+            end
+            mountNotify({ Title = "Auto Sell Egg", Content = content })
+        end
+        return anySuccess
+    end
+
+    ShopTab:CreateButton({
+        Name = "Refresh",
+        Callback = function()
+            refreshAutoSellEggList(true)
+        end,
+    })
+
+    local autoSellEggDelaySeconds = "1"
+    local autoSellEggRunning = false
+
+    ShopTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto sell egg actions",
+        CurrentValue = autoSellEggDelaySeconds,
+        Callback = function(value)
+            autoSellEggDelaySeconds = value
+        end,
+    })
+
+    ShopTab:CreateToggle({
+        Name = "Auto Sell Egg",
+        Callback = function(enabled)
+            autoSellEggRunning = enabled
+            if not enabled then return end
+            task.spawn(function()
+                local Event = ReplicatedStorage.Remotes.TutorialRemotes.RequestSell
+                while autoSellEggRunning do
+                    if #selectedAutoSellEggRarities == 0 then
+                        task.wait(math.max(0.1, tonumber(autoSellEggDelaySeconds) or 1))
+                    else
+                        refreshAutoSellEggList(false)
+                        local toSell = {}
+                        local eggList = autoSellEggData.EggFruits
+                        if type(eggList) == "table" then
+                            for _, egg in ipairs(eggList) do
+                                if type(egg.Id) == "string" and egg.Id ~= ""
+                                    and eggMatchesAutoSellRarityFilter(egg) then
+                                    table.insert(toSell, egg)
+                                end
+                            end
+                        end
+                        for _, egg in ipairs(toSell) do
+                            if not autoSellEggRunning then break end
+                            local result = Event:InvokeServer("SELL_EGG", egg.Id, 1)
+                            local expected = parseAutoSellEggResult(result)
+                            local success = expected and expected.Success
+                            local message = (expected and expected.Message) or (success and "Sold" or "Failed")
+                            mountNotify({
+                                Title = "Auto Sell Egg",
+                                Content = message,
+                                Icon = success and "check" or "x",
+                            })
+                            if success then
+                                local list = autoSellEggData.EggFruits
+                                if type(list) == "table" then
+                                    for i = #list, 1, -1 do
+                                        if list[i].Id == egg.Id then
+                                            table.remove(list, i)
+                                            break
+                                        end
+                                    end
+                                    autoSellEggData.EggCount = #list
+                                end
+                                updateAutoSellEggOwnedParagraph()
+                            end
+                            if autoSellEggRunning and egg ~= toSell[#toSell] then
+                                task.wait(1)
+                            end
+                        end
+                        local delay = math.max(0.1, tonumber(autoSellEggDelaySeconds) or 1)
+                        task.wait(delay)
+                    end
+                end
+            end)
+        end,
     })
 
     -- */  Auto Sell Fruit Section  /* --
