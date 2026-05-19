@@ -1876,56 +1876,60 @@ local function createMainTabSpecialDiceController(deps: {
             end
         end)
     end
-    ensureItemsDataListener()
-    pullItems()
-
-    dropdown = deps.mainTab:CreateDropdown({
-        Name = "Special Dice",
-        Flag = "main_special_dice_dropdown",
-        Options = buildOptions(),
-        CurrentOption = NONE,
-        Search = true,
-        Callback = function(value)
-            if suppressDropdownCallback then
-                return
-            end
-            local picked = rayfieldDropdownFirst(value)
-            if type(picked) ~= "string" or picked == NONE then
-                selectedId = nil
-                selectedName = nil
-                autoUsePending = false
-                deps.onParagraphDirty()
-                task.defer(refreshDropdown)
-                return
-            end
-            local diceId = displayToId[picked]
-            if not diceId or diceId == "" then
-                for _, dice in ipairs(CATALOG) do
-                    local prefix = dice.name .. " x"
-                    if string.sub(picked, 1, #prefix) == prefix then
-                        diceId = dice.id
-                        break
+    local function mountDropdown()
+        if dropdown then
+            return
+        end
+        ensureItemsDataListener()
+        pullItems()
+        dropdown = deps.mainTab:CreateDropdown({
+            Name = "Special Dice",
+            Flag = "main_special_dice_dropdown",
+            Options = buildOptions(),
+            CurrentOption = NONE,
+            Search = true,
+            Callback = function(value)
+                if suppressDropdownCallback then
+                    return
+                end
+                local picked = rayfieldDropdownFirst(value)
+                if type(picked) ~= "string" or picked == NONE then
+                    selectedId = nil
+                    selectedName = nil
+                    autoUsePending = false
+                    deps.onParagraphDirty()
+                    task.defer(refreshDropdown)
+                    return
+                end
+                local diceId = displayToId[picked]
+                if not diceId or diceId == "" then
+                    for _, dice in ipairs(CATALOG) do
+                        local prefix = dice.name .. " x"
+                        if string.sub(picked, 1, #prefix) == prefix then
+                            diceId = dice.id
+                            break
+                        end
                     end
                 end
-            end
-            if not diceId or diceId == "" then
-                return
-            end
-            selectedId = diceId
-            selectedName = nameForId(diceId)
-            autoUsePending = false
-            local used = requestUseItem(diceId)
-            deps.onParagraphDirty()
-            task.defer(refreshDropdown)
-            if not used then
-                mountNotify({
-                    Title = "Special Dice",
-                    Content = ("requestUseItem failed for %s."):format(selectedName or diceId),
-                    Icon = "x",
-                })
-            end
-        end,
-    })
+                if not diceId or diceId == "" then
+                    return
+                end
+                selectedId = diceId
+                selectedName = nameForId(diceId)
+                autoUsePending = false
+                local used = requestUseItem(diceId)
+                deps.onParagraphDirty()
+                task.defer(refreshDropdown)
+                if not used then
+                    mountNotify({
+                        Title = "Special Dice",
+                        Content = ("requestUseItem failed for %s."):format(selectedName or diceId),
+                        Icon = "x",
+                    })
+                end
+            end,
+        })
+    end
 
     return {
         footerLine = function(): string
@@ -1934,6 +1938,7 @@ local function createMainTabSpecialDiceController(deps: {
             end
             return "Special dice: none"
         end,
+        mountDropdown = mountDropdown,
         refreshDropdown = refreshDropdown,
         tryAutoUseWhenAllSelectedAtZero = tryAutoUseWhenAllSelectedAtZero,
         clearAutoUsePending = function()
@@ -3372,9 +3377,13 @@ do
     local SpecialRollDropdown: any = nil
     local autoCombineSpecialRollEnabled = false
     local specialRollCombineInvokePending: { [string]: boolean } = {}
+    local autoCombineAllZeroLog: { string } = {}
+    local AUTO_COMBINE_ALL_ZERO_LOG_MAX = 25
+    local autoCombineAllZeroWasActive = false
     local runAutoCombineSpecialRollPass: () -> ()
     local specialDiceCtrl: {
         footerLine: () -> string,
+        mountDropdown: () -> (),
         refreshDropdown: () -> (),
         tryAutoUseWhenAllSelectedAtZero: ({ string }, { [string]: any }) -> (),
         clearAutoUsePending: () -> (),
@@ -3462,6 +3471,32 @@ do
         return ("%s: —"):format(label)
     end
 
+    local function appendAutoCombineAllZeroLog()
+        local tierNames: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            if table.find(selectedSpecialRollTierKeys, tier) then
+                table.insert(tierNames, specialRollTierDisplayName(tier))
+            end
+        end
+        local stamp = os.date("%Y-%m-%d %H:%M:%S")
+        local line = ("[%s] All selected at 0 remaining: %s"):format(stamp, table.concat(tierNames, ", "))
+        table.insert(autoCombineAllZeroLog, line)
+        if #autoCombineAllZeroLog > AUTO_COMBINE_ALL_ZERO_LOG_MAX then
+            table.remove(autoCombineAllZeroLog, 1)
+        end
+    end
+
+    local function buildAutoCombineAllZeroLogSection(): string
+        if #autoCombineAllZeroLog == 0 then
+            return ""
+        end
+        local lines: { string } = { "\n\nAuto combine log:" }
+        for _, line in ipairs(autoCombineAllZeroLog) do
+            table.insert(lines, line)
+        end
+        return table.concat(lines, "\n")
+    end
+
     local function buildSpecialRollParagraphBody(): string
         local selectedLine = buildSpecialRollSelectedLine()
         local progressionLines: { string } = {}
@@ -3477,6 +3512,7 @@ do
             .. selectedLine
             .. "\n"
             .. specialDiceCtrl.footerLine()
+            .. buildAutoCombineAllZeroLogSection()
         if not anyProgression then
             body = body .. "\n\n(no progression yet)"
         end
@@ -3808,8 +3844,14 @@ do
             end
         end
         if allSelectedAtZero then
+            if not autoCombineAllZeroWasActive then
+                autoCombineAllZeroWasActive = true
+                appendAutoCombineAllZeroLog()
+                scheduleRefreshSpecialRollParagraph()
+            end
             specialDiceCtrl.tryAutoUseWhenAllSelectedAtZero(selectedSpecialRollTierKeys, specialRollProgressionByTier)
         else
+            autoCombineAllZeroWasActive = false
             specialDiceCtrl.clearAutoUsePending()
         end
     end
@@ -3920,6 +3962,8 @@ do
             specialRollSetSelectedTierKeysFromDisplayOptions(value)
         end,
     })
+
+    specialDiceCtrl.mountDropdown()
 
     task.defer(function()
         bootstrapSpecialRollSection()
