@@ -4585,9 +4585,9 @@ do
 
     MainTab:CreateSection("Auto Equip Slimes")
 
-    local autoEquipBestEnabled = false
-    local autoEquipBestLoopToken = 0
-    local AUTO_EQUIP_BEST_INTERVAL_SEC = 30
+    autoEquipBestEnabled = false
+    autoEquipBestLoopToken = 0
+    AUTO_EQUIP_BEST_INTERVAL_SEC = 30
 
     MainTab:CreateToggle({
         Name = "Auto Equip Best",
@@ -4619,7 +4619,7 @@ do
 
     MainTab:CreateSection("Upgrades")
 
-    local UPGRADE_LEVEL_STAT_KEYS: { string } = {
+    UPGRADE_LEVEL_STAT_KEYS = {
         "rollSpeed",
         "luck",
         "walkSpeed",
