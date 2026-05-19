@@ -3325,7 +3325,7 @@ do
         CurrentValue = autoRollDelaySec,
         Callback = function(value)
             if type(value) == "number" and value == value then
-                autoRollDelaySec = math.clamp(value, 2, 10)
+                autoRollDelaySec = math.clamp(value, 0.1, 10)
             end
         end,
     })
