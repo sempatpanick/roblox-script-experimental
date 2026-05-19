@@ -1818,7 +1818,10 @@ local function mountItemsInventoryPageSection(
             end
         end
         table.sort(rows, function(a, b)
-            return a.order ~= b.order and a.order < b.order or a.name < b.name
+            if a.order ~= b.order then
+                return a.order < b.order
+            end
+            return a.name < b.name
         end)
         local lines = { ("ConsumablesList (%d)"):format(#rows) }
         local n = math.min(#rows, inv.maxLines)
@@ -1856,7 +1859,7 @@ local function mountItemsInventoryPageSection(
             local sid = if type(data) == "table" then tostring(data.id or "?") else "?"
             local order = 0
             if type(data) == "table" and type(inv.svcUtils.getLayoutOrder) == "function" then
-                order = inv.svcUtils.getLayoutOrder(data)
+                order = tonumber(inv.svcUtils.getLayoutOrder(data)) or 0
             end
             local odds = ""
             if type(data) == "table" and type(inv.svcUtils.getVisualOdds) == "function" then
@@ -1875,7 +1878,10 @@ local function mountItemsInventoryPageSection(
             })
         end
         table.sort(rows, function(a, b)
-            return a.order ~= b.order and a.order > b.order or a.uid < b.uid
+            if a.order ~= b.order then
+                return a.order > b.order
+            end
+            return a.uid < b.uid
         end)
         local lines = { ("FeedableSlimesList (%d)"):format(#rows) }
         local n = math.min(#rows, inv.maxLines)
