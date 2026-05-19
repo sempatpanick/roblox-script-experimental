@@ -4346,7 +4346,7 @@ do
         return math.clamp(math.floor(owned[def.name] or 0), 0, 9999)
     end
 
-    local ODDS_SUFFIX_MULT: { [string]: number } = {
+    ODDS_SUFFIX_MULT = {
         K = 1e3,
         M = 1e6,
         B = 1e9,
@@ -4370,7 +4370,7 @@ do
    
     }
 
-    local function mainOddsSuffixMultiplier(suf: string): number
+    function mainOddsSuffixMultiplier(suf: string): number
         if suf == "" then
             return 1
         end
@@ -4384,7 +4384,7 @@ do
     end
 
     -- "1 / 119B" → numeric denominator for sort (higher = rarer).
-    local function mainParseOddsSortKey(oddsText: string): number
+    function mainParseOddsSortKey(oddsText: string): number
         local t = mainTrimGuiText(oddsText or "")
         if t == "" then
             return 0
@@ -4405,7 +4405,7 @@ do
         return n * mainOddsSuffixMultiplier(suf or "")
     end
 
-    local function mainFindWorkspaceSlimesFolders(): { Instance }
+    function mainFindWorkspaceSlimesFolders(): { Instance }
         local out: { Instance } = {}
         for _, ch in ipairs(Workspace:GetChildren()) do
             if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
@@ -4418,7 +4418,7 @@ do
         return out
     end
 
-    local function mainGuiTextFromContentChild(content: Instance, childName: string): string
+    function mainGuiTextFromContentChild(content: Instance, childName: string): string
         local node = content:FindFirstChild(childName)
         if not node then
             return ""
@@ -4441,7 +4441,7 @@ do
         return ""
     end
 
-    local function mainSlimeBillboardNameAndOdds(slime: Instance): (string, string)
+    function mainSlimeBillboardNameAndOdds(slime: Instance): (string, string)
         local bb = slime:FindFirstChild("SlimeInfoBillboard", true)
         if not bb then
             return "", ""
@@ -4469,11 +4469,11 @@ do
         return name, odds
     end
 
-    local function mainNormalizeWorkspaceSlimeUid(uid: string): string
+    function mainNormalizeWorkspaceSlimeUid(uid: string): string
         return string.gsub(uid, "#%d+$", "")
     end
 
-    local function mainScanFeedableSlimeOptions(): { string }
+    function mainScanFeedableSlimeOptions(): { string }
         table.clear(autoFeedOptionToUid)
         local slimeFolders = mainFindWorkspaceSlimesFolders()
         if #slimeFolders == 0 then
@@ -4532,7 +4532,7 @@ do
         return opts
     end
 
-    local function refreshAutoFeedSlimeDropdown(showNotify: boolean)
+    function refreshAutoFeedSlimeDropdown(showNotify: boolean)
         local opts = mainScanFeedableSlimeOptions()
         if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Refresh then
             AutoFeedSlimeDropdown:Refresh(opts)
@@ -4612,7 +4612,7 @@ do
         refreshAutoFeedFoodDropdown(false)
     end)
 
-    local lpForConsumables = Players.LocalPlayer
+    lpForConsumables = Players.LocalPlayer
     if lpForConsumables then
         pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
         if pgWatch then
