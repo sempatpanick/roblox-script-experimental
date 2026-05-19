@@ -1748,6 +1748,7 @@ local function createMainTabSpecialDiceController(deps: {
     local selectedName: string? = nil
     local autoUsePending = false
     local dropdown: any = nil
+    local suppressDropdownCallback = false
 
     local function nameForId(diceId: string): string
         for _, dice in ipairs(CATALOG) do
@@ -1800,6 +1801,7 @@ local function createMainTabSpecialDiceController(deps: {
     end
 
     local function refreshDropdown()
+        suppressDropdownCallback = true
         local opts = buildOptions()
         if dropdown and dropdown.Refresh then
             dropdown:Refresh(opts)
@@ -1811,6 +1813,7 @@ local function createMainTabSpecialDiceController(deps: {
                     if dropdown and dropdown.Set then
                         dropdown:Set(label)
                     end
+                    suppressDropdownCallback = false
                     return
                 end
             end
@@ -1818,6 +1821,7 @@ local function createMainTabSpecialDiceController(deps: {
         if dropdown and dropdown.Set then
             dropdown:Set(NONE)
         end
+        suppressDropdownCallback = false
     end
 
     local function requestUseItem(itemId: string): boolean
@@ -1850,6 +1854,31 @@ local function createMainTabSpecialDiceController(deps: {
         end
     end
 
+    local itemsListenerConn: RBXScriptConnection? = nil
+    local function ensureItemsDataListener()
+        if itemsListenerConn then
+            return
+        end
+        local client = deps.getDataServiceClient()
+        if not client or type(client.getChangedSignal) ~= "function" then
+            return
+        end
+        local ok, signal = pcall(function()
+            return client:getChangedSignal("items")
+        end)
+        if not ok or not signal or type(signal.Connect) ~= "function" then
+            return
+        end
+        itemsListenerConn = signal:Connect(function(newItems)
+            if type(newItems) == "table" then
+                itemsSave = deps.cloneTable(newItems)
+                task.defer(refreshDropdown)
+            end
+        end)
+    end
+    ensureItemsDataListener()
+    pullItems()
+
     dropdown = deps.mainTab:CreateDropdown({
         Name = "Special Dice",
         Flag = "main_special_dice_dropdown",
@@ -1857,15 +1886,28 @@ local function createMainTabSpecialDiceController(deps: {
         CurrentOption = NONE,
         Search = true,
         Callback = function(value)
+            if suppressDropdownCallback then
+                return
+            end
             local picked = rayfieldDropdownFirst(value)
             if type(picked) ~= "string" or picked == NONE then
                 selectedId = nil
                 selectedName = nil
                 autoUsePending = false
                 deps.onParagraphDirty()
+                task.defer(refreshDropdown)
                 return
             end
             local diceId = displayToId[picked]
+            if not diceId or diceId == "" then
+                for _, dice in ipairs(CATALOG) do
+                    local prefix = dice.name .. " x"
+                    if string.sub(picked, 1, #prefix) == prefix then
+                        diceId = dice.id
+                        break
+                    end
+                end
+            end
             if not diceId or diceId == "" then
                 return
             end
@@ -1873,8 +1915,8 @@ local function createMainTabSpecialDiceController(deps: {
             selectedName = nameForId(diceId)
             autoUsePending = false
             local used = requestUseItem(diceId)
-            refreshDropdown()
             deps.onParagraphDirty()
+            task.defer(refreshDropdown)
             if not used then
                 mountNotify({
                     Title = "Special Dice",
@@ -3443,7 +3485,6 @@ do
 
     refreshSpecialRollParagraph = function()
         tryPullPlayerUpgradesFromDataService()
-        specialDiceCtrl.refreshDropdown()
         if SpecialRollParagraph and SpecialRollParagraph.Set then
             SpecialRollParagraph:Set({
                 Title = "Special rolls",
@@ -3865,6 +3906,7 @@ do
         refreshSpecialRollDropdownFromProgression()
         tryPullSpecialRollProgressionFromDataService()
         refreshSpecialRollParagraph()
+        specialDiceCtrl.refreshDropdown()
     end
 
     SpecialRollDropdown = MainTab:CreateDropdown({
