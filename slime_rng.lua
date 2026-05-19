@@ -2045,7 +2045,6 @@ local function mountItemsInventoryPageSection(
         local rows = {}
         for uid, value in pairs(feedable) do
             local data = inv.svcUtils.getSlimeData(uid, value)
-            print(HttpService:JSONEncode(data))
             local lvl = if type(data) == "table" then tonumber(data.level) or 1 else 1
             local sid = if type(data) == "table" then tostring(data.id or "?") else "?"
             local order = 0
