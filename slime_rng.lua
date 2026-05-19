@@ -1706,6 +1706,200 @@ do
     })
 end
 
+local sharedInventoryItemUtils: any = nil
+
+local function tryGetInventoryItemUtils(): any?
+    if sharedInventoryItemUtils then
+        return sharedInventoryItemUtils
+    end
+    local src = ReplicatedStorage:FindFirstChild("Source")
+    local folder = src and src:FindFirstChild("Features")
+    folder = folder and folder:FindFirstChild("Inventory")
+    local mod = folder and folder:FindFirstChild("InventoryItemUtils")
+    if not mod or not mod:IsA("ModuleScript") then
+        return nil
+    end
+    local ok, result = pcall(require, mod)
+    if ok and type(result) == "table" then
+        sharedInventoryItemUtils = result
+        return result
+    end
+    return nil
+end
+
+local function createMainTabSpecialDiceController(deps: {
+    mainTab: any,
+    getDataServiceClient: () -> any?,
+    cloneTable: (any) -> { [string]: any },
+    resolveInventoryRemote: () -> RemoteFunction?,
+    onParagraphDirty: () -> (),
+})
+    local NONE = "(None)"
+    local CATALOG: { { id: string, name: string } } = {
+        { id = "jackpotSpin", name = "Jackpot Spin" },
+        { id = "bigDice", name = "Big Dice" },
+        { id = "hugeDice", name = "Huge Dice" },
+        { id = "shinyDice", name = "Shiny Dice" },
+        { id = "invertedDice", name = "Inverted Dice" },
+    }
+    local displayToId: { [string]: string } = {}
+    local itemsSave: { [string]: any } = {}
+    local selectedId: string? = nil
+    local selectedName: string? = nil
+    local autoUsePending = false
+    local dropdown: any = nil
+
+    local function nameForId(diceId: string): string
+        for _, dice in ipairs(CATALOG) do
+            if dice.id == diceId then
+                return dice.name
+            end
+        end
+        return diceId
+    end
+
+    local function pullItems(): boolean
+        local client = deps.getDataServiceClient()
+        if not client then
+            return false
+        end
+        local ok, items = pcall(function()
+            return client:get("items")
+        end)
+        if ok and type(items) == "table" then
+            itemsSave = deps.cloneTable(items)
+            return true
+        end
+        return false
+    end
+
+    local function qtyForId(diceId: string): number
+        local utils = tryGetInventoryItemUtils()
+        if utils and type(utils.getAmountOwned) == "function" then
+            return utils.getAmountOwned(diceId, {}, itemsSave)
+        end
+        local raw = itemsSave[diceId]
+        if type(raw) == "number" then
+            return math.max(0, math.floor(raw))
+        end
+        return 0
+    end
+
+    local function buildOptions(): { string }
+        table.clear(displayToId)
+        tryGetInventoryItemUtils()
+        pullItems()
+        local opts: { string } = { NONE }
+        displayToId[NONE] = ""
+        for _, dice in ipairs(CATALOG) do
+            local label = ("%s x%d"):format(dice.name, qtyForId(dice.id))
+            displayToId[label] = dice.id
+            table.insert(opts, label)
+        end
+        return opts
+    end
+
+    local function refreshDropdown()
+        local opts = buildOptions()
+        if dropdown and dropdown.Refresh then
+            dropdown:Refresh(opts)
+        end
+        if selectedId then
+            for _, dice in ipairs(CATALOG) do
+                if dice.id == selectedId then
+                    local label = ("%s x%d"):format(dice.name, qtyForId(dice.id))
+                    if dropdown and dropdown.Set then
+                        dropdown:Set(label)
+                    end
+                    return
+                end
+            end
+        end
+        if dropdown and dropdown.Set then
+            dropdown:Set(NONE)
+        end
+    end
+
+    local function requestUseItem(itemId: string): boolean
+        local rf = deps.resolveInventoryRemote()
+        if not rf then
+            return false
+        end
+        local ok, result = pcall(function()
+            return rf:InvokeServer("requestUseItem", itemId)
+        end)
+        return ok == true and result == true
+    end
+
+    local function tryAutoUseWhenAllSelectedAtZero(selectedTierKeys: { string }, progressionByTier: { [string]: any })
+        if not selectedId or autoUsePending or #selectedTierKeys == 0 then
+            return
+        end
+        for _, tier in ipairs(selectedTierKeys) do
+            local st = progressionByTier[tier]
+            if not st or st.rollsUntilNext ~= 0 then
+                return
+            end
+        end
+        if qtyForId(selectedId) <= 0 then
+            return
+        end
+        if requestUseItem(selectedId) then
+            autoUsePending = true
+            task.defer(refreshDropdown)
+        end
+    end
+
+    dropdown = deps.mainTab:CreateDropdown({
+        Name = "Special Dice",
+        Flag = "main_special_dice_dropdown",
+        Options = buildOptions(),
+        CurrentOption = NONE,
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if type(picked) ~= "string" or picked == NONE then
+                selectedId = nil
+                selectedName = nil
+                autoUsePending = false
+                deps.onParagraphDirty()
+                return
+            end
+            local diceId = displayToId[picked]
+            if not diceId or diceId == "" then
+                return
+            end
+            selectedId = diceId
+            selectedName = nameForId(diceId)
+            autoUsePending = false
+            local used = requestUseItem(diceId)
+            refreshDropdown()
+            deps.onParagraphDirty()
+            if not used then
+                mountNotify({
+                    Title = "Special Dice",
+                    Content = ("requestUseItem failed for %s."):format(selectedName or diceId),
+                    Icon = "x",
+                })
+            end
+        end,
+    })
+
+    return {
+        footerLine = function(): string
+            if selectedName then
+                return ("Special dice: %s"):format(selectedName)
+            end
+            return "Special dice: none"
+        end,
+        refreshDropdown = refreshDropdown,
+        tryAutoUseWhenAllSelectedAtZero = tryAutoUseWhenAllSelectedAtZero,
+        clearAutoUsePending = function()
+            autoUsePending = false
+        end,
+    }
+end
+
 local function mountItemsInventoryPageSection(
     mainTab: any,
     getDataServiceClientFn: () -> any?,
@@ -1731,36 +1925,31 @@ local function mountItemsInventoryPageSection(
         if modName == "InventoryServiceUtils" and inv.svcUtils then
             return true
         end
+        if modName == "InventoryItemUtils" then
+            local utils = tryGetInventoryItemUtils()
+            if utils then
+                inv.itemUtils = utils
+                inv.itemErr = nil
+                return true
+            end
+            inv.itemErr = "InventoryItemUtils not found under ReplicatedStorage.Source.Features.Inventory"
+            return false
+        end
         local src = ReplicatedStorage:FindFirstChild("Source")
         local folder = src and src:FindFirstChild("Features")
         folder = folder and folder:FindFirstChild("Inventory")
         local mod = folder and folder:FindFirstChild(modName)
         if not mod or not mod:IsA("ModuleScript") then
-            local msg = modName .. " not found under ReplicatedStorage.Source.Features.Inventory"
-            if modName == "InventoryItemUtils" then
-                inv.itemErr = msg
-            else
-                inv.svcErr = msg
-            end
+            inv.svcErr = modName .. " not found under ReplicatedStorage.Source.Features.Inventory"
             return false
         end
         local ok, result = pcall(require, mod)
         if not ok or type(result) ~= "table" then
-            local err = tostring(result)
-            if modName == "InventoryItemUtils" then
-                inv.itemErr = err
-            else
-                inv.svcErr = err
-            end
+            inv.svcErr = tostring(result)
             return false
         end
-        if modName == "InventoryItemUtils" then
-            inv.itemUtils = result
-            inv.itemErr = nil
-        else
-            inv.svcUtils = result
-            inv.svcErr = nil
-        end
+        inv.svcUtils = result
+        inv.svcErr = nil
         return true
     end
 
@@ -1810,6 +1999,7 @@ local function mountItemsInventoryPageSection(
             if type(entry) == "table" and type(entry.definition) == "table" then
                 local def = entry.definition
                 table.insert(rows, {
+                    id = tostring(def.id or id),
                     name = tostring(def.name or id),
                     kind = tostring(def.kind or "?"),
                     amount = tonumber(entry.amountOwned) or 0,
@@ -1827,7 +2017,7 @@ local function mountItemsInventoryPageSection(
         local n = math.min(#rows, inv.maxLines)
         for i = 1, n do
             local r = rows[i]
-            table.insert(lines, ("  %s  [%s]  x%d"):format(r.name, r.kind, r.amount))
+            table.insert(lines, ("  %s (%s)  [%s]  x%d"):format(r.name, r.id, r.kind, r.amount))
         end
         if #rows > n then
             table.insert(lines, ("… and %d more"):format(#rows - n))
@@ -1855,6 +2045,7 @@ local function mountItemsInventoryPageSection(
         local rows = {}
         for uid, value in pairs(feedable) do
             local data = inv.svcUtils.getSlimeData(uid, value)
+            print(HttpService:JSONEncode(data))
             local lvl = if type(data) == "table" then tonumber(data.level) or 1 else 1
             local sid = if type(data) == "table" then tostring(data.id or "?") else "?"
             local order = 0
@@ -3141,6 +3332,12 @@ do
     local autoCombineSpecialRollEnabled = false
     local specialRollCombineInvokePending: { [string]: boolean } = {}
     local runAutoCombineSpecialRollPass: () -> ()
+    local specialDiceCtrl: {
+        footerLine: () -> string,
+        refreshDropdown: () -> (),
+        tryAutoUseWhenAllSelectedAtZero: ({ string }, { [string]: any }) -> (),
+        clearAutoUsePending: () -> (),
+    }
 
     local function specialRollTierDisplayName(tierKey: string): string
         return string.sub(tierKey, 1, 1):upper() .. string.sub(tierKey, 2)
@@ -3176,6 +3373,20 @@ do
     local SpecialRollParagraph = MainTab:CreateParagraph({
         Title = "Special rolls",
         Content = "—\n\nPick: none",
+    })
+
+    local refreshSpecialRollParagraph: () -> ()
+
+    specialDiceCtrl = createMainTabSpecialDiceController({
+        mainTab = MainTab,
+        getDataServiceClient = getDataServiceClient,
+        cloneTable = cloneUpgradesTable,
+        resolveInventoryRemote = function()
+            return resolveNetworkerRemoteFunction("InventoryService", LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
+        end,
+        onParagraphDirty = function()
+            refreshSpecialRollParagraph()
+        end,
     })
 
     local function buildSpecialRollSelectedLine(): string
@@ -3220,15 +3431,20 @@ do
                 anyProgression = true
             end
         end
-        local body = table.concat(progressionLines, "\n") .. "\n\n" .. selectedLine
+        local body = table.concat(progressionLines, "\n")
+            .. "\n\n"
+            .. selectedLine
+            .. "\n"
+            .. specialDiceCtrl.footerLine()
         if not anyProgression then
             body = body .. "\n\n(no progression yet)"
         end
         return body
     end
 
-    local function refreshSpecialRollParagraph()
+    refreshSpecialRollParagraph = function()
         tryPullPlayerUpgradesFromDataService()
+        specialDiceCtrl.refreshDropdown()
         if SpecialRollParagraph and SpecialRollParagraph.Set then
             SpecialRollParagraph:Set({
                 Title = "Special rolls",
@@ -3541,6 +3757,20 @@ do
                     specialRollCombineInvokePending[tier] = nil
                 end
             end
+        end
+
+        local allSelectedAtZero = #selectedSpecialRollTierKeys > 0
+        for _, tier in ipairs(selectedSpecialRollTierKeys) do
+            local st = specialRollProgressionByTier[tier]
+            if not st or st.rollsUntilNext ~= 0 then
+                allSelectedAtZero = false
+                break
+            end
+        end
+        if allSelectedAtZero then
+            specialDiceCtrl.tryAutoUseWhenAllSelectedAtZero(selectedSpecialRollTierKeys, specialRollProgressionByTier)
+        else
+            specialDiceCtrl.clearAutoUsePending()
         end
     end
 
