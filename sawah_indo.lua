@@ -2515,16 +2515,16 @@ do
 
     local function equipSelectedPlantForFarm()
         if not selectedPlant or selectedPlant == "" then
-            return
+            return false
         end
         local character = Players.LocalPlayer.Character
         local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
         if not character or not backpack then
-            return
+            return false
         end
         local plantTool = backpack:FindFirstChild(selectedPlant) or character:FindFirstChild(selectedPlant)
         if not plantTool or not plantTool:IsA("Tool") then
-            return
+            return false
         end
         local currentTool = nil
         for _, c in ipairs(character:GetChildren()) do
@@ -2534,13 +2534,14 @@ do
             end
         end
         if currentTool == plantTool then
-            return
+            return true
         end
         if currentTool then
             currentTool.Parent = backpack
             task.wait()
         end
         plantTool.Parent = character
+        return true
     end
 
     local function teleportCharacterNear(position, maxDistance)
@@ -2637,8 +2638,6 @@ do
 
             task.spawn(function()
                 while autoFarmRunning do
-                    equipSelectedPlantForFarm()
-
                     local center = getFarmPosition()
                     local plantPosition = findNextPlantPosition(selectedFarmStyle, center, farmCropMaxCount)
                     if not plantPosition then
@@ -2647,7 +2646,8 @@ do
                         if autoFarmTeleportEnabled then
                             teleportCharacterNear(plantPosition)
                         end
-                        if isCharacterWithinAutoFarmRadius(center, selectedFarmStyle) then
+                        if isCharacterWithinAutoFarmRadius(center, selectedFarmStyle)
+                            and equipSelectedPlantForFarm() then
                             PlantCropEvent:FireServer(plantPosition)
                         end
                         task.wait(1)
