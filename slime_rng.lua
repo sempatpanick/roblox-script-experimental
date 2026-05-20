@@ -4583,7 +4583,7 @@ do
         end,
     })
 
-    MainTab:CreateToggle({
+    AutoFeedSlimeDropdown:CreateToggle({
         Name = "Use All Food",
         Flag = "main_auto_feed_use_all_food",
         CurrentValue = false,
