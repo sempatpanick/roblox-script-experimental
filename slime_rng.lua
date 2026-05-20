@@ -4099,6 +4099,7 @@ do
     local selectedAutoFeedOption: string? = nil
     local AutoFeedSlimeDropdown: any = nil
     local autoFeedEnabled = false
+    local autoFeedUseAllFood = false
     local autoFeedLoopToken = 0
     local AUTO_FEED_INTERVAL_SEC = 2.5
 
@@ -4582,6 +4583,15 @@ do
         end,
     })
 
+    MainTab:CreateToggle({
+        Name = "Use All Food",
+        Flag = "main_auto_feed_use_all_food",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoFeedUseAllFood = enabled == true
+        end,
+    })
+
     AutoFeedSlimeDropdown = MainTab:CreateDropdown({
         Name = "Slime",
         Flag = "main_auto_feed_slime_dropdown",
@@ -4654,9 +4664,11 @@ do
                             if not rf or not rf:IsA("RemoteFunction") then
                                 task.wait(AUTO_FEED_INTERVAL_SEC)
                             else
-                                if mainAutoFeedOwnedAmountForFoodId(foodId) > 0 then
+                                local ownedAmt = mainAutoFeedOwnedAmountForFoodId(foodId)
+                                if ownedAmt > 0 then
+                                    local useQty = if autoFeedUseAllFood then ownedAmt else 1
                                     pcall(function()
-                                        (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, 1)
+                                        (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, useQty)
                                     end)
                                 end
                                 task.wait(AUTO_FEED_INTERVAL_SEC)
