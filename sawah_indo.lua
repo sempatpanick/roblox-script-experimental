@@ -2354,19 +2354,53 @@ do
         updateFarmInfoParagraph()
     end)
 
+    local function getPlantBaseName(toolDisplayName)
+        if type(toolDisplayName) ~= "string" then
+            return toolDisplayName
+        end
+        local baseName = toolDisplayName:match("^(.-) x(%d+)$")
+        return baseName or toolDisplayName
+    end
+
+    local function findPlantToolInContainer(container, baseName)
+        if not container then
+            return nil
+        end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Tool") and getPlantBaseName(child.Name) == baseName then
+                return child
+            end
+        end
+        return nil
+    end
+
+    local function plantSelectionMatchesToolName(selection, toolName)
+        return getPlantBaseName(selection) == getPlantBaseName(toolName)
+    end
+
     local function getBackpackToolsForPlants()
         local tools = {}
         local seen = {}
-        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
-        if backpack then
-            for _, child in ipairs(backpack:GetChildren()) do
-                if child:IsA("Tool") then
+        local player = Players.LocalPlayer
+        local starterGear = player:FindFirstChild("Backpack")
+        if starterGear then
+            for _, child in ipairs(starterGear:GetChildren()) do
+                if child:IsA("Tool") and not seen[child.Name] then
                     table.insert(tools, child)
                     seen[child.Name] = true
                 end
             end
         end
-        local character = Players.LocalPlayer.Character
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, child in ipairs(backpack:GetChildren()) do
+                if child:IsA("Tool") and not seen[child.Name] then
+                    table.insert(tools, child)
+                    seen[child.Name] = true
+                end
+            end
+        end
+        local character = player.Character
         if character then
             for _, child in ipairs(character:GetChildren()) do
                 if child:IsA("Tool") and not seen[child.Name] then
@@ -2398,10 +2432,19 @@ do
             table.insert(plantItems, tool.Name)
         end
         PlantDropdown:Refresh(plantItems)
-        if selectedPlant and not table.find(plantItems, selectedPlant) then
-            selectedPlant = nil
-            if PlantDropdown.Select then PlantDropdown:Select(nil) end
-            if PlantDropdown.Set then PlantDropdown:Set({}) end
+        if selectedPlant then
+            local stillSelected = false
+            for _, itemName in ipairs(plantItems) do
+                if plantSelectionMatchesToolName(selectedPlant, itemName) then
+                    stillSelected = true
+                    break
+                end
+            end
+            if not stillSelected then
+                selectedPlant = nil
+                if PlantDropdown.Select then PlantDropdown:Select(nil) end
+                if PlantDropdown.Set then PlantDropdown:Set({}) end
+            end
         end
     end
 
@@ -2517,15 +2560,43 @@ do
         if not selectedPlant or selectedPlant == "" then
             return false
         end
-        local character = Players.LocalPlayer.Character
-        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+        local baseName = getPlantBaseName(selectedPlant)
+        local player = Players.LocalPlayer
+        local character = player.Character
+        local backpack = player:FindFirstChild("Backpack")
         if not character or not backpack then
             return false
         end
-        local plantTool = backpack:FindFirstChild(selectedPlant) or character:FindFirstChild(selectedPlant)
+
+        local plantTool
+        local starterGear = player:FindFirstChild("StarterGear")
+        if starterGear then
+            plantTool = findPlantToolInContainer(starterGear, baseName)
+        end
+
+        if plantTool and plantTool.Parent == starterGear then
+            local characterTool = findPlantToolInContainer(character, baseName)
+            local backpackTool = findPlantToolInContainer(backpack, baseName)
+            if characterTool then
+                plantTool = characterTool
+            elseif backpackTool then
+                plantTool = backpackTool
+            else
+                plantTool = plantTool:Clone()
+                plantTool.Parent = backpack
+                task.wait()
+            end
+        end
+
+        if not plantTool then
+            plantTool = findPlantToolInContainer(backpack, baseName)
+                or findPlantToolInContainer(character, baseName)
+        end
+
         if not plantTool or not plantTool:IsA("Tool") then
             return false
         end
+
         local currentTool = nil
         for _, c in ipairs(character:GetChildren()) do
             if c:IsA("Tool") then
@@ -2533,14 +2604,23 @@ do
                 break
             end
         end
-        if currentTool == plantTool then
+        if currentTool and getPlantBaseName(currentTool.Name) == baseName then
             return true
         end
         if currentTool then
             currentTool.Parent = backpack
             task.wait()
         end
-        plantTool.Parent = character
+        if plantTool.Parent ~= character then
+            plantTool.Parent = backpack
+            task.wait()
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.EquipTool then
+            humanoid:EquipTool(plantTool)
+        else
+            plantTool.Parent = character
+        end
         return true
     end
 
