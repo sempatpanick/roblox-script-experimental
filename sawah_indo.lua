@@ -2037,17 +2037,36 @@ do
         return #refreshAllCropsByLocalPlayer()
     end
 
-    -- Farm layout styles (add new curves to FarmStyleBuilders + FARM_STYLE_OPTIONS).
-    local FARM_STYLE_OPTIONS = { "Default", "Random", "Heart", "Circle" }
-    local farmHeartCurveScale = 0.3
-    local farmCircleRadius = 4
-    local farmRandomRadius = 4
+    -- Farm layout styles (add to FARM_STYLES + FarmStyleBuilders).
+    local FARM_STYLES = {
+        order = { "Default", "Random", "Heart", "Circle" },
+        Default = {},
+        Random = { radius = 4 },
+        Heart = { radius = 4 },
+        Circle = { radius = 4 },
+    }
+
+    local HEART_CURVE_MAX_DIST do
+        local maxDist = 0
+        for i = 0, 359 do
+            local angle = i / 360 * 2 * math.pi
+            local sinT = math.sin(angle)
+            local x = 16 * sinT * sinT * sinT
+            local z = 13 * math.cos(angle) - 5 * math.cos(2 * angle) - 2 * math.cos(3 * angle) - math.cos(4 * angle)
+            local dist = math.sqrt(x * x + z * z)
+            if dist > maxDist then
+                maxDist = dist
+            end
+        end
+        HEART_CURVE_MAX_DIST = maxDist
+    end
 
     local function heartCurveOffsetXZ(t)
         local sinT = math.sin(t)
         local x = 16 * sinT * sinT * sinT
         local z = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
-        return x * farmHeartCurveScale, z * farmHeartCurveScale
+        local scale = FARM_STYLES.Heart.radius / HEART_CURVE_MAX_DIST
+        return x * scale, z * scale
     end
 
     local function seededFarmRandom(center, count)
@@ -2078,7 +2097,7 @@ do
             local rng = seededFarmRandom(center, count)
             for i = 1, count do
                 local angle = rng:NextNumber(0, math.pi * 2)
-                local dist = math.sqrt(rng:NextNumber()) * farmRandomRadius
+                local dist = math.sqrt(rng:NextNumber()) * FARM_STYLES.Random.radius
                 local offsetX = math.cos(angle) * dist
                 local offsetZ = math.sin(angle) * dist
                 positions[i] = Vector3.new(center.X + offsetX, center.Y, center.Z + offsetZ)
@@ -2112,8 +2131,8 @@ do
             end
             for i = 1, count do
                 local t = (i - 1) / count * 2 * math.pi
-                local offsetX = math.cos(t) * farmCircleRadius
-                local offsetZ = math.sin(t) * farmCircleRadius
+                local offsetX = math.cos(t) * FARM_STYLES.Circle.radius
+                local offsetZ = math.sin(t) * FARM_STYLES.Circle.radius
                 positions[i] = Vector3.new(center.X + offsetX, center.Y, center.Z + offsetZ)
             end
             return positions
@@ -2376,14 +2395,14 @@ do
         end
     })
 
-    local heartScaleSlider
+    local heartRadiusSlider
     local circleRadiusSlider
     local randomRadiusSlider
 
     local function updateFarmStyleSliderVisibility()
         local style = normalizeFarmStyle(selectedFarmStyle)
-        if heartScaleSlider and heartScaleSlider.SetVisible then
-            heartScaleSlider:SetVisible(style == "Heart")
+        if heartRadiusSlider and heartRadiusSlider.SetVisible then
+            heartRadiusSlider:SetVisible(style == "Heart")
         end
         if circleRadiusSlider and circleRadiusSlider.SetVisible then
             circleRadiusSlider:SetVisible(style == "Circle")
@@ -2395,7 +2414,7 @@ do
 
     FarmTab:CreateDropdown({
         Name = "Farm Style",
-        Options = FARM_STYLE_OPTIONS,
+        Options = FARM_STYLES.order,
         CurrentOption = { selectedFarmStyle },
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
@@ -2406,13 +2425,14 @@ do
         end,
     })
 
-    heartScaleSlider = FarmTab:CreateSlider({
-        Name = "Heart scale",
-        Range = { 0.1, 2 },
-        Increment = 0.05,
-        CurrentValue = farmHeartCurveScale,
+    heartRadiusSlider = FarmTab:CreateSlider({
+        Name = "Heart radius",
+        Range = { 1, 25 },
+        Increment = 0.5,
+        Suffix = "studs",
+        CurrentValue = FARM_STYLES.Heart.radius,
         Callback = function(value)
-            farmHeartCurveScale = value
+            FARM_STYLES.Heart.radius = value
         end,
     })
 
@@ -2421,9 +2441,9 @@ do
         Range = { 1, 25 },
         Increment = 0.5,
         Suffix = "studs",
-        CurrentValue = farmCircleRadius,
+        CurrentValue = FARM_STYLES.Circle.radius,
         Callback = function(value)
-            farmCircleRadius = value
+            FARM_STYLES.Circle.radius = value
         end,
     })
 
@@ -2432,9 +2452,9 @@ do
         Range = { 1, 25 },
         Increment = 0.5,
         Suffix = "studs",
-        CurrentValue = farmRandomRadius,
+        CurrentValue = FARM_STYLES.Random.radius,
         Callback = function(value)
-            farmRandomRadius = value
+            FARM_STYLES.Random.radius = value
         end,
     })
 
