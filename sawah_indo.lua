@@ -2210,20 +2210,58 @@ do
         return plantedCount < quantity
     end
 
+    local AUTO_FARM_BASE_RADIUS = 29
+
+    local function getFarmStyleRadius(styleName)
+        local style = normalizeFarmStyle(styleName)
+        local config = FARM_STYLES[style]
+        return (config and config.radius) or 0
+    end
+
+    local function getAutoFarmPlantRadius(styleName)
+        return AUTO_FARM_BASE_RADIUS - getFarmStyleRadius(styleName)
+    end
+
+    local function isCharacterWithinAutoFarmRadius(farmPosition, styleName)
+        local character = Players.LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then
+            return false
+        end
+        return (rootPart.Position - farmPosition).Magnitude <= getAutoFarmPlantRadius(styleName)
+    end
+
     FarmTab:CreateSection("Plant Crops")
     -- Farm position: default until user sets current position
     local DEFAULT_FARM_POSITION = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
     local farmPosition = DEFAULT_FARM_POSITION
     local farmCropMaxCount = nil
+    local selectedFarmStyle = "Default"
 
     local function getFarmPosition()
         return farmPosition
+    end
+
+    local function getCharacterDistanceFromFarm()
+        local character = Players.LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then
+            return nil
+        end
+        return (rootPart.Position - farmPosition).Magnitude
     end
 
     local function farmInfoParagraphText()
         local lines = {
             string.format("Position: %.1f, %.1f, %.1f", farmPosition.X, farmPosition.Y, farmPosition.Z),
         }
+        local currentRadius = getCharacterDistanceFromFarm()
+        if currentRadius then
+            table.insert(lines, string.format("Current Radius: %.1f studs", currentRadius))
+        else
+            table.insert(lines, "Current Radius: (no character)")
+        end
+        table.insert(lines, string.format("Radius Farm: %.1f studs", getAutoFarmPlantRadius(selectedFarmStyle)))
         if farmCropMaxCount then
             table.insert(lines, string.format("Max crops: %d", farmCropMaxCount))
             table.insert(lines, string.format("Active crops: %d / %d", countLocalPlayerActiveCrops(), farmCropMaxCount))
@@ -2306,6 +2344,16 @@ do
         updateFarmInfoParagraph()
     end
 
+    local farmInfoLastUpdate = 0
+    RunService.Heartbeat:Connect(function()
+        local now = tick()
+        if now - farmInfoLastUpdate < 0.25 then
+            return
+        end
+        farmInfoLastUpdate = now
+        updateFarmInfoParagraph()
+    end)
+
     local function getBackpackToolsForPlants()
         local tools = {}
         local seen = {}
@@ -2385,7 +2433,6 @@ do
         end
     end
     local FarmQuantity = "1"
-    local selectedFarmStyle = "Default"
 
     FarmTab:CreateInput({
         Name = "Quantity",
@@ -2423,6 +2470,7 @@ do
             if picked then
                 selectedFarmStyle = picked
                 updateFarmStyleSliderVisibility()
+                updateFarmInfoParagraph()
             end
         end,
     })
@@ -2435,6 +2483,7 @@ do
         CurrentValue = FARM_STYLES.Heart.radius,
         Callback = function(value)
             FARM_STYLES.Heart.radius = value
+            updateFarmInfoParagraph()
         end,
     })
 
@@ -2446,6 +2495,7 @@ do
         CurrentValue = FARM_STYLES.Circle.radius,
         Callback = function(value)
             FARM_STYLES.Circle.radius = value
+            updateFarmInfoParagraph()
         end,
     })
 
@@ -2457,6 +2507,7 @@ do
         CurrentValue = FARM_STYLES.Random.radius,
         Callback = function(value)
             FARM_STYLES.Random.radius = value
+            updateFarmInfoParagraph()
         end,
     })
 
@@ -2596,7 +2647,9 @@ do
                         if autoFarmTeleportEnabled then
                             teleportCharacterNear(plantPosition)
                         end
-                        PlantCropEvent:FireServer(plantPosition)
+                        if isCharacterWithinAutoFarmRadius(center, selectedFarmStyle) then
+                            PlantCropEvent:FireServer(plantPosition)
+                        end
                         task.wait(1)
                     end
                 end
