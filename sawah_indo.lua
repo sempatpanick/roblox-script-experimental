@@ -2146,21 +2146,6 @@ do
         return "Default"
     end
 
-    local function getFarmStyleRadius(styleName)
-        local config = FARM_STYLES[normalizeFarmStyle(styleName)]
-        return config.radius or 0
-    end
-
-    local function isCharacterWithinFarmPlantRange(farmPosition, styleName)
-        local character = Players.LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then
-            return false
-        end
-        local maxDistance = 29 - getFarmStyleRadius(styleName)
-        return (rootPart.Position - farmPosition).Magnitude <= maxDistance
-    end
-
     local function buildFarmStylePositions(styleName, center, count)
         local builder = FarmStyleBuilders[normalizeFarmStyle(styleName)]
         return builder(center, count)
@@ -2352,6 +2337,7 @@ do
         Name = "Plant",
         Options = plantItems,
         CurrentOption = {},
+        Search = true,
         Callback = function(value)
             selectedPlant = rayfieldDropdownFirst(value)
         end
@@ -2431,6 +2417,7 @@ do
         Name = "Farm Style",
         Options = FARM_STYLES.order,
         CurrentOption = { selectedFarmStyle },
+        Search = true,
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
             if picked then
@@ -2609,9 +2596,7 @@ do
                         if autoFarmTeleportEnabled then
                             teleportCharacterNear(plantPosition)
                         end
-                        if isCharacterWithinFarmPlantRange(center, selectedFarmStyle) then
-                            PlantCropEvent:FireServer(plantPosition)
-                        end
+                        PlantCropEvent:FireServer(plantPosition)
                         task.wait(1)
                     end
                 end
