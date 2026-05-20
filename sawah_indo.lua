@@ -2826,6 +2826,244 @@ do
     end
     local areaPrefix = (LahanConfig and LahanConfig.AreaPrefix) or "AreaTanamBesar"
 
+    local function getRequestLahanRemote()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        local tutorialRemotes = remotes and remotes:FindFirstChild("TutorialRemotes")
+        local requestLahan = tutorialRemotes and tutorialRemotes:FindFirstChild("RequestLahan")
+        if requestLahan and requestLahan:IsA("RemoteFunction") then
+            return requestLahan
+        end
+        return nil
+    end
+
+    local function invokeLahanGetStatus()
+        local requestLahan = getRequestLahanRemote()
+        if not requestLahan then
+            return nil, "RequestLahan not found"
+        end
+        local ok, result = pcall(function()
+            return requestLahan:InvokeServer("GET_STATUS")
+        end)
+        if not ok then
+            return nil, tostring(result)
+        end
+        if type(result) ~= "table" then
+            return nil, "invalid response"
+        end
+        return result
+    end
+
+    local function playerHasClaimedLahan(status)
+        if not status or status.Success ~= true then
+            return false
+        end
+        local current = status.PlayerCurrentLahan
+        return current ~= nil and tostring(current) ~= ""
+    end
+
+    local function isLandPartName(name)
+        if type(name) ~= "string" or name == "" then
+            return false
+        end
+        if string.sub(name, 1, #areaPrefix) == areaPrefix then
+            return true
+        end
+        return string.sub(name, 1, 9) == "AreaTanam"
+    end
+
+    local function extractLandNamesFromGetStatus(status)
+        local names = {}
+        local seen = {}
+        local function tryAdd(name)
+            if not isLandPartName(name) or seen[name] then
+                return
+            end
+            seen[name] = true
+            table.insert(names, name)
+        end
+        if type(status) ~= "table" then
+            return names
+        end
+        local listKeys = {
+            "LahanList",
+            "AvailableLahan",
+            "Available",
+            "Areas",
+            "Parts",
+            "PartNames",
+            "Lahan",
+            "Lands",
+            "List",
+            "AllLahan",
+            "Plots",
+        }
+        for _, key in ipairs(listKeys) do
+            local value = status[key]
+            if type(value) == "table" then
+                for idx, item in ipairs(value) do
+                    if type(item) == "string" then
+                        tryAdd(item)
+                    elseif type(item) == "table" then
+                        tryAdd(item.PartName or item.Name or item.AreaName)
+                    elseif type(idx) == "string" then
+                        tryAdd(idx)
+                    end
+                end
+                for idx, item in pairs(value) do
+                    if type(idx) == "string" then
+                        tryAdd(idx)
+                    end
+                    if type(item) == "string" then
+                        tryAdd(item)
+                    elseif type(item) == "table" then
+                        tryAdd(item.PartName or item.Name or item.AreaName)
+                    end
+                end
+            end
+        end
+        local function scan(tbl, depth)
+            if depth > 5 or type(tbl) ~= "table" then
+                return
+            end
+            for key, value in pairs(tbl) do
+                if type(key) == "string" then
+                    tryAdd(key)
+                end
+                if type(value) == "string" then
+                    tryAdd(value)
+                elseif type(value) == "table" then
+                    if value.PartName then
+                        tryAdd(value.PartName)
+                    end
+                    if value.Name then
+                        tryAdd(value.Name)
+                    end
+                    scan(value, depth + 1)
+                end
+            end
+        end
+        scan(status, 0)
+        table.sort(names)
+        return names
+    end
+
+    local function getLandNamesForClaimDropdown()
+        local status = invokeLahanGetStatus()
+        local names = extractLandNamesFromGetStatus(status)
+        if #names > 0 then
+            return names
+        end
+        local totalAreas = (LahanConfig and LahanConfig.TotalAreas) or 32
+        for i = 1, totalAreas do
+            table.insert(names, areaPrefix .. tostring(i))
+        end
+        return names
+    end
+
+    local claimLandOptions = { "Random" }
+    local selectedClaimLand = "Random"
+    local autoClaimLandRunning = false
+
+    local function refreshClaimLandDropdown(dropdown)
+        local lands = getLandNamesForClaimDropdown()
+        claimLandOptions = { "Random" }
+        for _, name in ipairs(lands) do
+            table.insert(claimLandOptions, name)
+        end
+        if dropdown and dropdown.Refresh then
+            dropdown:Refresh(claimLandOptions)
+        end
+        local picked = rayfieldDropdownFirst(selectedClaimLand)
+        if picked == nil or picked == "" then
+            selectedClaimLand = "Random"
+        else
+            local found = false
+            for _, opt in ipairs(claimLandOptions) do
+                if opt == picked then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                selectedClaimLand = "Random"
+            end
+        end
+    end
+
+    local function pickClaimLandPartName()
+        if selectedClaimLand ~= "Random" then
+            return selectedClaimLand
+        end
+        local choices = {}
+        for _, name in ipairs(claimLandOptions) do
+            if name ~= "Random" then
+                table.insert(choices, name)
+            end
+        end
+        if #choices == 0 then
+            return nil
+        end
+        return choices[math.random(1, #choices)]
+    end
+
+    local function tryClaimSelectedLand()
+        local status, err = invokeLahanGetStatus()
+        if not status then
+            return false, err
+        end
+        if playerHasClaimedLahan(status) then
+            return false, "already_claimed"
+        end
+        local partName = pickClaimLandPartName()
+        if not partName then
+            return false, "no_land_selected"
+        end
+        local requestLahan = getRequestLahanRemote()
+        if not requestLahan then
+            return false, "RequestLahan not found"
+        end
+        local ok, result = pcall(function()
+            return requestLahan:InvokeServer("BUY", { PartName = partName })
+        end)
+        if not ok then
+            return false, tostring(result)
+        end
+        return true, result
+    end
+
+    FarmTab:CreateSection("Claim Land")
+    local ClaimLandDropdown = FarmTab:CreateDropdown({
+        Name = "Land",
+        Options = claimLandOptions,
+        CurrentOption = { "Random" },
+        Callback = function(value)
+            selectedClaimLand = rayfieldDropdownFirst(value) or "Random"
+        end,
+    })
+    refreshClaimLandDropdown(ClaimLandDropdown)
+
+    FarmTab:CreateToggle({
+        Name = "Auto Claim Land",
+        Callback = function(enabled)
+            autoClaimLandRunning = enabled
+            if not enabled then
+                return
+            end
+            task.spawn(function()
+                while autoClaimLandRunning do
+                    refreshClaimLandDropdown(ClaimLandDropdown)
+                    local status = invokeLahanGetStatus()
+                    if playerHasClaimedLahan(status) then
+                        task.wait(60)
+                        continue
+                    end
+                    tryClaimSelectedLand()
+                    task.wait(60)
+                end
+            end)
+        end,
+    })
+
     local function getOwnerIdFromInstance(obj)
         local v = obj:GetAttribute("OwnerId")
         if v ~= nil and type(v) == "number" then return v end
@@ -2834,6 +3072,28 @@ do
             return c.Value
         end
         return nil
+    end
+
+    local function appendInstanceAttributes(lines, obj, indent)
+        indent = indent or "    "
+        local attrs = {}
+        pcall(function()
+            attrs = obj:GetAttributes()
+        end)
+        local keys = {}
+        for k in pairs(attrs) do
+            table.insert(keys, k)
+        end
+        table.sort(keys, function(a, b)
+            return string.lower(tostring(a)) < string.lower(tostring(b))
+        end)
+        if #keys == 0 then
+            table.insert(lines, indent .. "(no attributes)")
+        else
+            for _, k in ipairs(keys) do
+                table.insert(lines, indent .. tostring(k) .. " = " .. formatValueForDisplay(attrs[k]))
+            end
+        end
     end
 
     local function getPalmLandMapText()
@@ -2860,6 +3120,8 @@ do
                 local ownerStr = ownerId ~= nil and tostring(ownerId) or "(none)"
                 local youTag = (ownerId == myUserId) and "  [you]" or ""
                 add("  " .. entry.name .. "  OwnerId: " .. ownerStr .. youTag)
+                appendInstanceAttributes(lines, entry.obj, "    ")
+                add("")
             end
             add("")
             local ownedCount = 0
@@ -2990,6 +3252,104 @@ do
                 Content = #text > 200 and (text:sub(1, 200) .. "...") or text,
             })
         end
+    })
+
+    FarmTab:CreateSection("Lahan status (RequestLahan)")
+    local lahanStatusResultLabel = FarmTab:CreateParagraph({
+        Title = "GET_STATUS result",
+        Content = "Tap Refresh to call ReplicatedStorage.Remotes.TutorialRemotes.RequestLahan:InvokeServer(\"GET_STATUS\")",
+    })
+
+    local function appendValueLines(lines, val, indent, depth, seen)
+        indent = indent or ""
+        depth = depth or 0
+        if depth > 8 then
+            table.insert(lines, indent .. "... (max depth)")
+            return
+        end
+        local valType = type(val)
+        if valType == "table" then
+            seen = seen or {}
+            if seen[val] then
+                table.insert(lines, indent .. "(cycle)")
+                return
+            end
+            seen[val] = true
+            local keys = {}
+            for k in pairs(val) do
+                table.insert(keys, k)
+            end
+            table.sort(keys, function(a, b)
+                return tostring(a) < tostring(b)
+            end)
+            if #keys == 0 then
+                table.insert(lines, indent .. "{}")
+            else
+                for _, k in ipairs(keys) do
+                    local v = val[k]
+                    if type(v) == "table" then
+                        table.insert(lines, indent .. tostring(k) .. " = {")
+                        appendValueLines(lines, v, indent .. "  ", depth + 1, seen)
+                        table.insert(lines, indent .. "}")
+                    else
+                        table.insert(lines, indent .. tostring(k) .. " = " .. formatValueForDisplay(v))
+                    end
+                end
+            end
+            seen[val] = nil
+        else
+            table.insert(lines, indent .. formatValueForDisplay(val))
+        end
+    end
+
+    local function getLahanStatusText()
+        local lines = {}
+        local function add(s)
+            table.insert(lines, s)
+        end
+        add("Remote: TutorialRemotes.RequestLahan")
+        add('Call: InvokeServer("GET_STATUS")')
+        add("")
+        local data, err = invokeLahanGetStatus()
+        if not data then
+            add("Invoke failed: " .. tostring(err))
+            return table.concat(lines, "\n")
+        end
+        if data.Success == true then
+            add("Success: true")
+            local current = data.PlayerCurrentLahan
+            if current == nil then
+                add("PlayerCurrentLahan: (none) — you can buy palm land")
+            else
+                add("PlayerCurrentLahan: " .. formatValueForDisplay(current))
+            end
+        else
+            add("Success: " .. tostring(data.Success))
+            if data.Message then
+                add("Message: " .. tostring(data.Message))
+            end
+        end
+        add("")
+        add("Full response:")
+        appendValueLines(lines, data, "  ", 0, nil)
+        return table.concat(lines, "\n")
+    end
+
+    FarmTab:CreateButton({
+        Name = "Refresh GET_STATUS",
+        Callback = function()
+            local text = getLahanStatusText()
+            if lahanStatusResultLabel and lahanStatusResultLabel.Set then
+                lahanStatusResultLabel:Set({
+                    Title = "GET_STATUS result",
+                    Content = text,
+                })
+            end
+            mountNotify({
+                Title = "Lahan GET_STATUS",
+                Content = #text > 200 and (text:sub(1, 200) .. "...") or text,
+            })
+        end,
     })
 end
 
