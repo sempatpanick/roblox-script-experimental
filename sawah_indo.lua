@@ -55,6 +55,26 @@ local function rayfieldDropdownFirst(valueOrTable)
     return valueOrTable
 end
 
+local function clearRayfieldDropdown(dropdown)
+    if not dropdown then
+        return
+    end
+    if dropdown.Set then
+        local ok = pcall(function()
+            dropdown:Set({})
+        end)
+        if ok then
+            return
+        end
+    end
+    if type(dropdown.CurrentOption) == "table" then
+        table.clear(dropdown.CurrentOption)
+    end
+end
+
+local getFarmPositionForConfig: (() -> Vector3)?
+local setFarmPositionFromConfig: (({ X: number, Y: number, Z: number }) -> ())?
+
 local function getExecutorFireSignal()
     local fire = rawget(_G, "firesignal")
     if type(fire) == "function" then
@@ -216,7 +236,7 @@ local Window = RayfieldLibrary:CreateWindow({
     LoadingSubtitle = "Sawah Indo",
     Icon = 4483362458,
     ConfigurationSaving = {
-        Enabled = false,
+        Enabled = true,
         FolderName = "sempatpanick",
         FileName = "sawah_indo",
     },
@@ -404,6 +424,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Anti AFK",
+        Flag = "lp_anti_afk",
         CurrentValue = true,
         Callback = function(enabled)
             if enabled then
@@ -416,6 +437,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Infinite Jump",
+        Flag = "lp_infinite_jump",
         Callback = function(enabled)
             if infiniteJumpConnection then
                 infiniteJumpConnection:Disconnect()
@@ -437,6 +459,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "No Clip",
+        Flag = "lp_no_clip",
         Callback = function(enabled)
             noClipEnabled = enabled
             local character = Players.LocalPlayer.Character
@@ -459,6 +482,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Fly",
+        Flag = "lp_fly",
         Callback = function(enabled)
             flyEnabled = enabled
             if enabled then
@@ -571,6 +595,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Free Camera",
+        Flag = "lp_free_camera",
         Callback = function(enabled)
             freeCameraEnabled = enabled
             if enabled then
@@ -583,6 +608,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Camera Penetrate",
+        Flag = "lp_camera_penetrate",
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
             local lp = Players.LocalPlayer
@@ -628,11 +654,12 @@ do
     end
 
     local currentWalkSpeed = getCurrentCharacterWalkSpeed()
-    local walkSpeedCurrentValue = tostring(currentWalkSpeed or defaultWalkSpeed)
+    local walkSpeedValue = tostring(currentWalkSpeed or defaultWalkSpeed)
 
     local WalkSpeedInput = LocalPlayerTab:CreateInput({
         Name = "Speed",
         PlaceholderText = "e.g. 16 or 100",
+        Flag = "lp_walk_speed",
         CurrentValue = walkSpeedValue,
         Callback = function(value)
             walkSpeedValue = value
@@ -663,6 +690,7 @@ do
     end
     LocalPlayerTab:CreateButton({
         Name = "Get Current Walk Speed",
+        Flag = "lp_walk_speed_get",
         Callback = function()
             syncWalkSpeedInputFromCharacter(true)
         end
@@ -672,6 +700,7 @@ do
     syncWalkSpeedInputFromCharacter(false)
     LocalPlayerTab:CreateButton({
         Name = "Apply",
+        Flag = "lp_walk_speed_apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -690,6 +719,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Reset",
+        Flag = "lp_walk_speed_reset",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -727,6 +757,7 @@ do
     local JumpHeightInput = LocalPlayerTab:CreateInput({
         Name = "Height",
         PlaceholderText = "e.g. 7.2 or 50",
+        Flag = "lp_jump_height",
         CurrentValue = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
@@ -757,6 +788,7 @@ do
     end
     LocalPlayerTab:CreateButton({
         Name = "Get Current Jump Height",
+        Flag = "lp_jump_height_get",
         Callback = function()
             syncJumpHeightInputFromCharacter(true)
         end
@@ -766,6 +798,7 @@ do
     syncJumpHeightInputFromCharacter(false)
     LocalPlayerTab:CreateButton({
         Name = "Apply",
+        Flag = "lp_jump_height_apply",
         Callback = function()
             local character = Players.LocalPlayer.Character
             if not character then
@@ -1067,6 +1100,7 @@ do
     LocalPlayerTab:CreateInput({
         Name = "ESP Max Distance",
         PlaceholderText = "0 = unlimited, e.g. 10000",
+        Flag = "lp_esp_max_distance",
         CurrentValue = tostring(espMaxDistance),
         Callback = function(value)
             local n = tonumber(value)
@@ -1123,6 +1157,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Names",
+        Flag = "lp_esp_player_names",
         CurrentValue = false,
         Callback = function(enabled)
             espNamesEnabled = enabled
@@ -1132,6 +1167,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Distance",
+        Flag = "lp_esp_player_distance",
         CurrentValue = false,
         Callback = function(enabled)
             espDistanceEnabled = enabled
@@ -1141,6 +1177,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Character",
+        Flag = "lp_esp_player_character",
         CurrentValue = false,
         Callback = function(enabled)
             espCharacterEnabled = enabled
@@ -1150,6 +1187,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP Player Lines",
+        Flag = "lp_esp_player_lines",
         CurrentValue = false,
         Callback = function(enabled)
             espLinesEnabled = enabled
@@ -1159,6 +1197,7 @@ do
     })
     LocalPlayerTab:CreateToggle({
         Name = "ESP All Object",
+        Flag = "lp_esp_all_objects",
         CurrentValue = false,
         Callback = function(enabled)
             espAllObjectsEnabled = enabled
@@ -1489,6 +1528,7 @@ do
 
     PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
         Name = "Player",
+        Flag = "lp_players_info_player",
         Options = infoPlayerDisplayNames,
         CurrentOption = {}, Search = true,
         Callback = function(value)
@@ -1511,12 +1551,14 @@ do
 
     LocalPlayerTab:CreateButton({
         Name = "Refresh list",
+        Flag = "lp_players_info_refresh_list",
         Callback = function()
             refreshPlayersInfoList(true)
         end,
     })
     LocalPlayerTab:CreateButton({
         Name = "Refresh details",
+        Flag = "lp_players_info_refresh_details",
         Callback = function()
             if not selectedInfoPlayer then
                 mountNotify({ Title = "Players Info", Content = "Select a player first" })
@@ -1579,6 +1621,7 @@ do
 
     CarryPlayerDropdown = LocalPlayerTab:CreateDropdown({
         Name = "Player",
+        Flag = "lp_carry_player",
         Options = carryDropdownOptions(),
         CurrentOption = { CARRY_NONE },
         Search = true,
@@ -1594,6 +1637,7 @@ do
 
     LocalPlayerTab:CreateToggle({
         Name = "Carry nearby selected player",
+        Flag = "lp_carry_nearby",
         CurrentValue = false,
         Callback = function(enabled)
             carryEnabled = enabled == true
@@ -1786,6 +1830,7 @@ do
     LocalPlayerTab:CreateSection("Server")
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
+        Flag = "lp_server_rejoin",
         Callback = function()
             local TeleportService = game:GetService("TeleportService")
             local placeId = game.PlaceId
@@ -1811,6 +1856,7 @@ do
 
     LocalPlayerTab:CreateButton({
         Name = "Copy game ID",
+        Flag = "lp_server_copy_placeid",
         Callback = function()
             local paste = setclipboard or toclipboard
             if not paste then
@@ -1934,6 +1980,7 @@ do
     LocalPlayerTab:CreateSection("Animation")
     LocalPlayerTab:CreateDropdown({
         Name = "Animation list",
+        Flag = "lp_animation_list",
         Options = animationOptions,
         CurrentOption = { selectedAnimationName },
         Search = false,
@@ -1944,6 +1991,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Animate",
+        Flag = "lp_animation_play",
         Callback = function()
             if selectedAnimationName == "Hair Grab (R6)" then
                 playHairGrabAnimationR6()
@@ -1954,6 +2002,7 @@ do
     })
     LocalPlayerTab:CreateButton({
         Name = "Clear Console",
+        Flag = "lp_console_clear",
         Callback = function()
             local cleared = false
             local clearFn = rawget(_G, "clearconsole") or rawget(_G, "rconsoleclear")
@@ -2302,6 +2351,19 @@ do
         setFarmCropMaxCount(getDefaultFarmCropMaxCount())
     end)
 
+    getFarmPositionForConfig = function()
+        return farmPosition
+    end
+    setFarmPositionFromConfig = function(pos)
+        if type(pos) == "table" then
+            local x, y, z = tonumber(pos.X), tonumber(pos.Y), tonumber(pos.Z)
+            if x and y and z then
+                farmPosition = Vector3.new(x, y, z)
+                updateFarmInfoParagraph()
+            end
+        end
+    end
+
     FarmTab:CreateSection("Section")
     FarmTab:CreateButton({
         Name = "Set current position as farm position",
@@ -2429,6 +2491,7 @@ do
 
     local PlantDropdown = FarmTab:CreateDropdown({
         Name = "Plant",
+        Flag = "farm_plant_dropdown",
         Options = plantItems,
         CurrentOption = {},
         Search = true,
@@ -2492,6 +2555,7 @@ do
     FarmTab:CreateInput({
         Name = "Quantity",
         PlaceholderText = "Enter quantity",
+        Flag = "farm_quantity",
         CurrentValue = FarmQuantity,
         Callback = function(value)
             FarmQuantity = value
@@ -2517,6 +2581,7 @@ do
 
     FarmTab:CreateDropdown({
         Name = "Farm Style",
+        Flag = "farm_style",
         Options = FARM_STYLES.order,
         CurrentOption = { selectedFarmStyle },
         Search = true,
@@ -2532,6 +2597,7 @@ do
 
     heartRadiusSlider = FarmTab:CreateSlider({
         Name = "Heart radius",
+        Flag = "farm_heart_radius",
         Range = { 1, 25 },
         Increment = 0.5,
         Suffix = "studs",
@@ -2544,6 +2610,7 @@ do
 
     circleRadiusSlider = FarmTab:CreateSlider({
         Name = "Circle radius",
+        Flag = "farm_circle_radius",
         Range = { 1, 25 },
         Increment = 0.5,
         Suffix = "studs",
@@ -2556,6 +2623,7 @@ do
 
     randomRadiusSlider = FarmTab:CreateSlider({
         Name = "Random radius",
+        Flag = "farm_random_radius",
         Range = { 1, 25 },
         Increment = 0.5,
         Suffix = "studs",
@@ -2703,6 +2771,7 @@ do
     local autoFarmTeleportEnabled = false
     FarmTab:CreateToggle({
         Name = "Teleport",
+        Flag = "farm_auto_teleport",
         Callback = function(enabled)
             autoFarmTeleportEnabled = enabled
         end
@@ -2710,6 +2779,7 @@ do
 
     FarmTab:CreateToggle({
         Name = "Auto Farm",
+        Flag = "farm_auto_farm",
         Callback = function(enabled)
             autoFarmRunning = enabled
             if autoFarmConnection then
@@ -2761,6 +2831,7 @@ do
 
     FarmTab:CreateToggle({
         Name = "Teleport",
+        Flag = "farm_harvest_teleport",
         Callback = function(enabled)
             harvestTeleportEnabled = enabled
         end
@@ -2768,6 +2839,7 @@ do
 
     FarmTab:CreateToggle({
         Name = "Harvest Plant",
+        Flag = "farm_harvest_plant",
         Callback = function(enabled)
             harvestPlantRunning = enabled
             if not enabled then return end
@@ -3064,6 +3136,7 @@ do
     FarmTab:CreateSection("Claim Land")
     local ClaimLandDropdown = FarmTab:CreateDropdown({
         Name = "Land",
+        Flag = "farm_claim_land",
         Options = claimLandOptions,
         CurrentOption = { "Random" },
         Callback = function(value)
@@ -3074,6 +3147,7 @@ do
 
     FarmTab:CreateToggle({
         Name = "Auto Claim Land",
+        Flag = "farm_auto_claim_land",
         Callback = function(enabled)
             autoClaimLandRunning = enabled
             if not enabled then
@@ -3408,6 +3482,7 @@ do
 
     AutomationTab:CreateToggle({
         Name = "Auto equip Payung when raining",
+        Flag = "auto_payung",
         Callback = function(enabled)
             autoPayungRunning = enabled
             if not enabled then return end
@@ -3490,6 +3565,7 @@ do
 
     AutomationTab:CreateToggle({
         Name = "Auto Shower (hygiene <= 50)",
+        Flag = "auto_shower",
         Callback = function(enabled)
             if hygieneSyncConnection then
                 hygieneSyncConnection:Disconnect()
@@ -3911,6 +3987,7 @@ do
 
     local BuyDropdown = ShopTab:CreateDropdown({
         Name = "Item",
+        Flag = "shop_buy_item",
         Options = buyItems,
         CurrentOption = {},
         Callback = function(value)
@@ -3944,6 +4021,7 @@ do
     ShopTab:CreateInput({
         Name = "Quantity",
         PlaceholderText = "Enter quantity",
+        Flag = "shop_buy_qty",
         CurrentValue = buyQty,
         Callback = function(value)
             buyQty = value
@@ -3982,6 +4060,7 @@ do
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds between auto buys",
+        Flag = "shop_buy_delay",
         CurrentValue = buyDelaySeconds,
         Callback = function(value)
             buyDelaySeconds = value
@@ -3990,6 +4069,7 @@ do
 
     ShopTab:CreateToggle({
         Name = "Auto Buy",
+        Flag = "shop_auto_buy",
         Callback = function(enabled)
             autoBuyRunning = enabled
             if not enabled then return end
@@ -4103,6 +4183,7 @@ do
 
     AutoSellCropsDropdown = ShopTab:CreateDropdown({
         Name = "Crop",
+        Flag = "shop_sell_crops",
         Options = autoSellCropsItems,
         CurrentOption = {},
         MultipleOptions = true,
@@ -4175,6 +4256,7 @@ do
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds between auto sell crop actions",
+        Flag = "shop_sell_crops_delay",
         CurrentValue = autoSellCropsDelaySeconds,
         Callback = function(value)
             autoSellCropsDelaySeconds = value
@@ -4183,6 +4265,7 @@ do
 
     ShopTab:CreateToggle({
         Name = "Auto Sell Crops",
+        Flag = "shop_auto_sell_crops",
         Callback = function(enabled)
             autoSellCropsRunning = enabled
             if not enabled then return end
@@ -4355,6 +4438,7 @@ do
 
     AutoSellFruitDropdown = ShopTab:CreateDropdown({
         Name = "Fruit",
+        Flag = "shop_sell_fruit",
         Options = AUTO_SELL_FRUIT_TYPES,
         CurrentOption = {},
         MultipleOptions = true,
@@ -4397,6 +4481,7 @@ do
 
     AutoSellFruitRarityDropdown = ShopTab:CreateDropdown({
         Name = "Rarity",
+        Flag = "shop_sell_fruit_rarity",
         Options = AUTO_SELL_FRUIT_RARITIES,
         CurrentOption = AUTO_SELL_FRUIT_RARITY_DEFAULT,
         MultipleOptions = true,
@@ -4614,6 +4699,7 @@ do
 
     AutoSellEggRarityDropdown = ShopTab:CreateDropdown({
         Name = "Rarity",
+        Flag = "shop_sell_egg_rarity",
         Options = AUTO_SELL_EGG_RARITIES,
         CurrentOption = AUTO_SELL_EGG_RARITY_DEFAULT,
         MultipleOptions = true,
