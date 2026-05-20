@@ -70,6 +70,10 @@ local function clearRayfieldDropdown(dropdown)
     end
 end
 
+-- Set by Auto Feed; used when loading configs (stable food labels, legacy qty strings).
+local normalizeAutoFeedFoodConfigValue: ((any) -> any)? = nil
+local syncAutoFeedFoodAfterConfigLoad: (() -> ())? = nil
+
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Slime RNG",
@@ -4198,15 +4202,24 @@ do
         return out
     end
 
-    local function mainFoodDropdownOptionLabel(displayName: string, xp: number, count: number): string
-        if count > 0 then
-            return ('%s  %d XP  x%d'):format(displayName, xp, count)
+    local function mainFoodDropdownOptionLabel(displayName: string, xp: number): string
+        return ('%s  %d XP'):format(displayName, xp)
+    end
+
+    local function mainFoodNameFromOptionLabel(opt: string): string
+        local trimmed = mainTrimGuiText(opt)
+        local name = string.match(trimmed, "^(.-)%s+%d+%s+XP")
+        if name then
+            return mainTrimGuiText(name)
         end
-        return ('%s  %d XP  x0'):format(displayName, xp)
+        local withoutQty = string.match(trimmed, "^(.-)%s+x%d+$")
+        if withoutQty then
+            return mainFoodNameFromOptionLabel(withoutQty)
+        end
+        return trimmed
     end
 
     local function mainBuildFoodDropdownOptions(): { string }
-        local owned = mainScanOwnedFoodByDisplayName()
         table.clear(autoFeedFoodOptionToId)
         local foods: { { id: string, name: string, xp: number } } = {}
         for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
@@ -4220,13 +4233,67 @@ do
         end)
         local opts: { string } = {}
         for _, food in ipairs(foods) do
-            local count = owned[food.name] or 0
-            local option = mainFoodDropdownOptionLabel(food.name, food.xp, count)
+            local option = mainFoodDropdownOptionLabel(food.name, food.xp)
             autoFeedFoodOptionToId[option] = food.id
             table.insert(opts, option)
         end
         return opts
     end
+
+    local function mainNormalizeAutoFeedFoodConfigValue(saved: any): any
+        if saved == nil then
+            return saved
+        end
+        mainBuildFoodDropdownOptions()
+        local nameToOption: { [string]: string } = {}
+        for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
+            nameToOption[food.name] = mainFoodDropdownOptionLabel(food.name, food.xp)
+        end
+        local function mapOne(raw: any): string?
+            if type(raw) ~= "string" or raw == "" then
+                return nil
+            end
+            if autoFeedFoodOptionToId[raw] then
+                return raw
+            end
+            local name = mainFoodNameFromOptionLabel(raw)
+            return nameToOption[name]
+        end
+        if type(saved) == "table" then
+            local out: { string } = {}
+            for _, v in ipairs(saved) do
+                local mapped = mapOne(v)
+                if mapped and not table.find(out, mapped) then
+                    table.insert(out, mapped)
+                end
+            end
+            return out
+        end
+        if type(saved) == "string" then
+            local mapped = mapOne(saved)
+            return mapped or saved
+        end
+        return saved
+    end
+
+    local function mainSyncAutoFeedFoodFromConfig(saved: any)
+        local normalized = mainNormalizeAutoFeedFoodConfigValue(saved)
+        selectedAutoFeedFoodIds = {}
+        local picked: { string } = {}
+        if type(normalized) == "table" then
+            picked = normalized
+        elseif type(normalized) == "string" and normalized ~= "" then
+            picked = { normalized }
+        end
+        for _, opt in ipairs(picked) do
+            local id = autoFeedFoodOptionToId[opt]
+            if id and not table.find(selectedAutoFeedFoodIds, id) then
+                table.insert(selectedAutoFeedFoodIds, id)
+            end
+        end
+    end
+
+    normalizeAutoFeedFoodConfigValue = mainNormalizeAutoFeedFoodConfigValue
 
     local function mainFoodDropdownOptionsForIds(ids: { string }): { string }
         local opts = mainBuildFoodDropdownOptions()
@@ -4271,9 +4338,21 @@ do
         if showNotify then
             mountNotify({
                 Title = "Auto Feed",
-                Content = "Food list updated (" .. tostring(#opts) .. " types, amounts from inventory).",
+                Content = "Food list updated (" .. tostring(#opts) .. " types).",
             })
         end
+    end
+
+    syncAutoFeedFoodAfterConfigLoad = function()
+        local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags["main_auto_feed_food_dropdown"]
+        if flagObj then
+            local saved = flagObj.CurrentValue
+            if saved == nil then
+                saved = flagObj.CurrentOption
+            end
+            mainSyncAutoFeedFoodFromConfig(saved)
+        end
+        refreshAutoFeedFoodDropdown(false)
     end
 
     local function mainHookConsumableItemButton(btn: Instance)
@@ -6002,12 +6081,18 @@ do
             if flagObj and type(flagObj.Set) == "function" then
                 local saved = data[flagName]
                 if saved ~= nil then
+                    if flagName == "main_auto_feed_food_dropdown" and normalizeAutoFeedFoodConfigValue then
+                        saved = normalizeAutoFeedFoodConfigValue(saved)
+                    end
                     local c = decodeColor3(saved)
                     pcall(function()
                         flagObj:Set(c or saved)
                     end)
                 end
             end
+        end
+        if syncAutoFeedFoodAfterConfigLoad then
+            task.defer(syncAutoFeedFoodAfterConfigLoad)
         end
         return true
     end
