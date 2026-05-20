@@ -4107,7 +4107,7 @@ do
     local autoFeedLoopToken = 0
     local AUTO_FEED_INTERVAL_SEC = 2.5
 
-    local function mainTrimGuiText(s: string): string
+    function mainTrimGuiText(s: string): string
         local t = string.gsub(s or "", "^%s+", "")
         t = string.gsub(t, "%s+$", "")
         t = string.gsub(t, "\r\n", " ")
@@ -4115,7 +4115,7 @@ do
         return t
     end
 
-    local function mainGuiInstanceTextContent(d: Instance): string
+    function mainGuiInstanceTextContent(d: Instance): string
         if d:IsA("TextLabel") then
             return (d :: TextLabel).Text
         end
@@ -4129,7 +4129,7 @@ do
     end
 
     -- …PlayerGui.Root.Inventory…DefaultItemsView.ConsumablesPanel.ConsumablesList
-    local CONSUMABLES_LIST_PATH = {
+    CONSUMABLES_LIST_PATH = {
         "Root",
         "Inventory",
         "PageItemsContent",
@@ -4139,7 +4139,7 @@ do
         "ConsumablesList",
     }
 
-    local function mainFindConsumablesList(): Instance?
+    function mainFindConsumablesList(): Instance?
         local lp = Players.LocalPlayer
         local pg = lp and lp:FindFirstChild("PlayerGui")
         if not pg then
@@ -4160,7 +4160,7 @@ do
         return pg:FindFirstChild("ConsumablesList", true)
     end
 
-    local function mainParseConsumableAmountText(s: string): number
+    function mainParseConsumableAmountText(s: string): number
         local t = mainTrimGuiText(s or "")
         local n = string.match(t, "[xX](%d+)")
         if n then
@@ -4170,7 +4170,7 @@ do
         return tonumber(n) or 0
     end
 
-    local function mainScanOwnedFoodByDisplayName(): { [string]: number }
+    function mainScanOwnedFoodByDisplayName(): { [string]: number }
         local out: { [string]: number } = {}
         local list = mainFindConsumablesList()
         if not list then
@@ -4202,11 +4202,11 @@ do
         return out
     end
 
-    local function mainFoodDropdownOptionLabel(displayName: string, xp: number): string
+    function mainFoodDropdownOptionLabel(displayName: string, xp: number): string
         return ('%s  %d XP'):format(displayName, xp)
     end
 
-    local function mainFoodNameFromOptionLabel(opt: string): string
+    function mainFoodNameFromOptionLabel(opt: string): string
         local trimmed = mainTrimGuiText(opt)
         local name = string.match(trimmed, "^(.-)%s+%d+%s+XP")
         if name then
@@ -4219,7 +4219,7 @@ do
         return trimmed
     end
 
-    local function mainBuildFoodDropdownOptions(): { string }
+    function mainBuildFoodDropdownOptions(): { string }
         table.clear(autoFeedFoodOptionToId)
         local foods: { { id: string, name: string, xp: number } } = {}
         for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
@@ -4240,7 +4240,7 @@ do
         return opts
     end
 
-    local function mainNormalizeAutoFeedFoodConfigValue(saved: any): any
+    function mainNormalizeAutoFeedFoodConfigValue(saved: any): any
         if saved == nil then
             return saved
         end
@@ -4276,7 +4276,7 @@ do
         return saved
     end
 
-    local function mainSyncAutoFeedFoodFromConfig(saved: any)
+    function mainSyncAutoFeedFoodFromConfig(saved: any)
         local normalized = mainNormalizeAutoFeedFoodConfigValue(saved)
         selectedAutoFeedFoodIds = {}
         local picked: { string } = {}
@@ -4307,7 +4307,7 @@ do
         return picked
     end
 
-    local function mainDisconnectConsumablesListeners()
+    function mainDisconnectConsumablesListeners()
         for _, c in ipairs(consumablesListConns) do
             c:Disconnect()
         end
@@ -4315,7 +4315,7 @@ do
         lastConsumablesList = nil
     end
 
-    local function refreshAutoFeedFoodDropdown(showNotify: boolean)
+    function refreshAutoFeedFoodDropdown(showNotify: boolean)
         local prevIds: { string } = {}
         for _, id in ipairs(selectedAutoFeedFoodIds) do
             table.insert(prevIds, id)
@@ -4355,7 +4355,7 @@ do
         refreshAutoFeedFoodDropdown(false)
     end
 
-    local function mainHookConsumableItemButton(btn: Instance)
+    function mainHookConsumableItemButton(btn: Instance)
         local amtFrame = btn:FindFirstChild("Amount")
         if not amtFrame then
             return
@@ -4368,7 +4368,7 @@ do
         end
     end
 
-    local function mainBindConsumablesListeners()
+    function mainBindConsumablesListeners()
         mainDisconnectConsumablesListeners()
         local list = mainFindConsumablesList()
         if not list then
@@ -4388,7 +4388,7 @@ do
         end
     end
 
-    local function mainEnsureConsumablesWatch()
+    function mainEnsureConsumablesWatch()
         local list = mainFindConsumablesList()
         if list and list ~= lastConsumablesList then
             mainBindConsumablesListeners()
@@ -4396,7 +4396,7 @@ do
         end
     end
 
-    local function mainAutoFeedActiveFoodIds(): { string }
+    function mainAutoFeedActiveFoodIds(): { string }
         local owned = mainScanOwnedFoodByDisplayName()
         local out: { string } = {}
         for _, id in ipairs(selectedAutoFeedFoodIds) do
@@ -4408,7 +4408,7 @@ do
         return out
     end
 
-    local function mainAutoFeedNextFoodId(): string?
+    function mainAutoFeedNextFoodId(): string?
         local ids = mainAutoFeedActiveFoodIds()
         if #ids == 0 then
             return nil
@@ -4417,7 +4417,7 @@ do
         return ids[autoFeedFoodCycleIndex]
     end
 
-    local function mainAutoFeedOwnedAmountForFoodId(foodId: string): number
+    function mainAutoFeedOwnedAmountForFoodId(foodId: string): number
         local def = AUTO_FEED_FOOD_BY_ID[foodId]
         if not def then
             return 0
