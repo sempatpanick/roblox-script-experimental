@@ -2826,6 +2826,24 @@ do
     end
     local areaPrefix = (LahanConfig and LahanConfig.AreaPrefix) or "AreaTanamBesar"
 
+    local function getOwnerIdFromInstance(obj)
+        local v = obj:GetAttribute("OwnerId")
+        if v ~= nil and type(v) == "number" then return v end
+        local c = obj:FindFirstChild("OwnerId")
+        if c and (c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("DoubleConstrainedValue")) then
+            return c.Value
+        end
+        return nil
+    end
+
+    local function isLandUnowned(partName)
+        local area = Workspace:FindFirstChild(partName)
+        if not area then
+            return false
+        end
+        return getOwnerIdFromInstance(area) == nil
+    end
+
     local function getRequestLahanRemote()
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         local tutorialRemotes = remotes and remotes:FindFirstChild("TutorialRemotes")
@@ -2996,7 +3014,7 @@ do
         end
         local choices = {}
         for _, name in ipairs(claimLandOptions) do
-            if name ~= "Random" then
+            if name ~= "Random" and isLandUnowned(name) then
                 table.insert(choices, name)
             end
         end
@@ -3063,16 +3081,6 @@ do
             end)
         end,
     })
-
-    local function getOwnerIdFromInstance(obj)
-        local v = obj:GetAttribute("OwnerId")
-        if v ~= nil and type(v) == "number" then return v end
-        local c = obj:FindFirstChild("OwnerId")
-        if c and (c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("DoubleConstrainedValue")) then
-            return c.Value
-        end
-        return nil
-    end
 
     local function appendInstanceAttributes(lines, obj, indent)
         indent = indent or "    "
