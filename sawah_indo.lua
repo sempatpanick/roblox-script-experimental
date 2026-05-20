@@ -72,8 +72,8 @@ local function clearRayfieldDropdown(dropdown)
     end
 end
 
-local getFarmPositionForConfig: (() -> Vector3)?
-local setFarmPositionFromConfig: (({ X: number, Y: number, Z: number }) -> ())?
+local getFarmPositionForConfig = nil
+local setFarmPositionFromConfig = nil
 
 local function getExecutorFireSignal()
     local fire = rawget(_G, "firesignal")
@@ -4539,6 +4539,7 @@ do
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds between auto sell fruit actions",
+        Flag = "shop_sell_fruit_delay",
         CurrentValue = autoSellFruitDelaySeconds,
         Callback = function(value)
             autoSellFruitDelaySeconds = value
@@ -4547,6 +4548,7 @@ do
 
     ShopTab:CreateToggle({
         Name = "Auto Sell Fruit",
+        Flag = "shop_auto_sell_fruit",
         Callback = function(enabled)
             autoSellFruitRunning = enabled
             if not enabled then return end
@@ -4753,6 +4755,7 @@ do
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds between auto sell egg actions",
+        Flag = "shop_sell_egg_delay",
         CurrentValue = autoSellEggDelaySeconds,
         Callback = function(value)
             autoSellEggDelaySeconds = value
@@ -4761,6 +4764,7 @@ do
 
     ShopTab:CreateToggle({
         Name = "Auto Sell Egg",
+        Flag = "shop_auto_sell_egg",
         Callback = function(enabled)
             autoSellEggRunning = enabled
             if not enabled then return end
@@ -4905,6 +4909,7 @@ do
 
     AutoSellMilkRarityDropdown = ShopTab:CreateDropdown({
         Name = "Rarity",
+        Flag = "shop_sell_milk_rarity",
         Options = AUTO_SELL_MILK_RARITIES,
         CurrentOption = AUTO_SELL_MILK_RARITY_DEFAULT,
         MultipleOptions = true,
@@ -4958,6 +4963,7 @@ do
     ShopTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds between auto sell milk actions",
+        Flag = "shop_sell_milk_delay",
         CurrentValue = autoSellMilkDelaySeconds,
         Callback = function(value)
             autoSellMilkDelaySeconds = value
@@ -4966,6 +4972,7 @@ do
 
     ShopTab:CreateToggle({
         Name = "Auto Sell Milk",
+        Flag = "shop_auto_sell_milk",
         Callback = function(enabled)
             autoSellMilkRunning = enabled
             if not enabled then return end
@@ -5142,6 +5149,7 @@ do
 
     GiftPlayerDropdown = ShopTab:CreateDropdown({
         Name = "Player",
+        Flag = "shop_gift_player",
         Options = giftPlayerDisplayNames,
         CurrentOption = {},
         Search = true,
@@ -5159,6 +5167,7 @@ do
 
     GiftPassDropdown = ShopTab:CreateDropdown({
         Name = "Passes",
+        Flag = "shop_gift_pass",
         Options = giftPassDisplayOptions,
         CurrentOption = {},
         Search = true,
@@ -6138,4 +6147,580 @@ do
         end,
     })
 
+end
+
+-- */  Config Tab  /* --
+do
+    local ConfigTab = Window:CreateTab("Config", 4483362458)
+
+    ConfigTab:CreateSection("Config management")
+    local CONFIG_DIR = "sempatpanick/sawah_indo"
+    local configMgmtName = ""
+    local savedConfigList = {}
+    local selectedSavedConfigName = nil
+    local SavedConfigsDropdown
+    local ConfigNameInput
+    local autoLoadPickerSelection = nil
+    local AutoLoadSavedDropdown
+
+    local function sanitizeConfigName(raw)
+        local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        s = s:gsub("[/\\]", "")
+        return s
+    end
+
+    local function ensureConfigFolder()
+        if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(CONFIG_DIR) then
+            pcall(function()
+                makefolder("sempatpanick")
+            end)
+            pcall(function()
+                makefolder(CONFIG_DIR)
+            end)
+        end
+    end
+
+    local function profilePath(name)
+        return CONFIG_DIR .. "/" .. sanitizeConfigName(name) .. ".json"
+    end
+
+    local function encodeColor3(c)
+        return {
+            __type = "Color3",
+            R = math.floor(c.R * 255 + 0.5),
+            G = math.floor(c.G * 255 + 0.5),
+            B = math.floor(c.B * 255 + 0.5),
+        }
+    end
+
+    local function decodeColor3(v)
+        if type(v) == "table" and v.__type == "Color3" then
+            return Color3.fromRGB(tonumber(v.R) or 255, tonumber(v.G) or 255, tonumber(v.B) or 255)
+        end
+        return nil
+    end
+
+    local function collectCurrentConfigData()
+        local data = {}
+        for flagName, flagObj in pairs(RayfieldLibrary.Flags or {}) do
+            local value
+            if flagObj.Type == "ColorPicker" and flagObj.Color then
+                value = encodeColor3(flagObj.Color)
+            else
+                value = flagObj.CurrentValue
+                if value == nil then value = flagObj.CurrentKeybind end
+                if value == nil then value = flagObj.CurrentOption end
+                if value == nil then value = flagObj.Color end
+                if typeof(value) == "Color3" then
+                    value = encodeColor3(value)
+                end
+            end
+            data[flagName] = value
+        end
+        if getFarmPositionForConfig then
+            local pos = getFarmPositionForConfig()
+            if pos then
+                data["_farm_position"] = { X = pos.X, Y = pos.Y, Z = pos.Z }
+            end
+        end
+        return data
+    end
+
+    local function applyConfigData(data)
+        if type(data) ~= "table" then
+            return false
+        end
+        for flagName, _ in pairs(data) do
+            if flagName == "_farm_position" then
+                continue
+            end
+            local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags[flagName]
+            if flagObj and type(flagObj.Set) == "function" then
+                local saved = data[flagName]
+                if saved ~= nil then
+                    local c = decodeColor3(saved)
+                    pcall(function()
+                        flagObj:Set(c or saved)
+                    end)
+                end
+            end
+        end
+        if setFarmPositionFromConfig and data._farm_position then
+            setFarmPositionFromConfig(data._farm_position)
+        end
+        return true
+    end
+
+    local function listProfiles()
+        local names = {}
+        if type(listfiles) ~= "function" then
+            return names
+        end
+        ensureConfigFolder()
+        local ok, files = pcall(function()
+            return listfiles(CONFIG_DIR)
+        end)
+        if not ok or type(files) ~= "table" then
+            return names
+        end
+        for _, filePath in ipairs(files) do
+            local normalized = tostring(filePath):gsub("\\", "/")
+            local base = normalized:match("([^/]+)$")
+            if base and base:sub(-5) == ".json" and base ~= "sawah_indo_autoload.json" then
+                table.insert(names, base:sub(1, -6))
+            end
+        end
+        table.sort(names)
+        return names
+    end
+
+    local function createConfigObject(name)
+        local trimmed = sanitizeConfigName(name)
+        return {
+            Save = function()
+                ensureConfigFolder()
+                if type(writefile) ~= "function" then
+                    error("writefile is not available")
+                end
+                writefile(profilePath(trimmed), HttpService:JSONEncode(collectCurrentConfigData()))
+            end,
+            Load = function()
+                if type(isfile) ~= "function" or type(readfile) ~= "function" then
+                    return false, "Config system unavailable (missing file APIs)"
+                end
+                local path = profilePath(trimmed)
+                if not isfile(path) then
+                    return false, "Config file not found or invalid"
+                end
+                local okRead, rawOrErr = pcall(function()
+                    return readfile(path)
+                end)
+                if not okRead then
+                    return false, tostring(rawOrErr)
+                end
+                local okDecode, decoded = pcall(function()
+                    return HttpService:JSONDecode(rawOrErr)
+                end)
+                if not okDecode then
+                    return false, "Config file not found or invalid"
+                end
+                applyConfigData(decoded)
+                return true
+            end,
+        }
+    end
+
+    local function getConfigManager()
+        if type(writefile) ~= "function" and type(readfile) ~= "function" then
+            return nil
+        end
+        ensureConfigFolder()
+        return {
+            Path = CONFIG_DIR .. "/",
+            AllConfigs = function()
+                return listProfiles()
+            end,
+            GetConfig = function(_, _)
+                return nil
+            end,
+            Config = function(_, name, _)
+                return createConfigObject(name)
+            end,
+            DeleteConfig = function(_, name)
+                if type(delfile) ~= "function" or type(isfile) ~= "function" then
+                    return false, "Delete is unavailable (missing file APIs)"
+                end
+                local path = profilePath(name)
+                if not isfile(path) then
+                    return false, "Config file not found"
+                end
+                local ok, err = pcall(function()
+                    delfile(path)
+                end)
+                if not ok then
+                    return false, tostring(err)
+                end
+                return true, 'Deleted "' .. sanitizeConfigName(name) .. '"'
+            end,
+        }
+    end
+
+    local function autoLoadMetaPath(cm)
+        return (cm.Path or "") .. "sawah_indo_autoload.json"
+    end
+
+    local function readAutoLoadPersistedName()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" or type(readfile) ~= "function" then
+            return ""
+        end
+        local path = autoLoadMetaPath(cm)
+        if not isfile(path) then
+            return ""
+        end
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile(path))
+        end)
+        if ok and type(data) == "table" then
+            return sanitizeConfigName(tostring(data.name or data.profile or ""))
+        end
+        return ""
+    end
+
+    local function writeAutoLoadPersistedName(name)
+        local cm = getConfigManager()
+        if not cm or type(writefile) ~= "function" then
+            return false
+        end
+        local path = autoLoadMetaPath(cm)
+        local trimmed = sanitizeConfigName(name)
+        if trimmed == "" then
+            if type(delfile) == "function" and type(isfile) == "function" and isfile(path) then
+                pcall(function()
+                    delfile(path)
+                end)
+            end
+            return true
+        end
+        local ok = pcall(function()
+            writefile(path, HttpService:JSONEncode({ name = trimmed }))
+        end)
+        return ok
+    end
+
+    local function refreshSavedConfigDropdowns(showNotify)
+        local cm = getConfigManager()
+        if not cm then
+            if showNotify then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                })
+            end
+            return
+        end
+        savedConfigList = cm:AllConfigs() or {}
+        table.sort(savedConfigList)
+        if SavedConfigsDropdown and SavedConfigsDropdown.Refresh then
+            SavedConfigsDropdown:Refresh(savedConfigList)
+        end
+        if AutoLoadSavedDropdown and AutoLoadSavedDropdown.Refresh then
+            AutoLoadSavedDropdown:Refresh(savedConfigList)
+        end
+        if autoLoadPickerSelection and not table.find(savedConfigList, autoLoadPickerSelection) then
+            autoLoadPickerSelection = nil
+            clearRayfieldDropdown(AutoLoadSavedDropdown)
+        end
+        if selectedSavedConfigName and not table.find(savedConfigList, selectedSavedConfigName) then
+            selectedSavedConfigName = nil
+            clearRayfieldDropdown(SavedConfigsDropdown)
+        end
+        if showNotify then
+            mountNotify({
+                Title = "Config",
+                Content = "Found " .. tostring(#savedConfigList) .. " saved profile(s).",
+            })
+        end
+    end
+
+    ConfigNameInput = ConfigTab:CreateInput({
+        Name = "Config name",
+        PlaceholderText = "e.g. main or farm",
+        CurrentValue = configMgmtName,
+        Callback = function(value)
+            configMgmtName = sanitizeConfigName(value)
+        end,
+    })
+
+    SavedConfigsDropdown = ConfigTab:CreateDropdown({
+        Name = "Config Saved",
+        Options = savedConfigList,
+        CurrentOption = {},
+        Search = true,
+        Callback = function(opts)
+            local value = rayfieldDropdownFirst(opts)
+            selectedSavedConfigName = (value and value ~= "") and value or nil
+            if value and value ~= "" then
+                configMgmtName = sanitizeConfigName(value)
+                if ConfigNameInput and ConfigNameInput.Set then
+                    ConfigNameInput:Set(configMgmtName)
+                elseif ConfigNameInput and ConfigNameInput.SetValue then
+                    ConfigNameInput:SetValue(configMgmtName)
+                end
+            end
+        end,
+    })
+
+    local function isWindUIConfigObject(v)
+        return type(v) == "table" and type(v.Save) == "function" and type(v.Load) == "function"
+    end
+
+    local function getConfigObject(cm, name)
+        local existing = cm:GetConfig(name)
+        if isWindUIConfigObject(existing) then
+            return existing
+        end
+        return cm:Config(name, false)
+    end
+
+    local function syncPersistedAutoLoadToUi()
+        if not AutoLoadSavedDropdown then
+            return
+        end
+        local persisted = readAutoLoadPersistedName()
+        if persisted == "" or not table.find(savedConfigList, persisted) then
+            return
+        end
+        autoLoadPickerSelection = persisted
+        if AutoLoadSavedDropdown.Set then
+            AutoLoadSavedDropdown:Set({ persisted })
+        elseif AutoLoadSavedDropdown.Select then
+            AutoLoadSavedDropdown:Select(persisted)
+        end
+    end
+
+    local function runStartupAutoLoadProfile()
+        local cm = getConfigManager()
+        if not cm or type(isfile) ~= "function" then
+            return
+        end
+        local name = readAutoLoadPersistedName()
+        if name == "" then
+            return
+        end
+        if not isfile(cm.Path .. name .. ".json") then
+            return
+        end
+        local cfg = getConfigObject(cm, name)
+        if Window.SetCurrentConfig then
+            Window:SetCurrentConfig(cfg)
+        end
+        local pok, loadResult, loadErr = pcall(function()
+            return cfg:Load()
+        end)
+        if not pok then
+            warn("[Sawah Indo] Auto-load failed: ", loadResult)
+            return
+        end
+        if loadResult == false then
+            warn("[Sawah Indo] Auto-load: ", loadErr)
+            return
+        end
+        mountNotify({
+            Title = "Config",
+            Content = 'Auto-loaded "' .. name .. '"',
+        })
+    end
+
+    ConfigTab:CreateButton({
+        Name = "Refresh Config",
+        Callback = function()
+            refreshSavedConfigDropdowns(true)
+        end,
+    })
+    ConfigTab:CreateButton({
+        Name = "Save Config",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                mountNotify({ Title = "Config", Content = "Enter a config name first" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            if Window.SetCurrentConfig then
+                Window:SetCurrentConfig(cfg)
+            end
+            local cfgPath = cm.Path .. name .. ".json"
+            if type(isfile) == "function" and isfile(cfgPath) and type(delfile) == "function" then
+                pcall(function()
+                    delfile(cfgPath)
+                end)
+            end
+            local ok, err = pcall(function()
+                cfg:Save()
+            end)
+            if not ok then
+                mountNotify({ Title = "Config", Content = "Save failed: " .. tostring(err) })
+                return
+            end
+            refreshSavedConfigDropdowns(false)
+            mountNotify({ Title = "Config", Content = 'Saved "' .. name .. '"' })
+        end,
+    })
+
+    ConfigTab:CreateButton({
+        Name = "Load Config",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                })
+                return
+            end
+            local name = sanitizeConfigName(configMgmtName)
+            if name == "" then
+                mountNotify({ Title = "Config", Content = "Enter or select a config name first" })
+                return
+            end
+            local cfg = getConfigObject(cm, name)
+            if Window.SetCurrentConfig then
+                Window:SetCurrentConfig(cfg)
+            end
+            local pok, loadResult, loadErr = pcall(function()
+                return cfg:Load()
+            end)
+            if not pok then
+                mountNotify({ Title = "Config", Content = "Load failed: " .. tostring(loadResult) })
+                return
+            end
+            if loadResult == false then
+                mountNotify({
+                    Title = "Config",
+                    Content = type(loadErr) == "string" and loadErr or "Config file not found or invalid",
+                })
+                return
+            end
+            mountNotify({ Title = "Config", Content = 'Loaded "' .. name .. '"' })
+        end,
+    })
+    ConfigTab:CreateButton({
+        Name = "Delete Config",
+        Callback = function()
+            local cm = getConfigManager()
+            if not cm then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                })
+                return
+            end
+            if not selectedSavedConfigName or selectedSavedConfigName == "" then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                })
+                return
+            end
+            local name = sanitizeConfigName(selectedSavedConfigName)
+            if name == "" then
+                mountNotify({
+                    Title = "Config",
+                    Content = "Select a config to delete",
+                })
+                return
+            end
+            local okDel, msg = cm:DeleteConfig(name)
+            refreshSavedConfigDropdowns(false)
+            if okDel then
+                if readAutoLoadPersistedName() == name then
+                    writeAutoLoadPersistedName("")
+                    autoLoadPickerSelection = nil
+                    clearRayfieldDropdown(AutoLoadSavedDropdown)
+                end
+                selectedSavedConfigName = nil
+                clearRayfieldDropdown(SavedConfigsDropdown)
+                if sanitizeConfigName(configMgmtName) == name then
+                    configMgmtName = ""
+                    if ConfigNameInput and ConfigNameInput.Set then
+                        ConfigNameInput:Set("")
+                    elseif ConfigNameInput and ConfigNameInput.SetValue then
+                        ConfigNameInput:SetValue("")
+                    end
+                end
+                mountNotify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or ('Deleted "' .. name .. '"'),
+                })
+            else
+                mountNotify({
+                    Title = "Config",
+                    Content = type(msg) == "string" and msg or "Delete failed",
+                })
+            end
+        end,
+    })
+    ConfigTab:CreateSection("Auto Load")
+    AutoLoadSavedDropdown = ConfigTab:CreateDropdown({
+        Name = "Config Saved",
+        Options = savedConfigList,
+        CurrentOption = {},
+        Search = true,
+        Callback = function(opts)
+            local value = rayfieldDropdownFirst(opts)
+            autoLoadPickerSelection = (value and value ~= "") and value or nil
+        end,
+    })
+    ConfigTab:CreateButton({
+        Name = "Set",
+        Callback = function()
+            if not autoLoadPickerSelection or autoLoadPickerSelection == "" then
+                mountNotify({
+                    Title = "Auto Load",
+                    Content = "Select a config in Config Saved first",
+                })
+                return
+            end
+            local cm = getConfigManager()
+            if not cm then
+                mountNotify({
+                    Title = "Auto Load",
+                    Content = "Config system unavailable (Studio or missing file APIs).",
+                })
+                return
+            end
+            local pick = sanitizeConfigName(autoLoadPickerSelection)
+            if pick == "" or not table.find(savedConfigList, pick) then
+                mountNotify({
+                    Title = "Auto Load",
+                    Content = "Selected profile is not in the list (try Refresh Config)",
+                })
+                return
+            end
+            if not isfile or not isfile(cm.Path .. pick .. ".json") then
+                mountNotify({
+                    Title = "Auto Load",
+                    Content = "That config file is not on disk yet (Save Config first)",
+                })
+                return
+            end
+            if not writeAutoLoadPersistedName(pick) then
+                mountNotify({ Title = "Auto Load", Content = "Failed to write autoload file" })
+                return
+            end
+            mountNotify({
+                Title = "Auto Load",
+                Content = 'Next run will load "' .. pick .. '"',
+            })
+        end,
+    })
+    ConfigTab:CreateButton({
+        Name = "Reset",
+        Callback = function()
+            writeAutoLoadPersistedName("")
+            autoLoadPickerSelection = nil
+            clearRayfieldDropdown(AutoLoadSavedDropdown)
+            mountNotify({
+                Title = "Auto Load",
+                Content = "Auto-load on startup disabled",
+            })
+        end,
+    })
+
+    refreshSavedConfigDropdowns(false)
+    syncPersistedAutoLoadToUi()
+
+    task.defer(function()
+        task.wait(0.45)
+        runStartupAutoLoadProfile()
+    end)
 end
