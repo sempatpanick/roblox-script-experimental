@@ -5387,6 +5387,69 @@ do
         end,
     })
 
+    ShopTab:CreateButton({
+        Name = "Gift All Passes to All Players",
+        Callback = function()
+            task.spawn(function()
+                refreshGiftPlayerList(false)
+                local totalPlayers = #giftPlayerList
+                local totalPasses = #giftPassCatalog
+                if totalPlayers == 0 then
+                    mountNotify({ Title = "Gift All to All", Content = "No other players in server", Icon = "x" })
+                    return
+                end
+                if totalPasses == 0 then
+                    mountNotify({ Title = "Gift All to All", Content = "No giftable passes in catalog", Icon = "x" })
+                    return
+                end
+                local sent = 0
+                local skipped = 0
+                for _, targetPlayer in ipairs(giftPlayerList) do
+                    if not targetPlayer.Parent then
+                        skipped += totalPasses
+                        continue
+                    end
+                    local playerLabel = giftPlayerDropdownLabel(targetPlayer)
+                    for _, pass in ipairs(giftPassCatalog) do
+                        if not targetPlayer.Parent then
+                            break
+                        end
+                        local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                        if ok then
+                            sent += 1
+                        else
+                            skipped += 1
+                            if err ~= "ALREADY_OWNED" then
+                                mountNotify({
+                                    Title = "Gift All to All",
+                                    Content = string.format(
+                                        "%s / %s: %s",
+                                        playerLabel,
+                                        pass.displayName or pass.Name,
+                                        tostring(err)
+                                    ),
+                                    Icon = "x",
+                                })
+                            end
+                        end
+                        task.wait(GIFT_ALL_DELAY_SECONDS)
+                    end
+                end
+                mountNotify({
+                    Title = "Gift All to All",
+                    Content = string.format(
+                        "Finished: %d sent, %d skipped (%d players × %d passes)",
+                        sent,
+                        skipped,
+                        totalPlayers,
+                        totalPasses
+                    ),
+                    Icon = sent > 0 and "check" or "x",
+                })
+            end)
+        end,
+    })
+
     Players.PlayerAdded:Connect(function(player)
         if player ~= Players.LocalPlayer then
             refreshGiftPlayerList(false)
