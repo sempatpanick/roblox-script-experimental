@@ -5229,14 +5229,22 @@ do
         return targetPlayer:GetAttribute("GP_" .. pass.Name) == true
     end
 
-    local function giftPassToPlayer(targetPlayer, pass, showSuccessNotify)
+    local function giftPassDelayAfterAttempt(err)
+        if err ~= "ALREADY_OWNED" then
+            task.wait(GIFT_ALL_DELAY_SECONDS)
+        end
+    end
+
+    local function giftPassToPlayer(targetPlayer, pass, showSuccessNotify, suppressAlreadyOwnedNotify)
         if playerOwnsGiftPass(targetPlayer, pass) then
-            local passLabel = pass.displayName or pass.Name
-            local playerLabel = giftPlayerDropdownLabel(targetPlayer)
-            mountNotify({
-                Title = "Gift Game Pass",
-                Content = string.format("%s already owns %s", playerLabel, passLabel),
-            })
+            if not suppressAlreadyOwnedNotify then
+                local passLabel = pass.displayName or pass.Name
+                local playerLabel = giftPlayerDropdownLabel(targetPlayer)
+                mountNotify({
+                    Title = "Gift Game Pass",
+                    Content = string.format("%s already owns %s", playerLabel, passLabel),
+                })
+            end
             return false, "ALREADY_OWNED"
         end
 
@@ -5304,7 +5312,7 @@ do
                     if not targetPlayer.Parent then
                         break
                     end
-                    local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                    local ok, err = giftPassToPlayer(targetPlayer, pass, false, true)
                     if ok then
                         sent = sent + 1
                     else
@@ -5317,7 +5325,7 @@ do
                             })
                         end
                     end
-                    task.wait(GIFT_ALL_DELAY_SECONDS)
+                    giftPassDelayAfterAttempt(err)
                 end
                 mountNotify({
                     Title = "Gift All",
@@ -5356,7 +5364,7 @@ do
                     if not targetPlayer.Parent then
                         skipped = skipped + 1
                     else
-                        local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                        local ok, err = giftPassToPlayer(targetPlayer, pass, false, true)
                         if ok then
                             sent = sent + 1
                         else
@@ -5369,8 +5377,8 @@ do
                                 })
                             end
                         end
+                        giftPassDelayAfterAttempt(err)
                     end
-                    task.wait(GIFT_ALL_DELAY_SECONDS)
                 end
                 mountNotify({
                     Title = "Gift to All",
@@ -5414,7 +5422,7 @@ do
                         if not targetPlayer.Parent then
                             break
                         end
-                        local ok, err = giftPassToPlayer(targetPlayer, pass, false)
+                        local ok, err = giftPassToPlayer(targetPlayer, pass, false, true)
                         if ok then
                             sent += 1
                         else
@@ -5432,7 +5440,7 @@ do
                                 })
                             end
                         end
-                        task.wait(GIFT_ALL_DELAY_SECONDS)
+                        giftPassDelayAfterAttempt(err)
                     end
                 end
                 mountNotify({
