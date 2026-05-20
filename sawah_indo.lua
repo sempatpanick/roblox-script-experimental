@@ -2033,6 +2033,14 @@ do
         return maxCount and tonumber(maxCount) or nil
     end
 
+    local function getDefaultFarmCropMaxCount()
+        local player = Players.LocalPlayer
+        if player and player:GetAttribute("GP_ExtraSlots") == true then
+            return 25
+        end
+        return 15
+    end
+
     local function countLocalPlayerActiveCrops()
         return #refreshAllCropsByLocalPlayer()
     end
@@ -2235,7 +2243,7 @@ do
     -- Farm position: default until user sets current position
     local DEFAULT_FARM_POSITION = Vector3.new(-169.41416931152, 39.296875, -287.59017944336)
     local farmPosition = DEFAULT_FARM_POSITION
-    local farmCropMaxCount = nil
+    local farmCropMaxCount = getDefaultFarmCropMaxCount()
     local selectedFarmStyle = "Default"
 
     local function getFarmPosition()
@@ -2289,6 +2297,10 @@ do
         farmCropMaxCount = maxCount
         updateFarmInfoParagraph()
     end
+
+    Players.LocalPlayer:GetAttributeChangedSignal("GP_ExtraSlots"):Connect(function()
+        setFarmCropMaxCount(getDefaultFarmCropMaxCount())
+    end)
 
     FarmTab:CreateSection("Section")
     FarmTab:CreateButton({
