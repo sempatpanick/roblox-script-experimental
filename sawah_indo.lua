@@ -5274,6 +5274,124 @@ do
         return true
     end
 
+    local GIFT_ALL_TO_ALL_LOG_FILE = "sawah_indo_gift_all_" .. tostring(game.PlaceId) .. ".json"
+    local giftAllToAllRunning = false
+    local giftAllPassQueue = {}
+    local giftAllPassLog = {
+        alreadyOwned = {},
+        sent = {},
+    }
+
+    local function giftAllPassQueueKey(player, pass)
+        return tostring(player.UserId) .. "_" .. pass.Name
+    end
+
+    local function loadGiftAllPassLog()
+        giftAllPassLog.alreadyOwned = {}
+        giftAllPassLog.sent = {}
+        if type(readfile) ~= "function" or type(isfile) ~= "function" then
+            return
+        end
+        if not isfile(GIFT_ALL_TO_ALL_LOG_FILE) then
+            return
+        end
+        local ok, raw = pcall(readfile, GIFT_ALL_TO_ALL_LOG_FILE)
+        if not ok or type(raw) ~= "string" then
+            return
+        end
+        local okDecode, data = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if not okDecode or type(data) ~= "table" then
+            return
+        end
+        if type(data.alreadyOwned) == "table" then
+            for _, key in ipairs(data.alreadyOwned) do
+                if type(key) == "string" then
+                    giftAllPassLog.alreadyOwned[key] = true
+                end
+            end
+        end
+        if type(data.sent) == "table" then
+            for _, key in ipairs(data.sent) do
+                if type(key) == "string" then
+                    giftAllPassLog.sent[key] = true
+                end
+            end
+        end
+    end
+
+    local function saveGiftAllPassLog()
+        if type(writefile) ~= "function" then
+            return
+        end
+        local alreadyOwnedList = {}
+        local sentList = {}
+        for key in pairs(giftAllPassLog.alreadyOwned) do
+            table.insert(alreadyOwnedList, key)
+        end
+        table.sort(alreadyOwnedList)
+        for key in pairs(giftAllPassLog.sent) do
+            table.insert(sentList, key)
+        end
+        table.sort(sentList)
+        pcall(writefile, GIFT_ALL_TO_ALL_LOG_FILE, HttpService:JSONEncode({
+            alreadyOwned = alreadyOwnedList,
+            sent = sentList,
+        }))
+    end
+
+    local function giftAllPassLogContains(key)
+        return giftAllPassLog.alreadyOwned[key] == true or giftAllPassLog.sent[key] == true
+    end
+
+    local function parseGiftAllPassQueueKey(key)
+        if type(key) ~= "string" then
+            return nil, nil
+        end
+        local userIdStr, passName = key:match("^(%d+)_(.+)$")
+        if not userIdStr then
+            return nil, nil
+        end
+        return tonumber(userIdStr), passName
+    end
+
+    local function findGiftPlayerByUserId(userId)
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.UserId == userId then
+                return player
+            end
+        end
+        return nil
+    end
+
+    local function findGiftPassByName(passName)
+        for _, pass in ipairs(giftPassCatalog) do
+            if pass.Name == passName then
+                return pass
+            end
+        end
+        return nil
+    end
+
+    local function rebuildGiftAllPassQueue()
+        refreshGiftPlayerList(false)
+        local newQueue = {}
+        local seen = {}
+        for _, player in ipairs(giftPlayerList) do
+            for _, pass in ipairs(giftPassCatalog) do
+                local key = giftAllPassQueueKey(player, pass)
+                if not giftAllPassLogContains(key) and not seen[key] then
+                    seen[key] = true
+                    table.insert(newQueue, key)
+                end
+            end
+        end
+        giftAllPassQueue = newQueue
+    end
+
+    loadGiftAllPassLog()
+
     ShopTab:CreateButton({
         Name = "Gift Passes",
         Callback = function()
@@ -5395,65 +5513,74 @@ do
         end,
     })
 
-    ShopTab:CreateButton({
+    ShopTab:CreateToggle({
         Name = "Gift All Passes to All Players",
-        Callback = function()
+        Flag = "shop_gift_all_to_all",
+        Callback = function(enabled)
+            giftAllToAllRunning = enabled
+            if not enabled then
+                saveGiftAllPassLog()
+                return
+            end
             task.spawn(function()
-                refreshGiftPlayerList(false)
-                local totalPlayers = #giftPlayerList
-                local totalPasses = #giftPassCatalog
-                if totalPlayers == 0 then
-                    mountNotify({ Title = "Gift All to All", Content = "No other players in server", Icon = "x" })
-                    return
-                end
-                if totalPasses == 0 then
-                    mountNotify({ Title = "Gift All to All", Content = "No giftable passes in catalog", Icon = "x" })
-                    return
-                end
-                local sent = 0
-                local skipped = 0
-                for _, targetPlayer in ipairs(giftPlayerList) do
-                    if not targetPlayer.Parent then
-                        skipped += totalPasses
-                        continue
+                loadGiftAllPassLog()
+                while giftAllToAllRunning do
+                    if #giftPassCatalog == 0 then
+                        mountNotify({
+                            Title = "Gift All to All",
+                            Content = "No giftable passes in catalog",
+                            Icon = "x",
+                        })
+                        giftAllToAllRunning = false
+                        break
                     end
-                    local playerLabel = giftPlayerDropdownLabel(targetPlayer)
-                    for _, pass in ipairs(giftPassCatalog) do
-                        if not targetPlayer.Parent then
-                            break
-                        end
-                        local ok, err = giftPassToPlayer(targetPlayer, pass, false, true)
-                        if ok then
-                            sent += 1
-                        else
-                            skipped += 1
-                            if err ~= "ALREADY_OWNED" then
-                                mountNotify({
-                                    Title = "Gift All to All",
-                                    Content = string.format(
-                                        "%s / %s: %s",
-                                        playerLabel,
-                                        pass.displayName or pass.Name,
-                                        tostring(err)
-                                    ),
-                                    Icon = "x",
-                                })
+                    rebuildGiftAllPassQueue()
+                    if #giftAllPassQueue == 0 then
+                        task.wait(2)
+                    else
+                        for _, key in ipairs(giftAllPassQueue) do
+                            if not giftAllToAllRunning then
+                                break
+                            end
+                            if giftAllPassLogContains(key) then
+                                continue
+                            end
+                            local userId, passName = parseGiftAllPassQueueKey(key)
+                            local targetPlayer = userId and findGiftPlayerByUserId(userId)
+                            local pass = passName and findGiftPassByName(passName)
+                            if not targetPlayer or not pass then
+                                continue
+                            end
+                            if playerOwnsGiftPass(targetPlayer, pass) then
+                                giftAllPassLog.alreadyOwned[key] = true
+                                saveGiftAllPassLog()
+                            else
+                                local ok, err = giftPassToPlayer(targetPlayer, pass, false, true)
+                                if ok then
+                                    giftAllPassLog.sent[key] = true
+                                    saveGiftAllPassLog()
+                                elseif err == "ALREADY_OWNED" then
+                                    giftAllPassLog.alreadyOwned[key] = true
+                                    saveGiftAllPassLog()
+                                else
+                                    mountNotify({
+                                        Title = "Gift All to All",
+                                        Content = string.format(
+                                            "%s / %s: %s",
+                                            giftPlayerDropdownLabel(targetPlayer),
+                                            pass.displayName or pass.Name,
+                                            tostring(err)
+                                        ),
+                                        Icon = "x",
+                                    })
+                                end
+                                giftPassDelayAfterAttempt(err)
                             end
                         end
-                        giftPassDelayAfterAttempt(err)
+                        task.wait(1)
                     end
                 end
-                mountNotify({
-                    Title = "Gift All to All",
-                    Content = string.format(
-                        "Finished: %d sent, %d skipped (%d players × %d passes)",
-                        sent,
-                        skipped,
-                        totalPlayers,
-                        totalPasses
-                    ),
-                    Icon = sent > 0 and "check" or "x",
-                })
+                saveGiftAllPassLog()
             end)
         end,
     })
