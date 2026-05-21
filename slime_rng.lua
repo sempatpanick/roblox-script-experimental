@@ -2729,6 +2729,7 @@ do
     local autoGunLoopToken = 0
     local autoGunEnemyListenerConns: { RBXScriptConnection } = {}
     local autoGunEnemyRefreshScheduled = false
+    local autoGunEnemiesListMaxLines = 0
 
     local EnemiesListParagraph = MainTab:CreateParagraph({
         Title = "Enemies",
@@ -2955,9 +2956,15 @@ do
         if #rows == 0 then
             return "Enemies folder(s) found, but no numeric enemy uids yet."
         end
+        if #rows > autoGunEnemiesListMaxLines then
+            autoGunEnemiesListMaxLines = #rows
+        end
         local lines: { string } = {}
         for _, row in ipairs(rows) do
             table.insert(lines, mainFormatEnemyListLine(row))
+        end
+        while #lines < autoGunEnemiesListMaxLines do
+            table.insert(lines, " ")
         end
         return table.concat(lines, "\n")
     end
