@@ -11,14 +11,14 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 
-return function(windowRef, notifyFn, recordingsDir)
+local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     local RecordingTab = windowRef:CreateTab("Recording", 4483362458)
 
     RecordingTab:CreateSection("Record Roblox Activities")
 
     local RECORDINGS_DIR = recordingsDir
     local RECORDING_SAMPLE_INTERVAL = 0.1
-    local function resolveExecutorFn(name: string)
+    local function resolveExecutorFn(name)
         local v = rawget(_G, name)
         if type(v) == "function" then
             return v
@@ -68,9 +68,9 @@ return function(windowRef, notifyFn, recordingsDir)
     local recordingPlayersDropdown
     local RECORDING_PLAYER_NONE = "(Select player)"
     local recordingPlayerOptions = { RECORDING_PLAYER_NONE }
-    local recordingPlayerDisplayToUserId: { [string]: number } = {}
-    local selectedRecordingPlayerUserId: number? = nil
-    local selectedRecordingPlayerName: string? = nil
+    local recordingPlayerDisplayToUserId = {}
+    local selectedRecordingPlayerUserId = nil
+    local selectedRecordingPlayerName = nil
     local savedRecordingsDropdown
     local savedRecordingStatusParagraph
     local selectedSavedRecordingPath = nil
@@ -79,10 +79,10 @@ return function(windowRef, notifyFn, recordingsDir)
     local playbackStartedAt = 0
     local playbackHumanoid = nil
     local playbackAutoRotateRestore = nil
-    local playbackKeysDown: { [Enum.KeyCode]: boolean } = {}
+    local playbackKeysDown = {}
     local SAVED_RECORDING_NONE = "(None)"
     local refreshRecordingPlayersDropdown = function() end
-    local refreshSavedRecordingsDropdown = function(_showNotify: boolean?) end
+    local refreshSavedRecordingsDropdown = function(_showNotify) end
 
     local VirtualInputManager = nil
     pcall(function()
@@ -105,7 +105,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return math.max(0, os.clock() - recordingStartedAt)
     end
 
-    local function updateRecordingParagraph(extraLine: string?)
+    local function updateRecordingParagraph(extraLine)
         if not (recordingStatusParagraph and recordingStatusParagraph.Set) then
             return
         end
@@ -124,7 +124,7 @@ return function(windowRef, notifyFn, recordingsDir)
         })
     end
 
-    local function appendRecordingEvent(kind: string, data: { [string]: any }?)
+    local function appendRecordingEvent(kind, data)
         if not recordingInProgress then
             return
         end
@@ -135,8 +135,7 @@ return function(windowRef, notifyFn, recordingsDir)
         })
     end
 
-    local function splitPathSegments(path: string): { string }
-        local segments = {}
+    local function splitPathSegments(path)        local segments = {}
         for piece in string.gmatch(path, "[^/]+") do
             if piece ~= "" and piece ~= "." then
                 table.insert(segments, piece)
@@ -145,11 +144,11 @@ return function(windowRef, notifyFn, recordingsDir)
         return segments
     end
 
-    local function normalizePath(path: string): string
+    local function normalizePath(path)
         return string.gsub(path or "", "\\", "/")
     end
 
-    local function baseNameFromPath(path: string): string
+    local function baseNameFromPath(path)
         local normalized = normalizePath(path)
         local idx = string.match(normalized, "^.*()/")
         if idx then
@@ -158,11 +157,11 @@ return function(windowRef, notifyFn, recordingsDir)
         return normalized
     end
 
-    local function isJsonPath(path: string): boolean
+    local function isJsonPath(path)
         return string.sub(string.lower(path), -5) == ".json"
     end
 
-    local function updateSavedRecordingStatus(text: string)
+    local function updateSavedRecordingStatus(text)
         if not (savedRecordingStatusParagraph and savedRecordingStatusParagraph.Set) then
             return
         end
@@ -203,7 +202,7 @@ return function(windowRef, notifyFn, recordingsDir)
         end
     end
 
-    local function stopSavedRecordingPlayback(reason: string?, shouldNotify: boolean?)
+    local function stopSavedRecordingPlayback(reason, shouldNotify)
         releaseSavedRecordingInputAndMotion()
 
         if playbackHumanoid and playbackAutoRotateRestore ~= nil then
@@ -228,7 +227,7 @@ return function(windowRef, notifyFn, recordingsDir)
         end
     end
 
-    local function refreshSelectionFromDropdownValue(value: any, pathMap: { [string]: string })
+    local function refreshSelectionFromDropdownValue(value, pathMap)
         local picked = (type(value) == "table" and value[1]) or value
         if type(picked) ~= "string" or picked == "" or picked == SAVED_RECORDING_NONE then
             selectedSavedRecordingPath = nil
@@ -237,7 +236,7 @@ return function(windowRef, notifyFn, recordingsDir)
         selectedSavedRecordingPath = pathMap[picked]
     end
 
-    local function getSelectedRecordingPlayer(): Player?
+    local function getSelectedRecordingPlayer()
         if type(selectedRecordingPlayerUserId) ~= "number" then
             return nil
         end
@@ -289,7 +288,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return true, nil
     end
 
-    local captureAvatarProfileForCharacter: (character: Model?) -> { [string]: any }
+    local captureAvatarProfileForCharacter
 
     local META_FIELD_ORDER = {
         "recorderName",
@@ -303,7 +302,7 @@ return function(windowRef, notifyFn, recordingsDir)
         "jobId",
     }
 
-    local function isSequentialArray(tbl: { [any]: any }): boolean
+    local function isSequentialArray(tbl)
         local maxIndex = 0
         local count = 0
         for k, _ in pairs(tbl) do
@@ -313,22 +312,22 @@ return function(windowRef, notifyFn, recordingsDir)
             if k > maxIndex then
                 maxIndex = k
             end
-            count += 1
+            count = count + 1
         end
         return maxIndex == count
     end
 
-    local function orderedObjectKeys(tbl: { [any]: any }, parentKey: string?)
-        local keys: { string } = {}
+    local function orderedObjectKeys(tbl, parentKey)
+        local keys = {}
         for k, _ in pairs(tbl) do
             if type(k) == "string" then
                 table.insert(keys, k)
             end
         end
 
-        local ordered: { string } = {}
-        local used: { [string]: boolean } = {}
-        local preferredOrder: { string } = {}
+        local ordered = {}
+        local used = {}
+        local preferredOrder = {}
 
         if tbl.meta ~= nil and tbl.events ~= nil then
             preferredOrder = { "meta", "events" }
@@ -366,7 +365,7 @@ return function(windowRef, notifyFn, recordingsDir)
             end
         end
 
-        local remaining: { string } = {}
+        local remaining = {}
         for _, k in ipairs(keys) do
             if not used[k] then
                 table.insert(remaining, k)
@@ -381,7 +380,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return ordered
     end
 
-    local function encodeRecordingJsonValue(value: any, parentKey: string?, pretty: boolean?, depth: number?): string
+    local function encodeRecordingJsonValue(value, parentKey, pretty, depth)
         local level = depth or 0
         local valueType = type(value)
         if value == nil then
@@ -400,7 +399,7 @@ return function(windowRef, notifyFn, recordingsDir)
         end
 
         if isSequentialArray(value) then
-            local parts: { string } = {}
+            local parts = {}
             for i = 1, #value do
                 local encoded = encodeRecordingJsonValue(value[i], nil, pretty, level + 1)
                 if pretty then
@@ -420,7 +419,7 @@ return function(windowRef, notifyFn, recordingsDir)
             return "[" .. table.concat(parts, ",") .. "]"
         end
 
-        local objectParts: { string } = {}
+        local objectParts = {}
         local keys = orderedObjectKeys(value, parentKey)
         for _, k in ipairs(keys) do
             local encodedKey = HttpService:JSONEncode(k)
@@ -488,7 +487,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return path, nil
     end
 
-    local function getCharacterHumanoidAndRoot(character: Model?)
+    local function getCharacterHumanoidAndRoot(character)
         if not character then
             return nil, nil
         end
@@ -497,7 +496,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return humanoid, rootPart
     end
 
-    captureAvatarProfileForCharacter = function(character: Model?): { [string]: any }
+    captureAvatarProfileForCharacter = function(character)
         local profile = {
             capturedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }
@@ -542,7 +541,7 @@ return function(windowRef, notifyFn, recordingsDir)
         return profile
     end
 
-    local function recordMovementSample(targetPlayer: Player?)
+    local function recordMovementSample(targetPlayer)
         local character = targetPlayer and targetPlayer.Character
         local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
         if not humanoid or not rootPart then
@@ -593,7 +592,7 @@ return function(windowRef, notifyFn, recordingsDir)
         })
     end
 
-    local function attachCharacterRecordingHooks(character: Model?)
+    local function attachCharacterRecordingHooks(character)
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         if not humanoid then
             appendRecordingEvent("character_missing_humanoid", {})
@@ -768,7 +767,7 @@ return function(windowRef, notifyFn, recordingsDir)
             end
             return aDisplay < bDisplay
         end)
-        local displayLabelCount: { [string]: number } = {}
+        local displayLabelCount = {}
 
         for _, player in ipairs(playersList) do
             local displayName = player.DisplayName or player.Name
@@ -845,7 +844,7 @@ return function(windowRef, notifyFn, recordingsDir)
         end)
     end)
 
-    local function setRecordingEnabled(enabled: boolean): boolean
+    local function setRecordingEnabled(enabled)
         if enabled then
             if not recordingInProgress then
                 return startRecording()
@@ -859,7 +858,7 @@ return function(windowRef, notifyFn, recordingsDir)
         end
     end
 
-    local function syncRecordingToggleUi(enabled: boolean)
+    local function syncRecordingToggleUi(enabled)
         if not recordingToggleControl then
             return
         end
@@ -921,7 +920,7 @@ return function(windowRef, notifyFn, recordingsDir)
     local savedDisplayToPath = {}
     local savedDisplayOptions = { SAVED_RECORDING_NONE }
 
-    refreshSavedRecordingsDropdown = function(showNotify: boolean?)
+    refreshSavedRecordingsDropdown = function(showNotify)
         selectedSavedRecordingPath = nil
         savedDisplayToPath = {}
         savedDisplayOptions = { SAVED_RECORDING_NONE }
@@ -1391,3 +1390,5 @@ return function(windowRef, notifyFn, recordingsDir)
 
     refreshSavedRecordingsDropdown(false)
 end
+
+return createRecordingTab
