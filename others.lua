@@ -54,6 +54,62 @@ local function rayfieldDropdownFirst(valueOrTable)
     return valueOrTable
 end
 
+-- */  Recording Tab (module)  /* --
+local RECORDING_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/recording_tab.lua"
+local function loadCreateRecordingTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/recording_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Recording Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "recording_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Recording Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Recording Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Recording Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createRecordingTab = loadCreateRecordingTab(RECORDING_TAB_REPO)
+if not createRecordingTab then
+    createRecordingTab = function(_windowRef, notifyFn, _recordingsDir)
+        notifyFn({ Title = "Recording", Content = "Failed to load recording tab module", Icon = "x" })
+    end
+end
+
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Others",
@@ -2639,6 +2695,9 @@ do
     })
 
 end
+
+createRecordingTab(Window, mountNotify, "sempatpanick/others/recordings")
+
 
 -- */  Avatar Tab  /* --
 do
