@@ -1,4 +1,4 @@
-﻿--[[
+--[[
   Local Player tab module for Rayfield scripts.
   Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/local_player_tab.lua
 
