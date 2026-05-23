@@ -49,6 +49,13 @@ local function mountNotify(opts)
     })
 end
 
+local function rayfieldDropdownFirst(valueOrTable)
+    if type(valueOrTable) == "table" then
+        return valueOrTable[1]
+    end
+    return valueOrTable
+end
+
 -- */  Recording Tab (module)  /* --
 local function loadCreateRecordingTab(repoUrl)
     local okReq, mod = pcall(function()
