@@ -1,4 +1,4 @@
-local cloneref = (cloneref or clonereference or function(instance) return instance end)
+﻿local cloneref = (cloneref or clonereference or function(instance) return instance end)
 
 -- ====================================================================
 --                        CORE SERVICES
@@ -2504,11 +2504,6 @@ do
 
     MainTab:CreateSection("Send Request Carry")
 
-    MainTab:CreateParagraph({
-        Title = "How it works",
-        Content = "Pick players from the list and/or type additional names (comma, semicolon, or line — same visible name as in-game / dropdown). Before each send, names are matched to players currently in the server; unmatched names are skipped. A request is only sent if your character and the target’s HumanoidRootPart are within 18 studs.\n\nCarryRemote.OnClientEvent: \"CarrierList\" keeps current carriers — those user ids are skipped; \"RequestExpired\" notifies; \"Declined\" excludes that targetId for 5 minutes.",
-    })
-
     local SendRequestCarryCarrierListParagraph
     local sendRequestCarryUpdateCarrierListParagraph
 
@@ -2818,7 +2813,7 @@ do
     end
 
     SendRequestCarryPlayersDropdown = MainTab:CreateDropdown({
-        Name = "Players (multi-select)",
+        Name = "To",
         Options = sendRequestCarryDropdownOptions(),
         CurrentOption = {},
         MultipleOptions = true,
@@ -2836,7 +2831,7 @@ do
     })
 
     MainTab:CreateInput({
-        Name = "Additional players",
+        Name = "By Name (additional)",
         PlaceholderText = "Display names, e.g. kyazuramoe, FriendName",
         CurrentValue = "",
         Ext = true,
@@ -2847,7 +2842,7 @@ do
 
     local SendRequestCarryAutoToggle
     SendRequestCarryAutoToggle = MainTab:CreateToggle({
-        Name = "Auto Send Request",
+        Name = "Auto Send",
         CurrentValue = false,
         Ext = true,
         Callback = function(enabled)
@@ -2963,11 +2958,6 @@ do
 
     MainTab:CreateSection("Accept Incoming Carry")
 
-    MainTab:CreateParagraph({
-        Title = "How it works",
-        Content = "If you select specific players below, only carry requests from those players are accepted. If nothing is selected, requests from everyone are accepted.\n\nUse the toggle to listen on ReplicatedStorage.CarryRemote for the \"Prompt\" action and reply with \"Response\" (accept = true).",
-    })
-
     local acceptIncomingCarrySelected = {}
     local AcceptIncomingCarryPlayersDropdown
     local acceptIncomingCarryRemoteConn = nil
@@ -3056,7 +3046,7 @@ do
     end
 
     AcceptIncomingCarryPlayersDropdown = MainTab:CreateDropdown({
-        Name = "Other players (display name)",
+        Name = "From",
         Options = acceptIncomingCarryDropdownOptions(),
         CurrentOption = {},
         MultipleOptions = true,
@@ -3075,7 +3065,7 @@ do
 
     local AcceptIncomingCarryListenToggle
     AcceptIncomingCarryListenToggle = MainTab:CreateToggle({
-        Name = "Listen for \"Prompt\" (auto-accept incoming carry)",
+        Name = "Auto Accept",
         CurrentValue = false,
         Ext = true,
         Callback = function(enabled)
@@ -3321,6 +3311,43 @@ do
         task.defer(transferCashRefreshList)
     end)
     task.defer(transferCashRefreshList)
+
+    MainTab:CreateSection("Teleport to camp")
+
+    local function teleportToCampCoords(x, y, z, placeName)
+        local character = Players.LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then
+            mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
+            return
+        end
+        rootPart.CFrame = CFrame.new(x, y, z)
+        mountNotify({
+            Title = "Teleport",
+            Content = "Teleported to " .. placeName,
+            Icon = "check",
+        })
+    end
+
+    local campLocations = {
+        { label = "Camp 1", x = -407.77, y = 248.20, z = 794.09 },
+        { label = "Camp 2", x = -337.77, y = 388.27, z = 522.16 },
+        { label = "Camp 3", x = 294.19, y = 430.33, z = 494.17 },
+        { label = "Camp 4", x = 323.46, y = 490.24, z = 348.33 },
+        { label = "Camp 5", x = 226.70, y = 314.21, z = -143.64 },
+        { label = "Summit", x = -613.51, y = 905.28, z = -533.45 },
+    }
+
+    for _, loc in ipairs(campLocations) do
+        local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
+        MainTab:CreateButton({
+            Name = label,
+            Ext = true,
+            Callback = function()
+                teleportToCampCoords(cx, cy, cz, label)
+            end,
+        })
+    end
 end
 -- */  Map Tab  /* --
 do
@@ -4601,43 +4628,6 @@ do
             })
         end,
     })
-
-    TeleportTab:CreateSection("Teleport to camp")
-
-    local function teleportToCampCoords(x, y, z, placeName)
-        local character = Players.LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then
-            mountNotify({ Title = "Teleport", Content = "Character not loaded", Icon = "x" })
-            return
-        end
-        rootPart.CFrame = CFrame.new(x, y, z)
-        mountNotify({
-            Title = "Teleport",
-            Content = "Teleported to " .. placeName,
-            Icon = "check",
-        })
-    end
-
-    local campLocations = {
-        { label = "Camp 1", x = -407.77, y = 248.20, z = 794.09 },
-        { label = "Camp 2", x = -337.77, y = 388.27, z = 522.16 },
-        { label = "Camp 3", x = 294.19, y = 430.33, z = 494.17 },
-        { label = "Camp 4", x = 323.46, y = 490.24, z = 348.33 },
-        { label = "Camp 5", x = 226.70, y = 314.21, z = -143.64 },
-        { label = "Summit", x = -613.51, y = 905.28, z = -533.45 },
-    }
-
-    for _, loc in ipairs(campLocations) do
-        local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
-        TeleportTab:CreateButton({
-            Name = label,
-            Ext = true,
-            Callback = function()
-                teleportToCampCoords(cx, cy, cz, label)
-            end,
-        })
-    end
 
     -- */  Teleport to Players  /* --
     TeleportTab:CreateSection("Teleport to Players")
