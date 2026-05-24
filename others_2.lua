@@ -277,6 +277,61 @@ if not createTeleportTab then
         notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
     end
 end
+-- */  Config Tab (module)  /* --
+local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local function loadCreateConfigTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/config_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Config Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "config_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Config Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Config Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Config Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createConfigTab = loadCreateConfigTab(CONFIG_TAB_REPO)
+if not createConfigTab then
+    createConfigTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Config", Content = "Failed to load Config Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Others",
@@ -284,7 +339,7 @@ local Window = RayfieldLibrary:CreateWindow({
     LoadingSubtitle = "Others",
     Icon = 4483362458,
     ConfigurationSaving = {
-        Enabled = false,
+        Enabled = true,
         FolderName = "sempatpanick",
         FileName = "others",
     },
@@ -367,11 +422,18 @@ createLocalPlayerTab(Window, mountNotify)
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "others" })
+
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
+-- */  Recording Tab  /* --
 createRecordingTab(Window, mountNotify, "sempatpanick/others/recordings")
 
+-- */  Config Tab  /* --
+createConfigTab(Window, mountNotify, {
+    configDir = "sempatpanick/others",
+    rayfieldLibrary = RayfieldLibrary,
+})
 
 -- */  Avatar Tab  /* --
 do
@@ -391,11 +453,74 @@ do
     })
 
     local AvatarPreviewImage
+    local avatarPreviewUsesImageElement = false
     local AvatarDetailsParagraph
     local AvatarOutfitParagraph
     local lastAvatarLookupUserId: number? = nil
     local activeAvatarOverlayModel: Model? = nil
     local activeAvatarOverlayRenderConn: RBXScriptConnection? = nil
+
+    local function setAvatarPreviewDisplay(opts: {
+        Image: string?,
+        Title: string?,
+        Description: string?,
+        ImageSize: number?,
+    })
+        if not AvatarPreviewImage then
+            return
+        end
+        if avatarPreviewUsesImageElement and AvatarPreviewImage.Set then
+            pcall(function()
+                AvatarPreviewImage:Set({
+                    Image = opts.Image or "",
+                    Title = opts.Title or "Avatar",
+                    Description = opts.Description or "",
+                    ImageSize = opts.ImageSize or 150,
+                })
+            end)
+            return
+        end
+        if AvatarPreviewImage.Set then
+            local content = opts.Description or ""
+            if opts.Image and opts.Image ~= "" then
+                if content ~= "" then
+                    content = content .. "\n\n"
+                end
+                content = content .. "Headshot: " .. tostring(opts.Image)
+            end
+            pcall(function()
+                AvatarPreviewImage:Set({
+                    Title = opts.Title or "Avatar",
+                    Content = content,
+                })
+            end)
+        end
+    end
+
+    do
+        local previewProps = {
+            Name = "AvatarPreview",
+            Title = "Avatar",
+            Image = "",
+            ImageSize = 150,
+            Description = "Results appear after Search.",
+        }
+        if type(AvatarTab.CreateImage) == "function" then
+            local okCreate, previewEl = pcall(function()
+                return AvatarTab:CreateImage(previewProps)
+            end)
+            if okCreate and previewEl then
+                AvatarPreviewImage = previewEl
+                avatarPreviewUsesImageElement = true
+            end
+        end
+        if not AvatarPreviewImage then
+            AvatarPreviewImage = AvatarTab:CreateParagraph({
+                Title = previewProps.Title,
+                Content = previewProps.Description,
+            })
+        end
+    end
 
     local function trimLookupText(s: string): string
         local t = string.gsub(s or "", "^%s+", "")
@@ -787,7 +912,7 @@ do
                         .. " exists but profile details could not be loaded.",
                     Icon = "x",
                 })
-                AvatarPreviewImage:Set({
+                setAvatarPreviewDisplay({
                     Image = "",
                     Description = "Profile unavailable for this id.",
                 })
@@ -805,7 +930,7 @@ do
                 "rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150",
                 userId
             )
-            AvatarPreviewImage:Set({
+            setAvatarPreviewDisplay({
                 Image = thumb,
                 Title = "Avatar",
                 Description = "",
@@ -836,14 +961,6 @@ do
                 Content = outfitContent,
             })
         end,
-    })
-
-    AvatarPreviewImage = AvatarTab:CreateImage({
-        Name = "AvatarPreview",
-        Title = "Avatar",
-        Image = "",
-        ImageSize = 150,
-        Description = "Results appear after Search.",
     })
 
     AvatarDetailsParagraph = AvatarTab:CreateParagraph({

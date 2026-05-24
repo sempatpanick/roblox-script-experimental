@@ -276,6 +276,61 @@ if not createTeleportTab then
         notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
     end
 end
+-- */  Config Tab (module)  /* --
+local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local function loadCreateConfigTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/config_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Config Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "config_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Config Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Config Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Config Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createConfigTab = loadCreateConfigTab(CONFIG_TAB_REPO)
+if not createConfigTab then
+    createConfigTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Config", Content = "Failed to load Config Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Speed Bike Escape",
@@ -283,7 +338,7 @@ local Window = RayfieldLibrary:CreateWindow({
     LoadingSubtitle = "Speed Bike Escape",
     Icon = 4483362458,
     ConfigurationSaving = {
-        Enabled = false,
+        Enabled = true,
         FolderName = "sempatpanick",
         FileName = "speed_bike_escape",
     },
@@ -366,6 +421,7 @@ local AutoBikeTabShared = Window:CreateTab("Auto Bike", 4483362458)
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { ext = true, notifyIcons = true, playerSearch = true, playerNoneOption = true })
+
 -- */  Auto Bike Tab  /* --
 do
     local AutoBikeTab = AutoBikeTabShared
@@ -411,6 +467,7 @@ do
 
     local RouteDropdown = AutoBikeTab:CreateDropdown({
         Name = "Route",
+        Flag = "bike_route_select",
         Options = routeDropdownOptions(),
         CurrentOption = { ROUTE_NONE },
         Search = true,
@@ -427,6 +484,7 @@ do
     AutoBikeTab:CreateInput({
         Name = "Delay (seconds)",
         PlaceholderText = "Seconds before each teleport",
+        Flag = "bike_teleportDelaySec",
         CurrentValue = teleportDelaySeconds,
         Ext = true,
         Callback = function(value)
@@ -446,6 +504,7 @@ do
 
     AutoBikeTab:CreateToggle({
         Name = "Auto Ride",
+        Flag = "bike_autoRide",
         CurrentValue = false,
         Ext = true,
         Callback = function(enabled)
@@ -509,5 +568,11 @@ end
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
+-- */  Recording Tab  /* --
 createRecordingTab(Window, mountNotify, "sempatpanick/speed_bike_escape/recordings")
 
+-- */  Config Tab  /* --
+createConfigTab(Window, mountNotify, {
+    configDir = "sempatpanick/speed_bike_escape",
+    rayfieldLibrary = RayfieldLibrary,
+})

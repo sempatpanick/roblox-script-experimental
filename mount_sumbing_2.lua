@@ -276,6 +276,61 @@ if not createTeleportTab then
         notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
     end
 end
+-- */  Config Tab (module)  /* --
+local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local function loadCreateConfigTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/config_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Config Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "config_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Config Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Config Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Config Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createConfigTab = loadCreateConfigTab(CONFIG_TAB_REPO)
+if not createConfigTab then
+    createConfigTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Config", Content = "Failed to load Config Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Mount Sumbing",
@@ -283,7 +338,7 @@ local Window = RayfieldLibrary:CreateWindow({
     LoadingSubtitle = "Mount Sumbing",
     Icon = 4483362458,
     ConfigurationSaving = {
-        Enabled = false,
+        Enabled = true,
         FolderName = "sempatpanick",
         FileName = "mount_sumbing",
     },
@@ -367,8 +422,6 @@ createLocalPlayerTab(Window, mountNotify)
 
 local QuestTabShared = Window:CreateTab("Quest", 4483362458)
 
--- */  Teleport Tab  /* --
-createTeleportTab(Window, mountNotify, { flagsPrefix = "sumbing" })
 -- */  Quest Tab  /* --
 do
     local QuestTab = QuestTabShared
@@ -438,6 +491,7 @@ do
 
     CatCoinDropdown = QuestTab:CreateDropdown({
         Name = "Token",
+        Flag = "sumbing_quest_catCoinToken",
         Options = getCatCoinDropdownValues(),
         CurrentOption = {},
         Callback = function(value)
@@ -448,6 +502,7 @@ do
     QuestTab:CreateInput({
         Name = "Qty",
         PlaceholderText = "e.g. 1",
+        Flag = "sumbing_quest_catCoinQty",
         CurrentValue = catCoinQty,
         Callback = function(value)
             catCoinQty = value
@@ -655,8 +710,17 @@ do
     })
 end
 
+-- */  Teleport Tab  /* --
+createTeleportTab(Window, mountNotify, { flagsPrefix = "sumbing" })
+
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
+-- */  Recording Tab  /* --
 createRecordingTab(Window, mountNotify, "sempatpanick/mount_sumbing/recordings")
 
+-- */  Config Tab  /* --
+createConfigTab(Window, mountNotify, {
+    configDir = "sempatpanick/mount_sumbing",
+    rayfieldLibrary = RayfieldLibrary,
+})

@@ -276,6 +276,61 @@ if not createTeleportTab then
         notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
     end
 end
+-- */  Config Tab (module)  /* --
+local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local function loadCreateConfigTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/config_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Config Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "config_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Config Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Config Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Config Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createConfigTab = loadCreateConfigTab(CONFIG_TAB_REPO)
+if not createConfigTab then
+    createConfigTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Config", Content = "Failed to load Config Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Mount Yahayuk",
@@ -366,11 +421,8 @@ end
 
 -- */  Local Player Tab  /* --
 createLocalPlayerTab(Window, mountNotify, {
-
     centerShiftLockCamera = true,
-
     shiftLockRenderStepId = "MountYahayukCenterShiftLockCamera",
-
 })
 
 -- */  Main Tab  /* --
@@ -3404,6 +3456,7 @@ do
         })
     end
 end
+
 -- */  Map Tab  /* --
 do
     local MapTab = Window:CreateTab("Map", 4483362458)
@@ -4524,7 +4577,15 @@ do
 end
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { ext = true, notifyIcons = true, playerSearch = true, playerNoneOption = true })
+
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
+-- */  Recording Tab  /* --
 createRecordingTab(Window, mountNotify, "sempatpanick/mount_yahayuk/recordings")
+
+-- */  Config Tab  /* --
+createConfigTab(Window, mountNotify, {
+    configDir = "sempatpanick/mount_yahayuk",
+    rayfieldLibrary = RayfieldLibrary,
+})
