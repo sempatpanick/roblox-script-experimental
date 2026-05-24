@@ -899,6 +899,49 @@ local windowWidthMinimized = windowWidth - 5
 local windowWidthHidden = windowWidth - 30
 local windowWidthLoading = math.floor(windowWidth * 0.84)
 local keyWindowWidth = math.floor(windowWidth * 467 / 500)
+local paragraphPadding = 11
+local paragraphContentGap = 6
+
+local function layoutParagraphElement(paragraph)
+	if not paragraph or not paragraph.Parent then return end
+
+	local title = paragraph:FindFirstChild("Title")
+	local content = paragraph:FindFirstChild("Content")
+	if not title or not content then return end
+
+	paragraph.AnchorPoint = Vector2.new(0, 0)
+
+	title.AnchorPoint = Vector2.new(0, 0)
+	title.Position = UDim2.new(0, paragraphPadding, 0, paragraphPadding)
+	title.Size = UDim2.new(1, -paragraphPadding * 2, 0, 0)
+	title.AutomaticSize = Enum.AutomaticSize.Y
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextWrapped = true
+
+	content.AnchorPoint = Vector2.new(0, 0)
+	content.Size = UDim2.new(1, -paragraphPadding * 2, 0, 0)
+	content.AutomaticSize = Enum.AutomaticSize.Y
+	content.TextXAlignment = Enum.TextXAlignment.Left
+	content.TextYAlignment = Enum.TextYAlignment.Top
+	content.TextWrapped = true
+
+	local function refreshHeight()
+		if not paragraph.Parent then return end
+		local titleHeight = math.max(title.TextBounds.Y, 14)
+		content.Position = UDim2.new(0, paragraphPadding, 0, paragraphPadding + titleHeight + paragraphContentGap)
+		local contentHeight = math.max(content.TextBounds.Y, 14)
+		paragraph.Size = UDim2.new(1, 0, 0, paragraphPadding + titleHeight + paragraphContentGap + contentHeight + paragraphPadding)
+	end
+
+	title:GetPropertyChangedSignal("TextBounds"):Connect(refreshHeight)
+	content:GetPropertyChangedSignal("TextBounds"):Connect(refreshHeight)
+	title:GetPropertyChangedSignal("Text"):Connect(refreshHeight)
+	content:GetPropertyChangedSignal("Text"):Connect(refreshHeight)
+
+	task.defer(refreshHeight)
+
+	return refreshHeight
+end
 
 Rayfield.DisplayOrder = 100
 LoadingFrame.Version.Text = Release
@@ -1676,65 +1719,6 @@ local function fadeOutKeyUI(KeyMain)
 	TweenService:Create(KeyMain.NoteTitle, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(KeyMain.NoteMessage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-end
-
-local paragraphTextPadding = 15
-
-local function updateParagraphLayout(Paragraph)
-	if not Paragraph or not Paragraph.Parent then
-		return
-	end
-
-	local Title = Paragraph:FindFirstChild("Title")
-	local Content = Paragraph:FindFirstChild("Content")
-	if not Title or not Content then
-		return
-	end
-
-	local topPad = 8
-	local textGap = 4
-	local bottomPad = 10
-
-	Title.TextWrapped = true
-	Title.TextXAlignment = Enum.TextXAlignment.Left
-	Title.TextYAlignment = Enum.TextYAlignment.Top
-	Title.AutomaticSize = Enum.AutomaticSize.Y
-	Title.Size = UDim2.new(1, -paragraphTextPadding * 2, 0, 0)
-	Title.Position = UDim2.new(0, paragraphTextPadding, 0, topPad)
-
-	Content.TextWrapped = true
-	Content.TextXAlignment = Enum.TextXAlignment.Left
-	Content.TextYAlignment = Enum.TextYAlignment.Top
-	Content.AutomaticSize = Enum.AutomaticSize.Y
-	Content.Size = UDim2.new(1, -paragraphTextPadding * 2, 0, 0)
-
-	local titleHeight = math.max(Title.TextBounds.Y, Title.TextSize)
-	Content.Position = UDim2.new(0, paragraphTextPadding, 0, topPad + titleHeight + textGap)
-
-	local contentHeight = math.max(Content.TextBounds.Y, Content.TextSize)
-	Paragraph.Size = UDim2.new(1, -10, 0, topPad + titleHeight + textGap + contentHeight + bottomPad)
-end
-
-local function bindParagraphLayout(Paragraph)
-	local updating = false
-	local function refresh()
-		if updating or not Paragraph.Parent then
-			return
-		end
-		updating = true
-		updateParagraphLayout(Paragraph)
-		updating = false
-	end
-
-	for _, label in ipairs({Paragraph:FindFirstChild("Title"), Paragraph:FindFirstChild("Content")}) do
-		if label then
-			label:GetPropertyChangedSignal("Text"):Connect(refresh)
-			label:GetPropertyChangedSignal("TextBounds"):Connect(refresh)
-		end
-	end
-
-	Paragraph:GetPropertyChangedSignal("AbsoluteSize"):Connect(refresh)
-	task.defer(refresh)
 end
 
 function RayfieldLibrary:CreateWindow(Settings)
@@ -2689,17 +2673,19 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
 			Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
 
+			local refreshParagraphLayout = layoutParagraphElement(Paragraph)
+
 			TweenService:Create(Paragraph, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 			TweenService:Create(Paragraph.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 			TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
-			bindParagraphLayout(Paragraph)
-
 			function ParagraphValue:Set(NewParagraphSettings)
 				Paragraph.Title.Text = NewParagraphSettings.Title
 				Paragraph.Content.Text = NewParagraphSettings.Content
-				updateParagraphLayout(Paragraph)
+				if refreshParagraphLayout then
+					task.defer(refreshParagraphLayout)
+				end
 			end
 
 			function ParagraphValue:Destroy()
@@ -3820,6 +3806,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	task.wait(0.1)
 	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0, windowWidth, 0, 275) or UDim2.new(0, windowWidth, 0, 475)}):Play()
+	TweenService:Create(Topbar, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, windowWidth, 0, 45)}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 
 	Topbar.BackgroundTransparency = 1
