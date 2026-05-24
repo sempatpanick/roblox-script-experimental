@@ -16,6 +16,8 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local RayfieldLibrary
 
+local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
+
 do
     local ok, result = pcall(function()
         return require("./rayfield_library")
@@ -27,7 +29,7 @@ do
         if cloneref(RunService):IsStudio() then
             RayfieldLibrary = require(cloneref(ReplicatedStorage):WaitForChild("rayfield_library"))
         else
-            RayfieldLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/rayfield_library.lua"))()
+            RayfieldLibrary = loadstring(game:HttpGet(baseURL .. "/rayfield_library.lua"))()
         end
     end
 end
@@ -230,7 +232,7 @@ local function forceCloseRobloxPurchasePrompt(timeoutSeconds: number?): boolean
 end
 
 -- */  Recording Tab (module)  /* --
-local RECORDING_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/recording_tab.lua"
+local RECORDING_TAB_REPO = baseURL .. "/tabs/recording_tab.lua"
 local function loadCreateRecordingTab(repoUrl)
     local okReq, mod = pcall(function()
         return require("./tabs/recording_tab")
@@ -286,7 +288,7 @@ if not createRecordingTab then
 end
 
 -- */  Local Player Tab (module)  /* --
-local LOCAL_PLAYER_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/local_player_tab.lua"
+local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)
     local okReq, mod = pcall(function()
         return require("./tabs/local_player_tab")
@@ -341,7 +343,7 @@ if not createLocalPlayerTab then
     end
 end
 -- */  Objects Tab (module)  /* --
-local OBJECTS_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/objects_tab.lua"
+local OBJECTS_TAB_REPO = baseURL .. "/tabs/objects_tab.lua"
 local function loadCreateObjectsTab(repoUrl)
     local okReq, mod = pcall(function()
         return require("./tabs/objects_tab")
@@ -396,7 +398,7 @@ if not createObjectsTab then
     end
 end
 -- */  Teleport Tab (module)  /* --
-local TELEPORT_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/teleport_tab.lua"
+local TELEPORT_TAB_REPO = baseURL .. "/tabs/teleport_tab.lua"
 local function loadCreateTeleportTab(repoUrl)
     local okReq, mod = pcall(function()
         return require("./tabs/teleport_tab")
