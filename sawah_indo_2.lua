@@ -395,6 +395,61 @@ if not createObjectsTab then
         notifyFn({ Title = "Objects", Content = "Failed to load Objects Tab tab module", Icon = "x" })
     end
 end
+-- */  Teleport Tab (module)  /* --
+local TELEPORT_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/teleport_tab.lua"
+local function loadCreateTeleportTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/teleport_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Teleport Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "teleport_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Teleport Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Teleport Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Teleport Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createTeleportTab = loadCreateTeleportTab(TELEPORT_TAB_REPO)
+if not createTeleportTab then
+    createTeleportTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Sawah Indo",
@@ -2081,361 +2136,143 @@ end
 local ShopTabShared = Window:CreateTab("Shop", 4483362458)
 
 -- */  Teleport Tab  /* --
-do
-    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
+createTeleportTab(Window, mountNotify, {
+    coordSectionTitle = "Coordinates",
+    flagsPrefix = "sawah",
+    afterCoords = function(TeleportTab)
+        TeleportTab:CreateSection("Teleport to Object")
+        local promptDisplayNames = {}
+        local promptList = {}
+        local selectedTeleportPrompt = nil
+        local TeleportDropdown
 
-    TeleportTab:CreateSection("Coordinates")
-    local coordTeleportInputCurrentValue = ""
-    local coordTeleportLookInputValue = ""
-
-    local function coordTeleportParseNumberTriple(str)
-        local s = str:gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        return parts
-    end
-
-    local function coordTeleportCFrameFromInputs(posStr, lookStr)
-        local posParts = coordTeleportParseNumberTriple(posStr)
-        if #posParts < 3 then
+        local function getPromptPosition(prompt)
+            if prompt.Parent and prompt.Parent:IsA("BasePart") then
+                return prompt.Parent.Position
+            end
+            if prompt.Parent and prompt.Parent:IsA("Model") and prompt.Parent.PrimaryPart then
+                return prompt.Parent.PrimaryPart.Position
+            end
+            if prompt.Parent and prompt.Parent:IsA("Model") then
+                local p, _ = prompt.Parent:GetBoundingBox()
+                return p.Position
+            end
             return nil
         end
-        local pos = Vector3.new(posParts[1], posParts[2], posParts[3])
-        local lookParts = coordTeleportParseNumberTriple(lookStr)
-        if #lookParts < 3 then
-            return CFrame.new(pos)
-        end
-        local dir = Vector3.new(lookParts[1], lookParts[2], lookParts[3])
-        if dir.Magnitude < 1e-5 then
-            return CFrame.new(pos)
-        end
-        return CFrame.lookAt(pos, pos + dir.Unit)
-    end
 
-    local CoordTeleportInput = TeleportTab:CreateInput({
-        Name = "Location",
-        PlaceholderText = "e.g. 100, 5, 200",
-        Flag = "sawah_tp_location",
-        CurrentValue = coordTeleportInputValue,
-        Callback = function(value)
-            coordTeleportInputValue = value
-        end,
-    })
-
-    local CoordTeleportLookInput = TeleportTab:CreateInput({
-        Name = "Look direction",
-        PlaceholderText = "e.g. 0, 0, -1 or empty",
-        Flag = "sawah_tp_lookDirection",
-        CurrentValue = coordTeleportLookInputValue,
-        Callback = function(value)
-            coordTeleportLookInputValue = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Get Current Location",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
+        local function refreshTeleportList(showNotify)
+            local prompts = {}
+            for _, child in ipairs(game:GetService("Workspace"):GetDescendants()) do
+                if child:IsA("ProximityPrompt") then
+                    table.insert(prompts, child)
+                end
             end
-            local pos = rootPart.Position
-            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
-            coordTeleportInputValue = text
-            if CoordTeleportInput and CoordTeleportInput.Set then
-                CoordTeleportInput:Set(text)
-            elseif CoordTeleportInput and CoordTeleportInput.SetValue then
-                CoordTeleportInput:SetValue(text)
+            promptList = prompts
+            promptDisplayNames = {}
+            local count = {}
+            for _, p in ipairs(prompts) do
+                local label = (p.ObjectText and #p.ObjectText > 0) and p.ObjectText or (p.Parent and p.Parent.Name or "ProximityPrompt")
+                count[label] = (count[label] or 0) + 1
+                local display = count[label] > 1 and (label .. " (" .. count[label] .. ")") or label
+                table.insert(promptDisplayNames, display)
             end
-            local look = rootPart.CFrame.LookVector
-            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
-            coordTeleportLookInputValue = lookText
-            if CoordTeleportLookInput and CoordTeleportLookInput.Set then
-                CoordTeleportLookInput:Set(lookText)
-            elseif CoordTeleportLookInput and CoordTeleportLookInput.SetValue then
-                CoordTeleportLookInput:SetValue(lookText)
+            TeleportDropdown:Refresh(promptDisplayNames)
+            if selectedTeleportPrompt then
+                local idx = table.find(promptList, selectedTeleportPrompt)
+                if not idx then
+                    selectedTeleportPrompt = nil
+                    if TeleportDropdown.Select then TeleportDropdown:Select(nil) end
+                    if TeleportDropdown.Set then TeleportDropdown:Set({}) end
+                end
             end
-            mountNotify({
-                Title = "Location",
-                Content = "Position: " .. text .. " Â· Look: " .. lookText,
-            })
-        end,
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local cf = coordTeleportCFrameFromInputs(coordTeleportInputValue, coordTeleportLookInputValue)
-            if not cf then
-                mountNotify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z",
-                })
-                return
-            end
-            rootPart.CFrame = cf
-            local p = cf.Position
-            mountNotify({
-                Title = "Teleport",
-                Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
-            })
-        end,
-    })
-    local coordTweenDurationValue = "5"
-    TeleportTab:CreateInput({
-        Name = "Tween Duration",
-        PlaceholderText = "e.g. 5",
-        CurrentValue = coordTweenDurationValue,
-        Callback = function(value)
-            coordTweenDurationValue = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Tween to Location",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local targetCf = coordTeleportCFrameFromInputs(coordTeleportInputValue, coordTeleportLookInputValue)
-            if not targetCf then
-                mountNotify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z",
-                })
-                return
-            end
-            local duration = tonumber(coordTweenDurationValue) or 5
-            if duration < 0.1 then duration = 0.1 end
-            local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
-            tween:Play()
-            local p = targetCf.Position
-            mountNotify({
-                Title = "Teleport",
-                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
-            })
-        end,
-    })
-    TeleportTab:CreateSection("Teleport to Object")
-    local promptDisplayNames = {}
-    local promptList = {}
-    local selectedTeleportPrompt = nil
-    local TeleportDropdown
-
-    local function getPromptPosition(prompt)
-        if prompt.Parent and prompt.Parent:IsA("BasePart") then
-            return prompt.Parent.Position
-        end
-        if prompt.Parent and prompt.Parent:IsA("Model") and prompt.Parent.PrimaryPart then
-            return prompt.Parent.PrimaryPart.Position
-        end
-        if prompt.Parent and prompt.Parent:IsA("Model") then
-            local p, _ = prompt.Parent:GetBoundingBox()
-            return p.Position
-        end
-        return nil
-    end
-
-    local function refreshTeleportList(showNotify)
-        local prompts = {}
-        for _, child in ipairs(game:GetService("Workspace"):GetDescendants()) do
-            if child:IsA("ProximityPrompt") then
-                table.insert(prompts, child)
+            if showNotify then
+                mountNotify({ Title = "Teleport", Content = "List refreshed (" .. #promptList .. " objects)" })
             end
         end
-        promptList = prompts
-        promptDisplayNames = {}
-        local count = {}
-        for _, p in ipairs(prompts) do
-            local label = (p.ObjectText and #p.ObjectText > 0) and p.ObjectText or (p.Parent and p.Parent.Name or "ProximityPrompt")
-            count[label] = (count[label] or 0) + 1
-            local display = count[label] > 1 and (label .. " (" .. count[label] .. ")") or label
-            table.insert(promptDisplayNames, display)
-        end
-        TeleportDropdown:Refresh(promptDisplayNames)
-        if selectedTeleportPrompt then
-            local idx = table.find(promptList, selectedTeleportPrompt)
-            if not idx then
+
+        TeleportDropdown = TeleportTab:CreateDropdown({
+            Name = "Object",
+            Options = promptDisplayNames,
+            CurrentOption = {},
+            Callback = function(value)
+                local picked = rayfieldDropdownFirst(value)
                 selectedTeleportPrompt = nil
-                if TeleportDropdown.Select then TeleportDropdown:Select(nil) end
-                if TeleportDropdown.Set then TeleportDropdown:Set({}) end
-            end
-        end
-        if showNotify then
-            mountNotify({ Title = "Teleport", Content = "List refreshed (" .. #promptList .. " objects)" })
-        end
-    end
-
-    TeleportDropdown = TeleportTab:CreateDropdown({
-        Name = "Object",
-        Options = promptDisplayNames,
-        CurrentOption = {},
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            selectedTeleportPrompt = nil
-            if picked then
-                local idx = table.find(promptDisplayNames, picked)
-                if idx and promptList[idx] then
-                    selectedTeleportPrompt = promptList[idx]
+                if picked then
+                    local idx = table.find(promptDisplayNames, picked)
+                    if idx and promptList[idx] then
+                        selectedTeleportPrompt = promptList[idx]
+                    end
                 end
             end
-        end
-    })
+        })
 
-    TeleportTab:CreateButton({
-        Name = "Refresh",
-        Callback = function()
-            refreshTeleportList(true)
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Callback = function()
-            if not selectedTeleportPrompt then
-                mountNotify({ Title = "Teleport", Content = "Select an object first" })
-                return
+        TeleportTab:CreateButton({
+            Name = "Refresh",
+            Callback = function()
+                refreshTeleportList(true)
             end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local pos = getPromptPosition(selectedTeleportPrompt)
-            if not pos then
-                mountNotify({ Title = "Teleport", Content = "Could not get object position" })
-                return
-            end
-            rootPart.CFrame = CFrame.new(pos + Vector3.new(0, 0, 3))
-            mountNotify({ Title = "Teleport", Content = "Teleported to object" })
-        end
-    })
-    local tweenDurationValue = "5"
-    TeleportTab:CreateInput({
-        Name = "Tween Duration",
-        PlaceholderText = "e.g. 5",
-        CurrentValue = tweenDurationValue,
-        Callback = function(value)
-            tweenDurationValue = value
-        end
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Tween to Location",
-        Callback = function()
-            if not selectedTeleportPrompt then
-                mountNotify({ Title = "Teleport", Content = "Select an object first" })
-                return
-            end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local pos = getPromptPosition(selectedTeleportPrompt)
-            if not pos then
-                mountNotify({ Title = "Teleport", Content = "Could not get object position" })
-                return
-            end
-            local targetPos = pos + Vector3.new(0, 0, 3)
-            local duration = tonumber(tweenDurationValue) or 5
-            if duration < 0.1 then duration = 0.1 end
-            local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(targetPos) })
-            tween:Play()
-            mountNotify({ Title = "Teleport", Content = "Tweening to object (" .. tostring(duration) .. "s)" })
-        end
-    })
-    TeleportTab:CreateSection("Teleport to Players")
-    local playerDisplayNames = {}
-    local playerList = {}
-    local selectedTeleportPlayer = nil
-    local PlayerTeleportDropdown
-
-    local function refreshPlayerList(showNotify)
-        playerList = {}
-        playerDisplayNames = {}
-        local localPlayer = Players.LocalPlayer
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= localPlayer and player.ClassName == "Player" then
-                table.insert(playerList, player)
-                table.insert(playerDisplayNames, player.DisplayName or player.Name)
-            end
-        end
-        PlayerTeleportDropdown:Refresh(playerDisplayNames)
-        if selectedTeleportPlayer then
-            if not table.find(playerList, selectedTeleportPlayer) then
-                selectedTeleportPlayer = nil
-                if PlayerTeleportDropdown.Select then PlayerTeleportDropdown:Select(nil) end
-                if PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set({}) end
-            end
-        end
-        if showNotify then
-            mountNotify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)" })
-        end
-    end
-
-    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
-        Name = "Player",
-        Options = playerDisplayNames,
-        CurrentOption = {},
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            selectedTeleportPlayer = nil
-            if picked then
-                local idx = table.find(playerDisplayNames, picked)
-                if idx and playerList[idx] then
-                    selectedTeleportPlayer = playerList[idx]
+        })
+        TeleportTab:CreateButton({
+            Name = "Teleport",
+            Callback = function()
+                if not selectedTeleportPrompt then
+                    mountNotify({ Title = "Teleport", Content = "Select an object first" })
+                    return
                 end
+                local character = Players.LocalPlayer.Character
+                local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+                if not rootPart then
+                    mountNotify({ Title = "Teleport", Content = "Character not loaded" })
+                    return
+                end
+                local pos = getPromptPosition(selectedTeleportPrompt)
+                if not pos then
+                    mountNotify({ Title = "Teleport", Content = "Could not get object position" })
+                    return
+                end
+                rootPart.CFrame = CFrame.new(pos + Vector3.new(0, 0, 3))
+                mountNotify({ Title = "Teleport", Content = "Teleported to object" })
             end
-        end
-    })
+        })
+        local tweenDurationValue = "5"
+        TeleportTab:CreateInput({
+            Name = "Tween Duration",
+            PlaceholderText = "e.g. 5",
+            CurrentValue = tweenDurationValue,
+            Callback = function(value)
+                tweenDurationValue = value
+            end
+        })
 
-    TeleportTab:CreateButton({
-        Name = "Refresh",
-        Callback = function()
-            refreshPlayerList(true)
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Callback = function()
-            if not selectedTeleportPlayer then
-                mountNotify({ Title = "Teleport", Content = "Select a player first" })
-                return
+        TeleportTab:CreateButton({
+            Name = "Tween to Location",
+            Callback = function()
+                if not selectedTeleportPrompt then
+                    mountNotify({ Title = "Teleport", Content = "Select an object first" })
+                    return
+                end
+                local character = Players.LocalPlayer.Character
+                local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+                if not rootPart then
+                    mountNotify({ Title = "Teleport", Content = "Character not loaded" })
+                    return
+                end
+                local pos = getPromptPosition(selectedTeleportPrompt)
+                if not pos then
+                    mountNotify({ Title = "Teleport", Content = "Could not get object position" })
+                    return
+                end
+                local targetPos = pos + Vector3.new(0, 0, 3)
+                local duration = tonumber(tweenDurationValue) or 5
+                if duration < 0.1 then duration = 0.1 end
+                local tweenInfo = TweenInfo.new(duration)
+                local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(targetPos) })
+                tween:Play()
+                mountNotify({ Title = "Teleport", Content = "Tweening to object (" .. tostring(duration) .. "s)" })
             end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local targetChar = selectedTeleportPlayer.Character
-            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then
-                mountNotify({ Title = "Teleport", Content = "Target player has no character" })
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            mountNotify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name) })
-        end
-    })
-end
-
+        })
+    end,
+})
 -- */  Shop Tab  /* --
 do
     local ShopTab = ShopTabShared

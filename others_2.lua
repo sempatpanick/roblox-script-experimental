@@ -220,6 +220,61 @@ if not createObjectsTab then
         notifyFn({ Title = "Objects", Content = "Failed to load Objects Tab tab module", Icon = "x" })
     end
 end
+-- */  Teleport Tab (module)  /* --
+local TELEPORT_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/teleport_tab.lua"
+local function loadCreateTeleportTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/teleport_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Teleport Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "teleport_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Teleport Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Teleport Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Teleport Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createTeleportTab = loadCreateTeleportTab(TELEPORT_TAB_REPO)
+if not createTeleportTab then
+    createTeleportTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Others",
@@ -309,234 +364,7 @@ end
 createLocalPlayerTab(Window, mountNotify)
 
 -- */  Teleport Tab  /* --
-do
-    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
-
-    TeleportTab:CreateSection("Teleport")
-    local teleportInputValue = ""
-    local teleportLookInputValue = ""
-
-    local function teleportParseNumberTriple(str)
-        local s = str:gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        return parts
-    end
-
-    local function teleportCFrameFromInputs(posStr, lookStr)
-        local posParts = teleportParseNumberTriple(posStr)
-        if #posParts < 3 then
-            return nil
-        end
-        local pos = Vector3.new(posParts[1], posParts[2], posParts[3])
-        local lookParts = teleportParseNumberTriple(lookStr)
-        if #lookParts < 3 then
-            return CFrame.new(pos)
-        end
-        local dir = Vector3.new(lookParts[1], lookParts[2], lookParts[3])
-        if dir.Magnitude < 1e-5 then
-            return CFrame.new(pos)
-        end
-        return CFrame.lookAt(pos, pos + dir.Unit)
-    end
-
-    local TeleportInput = TeleportTab:CreateInput({
-        Name = "Location",
-        PlaceholderText = "e.g. 100, 5, 200 or 100 5 200",
-        Flag = "others_tp_location",
-        CurrentValue = teleportInputValue,
-        Callback = function(value)
-            teleportInputValue = value
-        end,
-    })
-
-    local TeleportLookInput = TeleportTab:CreateInput({
-        Name = "Look direction",
-        PlaceholderText = "e.g. 0, 0, -1 or leave empty for position only",
-        Flag = "others_tp_lookDirection",
-        CurrentValue = teleportLookInputValue,
-        Callback = function(value)
-            teleportLookInputValue = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Get Current Location",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local pos = rootPart.Position
-            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
-            teleportInputValue = text
-            if TeleportInput and TeleportInput.Set then
-                TeleportInput:Set(text)
-            elseif TeleportInput and TeleportInput.SetValue then
-                TeleportInput:SetValue(text)
-            end
-            local look = rootPart.CFrame.LookVector
-            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
-            teleportLookInputValue = lookText
-            if TeleportLookInput and TeleportLookInput.Set then
-                TeleportLookInput:Set(lookText)
-            elseif TeleportLookInput and TeleportLookInput.SetValue then
-                TeleportLookInput:SetValue(lookText)
-            end
-            mountNotify({
-                Title = "Location",
-                Content = "Position: " .. text .. " · Look: " .. lookText,
-            })
-        end,
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not cf then
-                mountNotify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                })
-                return
-            end
-            rootPart.CFrame = cf
-            local p = cf.Position
-            mountNotify({
-                Title = "Teleport",
-                Content = string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z),
-            })
-        end,
-    })
-    local tweenDurationValue = "5"
-    TeleportTab:CreateInput({
-        Name = "Tween Duration",
-        PlaceholderText = "e.g. 5",
-        CurrentValue = tweenDurationValue,
-        Callback = function(value)
-            tweenDurationValue = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Tween to Location",
-        Callback = function()
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not targetCf then
-                mountNotify({
-                    Title = "Teleport",
-                    Content = "Enter position as X, Y, Z (e.g. 100, 5, 200)",
-                })
-                return
-            end
-            local duration = tonumber(tweenDurationValue) or 5
-            if duration < 0.1 then duration = 0.1 end
-            local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
-            tween:Play()
-            local p = targetCf.Position
-            mountNotify({
-                Title = "Teleport",
-                Content = string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration),
-            })
-        end,
-    })
-
-    -- */  Teleport to Players  /* --
-    TeleportTab:CreateSection("Teleport to Players")
-    local playerDisplayNames = {}
-    local playerList = {}
-    local selectedTeleportPlayer = nil
-    local PlayerTeleportDropdown
-
-    local function refreshPlayerList(showNotify)
-        playerList = {}
-        playerDisplayNames = {}
-        local localPlayer = Players.LocalPlayer
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= localPlayer and player.ClassName == "Player" then
-                table.insert(playerList, player)
-                table.insert(playerDisplayNames, player.DisplayName or player.Name)
-            end
-        end
-        if PlayerTeleportDropdown and PlayerTeleportDropdown.Refresh then
-            PlayerTeleportDropdown:Refresh(playerDisplayNames)
-        end
-        if selectedTeleportPlayer then
-            if not table.find(playerList, selectedTeleportPlayer) then
-                selectedTeleportPlayer = nil
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Select then PlayerTeleportDropdown:Select(nil) end
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then PlayerTeleportDropdown:Set({}) end
-            end
-        end
-        if showNotify then
-            mountNotify({ Title = "Teleport", Content = "Player list refreshed (" .. #playerList .. " players)" })
-        end
-    end
-
-    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
-        Name = "Player",
-        Options = playerDisplayNames,
-        CurrentOption = {},
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            selectedTeleportPlayer = nil
-            if picked then
-                local idx = table.find(playerDisplayNames, picked)
-                if idx and playerList[idx] then
-                    selectedTeleportPlayer = playerList[idx]
-                end
-            end
-        end
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Refresh",
-        Callback = function()
-            refreshPlayerList(true)
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Callback = function()
-            if not selectedTeleportPlayer then
-                mountNotify({ Title = "Teleport", Content = "Select a player first" })
-                return
-            end
-            local character = Players.LocalPlayer.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not rootPart then
-                mountNotify({ Title = "Teleport", Content = "Character not loaded" })
-                return
-            end
-            local targetChar = selectedTeleportPlayer.Character
-            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then
-                mountNotify({ Title = "Teleport", Content = "Target player has no character" })
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            mountNotify({ Title = "Teleport", Content = "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name) })
-        end
-    })
-end
-
+createTeleportTab(Window, mountNotify, { flagsPrefix = "others" })
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 

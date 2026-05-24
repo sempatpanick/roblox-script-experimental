@@ -219,6 +219,61 @@ if not createObjectsTab then
         notifyFn({ Title = "Objects", Content = "Failed to load Objects Tab tab module", Icon = "x" })
     end
 end
+-- */  Teleport Tab (module)  /* --
+local TELEPORT_TAB_REPO = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/teleport_tab.lua"
+local function loadCreateTeleportTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("./tabs/teleport_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Teleport Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "teleport_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Teleport Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Teleport Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Teleport Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createTeleportTab = loadCreateTeleportTab(TELEPORT_TAB_REPO)
+if not createTeleportTab then
+    createTeleportTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
+    end
+end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
     Name = "sempatpanick | Expedition Antartica",
@@ -1329,307 +1384,24 @@ end
 
 
 -- */  Teleport Tab  /* --
-do
-    local TeleportTab = Window:CreateTab("Teleport", 4483362458)
-
-    TeleportTab:CreateSection("Teleport")
-    local teleportInputValue = ""
-    local teleportLookInputValue = ""
-
-    local function teleportCFrameFromInputs(posStr, lookStr)
-        local pos = parsePositionString(posStr)
-        if not pos then
-            return nil
-        end
-        local s = (lookStr or ""):gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        if #parts < 3 then
-            return CFrame.new(pos)
-        end
-        local dir = Vector3.new(parts[1], parts[2], parts[3])
-        if dir.Magnitude < 1e-5 then
-            return CFrame.new(pos)
-        end
-        return CFrame.lookAt(pos, pos + dir.Unit)
-    end
-
-    local TeleportInput = TeleportTab:CreateInput({
-        Ext = true,
-        Name = "Location",
-        PlaceholderText = "e.g. 100, 5, 200 or 100 5 200",
-        CurrentValue = teleportInputValue,
-        Callback = function(value)
-            teleportInputValue = value
-        end
-    })
-
-    local TeleportLookInput = TeleportTab:CreateInput({
-        Ext = true,
-        Name = "Look direction",
-        PlaceholderText = "e.g. 0, 0, -1 or leave empty",
-        CurrentValue = teleportLookInputValue,
-        Callback = function(value)
-            teleportLookInputValue = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Get Current Location",
-        Ext = true,
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local pos = rootPart.Position
-            local text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
-            teleportInputValue = text
-            if TeleportInput and TeleportInput.Set then
-                TeleportInput:Set(text)
-            elseif TeleportInput and TeleportInput.SetValue then
-                TeleportInput:SetValue(text)
-            end
-            local look = rootPart.CFrame.LookVector
-            local lookText = string.format("%.4f, %.4f, %.4f", look.X, look.Y, look.Z)
-            teleportLookInputValue = lookText
-            if TeleportLookInput and TeleportLookInput.Set then
-                TeleportLookInput:Set(lookText)
-            elseif TeleportLookInput and TeleportLookInput.SetValue then
-                TeleportLookInput:SetValue(lookText)
-            end
-            notify("Location", "Position: " .. text .. " · Look: " .. lookText)
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Ext = true,
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local cf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not cf then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            rootPart.CFrame = cf
-            local p = cf.Position
-            notify("Teleport", string.format("Teleported to %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
-        end
-    })
-    local tweenDurationValue = "5"
-    TeleportTab:CreateInput({
-        Ext = true,
-        Name = "Tween Duration",
-        PlaceholderText = "e.g. 5",
-        CurrentValue = tweenDurationValue,
-        Callback = function(value)
-            tweenDurationValue = value
-        end
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Tween to Location",
-        Ext = true,
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetCf = teleportCFrameFromInputs(teleportInputValue, teleportLookInputValue)
-            if not targetCf then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            local duration = tonumber(tweenDurationValue) or 5
-            if duration < 0.1 then duration = 0.1 end
-            local tweenInfo = TweenInfo.new(duration)
-            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCf })
-            tween:Play()
-            local p = targetCf.Position
-            notify("Teleport", string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)", p.X, p.Y, p.Z, duration))
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Walk to Location",
-        Ext = true,
-        Callback = function()
-            local _, rootPart, humanoid = getLocalCharacterParts()
-            if not rootPart or not humanoid then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetPos = parsePositionString(teleportInputValue)
-            if not targetPos then
-                notify("Teleport", "Enter position as X, Y, Z (e.g. 100, 5, 200)", "x")
-                return
-            end
-            humanoid:MoveTo(targetPos)
-            notify("Teleport", string.format("Walking to %.1f, %.1f, %.1f", targetPos.X, targetPos.Y, targetPos.Z))
-        end
-    })
-    -- */  Teleport to Camp  /* --
-    local campTeleportList = {
-        { name = "Camp 1", position = "-3718.86, 240.00, 235.13" },
-        { name = "Camp 2", position = "1789.92, 110.44, -137.28" },
-        { name = "Camp 3", position = "5892.31, 320.00, -19.92" },
-        { name = "Camp 4", position = "8991.70, 600.60, 103.15" },
-        { name = "South Pole", position = "10989.81, 569.12, 106.85" },
-    }
-
-    local campTeleportNames = {}
-    for _, camp in ipairs(campTeleportList) do
-        table.insert(campTeleportNames, camp.name)
-    end
-
-    local selectedCampTeleport = (#campTeleportNames > 0) and campTeleportNames[1] or nil
-
-    TeleportTab:CreateSection("Teleport to Camp")
-    TeleportTab:CreateDropdown({
-        Ext = true,
-        Name = "Camp",
-        Options = campTeleportNames,
-        CurrentOption = { selectedCampTeleport or campTeleportNames[1] },
-        Callback = function(opts)
-            local value = type(opts) == "table" and opts[1] or opts
-            selectedCampTeleport = value
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Ext = true,
-        Callback = function()
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport to Camp", "Character not loaded", "x")
-                return
-            end
-            if not selectedCampTeleport then
-                notify("Teleport to Camp", "Select a camp first", "x")
-                return
-            end
-            local posStr = nil
-            for _, camp in ipairs(campTeleportList) do
-                if camp.name == selectedCampTeleport then
-                    posStr = camp.position
-                    break
-                end
-            end
-            if not posStr then
-                notify("Teleport to Camp", "Camp not found", "x")
-                return
-            end
-            local targetPos = parsePositionString(posStr)
-            if not targetPos then
-                notify("Teleport to Camp", "Invalid position", "x")
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetPos)
-            notify("Teleport to Camp", "Teleported to " .. selectedCampTeleport)
-        end
-    })
-
-    -- */  Teleport to Players  /* --
-    TeleportTab:CreateSection("Teleport to Players")
-    local playerDisplayNames = {}
-    local playerList = {}
-    local selectedTeleportPlayer = nil
-    local PlayerTeleportDropdown
-
-    local TELEPORT_PLAYER_NONE = "(None)"
-
-    local function teleportPlayerDropdownOptions()
-        local opts = { TELEPORT_PLAYER_NONE }
-        for _, n in ipairs(playerDisplayNames) do
-            table.insert(opts, n)
-        end
-        return opts
-    end
-
-    local function refreshPlayerList(showNotify)
-        playerList = {}
-        playerDisplayNames = {}
-        local localPlayer = Players.LocalPlayer
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= localPlayer and player.ClassName == "Player" then
-                table.insert(playerList, player)
-                table.insert(playerDisplayNames, player.DisplayName or player.Name)
-            end
-        end
-        if PlayerTeleportDropdown and PlayerTeleportDropdown.Refresh then
-            PlayerTeleportDropdown:Refresh(teleportPlayerDropdownOptions())
-        end
-        if selectedTeleportPlayer then
-            if not table.find(playerList, selectedTeleportPlayer) then
-                selectedTeleportPlayer = nil
-                if PlayerTeleportDropdown and PlayerTeleportDropdown.Set then
-                    PlayerTeleportDropdown:Set(TELEPORT_PLAYER_NONE)
-                end
-            end
-        end
-        if showNotify then
-            notify("Teleport", "Player list refreshed (" .. #playerList .. " players)")
-        end
-    end
-
-    PlayerTeleportDropdown = TeleportTab:CreateDropdown({
-        Ext = true,
-        Name = "Player",
-        Search = true,
-        Options = teleportPlayerDropdownOptions(),
-        CurrentOption = { TELEPORT_PLAYER_NONE },
-        Callback = function(opts)
-            local value = type(opts) == "table" and opts[1] or opts
-            selectedTeleportPlayer = nil
-            if value and value ~= TELEPORT_PLAYER_NONE then
-                local idx = table.find(playerDisplayNames, value)
-                if idx and playerList[idx] then
-                    selectedTeleportPlayer = playerList[idx]
-                end
-            end
-        end,
-    })
-
-    TeleportTab:CreateButton({
-        Name = "Refresh",
-        Ext = true,
-        Callback = function()
-            refreshPlayerList(true)
-        end
-    })
-    TeleportTab:CreateButton({
-        Name = "Teleport",
-        Ext = true,
-        Callback = function()
-            if not selectedTeleportPlayer then
-                notify("Teleport", "Select a player first", "x")
-                return
-            end
-            local _, rootPart = getLocalCharacterParts()
-            if not rootPart then
-                notify("Teleport", "Character not loaded", "x")
-                return
-            end
-            local targetChar = selectedTeleportPlayer.Character
-            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then
-                notify("Teleport", "Target player has no character", "x")
-                return
-            end
-            rootPart.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 0, 3))
-            notify("Teleport", "Teleported to " .. (selectedTeleportPlayer.DisplayName or selectedTeleportPlayer.Name))
-        end
-    })
-end
-
+createTeleportTab(Window, mountNotify, {
+    ext = true,
+    notifyIcons = true,
+    walkToLocation = true,
+    playerSearch = true,
+    playerNoneOption = true,
+    campTeleport = {
+        sectionTitle = "Teleport to Camp",
+        mode = "dropdown",
+        camps = {
+            { name = "Camp 1", position = "-3718.86, 240.00, 235.13" },
+            { name = "Camp 2", position = "1789.92, 110.44, -137.28" },
+            { name = "Camp 3", position = "5892.31, 320.00, -19.92" },
+            { name = "Camp 4", position = "8991.70, 600.60, 103.15" },
+            { name = "South Pole", position = "10989.81, 569.12, 106.85" },
+        },
+    },
+})
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
