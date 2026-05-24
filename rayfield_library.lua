@@ -894,7 +894,7 @@ local dragBarCosmetic = dragBar and dragBar.Drag or nil
 local dragOffset = 255
 local dragOffsetMobile = 150
 
-local windowWidth = 400
+local windowWidth = 420
 local windowWidthMinimized = windowWidth - 5
 local windowWidthHidden = windowWidth - 30
 local windowWidthLoading = math.floor(windowWidth * 0.84)
@@ -1676,6 +1676,65 @@ local function fadeOutKeyUI(KeyMain)
 	TweenService:Create(KeyMain.NoteTitle, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(KeyMain.NoteMessage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
+end
+
+local paragraphTextPadding = 15
+
+local function updateParagraphLayout(Paragraph)
+	if not Paragraph or not Paragraph.Parent then
+		return
+	end
+
+	local Title = Paragraph:FindFirstChild("Title")
+	local Content = Paragraph:FindFirstChild("Content")
+	if not Title or not Content then
+		return
+	end
+
+	local topPad = 8
+	local textGap = 4
+	local bottomPad = 10
+
+	Title.TextWrapped = true
+	Title.TextXAlignment = Enum.TextXAlignment.Left
+	Title.TextYAlignment = Enum.TextYAlignment.Top
+	Title.AutomaticSize = Enum.AutomaticSize.Y
+	Title.Size = UDim2.new(1, -paragraphTextPadding * 2, 0, 0)
+	Title.Position = UDim2.new(0, paragraphTextPadding, 0, topPad)
+
+	Content.TextWrapped = true
+	Content.TextXAlignment = Enum.TextXAlignment.Left
+	Content.TextYAlignment = Enum.TextYAlignment.Top
+	Content.AutomaticSize = Enum.AutomaticSize.Y
+	Content.Size = UDim2.new(1, -paragraphTextPadding * 2, 0, 0)
+
+	local titleHeight = math.max(Title.TextBounds.Y, Title.TextSize)
+	Content.Position = UDim2.new(0, paragraphTextPadding, 0, topPad + titleHeight + textGap)
+
+	local contentHeight = math.max(Content.TextBounds.Y, Content.TextSize)
+	Paragraph.Size = UDim2.new(1, -10, 0, topPad + titleHeight + textGap + contentHeight + bottomPad)
+end
+
+local function bindParagraphLayout(Paragraph)
+	local updating = false
+	local function refresh()
+		if updating or not Paragraph.Parent then
+			return
+		end
+		updating = true
+		updateParagraphLayout(Paragraph)
+		updating = false
+	end
+
+	for _, label in ipairs({Paragraph:FindFirstChild("Title"), Paragraph:FindFirstChild("Content")}) do
+		if label then
+			label:GetPropertyChangedSignal("Text"):Connect(refresh)
+			label:GetPropertyChangedSignal("TextBounds"):Connect(refresh)
+		end
+	end
+
+	Paragraph:GetPropertyChangedSignal("AbsoluteSize"):Connect(refresh)
+	task.defer(refresh)
 end
 
 function RayfieldLibrary:CreateWindow(Settings)
@@ -2635,9 +2694,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 			TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			bindParagraphLayout(Paragraph)
+
 			function ParagraphValue:Set(NewParagraphSettings)
 				Paragraph.Title.Text = NewParagraphSettings.Title
 				Paragraph.Content.Text = NewParagraphSettings.Content
+				updateParagraphLayout(Paragraph)
 			end
 
 			function ParagraphValue:Destroy()
