@@ -1522,28 +1522,65 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         task.defer(refreshCarryPlayers)
     end)
 
+    local rejoinTeleporting = false
+
     LocalPlayerTab:CreateSection("Server")
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
         Callback = function()
+            if rejoinTeleporting then
+                return
+            end
+
             local TeleportService = game:GetService("TeleportService")
+            local player = Players.LocalPlayer
             local placeId = game.PlaceId
             local jobId = game.JobId
-            if placeId and jobId and #jobId > 0 then
-                local ok, err = pcall(function()
-                    TeleportService:TeleportToPlaceInstance(placeId, jobId)
-                end)
-                if not ok then
-                    mountNotify({
-                        Title = "Rejoin",
-                        Content = "Failed: " .. tostring(err),
-                    })
-                end
-            else
+
+            local isPrivateServer = game.PrivateServerId ~= "" and game.PrivateServerId ~= nil
+            local accessCode = nil
+            local teleportData = TeleportService:GetLocalPlayerTeleportData()
+            if teleportData and type(teleportData) == "table" then
+                accessCode = teleportData.AccessCode
+            end
+
+            if not placeId then
                 mountNotify({
                     Title = "Rejoin",
-                    Content = "Cannot rejoin (missing PlaceId or JobId)",
+                    Content = "Cannot rejoin (missing PlaceId)",
                 })
+                return
+            end
+
+            if not (isPrivateServer and accessCode) and (not jobId or #jobId == 0) then
+                mountNotify({
+                    Title = "Rejoin",
+                    Content = "Cannot rejoin (missing JobId)",
+                })
+                return
+            end
+
+            rejoinTeleporting = true
+            local ok, err = pcall(function()
+                if isPrivateServer then
+                    if accessCode then
+                        TeleportService:TeleportToPrivateServer(placeId, accessCode, { player })
+                    else
+                        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+                    end
+                else
+                    TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+                end
+            end)
+
+            if not ok then
+                mountNotify({
+                    Title = "Rejoin",
+                    Content = "Failed: " .. tostring(err),
+                })
+                task.delay(3, function()
+                    rejoinTeleporting = false
+                end)
             end
         end,
     })
