@@ -1539,18 +1539,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
             local isPrivateServer = game.PrivateServerId ~= "" and game.PrivateServerId ~= nil
             local accessCode = nil
-            print("running 1")
             local teleportData = TeleportService:GetLocalPlayerTeleportData()
-            print("running 2")
-            -- INSERT_YOUR_CODE
-            -- Print the teleportData as JSON (if possible)
-            local HttpService = game:GetService("HttpService")
-            local jsonStr
-            pcall(function()
-                jsonStr = HttpService:JSONEncode(teleportData)
-            end)
-            print("running 3")
-            print("[Local Player Tab] TeleportData as JSON:", jsonStr)
  
             if teleportData and type(teleportData) == "table" then
                 accessCode = teleportData.AccessCode
