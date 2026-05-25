@@ -342,7 +342,7 @@ local Window = RayfieldLibrary:CreateWindow({
     MinSize = Vector2.new(420, 280),
     MaxSize = Vector2.new(1100, 760),
     ConfigurationSaving = {
-        Enabled = false,
+        Enabled = true,
         FolderName = "sempatpanick",
         FileName = "mount_yahayuk",
     },
@@ -1099,7 +1099,7 @@ do
 
     MainTab:CreateButton({
         Name = "Refresh Routes (mode Walk)",
-        Ext = true,
+        Flag = "yahayuk_main_refresh_routes",
         Callback = function()
             task.spawn(function()
                 notifyAutoSummit("Refreshing walk routes from remote...")
@@ -1115,9 +1115,9 @@ do
 
     MainTab:CreateDropdown({
         Name = "Mode",
+        Flag = "yahayuk_main_auto_summit_mode",
         Options = AUTO_SUMMIT_MODE_OPTIONS,
         CurrentOption = { autoSummitMode },
-        Ext = true,
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
             if picked and table.find(AUTO_SUMMIT_MODE_OPTIONS, picked) then
@@ -2351,9 +2351,9 @@ do
 
     local SummitQtyInput = MainTab:CreateInput({
         Name = "Qty of summit",
+        Flag = "yahayuk_main_summit_qty",
         PlaceholderText = "Empty = unlimited",
         CurrentValue = "",
-        Ext = true,
         Callback = function(value)
             summitQty = value
         end,
@@ -2361,8 +2361,8 @@ do
 
     MainTab:CreateToggle({
         Name = "Randomize Teleport",
+        Flag = "yahayuk_main_randomize_teleport",
         CurrentValue = false,
-        Ext = true,
         Callback = function(enabled)
             autoSummitRandomizeTeleportDelay = enabled
         end,
@@ -2370,8 +2370,8 @@ do
 
     MainTab:CreateToggle({
         Name = "Include Failed Route",
+        Flag = "yahayuk_main_include_failed_route",
         CurrentValue = false,
-        Ext = true,
         Callback = function(enabled)
             autoSummitIncludeFailedRoute = enabled
         end,
@@ -2404,8 +2404,8 @@ do
 
     autoSummitMainToggle = MainTab:CreateToggle({
         Name = "Auto Summit",
+        Flag = "yahayuk_main_auto_summit",
         CurrentValue = false,
-        Ext = true,
         Callback = function(enabled)
             autoSummitEnabled = enabled
             if not enabled then
@@ -2921,11 +2921,11 @@ do
 
     SendRequestCarryPlayersDropdown = MainTab:CreateDropdown({
         Name = "To",
+        Flag = "yahayuk_main_send_carry_to",
         Options = sendRequestCarryDropdownOptions(),
         CurrentOption = {},
         MultipleOptions = true,
         Search = true,
-        Ext = true,
         Callback = function(selected)
             if type(selected) == "table" then
                 sendRequestCarrySelected = selected
@@ -2939,9 +2939,9 @@ do
 
     MainTab:CreateInput({
         Name = "By Name (additional)",
+        Flag = "yahayuk_main_send_carry_by_name",
         PlaceholderText = "Display names, e.g. kyazuramoe, FriendName",
         CurrentValue = "",
-        Ext = true,
         Callback = function(value)
             sendRequestCarryAdditionalPlayersText = value or ""
         end,
@@ -2950,8 +2950,8 @@ do
     local SendRequestCarryAutoToggle
     SendRequestCarryAutoToggle = MainTab:CreateToggle({
         Name = "Auto Send",
+        Flag = "yahayuk_main_send_carry_auto",
         CurrentValue = false,
-        Ext = true,
         Callback = function(enabled)
             sendRequestCarryAutoLoopToken = sendRequestCarryAutoLoopToken + 1
             if not enabled then
@@ -3154,11 +3154,11 @@ do
 
     AcceptIncomingCarryPlayersDropdown = MainTab:CreateDropdown({
         Name = "From",
+        Flag = "yahayuk_main_accept_carry_from",
         Options = acceptIncomingCarryDropdownOptions(),
         CurrentOption = {},
         MultipleOptions = true,
         Search = true,
-        Ext = true,
         Callback = function(selected)
             if type(selected) == "table" then
                 acceptIncomingCarrySelected = selected
@@ -3173,8 +3173,8 @@ do
     local AcceptIncomingCarryListenToggle
     AcceptIncomingCarryListenToggle = MainTab:CreateToggle({
         Name = "Auto Accept",
+        Flag = "yahayuk_main_accept_carry_auto",
         CurrentValue = false,
-        Ext = true,
         Callback = function(enabled)
             if acceptIncomingCarryRemoteConn then
                 acceptIncomingCarryRemoteConn:Disconnect()
@@ -3309,10 +3309,10 @@ do
 
     TransferCashPlayersDropdown = MainTab:CreateDropdown({
         Name = "Player",
+        Flag = "yahayuk_main_transfer_cash_player",
         Options = transferCashInitialOpts,
         CurrentOption = transferCashInitialCurrent,
         Search = true,
-        Ext = true,
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
             transferCashSelectedPlayer = picked and transferCashFindPlayerByLabel(picked) or nil
@@ -3321,9 +3321,9 @@ do
 
     MainTab:CreateInput({
         Name = "Amount",
+        Flag = "yahayuk_main_transfer_cash_amount",
         PlaceholderText = "e.g. 100",
         CurrentValue = "",
-        Ext = true,
         Callback = function(value)
             transferCashAmountText = value or ""
         end,
@@ -3331,7 +3331,7 @@ do
 
     MainTab:CreateButton({
         Name = "Give Cash",
-        Ext = true,
+        Flag = "yahayuk_main_transfer_cash_give",
         Callback = function()
             if not transferCashSelectedPlayer then
                 mountNotify({ Title = "Transfer Cash", Content = "Select a player first", Icon = "x" })
@@ -3447,9 +3447,10 @@ do
 
     for _, loc in ipairs(campLocations) do
         local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
+        local campFlag = "yahayuk_main_teleport_" .. string.lower(string.gsub(label, "%s+", "_"))
         MainTab:CreateButton({
             Name = label,
-            Ext = true,
+            Flag = campFlag,
             Callback = function()
                 teleportToCampCoords(cx, cy, cz, label)
             end,
@@ -3841,8 +3842,8 @@ do
 
     MapTab:CreateToggle({
         Name = "Boost FPS",
+        Flag = "yahayuk_map_boost_fps",
         CurrentValue = false,
-        Ext = true,
         Callback = function(value)
             local enabled = value == true or (type(value) == "table" and value[1] == true)
             if enabled == fpsBoostEnabled then
@@ -3871,8 +3872,8 @@ do
 
     MapTab:CreateToggle({
         Name = "Boost FPS: part materials (heavy)",
+        Flag = "yahayuk_map_boost_fps_materials",
         CurrentValue = false,
-        Ext = true,
         Callback = function(value)
             local enabled = value == true or (type(value) == "table" and value[1] == true)
             if enabled == fpsBoostPartMaterialsEnabled then
@@ -4021,8 +4022,8 @@ do
 
     MapTab:CreateToggle({
         Name = "Hide Heavy VFX (Map-specific)",
+        Flag = "yahayuk_map_hide_heavy_vfx",
         CurrentValue = false,
-        Ext = true,
         Callback = function(value)
             local enabled = value == true or (type(value) == "table" and value[1] == true)
             if enabled == mapVfxHideEnabled then
@@ -4392,8 +4393,8 @@ do
 
     MapTab:CreateToggle({
         Name = "Hide Map Decor (Road/Flower/Vine/Leaves/Trashcan)",
+        Flag = "yahayuk_map_hide_decor",
         CurrentValue = false,
-        Ext = true,
         Callback = function(value)
             local enabled = value == true or (type(value) == "table" and value[1] == true)
             if enabled == hideMapDecorEnabled then
@@ -4450,7 +4451,7 @@ do
 
     MapTab:CreateButton({
         Name = "Scan FPS Analyzer",
-        Ext = true,
+        Flag = "yahayuk_map_fps_analyzer_scan",
         Callback = function()
             local ok, err = pcall(function()
                 local jobGen = bumpMapPerfJobGeneration()
