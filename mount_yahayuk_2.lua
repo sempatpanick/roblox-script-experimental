@@ -1113,20 +1113,6 @@ do
         end,
     })
 
-    MainTab:CreateDropdown({
-        Name = "Mode",
-        Flag = "yahayuk_main_auto_summit_mode",
-        Options = AUTO_SUMMIT_MODE_OPTIONS,
-        CurrentOption = { autoSummitMode },
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            if picked and table.find(AUTO_SUMMIT_MODE_OPTIONS, picked) then
-                autoSummitMode = picked
-                task.defer(updateAutoSummitRouteModeParagraph)
-            end
-        end,
-    })
-
     local lpAutoSummit = Players.LocalPlayer
 
     local function releaseAutoSummitWalkVirtualKeys()
@@ -1176,6 +1162,34 @@ do
         autoSummitWalkPlaybackHumanoid = nil
         autoSummitWalkPlaybackAutoRotateRestore = nil
     end
+
+    local AutoSummitModeDropdown
+    AutoSummitModeDropdown = MainTab:CreateDropdown({
+        Name = "Mode",
+        Flag = "yahayuk_main_auto_summit_mode",
+        Options = AUTO_SUMMIT_MODE_OPTIONS,
+        CurrentOption = { autoSummitMode },
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if type(AutoSummitModeDropdown) == "table" and type(AutoSummitModeDropdown.CurrentOption) == "table" then
+                local fromUi = rayfieldDropdownFirst(AutoSummitModeDropdown.CurrentOption)
+                if fromUi and table.find(AUTO_SUMMIT_MODE_OPTIONS, fromUi) then
+                    picked = fromUi
+                end
+            end
+            if picked and table.find(AUTO_SUMMIT_MODE_OPTIONS, picked) and picked ~= autoSummitMode then
+                local previousMode = autoSummitMode
+                autoSummitMode = picked
+                if autoSummitEnabled then
+                    if previousMode == "Walk" or picked == "Walk" then
+                        stopAutoSummitWalkCharacter()
+                    end
+                    notifyAutoSummit("Mode switched to " .. picked)
+                end
+                updateAutoSummitRouteModeParagraph()
+            end
+        end,
+    })
 
     -- Periodic jumps during MoveTo + recording playback when summitRoute[*].walkWithJump is true.
     local function startWalkJumpAssistForLeg(shouldCancel: () -> boolean): () -> ()
@@ -2457,10 +2471,6 @@ do
                 return
             end
 
-            local function shouldAbort()
-                return not autoSummitEnabled or autoSummitRestartFromDeath
-            end
-
             task.spawn(function()
                 local qtyNum = tonumber(summitQty and summitQty:gsub("%s+", "") or "")
                 local runCount = 0
@@ -2470,9 +2480,15 @@ do
                     if not autoSummitEnabled then
                         break
                     end
+                    local cycleMode = autoSummitMode
+                    local function shouldAbort()
+                        return not autoSummitEnabled
+                            or autoSummitRestartFromDeath
+                            or autoSummitMode ~= cycleMode
+                    end
                     local modeHandler = getCurrentAutoSummitModeHandler()
                     modeHandler.resetRouteStatus()
-                    task.defer(updateAutoSummitRouteModeParagraph)
+                    updateAutoSummitRouteModeParagraph()
                     local runStartTime = os.clock()
                     rootPart = getRootPart()
                     if not rootPart then
@@ -2566,10 +2582,10 @@ do
                             end
                             if autoSummitEnabled and (not qtyNum or remaining > 0) then
                                 local betweenRunDelay = modeHandler.getBetweenRunDelay()
-                                if not waitWithCancel(betweenRunDelay, function()
-                                    return not autoSummitEnabled
-                                end) then
-                                    break
+                                if not waitWithCancel(betweenRunDelay, shouldAbort) then
+                                    if not autoSummitEnabled then
+                                        break
+                                    end
                                 end
                             end
                         elseif atSummitNow then
@@ -2578,9 +2594,7 @@ do
                                     autoSummitCurrentCpLabel
                                 )
                             )
-                            if not waitWithCancel(1, function()
-                                return not autoSummitEnabled
-                            end) then
+                            if not waitWithCancel(1, shouldAbort) and not autoSummitEnabled then
                                 break
                             end
                         else
@@ -3447,7 +3461,8 @@ do
 
     for _, loc in ipairs(campLocations) do
         local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
-        local campFlag = "yahayuk_main_teleport_" .. string.lower(string.gsub(label, "%s+", "_"))
+        local campSlug = string.gsub(label, "%s+", "_")
+        local campFlag = "yahayuk_main_teleport_" .. string.lower(campSlug)
         MainTab:CreateButton({
             Name = label,
             Flag = campFlag,
