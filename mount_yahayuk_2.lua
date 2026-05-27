@@ -1311,6 +1311,8 @@ do
         end
 
         local movementConnection: RBXScriptConnection? = nil
+        local movementBlendInDuration = 0.12
+        local movementBlendStartCFrame: CFrame? = nil
         local function cleanupPlaybackState()
             if movementConnection then
                 pcall(function()
@@ -1378,17 +1380,29 @@ do
                     alpha = 0
                 end
 
+                local playbackTargetCf = cfA:Lerp(cfB, alpha)
+                if not movementBlendStartCFrame then
+                    movementBlendStartCFrame = rootPart.CFrame
+                end
+                local finalCf = playbackTargetCf
+                if elapsed < movementBlendInDuration and movementBlendStartCFrame then
+                    local blendAlpha = math.clamp(elapsed / movementBlendInDuration, 0, 1)
+                    finalCf = movementBlendStartCFrame:Lerp(playbackTargetCf, blendAlpha)
+                end
+
                 pcall(function()
-                    rootPart.CFrame = cfA:Lerp(cfB, alpha)
+                    rootPart.CFrame = finalCf
                 end)
 
-                local vel = dataA.velocity
-                if type(vel) == "table" then
-                    local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
-                    if vx and vy and vz then
-                        pcall(function()
-                            rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
-                        end)
+                if elapsed >= movementBlendInDuration then
+                    local vel = dataA.velocity
+                    if type(vel) == "table" then
+                        local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
+                        if vx and vy and vz then
+                            pcall(function()
+                                rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
+                            end)
+                        end
                     end
                 end
             end)
@@ -1413,7 +1427,7 @@ do
             end
             local data = type(event.data) == "table" and event.data or {}
             local character = lpAutoSummit.Character
-            local humanoid, rootPart = getCharacterHumanoidAndRootWalk(character)
+            local humanoid = select(1, getCharacterHumanoidAndRootWalk(character))
 
             if humanoid and autoSummitWalkPlaybackHumanoid ~= humanoid then
                 if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
