@@ -439,6 +439,11 @@ do
     local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
     local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
+    -- Transition tuning: MoveTo(first position) -> route playback handoff
+    -- Increase durations for smoother/softer handoff, decrease for snappier start.
+    local AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC = 0.14
+    local AUTO_SUMMIT_WALK_TRANSITION_MIN_SEC = 0.10
+    local AUTO_SUMMIT_WALK_TRANSITION_MAX_SEC = 0.56
     local autoSummitMode = "Walk"
     local AUTO_SUMMIT_MODE_OPTIONS = { "Walk", "Teleport" }
     local updateAutoSummitRouteModeParagraph: () -> ()
@@ -836,24 +841,6 @@ do
         return nil
     end
 
-    local function findFirstMovementLookDirection(events: { any }): Vector3?
-        for _, ev in ipairs(events) do
-            if type(ev) == "table" and ev.kind == "movement" and type(ev.data) == "table" then
-                local look = ev.data.lookDirection
-                if type(look) == "table" then
-                    local x, y, z = tonumber(look.x), tonumber(look.y), tonumber(look.z)
-                    if x and y and z then
-                        local planar = Vector3.new(x, 0, z)
-                        if planar.Magnitude > 1e-4 then
-                            return planar.Unit
-                        end
-                    end
-                end
-            end
-        end
-        return nil
-    end
-
     local function getCharacterHumanoidAndRootWalk(character: Model?): (Humanoid?, BasePart?)
         if not character then
             return nil, nil
@@ -930,37 +917,6 @@ do
             humanoid:Move(Vector3.new(0, 0, 0))
         end)
         return false
-    end
-
-    local function smoothRootFaceDirection(
-        rootPart: BasePart,
-        lookDir: Vector3?,
-        shouldCancel: () -> boolean,
-        durationSec: number?
-    )
-        if not lookDir then
-            return
-        end
-        local planar = Vector3.new(lookDir.X, 0, lookDir.Z)
-        if planar.Magnitude <= 1e-4 then
-            return
-        end
-        local dir = planar.Unit
-        local targetCf = CFrame.lookAt(rootPart.Position, rootPart.Position + dir)
-        local startCf = rootPart.CFrame
-        local total = math.clamp(durationSec or 0.14, 0.05, 0.3)
-        local t0 = os.clock()
-        while not shouldCancel() do
-            local alpha = (os.clock() - t0) / total
-            if alpha >= 1 then
-                break
-            end
-            rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
-            task.wait()
-        end
-        if not shouldCancel() then
-            rootPart.CFrame = targetCf
-        end
     end
 
     local summitRoute = {
@@ -1360,8 +1316,14 @@ do
         end
 
         local movementConnection: RBXScriptConnection? = nil
-        local movementBlendInDuration = 0.12
+        local movementBlendInDuration = AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC
         local movementBlendStartCFrame: CFrame? = nil
+        local movementBlendVelocityStart: Vector3? = nil
+        local movementBlendDurationInitialized = false
+        local function easeInOutSine(t: number): number
+            local c = math.clamp(t, 0, 1)
+            return 0.5 - 0.5 * math.cos(math.pi * c)
+        end
         local function cleanupPlaybackState()
             if movementConnection then
                 pcall(function()
@@ -1433,9 +1395,31 @@ do
                 if not movementBlendStartCFrame then
                     movementBlendStartCFrame = rootPart.CFrame
                 end
+                if not movementBlendVelocityStart then
+                    movementBlendVelocityStart = rootPart.AssemblyLinearVelocity
+                end
+                if not movementBlendDurationInitialized and movementBlendStartCFrame then
+                    movementBlendDurationInitialized = true
+                    local initialDist = (movementBlendStartCFrame.Position - playbackTargetCf.Position).Magnitude
+                    local startLook = movementBlendStartCFrame.LookVector
+                    local targetLook = playbackTargetCf.LookVector
+                    local planarA = Vector3.new(startLook.X, 0, startLook.Z)
+                    local planarB = Vector3.new(targetLook.X, 0, targetLook.Z)
+                    local yawDelta = 0
+                    if planarA.Magnitude > 1e-4 and planarB.Magnitude > 1e-4 then
+                        yawDelta = math.deg(math.acos(math.clamp(planarA.Unit:Dot(planarB.Unit), -1, 1)))
+                    end
+                    local distDur = math.clamp(initialDist * 0.035, 0, 0.22)
+                    local yawDur = math.clamp(yawDelta / 600, 0, 0.18)
+                    movementBlendInDuration = math.clamp(
+                        AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC + distDur + yawDur,
+                        AUTO_SUMMIT_WALK_TRANSITION_MIN_SEC,
+                        AUTO_SUMMIT_WALK_TRANSITION_MAX_SEC
+                    )
+                end
                 local finalCf = playbackTargetCf
                 if elapsed < movementBlendInDuration and movementBlendStartCFrame then
-                    local blendAlpha = math.clamp(elapsed / movementBlendInDuration, 0, 1)
+                    local blendAlpha = easeInOutSine(math.clamp(elapsed / movementBlendInDuration, 0, 1))
                     finalCf = movementBlendStartCFrame:Lerp(playbackTargetCf, blendAlpha)
                 end
 
@@ -1443,13 +1427,20 @@ do
                     rootPart.CFrame = finalCf
                 end)
 
-                if elapsed >= movementBlendInDuration then
-                    local vel = dataA.velocity
-                    if type(vel) == "table" then
-                        local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
-                        if vx and vy and vz then
+                local vel = dataA.velocity
+                if type(vel) == "table" then
+                    local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
+                    if vx and vy and vz then
+                        local targetVel = Vector3.new(vx, vy, vz)
+                        if elapsed < movementBlendInDuration and movementBlendVelocityStart then
+                            local vAlpha = easeInOutSine(math.clamp(elapsed / movementBlendInDuration, 0, 1))
+                            local blendedVel = movementBlendVelocityStart:Lerp(targetVel, vAlpha)
                             pcall(function()
-                                rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
+                                rootPart.AssemblyLinearVelocity = blendedVel
+                            end)
+                        else
+                            pcall(function()
+                                rootPart.AssemblyLinearVelocity = targetVel
                             end)
                         end
                     end
@@ -1753,7 +1744,6 @@ do
                         return false, reachedSummitInThisCycle
                     end
                     local firstTargetPos = firstPos
-                    local firstLookDir = findFirstMovementLookDirection(events)
                     local recordedRootToFeet = extractRecordedRootToFeetHeightWalk(payload, events)
                     local currentRootToFeet = getCharacterRootToFeetHeightWalk(character)
                     if recordedRootToFeet and currentRootToFeet then
@@ -1771,13 +1761,6 @@ do
                     end
 
                     humanoidWalkToWorldPosition(humanoid, rootPart, firstTargetPos, shouldCancel, 7)
-                    if shouldCancel() then
-                        endWalkJumpAssist()
-                        return false, reachedSummitInThisCycle
-                    end
-                    pcall(function()
-                        smoothRootFaceDirection(rootPart, firstLookDir, shouldCancel, 0.12)
-                    end)
                     if shouldCancel() then
                         endWalkJumpAssist()
                         return false, reachedSummitInThisCycle
