@@ -17,7 +17,16 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     RecordingTab:CreateSection("Record Roblox Activities")
 
     local RECORDINGS_DIR = recordingsDir
-    local RECORDING_SAMPLE_INTERVAL = 0.1
+    local DEFAULT_RECORDING_MOVEMENT_HZ = 30
+    local MIN_RECORDING_MOVEMENT_HZ = 10
+    local MAX_RECORDING_MOVEMENT_HZ = 60
+    local recordingMovementHz = DEFAULT_RECORDING_MOVEMENT_HZ
+
+    local function getRecordingSampleInterval()
+        local hz = tonumber(recordingMovementHz) or DEFAULT_RECORDING_MOVEMENT_HZ
+        hz = math.clamp(hz, MIN_RECORDING_MOVEMENT_HZ, MAX_RECORDING_MOVEMENT_HZ)
+        return 1 / hz
+    end
     local function resolveExecutorFn(name)
         local v = rawget(_G, name)
         if type(v) == "function" then
@@ -80,6 +89,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     local playbackHumanoid = nil
     local playbackAutoRotateRestore = nil
     local playbackKeysDown = {}
+    local playbackMovementConnection = nil
     local SAVED_RECORDING_NONE = "(None)"
     local refreshRecordingPlayersDropdown = function() end
     local refreshSavedRecordingsDropdown = function(_showNotify) end
@@ -113,6 +123,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         local targetText = selectedRecordingPlayerName or "(not selected)"
         local content = stateText
             .. "\nTarget: " .. targetText
+            .. "\nSample rate: " .. tostring(recordingMovementHz) .. " Hz"
             .. "\nEvents: " .. tostring(#recordingEvents)
             .. "\nLast file: " .. (lastSavedRecordingPath ~= "" and lastSavedRecordingPath or "(none)")
         if extraLine and extraLine ~= "" then
@@ -205,6 +216,13 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     local function stopSavedRecordingPlayback(reason, shouldNotify)
         releaseSavedRecordingInputAndMotion()
 
+        if playbackMovementConnection then
+            pcall(function()
+                playbackMovementConnection:Disconnect()
+            end)
+            playbackMovementConnection = nil
+        end
+
         if playbackHumanoid and playbackAutoRotateRestore ~= nil then
             pcall(function()
                 playbackHumanoid.AutoRotate = playbackAutoRotateRestore
@@ -296,6 +314,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         "avatarProfile",
         "totalEvents",
         "durationSeconds",
+        "movementSampleHz",
         "startedAtUtc",
         "gameId",
         "placeId",
@@ -465,6 +484,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                 avatarProfile = captureAvatarProfileForCharacter(targetPlayer and targetPlayer.Character),
                 totalEvents = #recordingEvents,
                 durationSeconds = tonumber(string.format("%.3f", math.max(0, recordingNow()))),
+                movementSampleHz = recordingMovementHz,
                 startedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 gameId = game.GameId,
                 placeId = game.PlaceId,
@@ -553,7 +573,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         local look = rootPart.CFrame.LookVector
         local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
         local signature = string.format(
-            "%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%s",
+            "%.2f|%.2f|%.2f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.2f|%.2f|%.2f|%s",
             moveDir.X, moveDir.Y, moveDir.Z,
             pos.X, pos.Y, pos.Z,
             vel.X, vel.Y, vel.Z,
@@ -643,6 +663,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
             playerUserId = targetPlayer.UserId,
             recorderName = Players.LocalPlayer and Players.LocalPlayer.Name or "unknown",
             recordKeyboardInputs = recordLocalInputs,
+            movementSampleHz = recordingMovementHz,
             avatarProfile = captureAvatarProfileForCharacter(targetPlayer.Character),
         })
 
@@ -698,12 +719,12 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
 
         attachCharacterRecordingHooks(targetPlayer.Character)
 
-        table.insert(recordingConnections, RunService.Heartbeat:Connect(function()
+        table.insert(recordingConnections, RunService.PostSimulation:Connect(function()
             if not recordingInProgress then
                 return
             end
             local now = recordingNow()
-            if (now - lastMovementCaptureAt) < RECORDING_SAMPLE_INTERVAL then
+            if (now - lastMovementCaptureAt) < getRecordingSampleInterval() then
                 return
             end
             lastMovementCaptureAt = now
@@ -835,6 +856,25 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         end,
     })
     refreshRecordingPlayersDropdown()
+
+    RecordingTab:CreateSlider({
+        Name = "Movement sample rate",
+        Flag = "recording_movement_hz",
+        Range = { MIN_RECORDING_MOVEMENT_HZ, MAX_RECORDING_MOVEMENT_HZ },
+        Increment = 5,
+        Suffix = "Hz",
+        CurrentValue = DEFAULT_RECORDING_MOVEMENT_HZ,
+        Callback = function(value)
+            recordingMovementHz = math.clamp(math.floor(tonumber(value) or DEFAULT_RECORDING_MOVEMENT_HZ), MIN_RECORDING_MOVEMENT_HZ, MAX_RECORDING_MOVEMENT_HZ)
+            updateRecordingParagraph()
+        end,
+    })
+
+    RecordingTab:CreateParagraph({
+        Title = "Sample rate",
+        Content = "Higher Hz = smoother playback and larger JSON files.\n10 Hz (compact) · 30 Hz (default) · 60 Hz (smoothest)",
+    })
+
     Players.PlayerAdded:Connect(function()
         refreshRecordingPlayersDropdown()
     end)
@@ -1072,16 +1112,10 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
             playbackAutoRotateRestore = nil
             playbackKeysDown = {}
 
-            local nextMovementDeltaByIndex = {}
-            local nextMovementTime = nil
-            for i = #events, 1, -1 do
-                local ev = events[i]
-                local evTime = tonumber(ev.t) or 0
+            local movementTrack = {}
+            for _, ev in ipairs(events) do
                 if ev.kind == "movement" then
-                    nextMovementDeltaByIndex[i] = nextMovementTime and math.max(0, nextMovementTime - evTime) or nil
-                    nextMovementTime = evTime
-                else
-                    nextMovementDeltaByIndex[i] = nil
+                    table.insert(movementTrack, ev)
                 end
             end
 
@@ -1184,30 +1218,92 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                     return CFrame.new(basePos)
                 end
 
-                local function applySmoothRootCFrame(rootPart, targetCf, durationSec)
-                    if durationSec <= 0.015 then
-                        rootPart.CFrame = targetCf
-                        return
+                local function findMovementSegmentIndex(track, elapsed)
+                    if #track == 0 then
+                        return nil
                     end
-                    local startCf = rootPart.CFrame
-                    local t0 = os.clock()
-                    while token == playbackToken do
-                        local alpha = (os.clock() - t0) / durationSec
-                        if alpha >= 1 then
+                    local idx = 1
+                    while idx < #track do
+                        local nextT = tonumber(track[idx + 1].t) or 0
+                        if nextT > elapsed then
                             break
                         end
-                        rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
-                        task.wait()
+                        idx = idx + 1
                     end
-                    if token == playbackToken then
-                        rootPart.CFrame = targetCf
-                    end
+                    return idx
                 end
 
                 local started = os.clock()
-                for i, event in ipairs(events) do
+
+                if #movementTrack > 0 then
+                    if playbackMovementConnection then
+                        pcall(function()
+                            playbackMovementConnection:Disconnect()
+                        end)
+                        playbackMovementConnection = nil
+                    end
+                    playbackMovementConnection = RunService.RenderStepped:Connect(function()
+                        if token ~= playbackToken then
+                            return
+                        end
+                        local elapsed = os.clock() - started
+                        local character = Players.LocalPlayer and Players.LocalPlayer.Character
+                        local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
+                        if not rootPart then
+                            return
+                        end
+
+                        if humanoid and playbackHumanoid ~= humanoid then
+                            if playbackHumanoid and playbackAutoRotateRestore ~= nil then
+                                pcall(function()
+                                    playbackHumanoid.AutoRotate = playbackAutoRotateRestore
+                                end)
+                            end
+                            playbackHumanoid = humanoid
+                            playbackAutoRotateRestore = humanoid.AutoRotate
+                            pcall(function()
+                                humanoid.AutoRotate = false
+                            end)
+                        end
+
+                        local segIdx = findMovementSegmentIndex(movementTrack, elapsed)
+                        if not segIdx then
+                            return
+                        end
+
+                        local evA = movementTrack[segIdx]
+                        local evB = movementTrack[math.min(segIdx + 1, #movementTrack)]
+                        local tA = tonumber(evA.t) or 0
+                        local tB = tonumber(evB.t) or tA
+                        local dataA = type(evA.data) == "table" and evA.data or {}
+                        local dataB = type(evB.data) == "table" and evB.data or {}
+                        local cfA = buildMovementTargetCFrame(rootPart, dataA)
+                        local cfB = buildMovementTargetCFrame(rootPart, dataB)
+                        if not (cfA and cfB) then
+                            return
+                        end
+
+                        local alpha = 1
+                        if evB ~= evA and tB > tA then
+                            alpha = math.clamp((elapsed - tA) / (tB - tA), 0, 1)
+                        elseif elapsed < tA then
+                            alpha = 0
+                        end
+
+                        pcall(function()
+                            rootPart.CFrame = cfA:Lerp(cfB, alpha)
+                        end)
+                    end)
+                end
+
+                for _, event in ipairs(events) do
                     if token ~= playbackToken then
                         return
+                    end
+
+                    local kind = event.kind
+                    if kind == "movement" then
+                        continue
                     end
 
                     local targetT = tonumber(event.t) or 0
@@ -1218,34 +1314,11 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                         return
                     end
 
-                    local kind = event.kind
                     local data = type(event.data) == "table" and event.data or {}
                     local character = Players.LocalPlayer and Players.LocalPlayer.Character
-                    local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
+                    local humanoid = select(1, getCharacterHumanoidAndRoot(character))
 
-                    if humanoid and playbackHumanoid ~= humanoid then
-                        if playbackHumanoid and playbackAutoRotateRestore ~= nil then
-                            pcall(function()
-                                playbackHumanoid.AutoRotate = playbackAutoRotateRestore
-                            end)
-                        end
-                        playbackHumanoid = humanoid
-                        playbackAutoRotateRestore = humanoid.AutoRotate
-                        pcall(function()
-                            humanoid.AutoRotate = false
-                        end)
-                    end
-
-                    if kind == "movement" then
-                        local targetCf = buildMovementTargetCFrame(rootPart, data)
-                        if rootPart and targetCf then
-                            local nextDelta = nextMovementDeltaByIndex[i]
-                            local smoothDuration = nextDelta and math.clamp(nextDelta * 0.8, 0.03, 0.14) or 0.07
-                            pcall(function()
-                                applySmoothRootCFrame(rootPart, targetCf, smoothDuration)
-                            end)
-                        end
-                    elseif kind == "jump_request" then
+                    if kind == "jump_request" then
                         if humanoid then
                             pcall(function()
                                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -1266,6 +1339,12 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                 end
 
                 if token == playbackToken then
+                    if playbackMovementConnection then
+                        pcall(function()
+                            playbackMovementConnection:Disconnect()
+                        end)
+                        playbackMovementConnection = nil
+                    end
                     releaseSavedRecordingInputAndMotion()
                     if playbackHumanoid and playbackAutoRotateRestore ~= nil then
                         pcall(function()
