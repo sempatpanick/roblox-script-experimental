@@ -836,6 +836,24 @@ do
         return nil
     end
 
+    local function findFirstMovementLookDirection(events: { any }): Vector3?
+        for _, ev in ipairs(events) do
+            if type(ev) == "table" and ev.kind == "movement" and type(ev.data) == "table" then
+                local look = ev.data.lookDirection
+                if type(look) == "table" then
+                    local x, y, z = tonumber(look.x), tonumber(look.y), tonumber(look.z)
+                    if x and y and z then
+                        local planar = Vector3.new(x, 0, z)
+                        if planar.Magnitude > 1e-4 then
+                            return planar.Unit
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     local function getCharacterHumanoidAndRootWalk(character: Model?): (Humanoid?, BasePart?)
         if not character then
             return nil, nil
@@ -912,6 +930,37 @@ do
             humanoid:Move(Vector3.new(0, 0, 0))
         end)
         return false
+    end
+
+    local function smoothRootFaceDirection(
+        rootPart: BasePart,
+        lookDir: Vector3?,
+        shouldCancel: () -> boolean,
+        durationSec: number?
+    )
+        if not lookDir then
+            return
+        end
+        local planar = Vector3.new(lookDir.X, 0, lookDir.Z)
+        if planar.Magnitude <= 1e-4 then
+            return
+        end
+        local dir = planar.Unit
+        local targetCf = CFrame.lookAt(rootPart.Position, rootPart.Position + dir)
+        local startCf = rootPart.CFrame
+        local total = math.clamp(durationSec or 0.14, 0.05, 0.3)
+        local t0 = os.clock()
+        while not shouldCancel() do
+            local alpha = (os.clock() - t0) / total
+            if alpha >= 1 then
+                break
+            end
+            rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
+            task.wait()
+        end
+        if not shouldCancel() then
+            rootPart.CFrame = targetCf
+        end
     end
 
     local summitRoute = {
@@ -1704,6 +1753,7 @@ do
                         return false, reachedSummitInThisCycle
                     end
                     local firstTargetPos = firstPos
+                    local firstLookDir = findFirstMovementLookDirection(events)
                     local recordedRootToFeet = extractRecordedRootToFeetHeightWalk(payload, events)
                     local currentRootToFeet = getCharacterRootToFeetHeightWalk(character)
                     if recordedRootToFeet and currentRootToFeet then
@@ -1721,6 +1771,13 @@ do
                     end
 
                     humanoidWalkToWorldPosition(humanoid, rootPart, firstTargetPos, shouldCancel, 7)
+                    if shouldCancel() then
+                        endWalkJumpAssist()
+                        return false, reachedSummitInThisCycle
+                    end
+                    pcall(function()
+                        smoothRootFaceDirection(rootPart, firstLookDir, shouldCancel, 0.12)
+                    end)
                     if shouldCancel() then
                         endWalkJumpAssist()
                         return false, reachedSummitInThisCycle
