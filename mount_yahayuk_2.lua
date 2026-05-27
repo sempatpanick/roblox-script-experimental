@@ -1242,16 +1242,10 @@ do
         payload: { [string]: any }?,
         shouldCancel: () -> boolean
     ): boolean
-        local nextMovementDeltaByIndex: { [number]: number? } = {}
-        local nextMovementTime: number? = nil
-        for i = #events, 1, -1 do
-            local ev = events[i]
-            local evTime = tonumber(ev.t) or 0
+        local movementTrack: { any } = {}
+        for _, ev in ipairs(events) do
             if ev.kind == "movement" then
-                nextMovementDeltaByIndex[i] = nextMovementTime and math.max(0, nextMovementTime - evTime) or nil
-                nextMovementTime = evTime
-            else
-                nextMovementDeltaByIndex[i] = nil
+                table.insert(movementTrack, ev)
             end
         end
 
@@ -1301,38 +1295,108 @@ do
             return CFrame.new(basePos)
         end
 
-        local function applySmoothRootCFrame(rootPart: BasePart, targetCf: CFrame, durationSec: number)
-            if durationSec <= 0.015 then
-                rootPart.CFrame = targetCf
-                return
+        local function findMovementSegmentIndex(track: { any }, elapsed: number): number?
+            if #track == 0 then
+                return nil
             end
-            local startCf = rootPart.CFrame
-            local t0 = os.clock()
-            while not shouldCancel() do
-                local alpha = (os.clock() - t0) / durationSec
-                if alpha >= 1 then
+            local idx = 1
+            while idx < #track do
+                local nextT = tonumber(track[idx + 1].t) or 0
+                if nextT > elapsed then
                     break
                 end
-                rootPart.CFrame = startCf:Lerp(targetCf, math.clamp(alpha, 0, 1))
-                task.wait()
+                idx = idx + 1
             end
-            if not shouldCancel() then
-                rootPart.CFrame = targetCf
+            return idx
+        end
+
+        local movementConnection: RBXScriptConnection? = nil
+        local function cleanupPlaybackState()
+            if movementConnection then
+                pcall(function()
+                    movementConnection:Disconnect()
+                end)
+                movementConnection = nil
             end
+            if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+                pcall(function()
+                    autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+                end)
+            end
+            autoSummitWalkPlaybackHumanoid = nil
+            autoSummitWalkPlaybackAutoRotateRestore = nil
+            releaseAutoSummitWalkVirtualKeys()
         end
 
         local started = os.clock()
+        if #movementTrack > 0 then
+            movementConnection = RunService.RenderStepped:Connect(function()
+                if shouldCancel() then
+                    return
+                end
+                local elapsed = os.clock() - started
+                local character = lpAutoSummit.Character
+                local humanoid, rootPart = getCharacterHumanoidAndRootWalk(character)
+                if not rootPart then
+                    return
+                end
+
+                if humanoid and autoSummitWalkPlaybackHumanoid ~= humanoid then
+                    if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
+                        pcall(function()
+                            autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
+                        end)
+                    end
+                    autoSummitWalkPlaybackHumanoid = humanoid
+                    autoSummitWalkPlaybackAutoRotateRestore = humanoid.AutoRotate
+                    pcall(function()
+                        humanoid.AutoRotate = false
+                    end)
+                end
+
+                local segIdx = findMovementSegmentIndex(movementTrack, elapsed)
+                if not segIdx then
+                    return
+                end
+
+                local evA = movementTrack[segIdx]
+                local evB = movementTrack[math.min(segIdx + 1, #movementTrack)]
+                local tA = tonumber(evA.t) or 0
+                local tB = tonumber(evB.t) or tA
+                local dataA = type(evA.data) == "table" and evA.data or {}
+                local dataB = type(evB.data) == "table" and evB.data or {}
+                local cfA = buildMovementTargetCFrame(rootPart, dataA)
+                local cfB = buildMovementTargetCFrame(rootPart, dataB)
+                if not (cfA and cfB) then
+                    return
+                end
+
+                local alpha = 1
+                if evB ~= evA and tB > tA then
+                    alpha = math.clamp((elapsed - tA) / (tB - tA), 0, 1)
+                elseif elapsed < tA then
+                    alpha = 0
+                end
+
+                pcall(function()
+                    rootPart.CFrame = cfA:Lerp(cfB, alpha)
+                end)
+
+                local vel = dataA.velocity
+                if type(vel) == "table" then
+                    local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
+                    if vx and vy and vz then
+                        pcall(function()
+                            rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
+                        end)
+                    end
+                end
+            end)
+        end
 
         for i, event in ipairs(events) do
             if shouldCancel() then
-                if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
-                    pcall(function()
-                        autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
-                    end)
-                end
-                autoSummitWalkPlaybackHumanoid = nil
-                autoSummitWalkPlaybackAutoRotateRestore = nil
-                releaseAutoSummitWalkVirtualKeys()
+                cleanupPlaybackState()
                 return false
             end
             local targetT = tonumber(event.t) or 0
@@ -1340,17 +1404,13 @@ do
                 task.wait(0.01)
             end
             if shouldCancel() then
-                if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
-                    pcall(function()
-                        autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
-                    end)
-                end
-                autoSummitWalkPlaybackHumanoid = nil
-                autoSummitWalkPlaybackAutoRotateRestore = nil
-                releaseAutoSummitWalkVirtualKeys()
+                cleanupPlaybackState()
                 return false
             end
             local kind = event.kind
+            if kind == "movement" then
+                continue
+            end
             local data = type(event.data) == "table" and event.data or {}
             local character = lpAutoSummit.Character
             local humanoid, rootPart = getCharacterHumanoidAndRootWalk(character)
@@ -1368,25 +1428,7 @@ do
                 end)
             end
 
-            if kind == "movement" then
-                local targetCf = buildMovementTargetCFrame(rootPart, data)
-                if rootPart and targetCf then
-                    local nextDelta = nextMovementDeltaByIndex[i]
-                    local smoothDuration = nextDelta and math.clamp(nextDelta * 0.8, 0.03, 0.14) or 0.07
-                    pcall(function()
-                        applySmoothRootCFrame(rootPart, targetCf, smoothDuration)
-                    end)
-                    local vel = data.velocity
-                    if type(vel) == "table" then
-                        local vx, vy, vz = tonumber(vel.x), tonumber(vel.y), tonumber(vel.z)
-                        if vx and vy and vz then
-                            pcall(function()
-                                rootPart.AssemblyLinearVelocity = Vector3.new(vx, vy, vz)
-                            end)
-                        end
-                    end
-                end
-            elseif kind == "jump_request" then
+            if kind == "jump_request" then
                 if humanoid then
                     pcall(function()
                         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -1406,14 +1448,7 @@ do
             end
         end
 
-        if autoSummitWalkPlaybackHumanoid and autoSummitWalkPlaybackAutoRotateRestore ~= nil then
-            pcall(function()
-                autoSummitWalkPlaybackHumanoid.AutoRotate = autoSummitWalkPlaybackAutoRotateRestore
-            end)
-        end
-        autoSummitWalkPlaybackHumanoid = nil
-        autoSummitWalkPlaybackAutoRotateRestore = nil
-        releaseAutoSummitWalkVirtualKeys()
+        cleanupPlaybackState()
         return true
     end
 
