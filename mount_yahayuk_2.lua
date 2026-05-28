@@ -1300,22 +1300,8 @@ do
             return CFrame.new(basePos)
         end
 
-        local function findMovementSegmentIndex(track: { any }, elapsed: number): number?
-            if #track == 0 then
-                return nil
-            end
-            local idx = 1
-            while idx < #track do
-                local nextT = tonumber(track[idx + 1].t) or 0
-                if nextT > elapsed then
-                    break
-                end
-                idx = idx + 1
-            end
-            return idx
-        end
-
         local movementConnection: RBXScriptConnection? = nil
+        local movementSegmentIndex = 1
         local movementBlendInDuration = AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC
         local movementBlendStartCFrame: CFrame? = nil
         local movementBlendVelocityStart: Vector3? = nil
@@ -1367,13 +1353,21 @@ do
                     end)
                 end
 
-                local segIdx = findMovementSegmentIndex(movementTrack, elapsed)
-                if not segIdx then
+                if #movementTrack == 0 then
                     return
                 end
 
-                local evA = movementTrack[segIdx]
-                local evB = movementTrack[math.min(segIdx + 1, #movementTrack)]
+                -- Advance in O(1)-amortized time instead of scanning from the start every frame.
+                while movementSegmentIndex < #movementTrack do
+                    local nextT = tonumber(movementTrack[movementSegmentIndex + 1].t) or 0
+                    if nextT > elapsed then
+                        break
+                    end
+                    movementSegmentIndex += 1
+                end
+
+                local evA = movementTrack[movementSegmentIndex]
+                local evB = movementTrack[math.min(movementSegmentIndex + 1, #movementTrack)]
                 local tA = tonumber(evA.t) or 0
                 local tB = tonumber(evB.t) or tA
                 local dataA = type(evA.data) == "table" and evA.data or {}
