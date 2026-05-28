@@ -439,6 +439,7 @@ do
     local autoSummitWalkKeysDown: { [Enum.KeyCode]: boolean } = {}
     local autoSummitWalkPlaybackHumanoid: Humanoid? = nil
     local autoSummitWalkPlaybackAutoRotateRestore: boolean? = nil
+    _G.__yahayukAutoSummitWalkSmoothingHz = tonumber(_G.__yahayukAutoSummitWalkSmoothingHz) or 22
     -- Transition tuning: MoveTo(first position) -> route playback handoff
     -- Increase durations for smoother/softer handoff, decrease for snappier start.
     local AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC = 0.14
@@ -1300,12 +1301,29 @@ do
             return CFrame.new(basePos)
         end
 
+        local function findMovementSegmentIndex(track: { any }, elapsed: number): number?
+            if #track == 0 then
+                return nil
+            end
+            local idx = 1
+            while idx < #track do
+                local nextT = tonumber(track[idx + 1].t) or 0
+                if nextT > elapsed then
+                    break
+                end
+                idx = idx + 1
+            end
+            return idx
+        end
+
         local movementConnection: RBXScriptConnection? = nil
-        local movementSegmentIndex = 1
         local movementBlendInDuration = AUTO_SUMMIT_WALK_TRANSITION_BASE_SEC
         local movementBlendStartCFrame: CFrame? = nil
         local movementBlendVelocityStart: Vector3? = nil
         local movementBlendDurationInitialized = false
+        local movementSmoothedCFrame: CFrame? = nil
+        local AUTO_SUMMIT_WALK_SMOOTHING_BLEND_MIN = 0.12
+        local AUTO_SUMMIT_WALK_SMOOTHING_BLEND_MAX = 0.92
         local function easeInOutSine(t: number): number
             local c = math.clamp(t, 0, 1)
             return 0.5 - 0.5 * math.cos(math.pi * c)
@@ -1329,7 +1347,7 @@ do
 
         local started = os.clock()
         if #movementTrack > 0 then
-            movementConnection = RunService.RenderStepped:Connect(function()
+            movementConnection = RunService.RenderStepped:Connect(function(deltaTime)
                 if shouldCancel() then
                     return
                 end
@@ -1353,21 +1371,13 @@ do
                     end)
                 end
 
-                if #movementTrack == 0 then
+                local segIdx = findMovementSegmentIndex(movementTrack, elapsed)
+                if not segIdx then
                     return
                 end
 
-                -- Advance in O(1)-amortized time instead of scanning from the start every frame.
-                while movementSegmentIndex < #movementTrack do
-                    local nextT = tonumber(movementTrack[movementSegmentIndex + 1].t) or 0
-                    if nextT > elapsed then
-                        break
-                    end
-                    movementSegmentIndex += 1
-                end
-
-                local evA = movementTrack[movementSegmentIndex]
-                local evB = movementTrack[math.min(movementSegmentIndex + 1, #movementTrack)]
+                local evA = movementTrack[segIdx]
+                local evB = movementTrack[math.min(segIdx + 1, #movementTrack)]
                 local tA = tonumber(evA.t) or 0
                 local tB = tonumber(evB.t) or tA
                 local dataA = type(evA.data) == "table" and evA.data or {}
@@ -1417,8 +1427,23 @@ do
                     finalCf = movementBlendStartCFrame:Lerp(playbackTargetCf, blendAlpha)
                 end
 
+                local dt = tonumber(deltaTime) or (1 / 60)
+                if dt <= 0 then
+                    dt = 1 / 60
+                end
+                local smoothingHz = math.clamp(tonumber(_G.__yahayukAutoSummitWalkSmoothingHz) or 22, 8, 75)
+                local smoothingAlpha = 1 - math.exp(-smoothingHz * dt)
+                smoothingAlpha = math.clamp(
+                    smoothingAlpha,
+                    AUTO_SUMMIT_WALK_SMOOTHING_BLEND_MIN,
+                    AUTO_SUMMIT_WALK_SMOOTHING_BLEND_MAX
+                )
+                if not movementSmoothedCFrame then
+                    movementSmoothedCFrame = rootPart.CFrame
+                end
+                movementSmoothedCFrame = movementSmoothedCFrame:Lerp(finalCf, smoothingAlpha)
                 pcall(function()
-                    rootPart.CFrame = finalCf
+                    rootPart.CFrame = movementSmoothedCFrame
                 end)
 
                 local vel = dataA.velocity
@@ -2453,6 +2478,22 @@ do
         CurrentValue = "",
         Callback = function(value)
             summitQty = value
+        end,
+    })
+
+    MainTab:CreateSlider({
+        Name = "Walk playback smoothness",
+        Flag = "yahayuk_main_walk_playback_smoothness",
+        Range = { 8, 75 },
+        Increment = 1,
+        Suffix = "Hz",
+        CurrentValue = tonumber(_G.__yahayukAutoSummitWalkSmoothingHz) or 22,
+        Callback = function(value)
+            _G.__yahayukAutoSummitWalkSmoothingHz = math.clamp(
+                math.floor(tonumber(value) or tonumber(_G.__yahayukAutoSummitWalkSmoothingHz) or 22),
+                8,
+                75
+            )
         end,
     })
 
