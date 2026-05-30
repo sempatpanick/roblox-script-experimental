@@ -1527,6 +1527,10 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
     local cachedPlaceProductInfo = nil
     local ServerInfoParagraph
+    local ServerLiveParagraph
+    local serverLiveHeartbeatConnection = nil
+    local lastServerLivePingMs = nil
+    local lastServerLivePlayerCount = nil
 
     local function getPlaceProductInfo()
         if cachedPlaceProductInfo == false then
@@ -1595,6 +1599,11 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             table.insert(lines, "VIP owner ID: " .. tostring(game.VIPServerOwnerId))
         end
 
+        return table.concat(lines, "\n")
+    end
+
+    local function buildServerLiveText()
+        local lines = {}
         local playerCount = #Players:GetPlayers()
         local maxPlayers = Players.MaxPlayers
         if maxPlayers > 0 then
@@ -1610,7 +1619,11 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             end)
             if okPing and ping then
                 table.insert(lines, string.format("Ping: %.0f ms", ping * 1000))
+            else
+                table.insert(lines, "Ping: —")
             end
+        else
+            table.insert(lines, "Ping: —")
         end
 
         return table.concat(lines, "\n")
@@ -1625,10 +1638,57 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end
     end
 
+    local function updateServerLiveParagraph(force)
+        if not (ServerLiveParagraph and ServerLiveParagraph.Set) then
+            return
+        end
+
+        local playerCount = #Players:GetPlayers()
+        local pingMs = nil
+        local localPlayer = Players.LocalPlayer
+        if localPlayer then
+            local okPing, ping = pcall(function()
+                return localPlayer:GetNetworkPing()
+            end)
+            if okPing and ping then
+                pingMs = math.floor(ping * 1000 + 0.5)
+            end
+        end
+
+        if not force and playerCount == lastServerLivePlayerCount and pingMs == lastServerLivePingMs then
+            return
+        end
+
+        lastServerLivePlayerCount = playerCount
+        lastServerLivePingMs = pingMs
+
+        ServerLiveParagraph:Set({
+            Title = "Live",
+            Content = buildServerLiveText(),
+        })
+    end
+
+    local function startServerLiveUpdates()
+        if serverLiveHeartbeatConnection then
+            return
+        end
+
+        updateServerLiveParagraph(true)
+
+        serverLiveHeartbeatConnection = RunService.Heartbeat:Connect(function()
+            updateServerLiveParagraph(false)
+        end)
+    end
+
     LocalPlayerTab:CreateSection("Server")
     ServerInfoParagraph = LocalPlayerTab:CreateParagraph({
         Title = "Game & Server",
         Content = "Loading game and server info…",
+    })
+
+    ServerLiveParagraph = LocalPlayerTab:CreateParagraph({
+        Title = "Live",
+        Content = "Players: …\nPing: …",
     })
 
     task.spawn(function()
@@ -1636,18 +1696,15 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         updateServerInfoParagraph()
     end)
 
+    startServerLiveUpdates()
+
     Players.PlayerAdded:Connect(function()
-        updateServerInfoParagraph()
+        updateServerLiveParagraph(true)
     end)
     Players.PlayerRemoving:Connect(function()
-        task.defer(updateServerInfoParagraph)
-    end)
-
-    task.spawn(function()
-        while ServerInfoParagraph do
-            task.wait(10)
-            updateServerInfoParagraph()
-        end
+        task.defer(function()
+            updateServerLiveParagraph(true)
+        end)
     end)
 
     LocalPlayerTab:CreateButton({
