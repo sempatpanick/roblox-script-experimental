@@ -19,6 +19,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local function rayfieldDropdownFirst(valueOrTable)
     if type(valueOrTable) == "table" then
@@ -1524,7 +1525,131 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
     local rejoinTeleporting = false
 
+    local cachedPlaceProductInfo = nil
+    local ServerInfoParagraph
+
+    local function getPlaceProductInfo()
+        if cachedPlaceProductInfo == false then
+            return nil
+        end
+        if cachedPlaceProductInfo then
+            return cachedPlaceProductInfo
+        end
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId)
+        end)
+        if ok and type(info) == "table" then
+            cachedPlaceProductInfo = info
+            return info
+        end
+        cachedPlaceProductInfo = false
+        return nil
+    end
+
+    local function buildServerInfoText()
+        local lines = {}
+        local productInfo = getPlaceProductInfo()
+
+        local gameName = "…"
+        if productInfo and productInfo.Name then
+            gameName = productInfo.Name
+        end
+        table.insert(lines, "Game: " .. gameName)
+        table.insert(lines, "Place ID: " .. tostring(game.PlaceId))
+        table.insert(lines, "Universe ID: " .. tostring(game.GameId))
+
+        if productInfo and productInfo.Creator then
+            local creator = productInfo.Creator
+            local creatorLabel = creator.Name or tostring(creator.CreatorTargetId or "?")
+            if creator.CreatorType == Enum.CreatorType.Group then
+                creatorLabel = creatorLabel .. " (Group)"
+            elseif creator.CreatorType == Enum.CreatorType.User then
+                creatorLabel = creatorLabel .. " (User)"
+            end
+            table.insert(lines, "Creator: " .. creatorLabel)
+        else
+            table.insert(lines, "Creator ID: " .. tostring(game.CreatorId))
+        end
+
+        if productInfo and productInfo.Created then
+            table.insert(lines, "Created: " .. tostring(productInfo.Created))
+        end
+        if productInfo and productInfo.Updated then
+            table.insert(lines, "Updated: " .. tostring(productInfo.Updated))
+        end
+
+        table.insert(lines, "")
+        table.insert(lines, "Job ID: " .. ((game.JobId and game.JobId ~= "") and game.JobId or "—"))
+
+        local serverType = "Public"
+        if game.PrivateServerId ~= "" then
+            serverType = "Private"
+        elseif game.VIPServerOwnerId ~= 0 then
+            serverType = "VIP (Reserved)"
+        end
+        table.insert(lines, "Server type: " .. serverType)
+        if game.PrivateServerId ~= "" then
+            table.insert(lines, "Private server ID: " .. game.PrivateServerId)
+        end
+        if game.VIPServerOwnerId ~= 0 then
+            table.insert(lines, "VIP owner ID: " .. tostring(game.VIPServerOwnerId))
+        end
+
+        local playerCount = #Players:GetPlayers()
+        local maxPlayers = Players.MaxPlayers
+        if maxPlayers > 0 then
+            table.insert(lines, string.format("Players: %d / %d", playerCount, maxPlayers))
+        else
+            table.insert(lines, "Players: " .. tostring(playerCount))
+        end
+
+        local localPlayer = Players.LocalPlayer
+        if localPlayer then
+            local okPing, ping = pcall(function()
+                return localPlayer:GetNetworkPing()
+            end)
+            if okPing and ping then
+                table.insert(lines, string.format("Ping: %.0f ms", ping * 1000))
+            end
+        end
+
+        return table.concat(lines, "\n")
+    end
+
+    local function updateServerInfoParagraph()
+        if ServerInfoParagraph and ServerInfoParagraph.Set then
+            ServerInfoParagraph:Set({
+                Title = "Game & Server",
+                Content = buildServerInfoText(),
+            })
+        end
+    end
+
     LocalPlayerTab:CreateSection("Server")
+    ServerInfoParagraph = LocalPlayerTab:CreateParagraph({
+        Title = "Game & Server",
+        Content = "Loading game and server info…",
+    })
+
+    task.spawn(function()
+        getPlaceProductInfo()
+        updateServerInfoParagraph()
+    end)
+
+    Players.PlayerAdded:Connect(function()
+        updateServerInfoParagraph()
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(updateServerInfoParagraph)
+    end)
+
+    task.spawn(function()
+        while ServerInfoParagraph do
+            task.wait(10)
+            updateServerInfoParagraph()
+        end
+    end)
+
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
         Callback = function()
