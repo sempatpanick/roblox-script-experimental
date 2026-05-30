@@ -936,176 +936,6 @@ do
         return targets
     end
 
-    local wordEspEnabled = false
-    local wordEspHighlights: { Highlight } = {}
-    local wordEspLabels: { BillboardGui } = {}
-    local wordEspLevelConn: RBXScriptConnection? = nil
-    local wordEspRenderConn: RBXScriptConnection? = nil
-
-    local function getWordEspAdornee(target: Instance): BasePart?
-        if target:IsA("BasePart") then
-            return target
-        end
-        if target:IsA("Model") then
-            if target.PrimaryPart then
-                return target.PrimaryPart
-            end
-            return target:FindFirstChildWhichIsA("BasePart", true)
-        end
-        return nil
-    end
-
-    local function getWordEspLabelText(adornee: BasePart, nodeName: string): string
-        local levelNum = getLocalLevelValue()
-        local levelText = levelNum and ("Level " .. tostring(levelNum)) or "Level ?"
-        local character = LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if rootPart and rootPart:IsA("BasePart") then
-            local dist = (rootPart.Position - adornee.Position).Magnitude
-            return string.format("%s\n%s · %.0fm", nodeName, levelText, dist)
-        end
-        return string.format("%s\n%s", nodeName, levelText)
-    end
-
-    local function createWordEspLabel(adornee: BasePart, nodeName: string): BillboardGui
-        local gui = Instance.new("BillboardGui")
-        gui.Name = "SempatPanickWordESPLabel"
-        gui.Size = UDim2.fromOffset(220, 48)
-        gui.StudsOffset = Vector3.new(0, 2.5, 0)
-        gui.AlwaysOnTop = true
-        local label = Instance.new("TextLabel")
-        label.Name = "Label"
-        label.BackgroundTransparency = 1
-        label.Size = UDim2.fromScale(1, 1)
-        label.Font = Enum.Font.GothamBold
-        label.TextColor3 = Color3.fromRGB(180, 140, 255)
-        label.TextStrokeTransparency = 0
-        label.TextScaled = true
-        label.TextWrapped = true
-        label.Text = getWordEspLabelText(adornee, nodeName)
-        label.Parent = gui
-        gui.Adornee = adornee
-        gui.Parent = adornee
-        return gui
-    end
-
-    local function clearWordEsp()
-        for _, highlight in ipairs(wordEspHighlights) do
-            pcall(function()
-                highlight:Destroy()
-            end)
-        end
-        table.clear(wordEspHighlights)
-        for _, gui in ipairs(wordEspLabels) do
-            pcall(function()
-                gui:Destroy()
-            end)
-        end
-        table.clear(wordEspLabels)
-    end
-
-    local function updateWordEspLabels()
-        if not wordEspEnabled then
-            return
-        end
-        for _, gui in ipairs(wordEspLabels) do
-            local adornee = gui.Adornee
-            if adornee and adornee:IsA("BasePart") then
-                local label = gui:FindFirstChild("Label")
-                if label and label:IsA("TextLabel") then
-                    label.Text = getWordEspLabelText(adornee, gui:GetAttribute("NodeName") or "Word")
-                end
-            end
-        end
-    end
-
-    local function stopWordEspRender()
-        if wordEspRenderConn then
-            wordEspRenderConn:Disconnect()
-            wordEspRenderConn = nil
-        end
-    end
-
-    local function startWordEspRender()
-        stopWordEspRender()
-        wordEspRenderConn = RunService.RenderStepped:Connect(updateWordEspLabels)
-    end
-
-    local function applyWordEsp()
-        clearWordEsp()
-        if not wordEspEnabled then
-            return
-        end
-        local levelNum = getLocalLevelValue()
-        if not levelNum then
-            return
-        end
-        local levelFolder = getLevelFolder(levelNum)
-        if not levelFolder then
-            return
-        end
-        for _, target in ipairs(getLevelWordCollectTargets(levelFolder)) do
-            if not (target:IsA("Model") or target:IsA("BasePart")) then
-                continue
-            end
-            local highlight = Instance.new("Highlight")
-            highlight.Name = "SempatPanickWordESP"
-            highlight.FillColor = Color3.fromRGB(140, 90, 255)
-            highlight.FillTransparency = 0.45
-            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-            highlight.OutlineTransparency = 0
-            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.Adornee = target
-            highlight.Parent = target
-            table.insert(wordEspHighlights, highlight)
-
-            local adornee = getWordEspAdornee(target)
-            if adornee then
-                local gui = createWordEspLabel(adornee, target.Name)
-                gui:SetAttribute("NodeName", target.Name)
-                table.insert(wordEspLabels, gui)
-            end
-        end
-        updateWordEspLabels()
-    end
-
-    local function bindWordEspLevelWatch()
-        if wordEspLevelConn then
-            return
-        end
-        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-        if not leaderstats then
-            return
-        end
-        local level = leaderstats:FindFirstChild("Level")
-        if not level then
-            return
-        end
-        wordEspLevelConn = level:GetPropertyChangedSignal("Value"):Connect(function()
-            applyWordEsp()
-        end)
-    end
-
-    local function unbindWordEspLevelWatch()
-        if wordEspLevelConn then
-            wordEspLevelConn:Disconnect()
-            wordEspLevelConn = nil
-        end
-    end
-
-    local function setWordEspEnabled(enabled: boolean)
-        wordEspEnabled = enabled
-        if enabled then
-            bindWordEspLevelWatch()
-            applyWordEsp()
-            startWordEspRender()
-            return
-        end
-        clearWordEsp()
-        stopWordEspRender()
-        unbindWordEspLevelWatch()
-    end
-
     local AUTO_COLLECT_WORD_VISIBLE_TIMEOUT = 15
     local AUTO_COLLECT_WORD_VISIBLE_POLL = 0.25
 
@@ -1165,6 +995,236 @@ do
             return foundVisiblePart
         end
         return false
+    end
+
+    local wordEspEnabled = false
+    local wordEspLevelConn: RBXScriptConnection? = nil
+    local wordEspRenderConn: RBXScriptConnection? = nil
+    local lastWordEspApplyAt = 0
+
+    local function getWordEspAdornee(target: Instance): BasePart?
+        if target:IsA("BasePart") then
+            return target
+        end
+        if target:IsA("Model") then
+            if target.PrimaryPart then
+                return target.PrimaryPart
+            end
+            return target:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return nil
+    end
+
+    local function getWordEspLabelText(adornee: BasePart, nodeName: string): string
+        local levelNum = getLocalLevelValue()
+        local levelText = levelNum and ("Level " .. tostring(levelNum)) or "Level ?"
+        local character = LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if rootPart and rootPart:IsA("BasePart") then
+            local dist = (rootPart.Position - adornee.Position).Magnitude
+            return string.format("%s\n%s · %.0fm", nodeName, levelText, dist)
+        end
+        return string.format("%s\n%s", nodeName, levelText)
+    end
+
+    local function createWordEspLabel(adornee: BasePart, nodeName: string): BillboardGui
+        local gui = Instance.new("BillboardGui")
+        gui.Name = "SempatPanickWordESPLabel"
+        gui.Size = UDim2.fromOffset(220, 48)
+        gui.StudsOffset = Vector3.new(0, 2.5, 0)
+        gui.AlwaysOnTop = true
+        local label = Instance.new("TextLabel")
+        label.Name = "Label"
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.fromScale(1, 1)
+        label.Font = Enum.Font.GothamBold
+        label.TextColor3 = Color3.fromRGB(180, 140, 255)
+        label.TextStrokeTransparency = 0
+        label.TextScaled = true
+        label.TextWrapped = true
+        label.Text = getWordEspLabelText(adornee, nodeName)
+        label.Parent = gui
+        gui.Adornee = adornee
+        gui.Parent = adornee
+        return gui
+    end
+
+    local wordEspState: { [Instance]: { highlight: Highlight, labelGui: BillboardGui? } } = {}
+
+    local function clearWordEspForTarget(target: Instance)
+        local state = wordEspState[target]
+        if not state then
+            return
+        end
+        if state.highlight then
+            pcall(function()
+                state.highlight:Destroy()
+            end)
+        end
+        if state.labelGui then
+            pcall(function()
+                state.labelGui:Destroy()
+            end)
+        end
+        wordEspState[target] = nil
+    end
+
+    local function clearWordEsp()
+        for target in pairs(wordEspState) do
+            clearWordEspForTarget(target)
+        end
+    end
+
+    local function updateWordEspLabels()
+        if not wordEspEnabled then
+            return
+        end
+        for _, state in pairs(wordEspState) do
+            local gui = state.labelGui
+            if not gui then
+                continue
+            end
+            local adornee = gui.Adornee
+            if adornee and adornee:IsA("BasePart") then
+                local label = gui:FindFirstChild("Label")
+                if label and label:IsA("TextLabel") then
+                    label.Text = getWordEspLabelText(adornee, gui:GetAttribute("NodeName") or "Word")
+                end
+            end
+        end
+    end
+
+    local function ensureWordEspForTarget(target: Instance)
+        local state = wordEspState[target]
+        if not state then
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "SempatPanickWordESP"
+            highlight.FillColor = Color3.fromRGB(140, 90, 255)
+            highlight.FillTransparency = 0.45
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.OutlineTransparency = 0
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.Adornee = target
+            highlight.Parent = target
+
+            local labelGui: BillboardGui? = nil
+            local adornee = getWordEspAdornee(target)
+            if adornee then
+                labelGui = createWordEspLabel(adornee, target.Name)
+                labelGui:SetAttribute("NodeName", target.Name)
+            end
+
+            state = {
+                highlight = highlight,
+                labelGui = labelGui,
+            }
+            wordEspState[target] = state
+        end
+
+        if state.labelGui then
+            local adornee = state.labelGui.Adornee
+            if adornee and adornee:IsA("BasePart") then
+                local label = state.labelGui:FindFirstChild("Label")
+                if label and label:IsA("TextLabel") then
+                    label.Text = getWordEspLabelText(adornee, state.labelGui:GetAttribute("NodeName") or target.Name)
+                end
+            end
+        end
+    end
+
+    local function syncWordEsp()
+        if not wordEspEnabled then
+            clearWordEsp()
+            return
+        end
+        local levelNum = getLocalLevelValue()
+        if not levelNum then
+            clearWordEsp()
+            return
+        end
+        local levelFolder = getLevelFolder(levelNum)
+        if not levelFolder then
+            clearWordEsp()
+            return
+        end
+
+        local activeTargets: { [Instance]: boolean } = {}
+        for _, target in ipairs(getLevelWordCollectTargets(levelFolder)) do
+            if not (target:IsA("Model") or target:IsA("BasePart")) then
+                continue
+            end
+            if not isWordCollectTargetVisible(target) then
+                continue
+            end
+            activeTargets[target] = true
+            ensureWordEspForTarget(target)
+        end
+
+        for target in pairs(wordEspState) do
+            if not activeTargets[target] then
+                clearWordEspForTarget(target)
+            end
+        end
+    end
+
+    local function stopWordEspRender()
+        if wordEspRenderConn then
+            wordEspRenderConn:Disconnect()
+            wordEspRenderConn = nil
+        end
+    end
+
+    local function startWordEspRender()
+        stopWordEspRender()
+        lastWordEspApplyAt = 0
+        wordEspRenderConn = RunService.RenderStepped:Connect(function()
+            if not wordEspEnabled then
+                return
+            end
+            updateWordEspLabels()
+            local now = os.clock()
+            if now - lastWordEspApplyAt >= AUTO_COLLECT_WORD_VISIBLE_POLL then
+                lastWordEspApplyAt = now
+                syncWordEsp()
+            end
+        end)
+    end
+
+    local function bindWordEspLevelWatch()
+        if wordEspLevelConn then
+            return
+        end
+        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+        if not leaderstats then
+            return
+        end
+        local level = leaderstats:FindFirstChild("Level")
+        if not level then
+            return
+        end
+        wordEspLevelConn = level:GetPropertyChangedSignal("Value"):Connect(function()
+            syncWordEsp()
+        end)
+    end
+
+    local function unbindWordEspLevelWatch()
+        if wordEspLevelConn then
+            wordEspLevelConn:Disconnect()
+            wordEspLevelConn = nil
+        end
+    end
+
+    local function setWordEspEnabled(enabled: boolean)
+        wordEspEnabled = enabled
+        if enabled then
+            bindWordEspLevelWatch()
+            syncWordEsp()
+            startWordEspRender()
+            return
+        end
+        clearWordEsp()
+        stopWordEspRender()
+        unbindWordEspLevelWatch()
     end
 
     local function waitForWordCollectTargetVisible(wordTarget: Instance, timeoutSec: number): boolean
