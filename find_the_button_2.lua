@@ -563,8 +563,9 @@ do
     local function fireButtonClickDetector(clickDetector: ClickDetector, buttonPart: BasePart): boolean
         local lp = LocalPlayer
         if type(fireclickdetector) == "function" then
+            local fakeDistance = math.min(clickDetector.MaxActivationDistance * 0.5, 10)
             local ok = pcall(function()
-                fireclickdetector(clickDetector, 0, lp)
+                fireclickdetector(clickDetector, fakeDistance, lp)
             end)
             if ok then
                 return true
@@ -582,6 +583,14 @@ do
             VirtualUser:ClickButton1(screenPos)
         end)
         return okClick
+    end
+
+    local function isWithinButtonClickRange(buttonModel: Instance, rootPart: BasePart, clickDetector: ClickDetector): boolean
+        local buttonPos = getInstanceWorldPosition(buttonModel)
+        if not buttonPos then
+            return false
+        end
+        return (rootPart.Position - buttonPos).Magnitude <= clickDetector.MaxActivationDistance
     end
 
     local function clickCurrentLevelButton(): boolean
@@ -611,12 +620,18 @@ do
             mountNotify({ Title = "Button", Content = "ClickDetector not found on button", Icon = "x" })
             return false
         end
-        local nearCFrame = getCFrameNearButton(buttonModel, rootPart)
-        if nearCFrame then
-            rootPart.CFrame = nearCFrame
-            task.wait(0.15)
-        end
+
+        -- fireclickdetector works at range in most executors; no teleport needed.
         local clicked = fireButtonClickDetector(clickDetector, buttonPart)
+        if not clicked and not isWithinButtonClickRange(buttonModel, rootPart, clickDetector) then
+            local nearCFrame = getCFrameNearButton(buttonModel, rootPart)
+            if nearCFrame then
+                rootPart.CFrame = nearCFrame
+                task.wait(0.15)
+                clicked = fireButtonClickDetector(clickDetector, buttonPart)
+            end
+        end
+
         if clicked then
             mountNotify({ Title = "Button", Content = "Clicked level " .. tostring(levelNum) .. " button", Icon = "check" })
         else
@@ -860,15 +875,18 @@ do
         end,
     })
 
-    MainTab:CreateKeybind({
-        Name = "Click Button",
-        CurrentKeybind = "E",
-        HoldToInteract = false,
-        Flag = "ftb_main_click_button_keybind",
-        Callback = function()
-            clickCurrentLevelButton()
-        end,
-    })
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then
+            return
+        end
+        if UserInputService:GetFocusedTextBox() then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard or input.KeyCode ~= Enum.KeyCode.R then
+            return
+        end
+        clickCurrentLevelButton()
+    end)
 
     MainTab:CreateSection("Auto Collect Word")
 
