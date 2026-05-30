@@ -4,6 +4,7 @@ local games = {
     [83369512629707] = baseURL .. "/sawah_indo_2.lua",
     [128070940451265] = baseURL .. "/speed_bike_escape_2.lua",
     [2693023319] = baseURL .. "/expedition_antartica_2.lua",
+    [103593441753340] = baseURL .. "/find_the_button_2.lua",
     [14963184269] = baseURL .. "/mount_sumbing_2.lua",
     [76964310785698] = baseURL .. "/mount_yahayuk_2.lua",
     [118098747383977] = baseURL .. "/mancing_indo_2.lua",
