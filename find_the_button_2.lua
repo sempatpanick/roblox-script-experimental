@@ -334,14 +334,14 @@ if not createConfigTab then
 end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
-    Name = "sempatpanick | Others",
+    Name = "sempatpanick | Find The Button",
     LoadingTitle = "sempatpanick",
-    LoadingSubtitle = "Others",
+    LoadingSubtitle = "Find The Button",
     Icon = 4483362458,
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "sempatpanick",
-        FileName = "others",
+        FileName = "find_the_button",
     },
     DisableRayfieldPrompts = true,
     DisableBuildWarnings = true,
@@ -1431,16 +1431,16 @@ do
 end
 
 -- */  Teleport Tab  /* --
-createTeleportTab(Window, mountNotify, { flagsPrefix = "others" })
+createTeleportTab(Window, mountNotify, { flagsPrefix = "find_the_button" })
 
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
 -- */  Recording Tab  /* --
-createRecordingTab(Window, mountNotify, "sempatpanick/others/recordings")
+createRecordingTab(Window, mountNotify, "sempatpanick/find_the_button/recordings")
 
 -- */  Config Tab  /* --
 createConfigTab(Window, mountNotify, {
-    configDir = "sempatpanick/others",
+    configDir = "sempatpanick/find_the_button",
     rayfieldLibrary = RayfieldLibrary,
 })
