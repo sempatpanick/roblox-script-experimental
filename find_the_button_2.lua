@@ -860,6 +860,16 @@ do
         end,
     })
 
+    MainTab:CreateKeybind({
+        Name = "Click Button",
+        CurrentKeybind = "E",
+        HoldToInteract = false,
+        Flag = "ftb_main_click_button_keybind",
+        Callback = function()
+            clickCurrentLevelButton()
+        end,
+    })
+
     MainTab:CreateSection("Auto Collect Word")
 
     local LetterTouched = ReplicatedStorage:WaitForChild("FE"):WaitForChild("LetterTouched")
