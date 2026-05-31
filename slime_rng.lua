@@ -92,6 +92,8 @@ local function deferUiOnHeartbeat(fn: () -> ())
     end)
 end
 
+local HEARTBEAT_POLL_SEC = 1
+
 local function schedulePeriodicOnHeartbeat(intervalSec: number, fn: () -> ()): RBXScriptConnection
     local lastAt = 0.0
     return RunService.Heartbeat:Connect(function()
@@ -102,6 +104,104 @@ local function schedulePeriodicOnHeartbeat(intervalSec: number, fn: () -> ()): R
         lastAt = now
         fn()
     end)
+end
+
+SlimeRngUtil = SlimeRngUtil or {}
+SlimeRngUtil.numberSuffixMult = {
+    K = 1e3,
+    M = 1e6,
+    B = 1e9,
+    T = 1e12,
+    Qd = 1e15,
+    Qn = 1e18,
+    Sx = 1e21,
+    Sp = 1e24,
+    O = 1e27,
+    N = 1e30,
+    De = 1e33,
+    Ud = 1e36,
+    Dd = 1e39,
+    TdD = 1e42,
+    QdD = 1e45,
+    QnD = 1e48,
+    SxD = 1e51,
+    SpD = 1e54,
+    OcD = 1e57,
+    NvD = 1e60,
+}
+SlimeRngUtil.numberSuffixOrder = {}
+do
+    for suffix, mult in pairs(SlimeRngUtil.numberSuffixMult) do
+        table.insert(SlimeRngUtil.numberSuffixOrder, { suffix = suffix, mult = mult })
+    end
+    table.sort(SlimeRngUtil.numberSuffixOrder, function(a, b)
+        return a.mult > b.mult
+    end)
+end
+
+function SlimeRngUtil.trimFormattedNumberZeros(text: string): string
+    text = string.gsub(text, "(%.%d-)0+$", "%1")
+    return string.gsub(text, "%.$", "")
+end
+
+function SlimeRngUtil.formatSuffixNumber(value: number): string
+    if type(value) ~= "number" or value ~= value then
+        return tostring(value)
+    end
+    if math.abs(value) < 1000 then
+        return tostring(math.floor(value))
+    end
+    for _, entry in ipairs(SlimeRngUtil.numberSuffixOrder) do
+        if math.abs(value) >= entry.mult then
+            local scaled = value / entry.mult
+            local absScaled = math.abs(scaled)
+            if absScaled >= 100 then
+                return SlimeRngUtil.trimFormattedNumberZeros(("%.0f%s"):format(scaled, entry.suffix))
+            elseif absScaled >= 10 then
+                return SlimeRngUtil.trimFormattedNumberZeros(("%.1f%s"):format(scaled, entry.suffix))
+            end
+            return SlimeRngUtil.trimFormattedNumberZeros(("%.2f%s"):format(scaled, entry.suffix))
+        end
+    end
+    return tostring(math.floor(value))
+end
+
+function SlimeRngUtil.readDataServiceNumber(client: any, key: string): number?
+    if not client or type(client.get) ~= "function" then
+        return nil
+    end
+    local ok, val = pcall(function()
+        return client:get(key)
+    end)
+    if not ok then
+        return nil
+    end
+    if type(val) == "number" then
+        return val
+    end
+    if type(val) == "string" then
+        return tonumber(val)
+    end
+    return nil
+end
+
+function SlimeRngUtil.zonesModuleGetZone(zonesMod: any, zoneId: number): any?
+    if not zonesMod or type(zonesMod.getZone) ~= "function" then
+        return nil
+    end
+    local ok, def = pcall(zonesMod.getZone, zoneId)
+    if ok and type(def) == "table" then
+        return def
+    end
+    return nil
+end
+
+function SlimeRngUtil.zonesModuleHasZone(zonesMod: any, zoneId: number): boolean
+    if not zonesMod or type(zonesMod.hasZone) ~= "function" then
+        return false
+    end
+    local ok, yes = pcall(zonesMod.hasZone, zoneId)
+    return ok and yes == true
 end
 
 -- Set by Auto Feed; used when loading configs (stable food labels, legacy qty strings).
@@ -968,28 +1068,6 @@ local function mountAutoFeedSection(
             "ConsumablesPanel",
             "ConsumablesList",
         },
-        oddsSuffixMult = {
-            K = 1e3,
-            M = 1e6,
-            B = 1e9,
-            T = 1e12,
-            Qd = 1e15,
-            Qn = 1e18,
-            Sx = 1e21,
-            Sp = 1e24,
-            O = 1e27,
-            N = 1e30,
-            De = 1e33,
-            Ud = 1e36,
-            Dd = 1e39,
-            TdD = 1e42,
-            QdD = 1e45,
-            QnD = 1e48,
-            SxD = 1e51,
-            SpD = 1e54,
-            OcD = 1e57,
-            NvD = 1e60,
-        },
     }
     for _, food in ipairs(s.systemFoods) do
         s.foodById[food.id] = food
@@ -1308,7 +1386,7 @@ local function mountAutoFeedSection(
             return 1
         end
         local lower = string.lower(suf)
-        for key, mult in pairs(s.oddsSuffixMult) do
+        for key, mult in pairs(SlimeRngUtil.numberSuffixMult) do
             if string.lower(key) == lower then
                 return mult
             end
@@ -1705,8 +1783,8 @@ local function mountUfoEventSection(
         if not id or not s.zonesMod or type(s.zonesMod.getZone) ~= "function" then
             return tostring(zoneId or "?")
         end
-        local ok, def = pcall(s.zonesMod.getZone, s.zonesMod, id)
-        if ok and type(def) == "table" and type(def.name) == "string" then
+        def = SlimeRngUtil.zonesModuleGetZone(s.zonesMod, id)
+        if type(def) == "table" and type(def.name) == "string" then
             return ('%s (#%d)'):format(def.name, id)
         end
         return ("Zone #%d"):format(id)
@@ -1754,8 +1832,7 @@ local function mountUfoEventSection(
 
     local function zoneExists(zoneId: number): boolean
         if s.zonesMod and type(s.zonesMod.hasZone) == "function" then
-            local ok, yes = pcall(s.zonesMod.hasZone, s.zonesMod, zoneId)
-            if ok and yes then
+            if SlimeRngUtil.zonesModuleHasZone(s.zonesMod, zoneId) then
                 return true
             end
         end
@@ -2077,7 +2154,7 @@ local function mountUfoEventSection(
     })
 
     deferUiOnHeartbeat(refreshParagraph)
-    schedulePeriodicOnHeartbeat(1.5, refreshParagraph)
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, refreshParagraph)
 end
 
 local REBIRTH_NETWORKER_VERSION = "leifstout_networker@0.3.1"
@@ -2089,95 +2166,82 @@ local function mountAutoRebirthSection(
 )
     mainTab:CreateSection("Auto Rebirth")
 
-    local s = {
+    AutoRebirthSection = {
         paragraph = nil :: any,
         rebirthUtils = nil :: any,
         enabled = false,
-        intervalSec = 5,
+        findNetworkerServiceRemotesFolderFn = findNetworkerServiceRemotesFolderFn,
+        getDataServiceClientFn = getDataServiceClientFn,
     }
 
-    local function tryLoadRebirthUtils(): boolean
-        if s.rebirthUtils then
+    function AutoRebirthSection.tryLoadRebirthUtils(): boolean
+        if AutoRebirthSection.rebirthUtils then
             return true
         end
-        local src = ReplicatedStorage:FindFirstChild("Source")
-        local rebirthFolder = src and src:FindFirstChild("Features")
+        src = ReplicatedStorage:FindFirstChild("Source")
+        rebirthFolder = src and src:FindFirstChild("Features")
         rebirthFolder = rebirthFolder and rebirthFolder:FindFirstChild("Rebirth")
-        local mod = rebirthFolder and rebirthFolder:FindFirstChild("RebirthServiceUtils")
+        mod = rebirthFolder and rebirthFolder:FindFirstChild("RebirthServiceUtils")
         if mod and mod:IsA("ModuleScript") then
-            local ok, result = pcall(require, mod)
+            ok, result = pcall(require, mod)
             if ok and type(result) == "table" then
-                s.rebirthUtils = result
+                AutoRebirthSection.rebirthUtils = result
                 return true
             end
         end
         return false
     end
 
-    local function getGoopAndRebirths(): (number?, number?)
-        local client = getDataServiceClientFn()
-        if not client or type(client.get) ~= "function" then
+    function AutoRebirthSection.getGoopAndRebirths(): (number?, number?)
+        client = AutoRebirthSection.getDataServiceClientFn()
+        if not client then
             return nil, nil
         end
-        local goop: number? = nil
-        local rebirths: number? = nil
-        local okGoop, goopVal = pcall(function()
-            return client:get("goop")
-        end)
-        if okGoop and type(goopVal) == "number" then
-            goop = goopVal
-        end
-        local okRebirths, rebirthsVal = pcall(function()
-            return client:get("rebirths")
-        end)
-        if okRebirths and type(rebirthsVal) == "number" then
-            rebirths = rebirthsVal
-        end
-        return goop, rebirths
+        return SlimeRngUtil.readDataServiceNumber(client, "goop"), SlimeRngUtil.readDataServiceNumber(client, "rebirths")
     end
 
-    local function rebirthCost(rebirthCount: number): number?
-        if not tryLoadRebirthUtils() or type(s.rebirthUtils.getCost) ~= "function" then
+    function AutoRebirthSection.rebirthCost(rebirthCount: number): number?
+        if not AutoRebirthSection.tryLoadRebirthUtils() or type(AutoRebirthSection.rebirthUtils.getCost) ~= "function" then
             return nil
         end
-        local ok, cost = pcall(s.rebirthUtils.getCost, s.rebirthUtils, rebirthCount)
+        ok, cost = pcall(AutoRebirthSection.rebirthUtils.getCost, rebirthCount)
         if ok and type(cost) == "number" then
             return cost
         end
         return nil
     end
 
-    local function hasEnoughGoopForRebirth(): boolean
-        if not tryLoadRebirthUtils() then
+    function AutoRebirthSection.hasEnoughGoopForRebirth(): boolean
+        if not AutoRebirthSection.tryLoadRebirthUtils() then
             return false
         end
-        local goop, rebirths = getGoopAndRebirths()
+        goop, rebirths = AutoRebirthSection.getGoopAndRebirths()
         if goop == nil or rebirths == nil then
             return false
         end
-        if type(s.rebirthUtils.canAffordRebirth) == "function" then
-            local ok, yes = pcall(s.rebirthUtils.canAffordRebirth, s.rebirthUtils, rebirths, goop)
+        if type(AutoRebirthSection.rebirthUtils.canAffordRebirth) == "function" then
+            ok, yes = pcall(AutoRebirthSection.rebirthUtils.canAffordRebirth, rebirths, goop)
             return ok and yes == true
         end
-        local cost = rebirthCost(rebirths)
+        cost = AutoRebirthSection.rebirthCost(rebirths)
         return cost ~= nil and goop >= cost
     end
 
-    local function getRebirthRemote(): RemoteFunction?
-        local fold = findNetworkerServiceRemotesFolderFn("RebirthService", REBIRTH_NETWORKER_VERSION)
-        local rf = fold and fold:FindFirstChild("RemoteFunction")
+    function AutoRebirthSection.getRebirthRemote(): RemoteFunction?
+        fold = AutoRebirthSection.findNetworkerServiceRemotesFolderFn("RebirthService", REBIRTH_NETWORKER_VERSION)
+        rf = fold and fold:FindFirstChild("RemoteFunction")
         if rf and rf:IsA("RemoteFunction") then
             return rf
         end
         return nil
     end
 
-    local function requestRebirth(): (boolean, string?)
-        local rf = getRebirthRemote()
+    function AutoRebirthSection.requestRebirth(): (boolean, string?)
+        rf = AutoRebirthSection.getRebirthRemote()
         if not rf then
             return false, "RebirthService RemoteFunction not found"
         end
-        local ok, success, errMsg = pcall(function()
+        ok, success, errMsg = pcall(function()
             return (rf :: RemoteFunction):InvokeServer("requestRebirth")
         end)
         if not ok then
@@ -2192,66 +2256,43 @@ local function mountAutoRebirthSection(
         return false, "Rebirth failed"
     end
 
-    local function rebirthGoopNeeded(rebirthCount: number): number
-        local cost = rebirthCost(rebirthCount)
+    function AutoRebirthSection.rebirthGoopNeeded(rebirthCount: number): number
+        cost = AutoRebirthSection.rebirthCost(rebirthCount)
         if cost then
             return cost
         end
-        local count = math.floor(rebirthCount)
-        return 2 ^ math.max(count, 0) * 500
+        return 2 ^ math.max(math.floor(rebirthCount), 0) * 500
     end
 
-    local function formatGoopAmount(value: number): string
-        local n = math.floor(value)
-        local negative = n < 0
-        n = math.abs(n)
-        local digits = tostring(n)
-        local formatted = ""
-        for i = #digits, 1, -1 do
-            formatted = digits:sub(i, i) .. formatted
-            local fromRight = #digits - i + 1
-            if fromRight % 3 == 0 and i > 1 then
-                formatted = "." .. formatted
-            end
-        end
-        if negative then
-            formatted = "-" .. formatted
-        end
-        return formatted
-    end
-
-    local function buildBody(): string
-        tryLoadRebirthUtils()
-        local goop, rebirths = getGoopAndRebirths()
+    function AutoRebirthSection.buildBody(): string
+        AutoRebirthSection.tryLoadRebirthUtils()
+        goop, rebirths = AutoRebirthSection.getGoopAndRebirths()
         if goop == nil or rebirths == nil then
             return "Waiting for goop / rebirths data (DataService)."
         end
-        local goopNeeded = rebirthGoopNeeded(rebirths)
-        local lines: { string } = {
-            ("Goop: %s / %s"):format(formatGoopAmount(goop), formatGoopAmount(goopNeeded)),
+        goopNeeded = AutoRebirthSection.rebirthGoopNeeded(rebirths)
+        lines = {
+            ("Goop: %s / %s"):format(SlimeRngUtil.formatSuffixNumber(goop), SlimeRngUtil.formatSuffixNumber(goopNeeded)),
             ("Rebirths: %d"):format(math.floor(rebirths)),
-            ("Ready: %s"):format(hasEnoughGoopForRebirth() and "yes" or "no"),
+            ("Ready: %s"):format(AutoRebirthSection.hasEnoughGoopForRebirth() and "yes" or "no"),
         }
-        if s.enabled then
+        if AutoRebirthSection.enabled then
             table.insert(lines, "Auto rebirth: ON")
         end
         return table.concat(lines, "\n")
     end
 
-    local function refreshParagraph()
-        if s.paragraph and s.paragraph.Set then
-            s.paragraph:Set({ Title = "Rebirth", Content = buildBody() })
+    function AutoRebirthSection.refreshParagraph()
+        if AutoRebirthSection.paragraph and AutoRebirthSection.paragraph.Set then
+            AutoRebirthSection.paragraph:Set({ Title = "Rebirth", Content = AutoRebirthSection.buildBody() })
         end
     end
 
-    local function tryAutoRebirthPass()
-        if not s.enabled then
+    function AutoRebirthSection.tryAutoRebirthPass()
+        if not AutoRebirthSection.enabled or not AutoRebirthSection.hasEnoughGoopForRebirth() then
             return
         end
-        if not hasEnoughGoopForRebirth() then
-            return
-        end
-        local ok, errMsg = requestRebirth()
+        ok, errMsg = AutoRebirthSection.requestRebirth()
         if ok then
             mountNotify({
                 Title = "Auto Rebirth",
@@ -2267,7 +2308,7 @@ local function mountAutoRebirthSection(
         end
     end
 
-    s.paragraph = mainTab:CreateParagraph({
+    AutoRebirthSection.paragraph = mainTab:CreateParagraph({
         Title = "Rebirth",
         Content = "Loading…",
     })
@@ -2277,14 +2318,221 @@ local function mountAutoRebirthSection(
         Flag = "main_auto_rebirth",
         CurrentValue = false,
         Callback = function(enabled)
-            s.enabled = enabled == true
+            AutoRebirthSection.enabled = enabled == true
         end,
     })
 
-    deferUiOnHeartbeat(refreshParagraph)
-    schedulePeriodicOnHeartbeat(s.intervalSec, function()
-        refreshParagraph()
-        tryAutoRebirthPass()
+    deferUiOnHeartbeat(AutoRebirthSection.refreshParagraph)
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, function()
+        AutoRebirthSection.refreshParagraph()
+        AutoRebirthSection.tryAutoRebirthPass()
+    end)
+end
+
+local function mountAutoOpenZoneSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?,
+    getDataServiceClientFn: () -> any?
+)
+    mainTab:CreateSection("Auto Open Zone")
+
+    AutoOpenZoneSection = {
+        paragraph = nil :: any,
+        zonesMod = nil :: any,
+        enabled = false,
+        findNetworkerServiceRemotesFolderFn = findNetworkerServiceRemotesFolderFn,
+        getDataServiceClientFn = getDataServiceClientFn,
+    }
+
+    function AutoOpenZoneSection.tryLoadZonesMod(): boolean
+        if AutoOpenZoneSection.zonesMod then
+            return true
+        end
+        src = ReplicatedStorage:FindFirstChild("Source")
+        gameFolder = src and src:FindFirstChild("Game")
+        zonesItems = gameFolder and gameFolder:FindFirstChild("Items")
+        zonesItems = zonesItems and zonesItems:FindFirstChild("Zones")
+        if zonesItems and zonesItems:IsA("ModuleScript") then
+            ok, result = pcall(require, zonesItems)
+            if ok and type(result) == "table" and type(result.getZone) == "function" then
+                AutoOpenZoneSection.zonesMod = result
+                return true
+            end
+        end
+        return false
+    end
+
+    function AutoOpenZoneSection.getCoinsAndMaxZone(): (number?, number?)
+        client = AutoOpenZoneSection.getDataServiceClientFn()
+        if not client then
+            return nil, nil
+        end
+        coins = SlimeRngUtil.readDataServiceNumber(client, "coins")
+        maxZone = SlimeRngUtil.readDataServiceNumber(client, "maxZone")
+        if maxZone then
+            maxZone = math.max(math.floor(maxZone), 1)
+        end
+        return coins, maxZone
+    end
+
+    function AutoOpenZoneSection.zoneHasId(zoneId: number): boolean
+        if not AutoOpenZoneSection.tryLoadZonesMod() then
+            return false
+        end
+        return SlimeRngUtil.zonesModuleHasZone(AutoOpenZoneSection.zonesMod, zoneId)
+    end
+
+    function AutoOpenZoneSection.zoneDef(zoneId: number): any?
+        if not AutoOpenZoneSection.tryLoadZonesMod() then
+            return nil
+        end
+        return SlimeRngUtil.zonesModuleGetZone(AutoOpenZoneSection.zonesMod, zoneId)
+    end
+
+    function AutoOpenZoneSection.zoneLabel(zoneId: number): string
+        def = AutoOpenZoneSection.zoneDef(zoneId)
+        name = type(def) == "table" and type(def.name) == "string" and def.name or "?"
+        return ("%d (%s)"):format(zoneId, name)
+    end
+
+    function AutoOpenZoneSection.nextZoneId(maxZone: number): number?
+        id = math.floor(maxZone) + 1
+        if AutoOpenZoneSection.zoneHasId(id) then
+            return id
+        end
+        return nil
+    end
+
+    function AutoOpenZoneSection.nextZonePrice(nextId: number): number?
+        def = AutoOpenZoneSection.zoneDef(nextId)
+        if type(def) == "table" and type(def.price) == "number" then
+            return def.price
+        end
+        return nil
+    end
+
+    function AutoOpenZoneSection.hasEnoughCoinsForNextZone(): boolean
+        coins, maxZone = AutoOpenZoneSection.getCoinsAndMaxZone()
+        if coins == nil or maxZone == nil then
+            return false
+        end
+        nextId = AutoOpenZoneSection.nextZoneId(maxZone)
+        if not nextId then
+            return false
+        end
+        price = AutoOpenZoneSection.nextZonePrice(nextId)
+        if price == nil then
+            return false
+        end
+        return coins >= price
+    end
+
+    function AutoOpenZoneSection.getZonesRemote(): RemoteFunction?
+        fold = AutoOpenZoneSection.findNetworkerServiceRemotesFolderFn("ZonesService", REBIRTH_NETWORKER_VERSION)
+        rf = fold and fold:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            return rf
+        end
+        return nil
+    end
+
+    function AutoOpenZoneSection.requestPurchaseZone(): (boolean, string?)
+        rf = AutoOpenZoneSection.getZonesRemote()
+        if not rf then
+            return false, "ZonesService RemoteFunction not found"
+        end
+        ok, success, errMsg = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestPurchaseZone")
+        end)
+        if not ok then
+            return false, tostring(success)
+        end
+        if success == true then
+            return true, nil
+        end
+        if type(errMsg) == "string" and errMsg ~= "" then
+            return false, errMsg
+        end
+        return false, "Failed to purchase zone"
+    end
+
+    function AutoOpenZoneSection.buildBody(): string
+        AutoOpenZoneSection.tryLoadZonesMod()
+        coins, maxZone = AutoOpenZoneSection.getCoinsAndMaxZone()
+        if coins == nil or maxZone == nil then
+            return "Waiting for coin / zone data (DataService)."
+        end
+        if not AutoOpenZoneSection.tryLoadZonesMod() then
+            return "Waiting for zone definitions (Source.Game.Items.Zones)."
+        end
+        currentHighest = AutoOpenZoneSection.zoneLabel(maxZone)
+        nextId = AutoOpenZoneSection.nextZoneId(maxZone)
+        lines = {}
+        if not nextId then
+            table.insert(lines, ("Coin: %s / MAXED"):format(SlimeRngUtil.formatSuffixNumber(coins)))
+            table.insert(lines, "Current Highest Zone: " .. currentHighest)
+            table.insert(lines, "Next Zone: MAXED")
+            table.insert(lines, "Ready: no")
+        else
+            price = AutoOpenZoneSection.nextZonePrice(nextId) or 0
+            table.insert(lines, ("Coin: %s / %s"):format(
+                SlimeRngUtil.formatSuffixNumber(coins),
+                SlimeRngUtil.formatSuffixNumber(price)
+            ))
+            table.insert(lines, "Current Highest Zone: " .. currentHighest)
+            table.insert(lines, "Next Zone: " .. AutoOpenZoneSection.zoneLabel(nextId))
+            table.insert(lines, ("Ready: %s"):format(AutoOpenZoneSection.hasEnoughCoinsForNextZone() and "yes" or "no"))
+        end
+        if AutoOpenZoneSection.enabled then
+            table.insert(lines, "Auto open zone: ON")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    function AutoOpenZoneSection.refreshParagraph()
+        if AutoOpenZoneSection.paragraph and AutoOpenZoneSection.paragraph.Set then
+            AutoOpenZoneSection.paragraph:Set({ Title = "Zone", Content = AutoOpenZoneSection.buildBody() })
+        end
+    end
+
+    function AutoOpenZoneSection.tryAutoOpenZonePass()
+        if not AutoOpenZoneSection.enabled or not AutoOpenZoneSection.hasEnoughCoinsForNextZone() then
+            return
+        end
+        ok, errMsg = AutoOpenZoneSection.requestPurchaseZone()
+        if ok then
+            mountNotify({
+                Title = "Auto Open Zone",
+                Content = "Zone unlocked.",
+                Icon = "check",
+            })
+        elseif errMsg and errMsg ~= "Not enough coins" then
+            mountNotify({
+                Title = "Auto Open Zone",
+                Content = errMsg,
+                Icon = "x",
+            })
+        end
+    end
+
+    AutoOpenZoneSection.paragraph = mainTab:CreateParagraph({
+        Title = "Zone",
+        Content = "Loading…",
+    })
+
+    mainTab:CreateToggle({
+        Name = "Auto Open Zone",
+        Flag = "main_auto_open_zone",
+        CurrentValue = false,
+        Callback = function(enabled)
+            AutoOpenZoneSection.enabled = enabled == true
+        end,
+    })
+
+    deferUiOnHeartbeat(AutoOpenZoneSection.refreshParagraph)
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, function()
+        AutoOpenZoneSection.refreshParagraph()
+        AutoOpenZoneSection.tryAutoOpenZonePass()
     end)
 end
 
@@ -4236,6 +4484,8 @@ do
     mountAutoFeedSection(MainTab, findNetworkerServiceRemotesFolder, lootUidFromInstance)
 
     mountAutoRebirthSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
+
+    mountAutoOpenZoneSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
 
     mountUfoEventSection(MainTab, findNetworkerServiceRemotesFolder)
 
