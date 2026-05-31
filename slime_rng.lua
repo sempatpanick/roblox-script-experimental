@@ -2456,6 +2456,51 @@ local function mountAutoOpenZoneSection(
         return false, "Failed to purchase zone"
     end
 
+    function AutoOpenZoneSection.requestTeleportZone(zoneId: number): boolean
+        rf = AutoOpenZoneSection.getZonesRemote()
+        if not rf then
+            return false
+        end
+        ok, success = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestTeleportZone", zoneId)
+        end)
+        return ok and success == true
+    end
+
+    function AutoOpenZoneSection.findZoneHitbox(zoneId: number): BasePart?
+        zones = Workspace:FindFirstChild("Zones")
+        zoneFolder = zones and zones:FindFirstChild(tostring(zoneId))
+        poi = zoneFolder and zoneFolder:FindFirstChild("POI")
+        hitbox = poi and poi:FindFirstChild("Hitbox")
+        if hitbox and hitbox:IsA("BasePart") then
+            return hitbox
+        end
+        return nil
+    end
+
+    function AutoOpenZoneSection.teleportToZoneId(zoneId: number): boolean
+        if AutoOpenZoneSection.requestTeleportZone(zoneId) then
+            return true
+        end
+        hitbox = AutoOpenZoneSection.findZoneHitbox(zoneId)
+        lp = Players.LocalPlayer
+        hrp = lp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+        if hitbox and hrp and hrp:IsA("BasePart") then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(hitbox.Position + Vector3.new(0, 5, 0))
+            return true
+        end
+        return false
+    end
+
+    function AutoOpenZoneSection.teleportToHighestZone(): boolean
+        _, maxZone = AutoOpenZoneSection.getCoinsAndMaxZone()
+        if not maxZone then
+            return false
+        end
+        return AutoOpenZoneSection.teleportToZoneId(math.floor(maxZone))
+    end
+
     function AutoOpenZoneSection.buildBody(): string
         AutoOpenZoneSection.tryLoadZonesMod()
         coins, maxZone = AutoOpenZoneSection.getCoinsAndMaxZone()
@@ -2499,11 +2544,26 @@ local function mountAutoOpenZoneSection(
         if not AutoOpenZoneSection.enabled or not AutoOpenZoneSection.hasEnoughCoinsForNextZone() then
             return
         end
+        _, maxZone = AutoOpenZoneSection.getCoinsAndMaxZone()
+        purchasedZoneId = maxZone and AutoOpenZoneSection.nextZoneId(maxZone)
         ok, errMsg = AutoOpenZoneSection.requestPurchaseZone()
         if ok then
+            teleported = false
+            if purchasedZoneId then
+                teleported = AutoOpenZoneSection.teleportToZoneId(purchasedZoneId)
+            end
+            if not teleported then
+                teleported = AutoOpenZoneSection.teleportToHighestZone()
+            end
+            notifyContent = "Zone unlocked."
+            if purchasedZoneId then
+                notifyContent = notifyContent .. " Teleported to " .. AutoOpenZoneSection.zoneLabel(purchasedZoneId) .. "."
+            elseif teleported then
+                notifyContent = notifyContent .. " Teleported to highest zone."
+            end
             mountNotify({
                 Title = "Auto Open Zone",
-                Content = "Zone unlocked.",
+                Content = notifyContent,
                 Icon = "check",
             })
         elseif errMsg and errMsg ~= "Not enough coins" then
