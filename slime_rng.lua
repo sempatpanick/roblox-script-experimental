@@ -1600,6 +1600,479 @@ local function mountAutoFeedSection(
     })
 end
 
+local function mountUfoTrackerSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?
+)
+    mainTab:CreateSection("UFO Tracker")
+
+    local s = {
+        paragraph = nil :: any,
+        zonesMod = nil :: any,
+        zonesClient = nil :: any,
+        ufoClient = nil :: any,
+        autoTeleportEnabled = false,
+        savedReturnCframe = nil :: CFrame?,
+        teleportedForEventKey = nil :: string?,
+    }
+
+    local function tryLoadGameModules(): boolean
+        if s.zonesMod then
+            return true
+        end
+        local src = ReplicatedStorage:FindFirstChild("Source")
+        if not src then
+            return false
+        end
+        local features = src:FindFirstChild("Features")
+        local gameFolder = src:FindFirstChild("Game")
+        local zonesItems = gameFolder and gameFolder:FindFirstChild("Items")
+        zonesItems = zonesItems and zonesItems:FindFirstChild("Zones")
+        local zonesClientMod = features and features:FindFirstChild("Zones")
+        zonesClientMod = zonesClientMod and zonesClientMod:FindFirstChild("ZonesServiceClient")
+        local ufoFolder = features and features:FindFirstChild("UfoEvent")
+        local ufoMod = ufoFolder and (
+            ufoFolder:FindFirstChild("UfoEventServiceClient") or ufoFolder:FindFirstChild("UfoEvent")
+        )
+        if zonesItems and zonesItems:IsA("ModuleScript") then
+            local ok, result = pcall(require, zonesItems)
+            if ok and type(result) == "table" then
+                s.zonesMod = result
+            end
+        end
+        if zonesClientMod and zonesClientMod:IsA("ModuleScript") then
+            local ok, result = pcall(require, zonesClientMod)
+            if ok and type(result) == "table" then
+                s.zonesClient = result
+            end
+        end
+        if ufoMod and ufoMod:IsA("ModuleScript") then
+            local ok, result = pcall(require, ufoMod)
+            if ok and type(result) == "table" then
+                s.ufoClient = result
+            end
+        end
+        return s.zonesMod ~= nil
+    end
+
+    local function fetchUfoState(): any?
+        if s.ufoClient and type(s.ufoClient.getStateSource) == "function" then
+            local ok, stateSource = pcall(s.ufoClient.getStateSource, s.ufoClient)
+            if ok and type(stateSource) == "function" then
+                local okRead, state = pcall(stateSource)
+                if okRead and type(state) == "table" then
+                    return state
+                end
+            end
+        end
+        local fold = findNetworkerServiceRemotesFolderFn("UfoEventService")
+        local rf = fold and fold:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            local ok, state = pcall(function()
+                return (rf :: RemoteFunction):InvokeServer("getState")
+            end)
+            if ok and type(state) == "table" then
+                return state
+            end
+        end
+        return nil
+    end
+
+    local function formatCountdown(nextStart: number): string
+        local remain = math.max(0, math.round(nextStart - Workspace:GetServerTimeNow()))
+        local mins = math.floor(remain / 60)
+        local secs = remain - mins * 60
+        if mins > 0 then
+            return ("%02d:%02d"):format(mins, secs)
+        end
+        return tostring(secs) .. "s"
+    end
+
+    local function zoneLabel(zoneId: any): string
+        local id = tonumber(zoneId)
+        if not id or not s.zonesMod or type(s.zonesMod.getZone) ~= "function" then
+            return tostring(zoneId or "?")
+        end
+        local ok, def = pcall(s.zonesMod.getZone, s.zonesMod, id)
+        if ok and type(def) == "table" and type(def.name) == "string" then
+            return ('%s (#%d)'):format(def.name, id)
+        end
+        return ("Zone #%d"):format(id)
+    end
+
+    local function liveUfoPosition(): Vector3?
+        local folder = Workspace:FindFirstChild("UfoEvent")
+        if not folder then
+            return nil
+        end
+        local model = folder:FindFirstChildWhichIsA("Model", true)
+        if model then
+            return model:GetPivot().Position
+        end
+        return nil
+    end
+
+    local function findZoneHitbox(zoneId: any): BasePart?
+        local id = tonumber(zoneId) or zoneId
+        if s.zonesClient and type(s.zonesClient.findZoneHitbox) == "function" then
+            local ok, hitbox = pcall(s.zonesClient.findZoneHitbox, s.zonesClient, id)
+            if ok and hitbox and hitbox:IsA("BasePart") then
+                return hitbox
+            end
+        end
+        local zones = Workspace:FindFirstChild("Zones")
+        local zoneFolder = zones and zones:FindFirstChild(tostring(id))
+        local poi = zoneFolder and zoneFolder:FindFirstChild("POI")
+        local hitbox = poi and poi:FindFirstChild("Hitbox")
+        if hitbox and hitbox:IsA("BasePart") then
+            return hitbox
+        end
+        return nil
+    end
+
+    local function getHumanoidRootPart(): BasePart?
+        local lp = Players.LocalPlayer
+        local character = lp and lp.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp:IsA("BasePart") then
+            return hrp
+        end
+        return nil
+    end
+
+    local function zoneExists(zoneId: number): boolean
+        if s.zonesMod and type(s.zonesMod.hasZone) == "function" then
+            local ok, yes = pcall(s.zonesMod.hasZone, s.zonesMod, zoneId)
+            if ok and yes then
+                return true
+            end
+        end
+        return findZoneHitbox(zoneId) ~= nil
+    end
+
+    local function collectActiveUfoZoneIds(state: any): { number }
+        local ids: { number } = {}
+        local function add(raw: any)
+            local n = tonumber(raw)
+            if not n then
+                return
+            end
+            for _, existing in ipairs(ids) do
+                if existing == n then
+                    return
+                end
+            end
+            table.insert(ids, n)
+        end
+        for _, field in ipairs({ "zoneIds", "ufoZoneIds", "activeZoneIds", "zones" }) do
+            local value = state[field]
+            if type(value) == "table" then
+                for _, entry in ipairs(value) do
+                    add(entry)
+                end
+                if #value == 0 then
+                    for _, entry in pairs(value) do
+                        add(entry)
+                    end
+                end
+            end
+        end
+        add(state.zoneId)
+        local seed = tonumber(state.zoneId)
+        if seed then
+            add(seed + 1)
+            add(seed + 2)
+        end
+        local zonesFolder = Workspace:FindFirstChild("Zones")
+        if zonesFolder then
+            for _, child in ipairs(zonesFolder:GetChildren()) do
+                local zid = tonumber(child.Name)
+                if zid then
+                    for _, inst in ipairs(child:GetDescendants()) do
+                        if inst.Name == "UFO" or inst.Name == "GoldUFO" then
+                            add(zid)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        local valid: { number } = {}
+        for _, id in ipairs(ids) do
+            if zoneExists(id) then
+                table.insert(valid, id)
+            end
+        end
+        table.sort(valid)
+        return valid
+    end
+
+    local function highestActiveUfoZoneId(state: any): number?
+        local ids = collectActiveUfoZoneIds(state)
+        if #ids == 0 then
+            return nil
+        end
+        return ids[#ids]
+    end
+
+    local function isUfoEventActive(state: any?): boolean
+        return type(state) == "table" and type(state.phase) == "string" and state.phase ~= "idle"
+    end
+
+    local function ufoEventKey(state: any): string?
+        if not isUfoEventActive(state) then
+            return nil
+        end
+        return tostring(state.phaseStartTime or "") .. ":" .. tostring(state.zoneId or "")
+    end
+
+    local function saveReturnPosition()
+        local hrp = getHumanoidRootPart()
+        if hrp then
+            s.savedReturnCframe = hrp.CFrame
+        end
+    end
+
+    local function restoreReturnPosition()
+        if not s.savedReturnCframe then
+            return
+        end
+        local hrp = getHumanoidRootPart()
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = s.savedReturnCframe
+        end
+        s.savedReturnCframe = nil
+    end
+
+    local function teleportToZoneId(zoneId: number, showNotify: boolean): boolean
+        if s.zonesClient and type(s.zonesClient.teleportToZone) == "function" then
+            local ok = pcall(s.zonesClient.teleportToZone, s.zonesClient, zoneId)
+            if ok then
+                if showNotify then
+                    mountNotify({
+                        Title = "UFO",
+                        Content = "Teleported to " .. zoneLabel(zoneId) .. ".",
+                        Icon = "check",
+                    })
+                end
+                return true
+            end
+        end
+        local hitbox = findZoneHitbox(zoneId)
+        local hrp = getHumanoidRootPart()
+        if hitbox and hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(hitbox.Position + Vector3.new(0, 5, 0))
+            if showNotify then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "Teleported near " .. zoneLabel(zoneId) .. " POI.",
+                    Icon = "check",
+                })
+            end
+            return true
+        end
+        if showNotify then
+            mountNotify({
+                Title = "UFO",
+                Content = "Could not teleport to that zone.",
+                Icon = "x",
+            })
+        end
+        return false
+    end
+
+    local function processAutoTeleport()
+        if not s.autoTeleportEnabled then
+            return
+        end
+        tryLoadGameModules()
+        local state = fetchUfoState()
+        if not state then
+            return
+        end
+        if isUfoEventActive(state) then
+            local key = ufoEventKey(state)
+            if key and s.teleportedForEventKey ~= key then
+                if not s.savedReturnCframe then
+                    saveReturnPosition()
+                end
+                local zoneId = highestActiveUfoZoneId(state)
+                if zoneId and teleportToZoneId(zoneId, false) then
+                    s.teleportedForEventKey = key
+                    mountNotify({
+                        Title = "UFO",
+                        Content = "Auto teleported to " .. zoneLabel(zoneId) .. " (highest of active UFO zones).",
+                        Icon = "check",
+                    })
+                end
+            end
+        elseif s.teleportedForEventKey and s.savedReturnCframe then
+            restoreReturnPosition()
+            s.teleportedForEventKey = nil
+            mountNotify({
+                Title = "UFO",
+                Content = "UFO event ended — returned to saved position.",
+                Icon = "check",
+            })
+        else
+            s.teleportedForEventKey = nil
+        end
+    end
+
+    local function formatVector3(pos: Vector3): string
+        return ("%.0f, %.0f, %.0f"):format(pos.X, pos.Y, pos.Z)
+    end
+
+    local function buildBody(): string
+        tryLoadGameModules()
+        local state = fetchUfoState()
+        local lines: { string } = {}
+        if not state then
+            local live = liveUfoPosition()
+            if live then
+                table.insert(lines, "Phase: (model only)")
+                table.insert(lines, "Position: " .. formatVector3(live))
+            else
+                table.insert(lines, "No UFO state yet.")
+                table.insert(lines, "Wait for game modules or an active event.")
+            end
+            return table.concat(lines, "\n")
+        end
+        local phase = tostring(state.phase or "?")
+        if phase == "idle" then
+            table.insert(lines, "Status: Idle")
+            if type(state.nextEventStartTime) == "number" then
+                table.insert(lines, "Next UFO: " .. formatCountdown(state.nextEventStartTime))
+            else
+                table.insert(lines, "Next UFO: unknown")
+            end
+        else
+            table.insert(lines, "Status: ACTIVE (" .. phase .. ")")
+            local activeZoneIds = collectActiveUfoZoneIds(state)
+            if #activeZoneIds > 0 then
+                local labels: { string } = {}
+                for _, id in ipairs(activeZoneIds) do
+                    table.insert(labels, zoneLabel(id))
+                end
+                table.insert(lines, "UFO zones: " .. table.concat(labels, ", "))
+                table.insert(lines, "Target (highest): " .. zoneLabel(activeZoneIds[#activeZoneIds]))
+            elseif state.zoneId ~= nil then
+                table.insert(lines, "Zone: " .. zoneLabel(state.zoneId))
+            end
+            if typeof(state.hoverPosition) == "Vector3" then
+                table.insert(lines, "Hover: " .. formatVector3(state.hoverPosition))
+            end
+            local live = liveUfoPosition()
+            if live then
+                table.insert(lines, "Model: " .. formatVector3(live))
+            end
+        end
+        if s.autoTeleportEnabled then
+            table.insert(lines, "Auto teleport: ON")
+            if s.savedReturnCframe then
+                table.insert(lines, "Return position: saved")
+            end
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function refreshParagraph()
+        if s.paragraph and s.paragraph.Set then
+            s.paragraph:Set({ Title = "UFO", Content = buildBody() })
+        end
+        processAutoTeleport()
+    end
+
+    s.paragraph = mainTab:CreateParagraph({
+        Title = "UFO",
+        Content = "Loading…",
+    })
+
+    mainTab:CreateButton({
+        Name = "Teleport to UFO zone",
+        Flag = "main_ufo_teleport_zone",
+        Callback = function()
+            tryLoadGameModules()
+            local state = fetchUfoState()
+            if not state or not isUfoEventActive(state) then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "No active UFO zone right now.",
+                    Icon = "x",
+                })
+                return
+            end
+            local zoneId = highestActiveUfoZoneId(state)
+            if not zoneId then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "No UFO zones found.",
+                    Icon = "x",
+                })
+                return
+            end
+            teleportToZoneId(zoneId, true)
+        end,
+    })
+
+    mainTab:CreateButton({
+        Name = "Teleport to UFO",
+        Flag = "main_ufo_teleport_model",
+        Callback = function()
+            tryLoadGameModules()
+            local state = fetchUfoState()
+            local target = liveUfoPosition()
+            if not target and state and typeof(state.hoverPosition) == "Vector3" then
+                target = state.hoverPosition
+            end
+            if not target then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "UFO is not in the world right now.",
+                    Icon = "x",
+                })
+                return
+            end
+            local lp = Players.LocalPlayer
+            local hrp = lp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+            if not hrp then
+                return
+            end
+            hrp.CFrame = CFrame.new(target + Vector3.new(0, 6, 0))
+            mountNotify({
+                Title = "UFO",
+                Content = "Teleported under the UFO.",
+                Icon = "check",
+            })
+        end,
+    })
+
+    mainTab:CreateToggle({
+        Name = "Auto Teleport UFO",
+        Flag = "main_ufo_auto_teleport",
+        CurrentValue = false,
+        Callback = function(enabled)
+            s.autoTeleportEnabled = enabled == true
+            if not s.autoTeleportEnabled then
+                if s.teleportedForEventKey and s.savedReturnCframe then
+                    restoreReturnPosition()
+                end
+                s.teleportedForEventKey = nil
+            end
+        end,
+    })
+
+    deferUiOnHeartbeat(refreshParagraph)
+    task.spawn(function()
+        while true do
+            refreshParagraph()
+            task.wait(1.5)
+        end
+    end)
+end
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
@@ -3546,6 +4019,8 @@ do
     })
 
     mountAutoFeedSection(MainTab, findNetworkerServiceRemotesFolder, lootUidFromInstance)
+
+    mountUfoTrackerSection(MainTab, findNetworkerServiceRemotesFolder)
 
     MainTab:CreateSection("Auto Equip Slimes")
 
