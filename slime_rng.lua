@@ -92,6 +92,18 @@ local function deferUiOnHeartbeat(fn: () -> ())
     end)
 end
 
+local function schedulePeriodicOnHeartbeat(intervalSec: number, fn: () -> ()): RBXScriptConnection
+    local lastAt = 0.0
+    return RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        if now - lastAt < intervalSec then
+            return
+        end
+        lastAt = now
+        fn()
+    end)
+end
+
 -- Set by Auto Feed; used when loading configs (stable food labels, legacy qty strings).
 local normalizeAutoFeedFoodConfigValue: ((any) -> any)? = nil
 local syncAutoFeedFoodAfterConfigLoad: (() -> ())? = nil
@@ -1600,11 +1612,11 @@ local function mountAutoFeedSection(
     })
 end
 
-local function mountUfoTrackerSection(
+local function mountUfoEventSection(
     mainTab: any,
     findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?
 )
-    mainTab:CreateSection("UFO Tracker")
+    mainTab:CreateSection("UFO Event")
 
     local s = {
         paragraph = nil :: any,
@@ -2065,11 +2077,214 @@ local function mountUfoTrackerSection(
     })
 
     deferUiOnHeartbeat(refreshParagraph)
-    task.spawn(function()
-        while true do
-            refreshParagraph()
-            task.wait(1.5)
+    schedulePeriodicOnHeartbeat(1.5, refreshParagraph)
+end
+
+local REBIRTH_NETWORKER_VERSION = "leifstout_networker@0.3.1"
+
+local function mountAutoRebirthSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?,
+    getDataServiceClientFn: () -> any?
+)
+    mainTab:CreateSection("Auto Rebirth")
+
+    local s = {
+        paragraph = nil :: any,
+        rebirthUtils = nil :: any,
+        enabled = false,
+        intervalSec = 5,
+    }
+
+    local function tryLoadRebirthUtils(): boolean
+        if s.rebirthUtils then
+            return true
         end
+        local src = ReplicatedStorage:FindFirstChild("Source")
+        local rebirthFolder = src and src:FindFirstChild("Features")
+        rebirthFolder = rebirthFolder and rebirthFolder:FindFirstChild("Rebirth")
+        local mod = rebirthFolder and rebirthFolder:FindFirstChild("RebirthServiceUtils")
+        if mod and mod:IsA("ModuleScript") then
+            local ok, result = pcall(require, mod)
+            if ok and type(result) == "table" then
+                s.rebirthUtils = result
+                return true
+            end
+        end
+        return false
+    end
+
+    local function getGoopAndRebirths(): (number?, number?)
+        local client = getDataServiceClientFn()
+        if not client or type(client.get) ~= "function" then
+            return nil, nil
+        end
+        local goop: number? = nil
+        local rebirths: number? = nil
+        local okGoop, goopVal = pcall(function()
+            return client:get("goop")
+        end)
+        if okGoop and type(goopVal) == "number" then
+            goop = goopVal
+        end
+        local okRebirths, rebirthsVal = pcall(function()
+            return client:get("rebirths")
+        end)
+        if okRebirths and type(rebirthsVal) == "number" then
+            rebirths = rebirthsVal
+        end
+        return goop, rebirths
+    end
+
+    local function rebirthCost(rebirthCount: number): number?
+        if not tryLoadRebirthUtils() or type(s.rebirthUtils.getCost) ~= "function" then
+            return nil
+        end
+        local ok, cost = pcall(s.rebirthUtils.getCost, s.rebirthUtils, rebirthCount)
+        if ok and type(cost) == "number" then
+            return cost
+        end
+        return nil
+    end
+
+    local function hasEnoughGoopForRebirth(): boolean
+        if not tryLoadRebirthUtils() then
+            return false
+        end
+        local goop, rebirths = getGoopAndRebirths()
+        if goop == nil or rebirths == nil then
+            return false
+        end
+        if type(s.rebirthUtils.canAffordRebirth) == "function" then
+            local ok, yes = pcall(s.rebirthUtils.canAffordRebirth, s.rebirthUtils, rebirths, goop)
+            return ok and yes == true
+        end
+        local cost = rebirthCost(rebirths)
+        return cost ~= nil and goop >= cost
+    end
+
+    local function getRebirthRemote(): RemoteFunction?
+        local fold = findNetworkerServiceRemotesFolderFn("RebirthService", REBIRTH_NETWORKER_VERSION)
+        local rf = fold and fold:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            return rf
+        end
+        return nil
+    end
+
+    local function requestRebirth(): (boolean, string?)
+        local rf = getRebirthRemote()
+        if not rf then
+            return false, "RebirthService RemoteFunction not found"
+        end
+        local ok, success, errMsg = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestRebirth")
+        end)
+        if not ok then
+            return false, tostring(success)
+        end
+        if success == true then
+            return true, nil
+        end
+        if type(errMsg) == "string" and errMsg ~= "" then
+            return false, errMsg
+        end
+        return false, "Rebirth failed"
+    end
+
+    local function rebirthGoopNeeded(rebirthCount: number): number
+        local cost = rebirthCost(rebirthCount)
+        if cost then
+            return cost
+        end
+        local count = math.floor(rebirthCount)
+        return 2 ^ math.max(count, 0) * 500
+    end
+
+    local function formatGoopAmount(value: number): string
+        local n = math.floor(value)
+        local negative = n < 0
+        n = math.abs(n)
+        local digits = tostring(n)
+        local formatted = ""
+        for i = #digits, 1, -1 do
+            formatted = digits:sub(i, i) .. formatted
+            local fromRight = #digits - i + 1
+            if fromRight % 3 == 0 and i > 1 then
+                formatted = "." .. formatted
+            end
+        end
+        if negative then
+            formatted = "-" .. formatted
+        end
+        return formatted
+    end
+
+    local function buildBody(): string
+        tryLoadRebirthUtils()
+        local goop, rebirths = getGoopAndRebirths()
+        if goop == nil or rebirths == nil then
+            return "Waiting for goop / rebirths data (DataService)."
+        end
+        local goopNeeded = rebirthGoopNeeded(rebirths)
+        local lines: { string } = {
+            ("Goop: %s / %s"):format(formatGoopAmount(goop), formatGoopAmount(goopNeeded)),
+            ("Rebirths: %d"):format(math.floor(rebirths)),
+            ("Ready: %s"):format(hasEnoughGoopForRebirth() and "yes" or "no"),
+        }
+        if s.enabled then
+            table.insert(lines, "Auto rebirth: ON")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function refreshParagraph()
+        if s.paragraph and s.paragraph.Set then
+            s.paragraph:Set({ Title = "Rebirth", Content = buildBody() })
+        end
+    end
+
+    local function tryAutoRebirthPass()
+        if not s.enabled then
+            return
+        end
+        if not hasEnoughGoopForRebirth() then
+            return
+        end
+        local ok, errMsg = requestRebirth()
+        if ok then
+            mountNotify({
+                Title = "Auto Rebirth",
+                Content = "Rebirth successful.",
+                Icon = "check",
+            })
+        elseif errMsg and errMsg ~= "Not enough goop" then
+            mountNotify({
+                Title = "Auto Rebirth",
+                Content = errMsg,
+                Icon = "x",
+            })
+        end
+    end
+
+    s.paragraph = mainTab:CreateParagraph({
+        Title = "Rebirth",
+        Content = "Loading…",
+    })
+
+    mainTab:CreateToggle({
+        Name = "Auto Rebirth",
+        Flag = "main_auto_rebirth",
+        CurrentValue = false,
+        Callback = function(enabled)
+            s.enabled = enabled == true
+        end,
+    })
+
+    deferUiOnHeartbeat(refreshParagraph)
+    schedulePeriodicOnHeartbeat(s.intervalSec, function()
+        refreshParagraph()
+        tryAutoRebirthPass()
     end)
 end
 
@@ -4020,7 +4235,9 @@ do
 
     mountAutoFeedSection(MainTab, findNetworkerServiceRemotesFolder, lootUidFromInstance)
 
-    mountUfoTrackerSection(MainTab, findNetworkerServiceRemotesFolder)
+    mountAutoRebirthSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
+
+    mountUfoEventSection(MainTab, findNetworkerServiceRemotesFolder)
 
     MainTab:CreateSection("Auto Equip Slimes")
 
