@@ -72,6 +72,26 @@ local function clearRayfieldDropdown(dropdown)
     end
 end
 
+-- DataService / network callbacks may run off the main thread; Rayfield Refresh touches Instances.
+local function deferUiOnHeartbeat(fn: () -> ())
+    if type(fn) ~= "function" then
+        return
+    end
+    local scheduled = false
+    local conn: RBXScriptConnection? = nil
+    conn = RunService.Heartbeat:Connect(function()
+        if scheduled then
+            return
+        end
+        scheduled = true
+        if conn then
+            conn:Disconnect()
+            conn = nil
+        end
+        fn()
+    end)
+end
+
 -- Set by Auto Feed; used when loading configs (stable food labels, legacy qty strings).
 local normalizeAutoFeedFoodConfigValue: ((any) -> any)? = nil
 local syncAutoFeedFoodAfterConfigLoad: (() -> ())? = nil
@@ -584,7 +604,7 @@ local function createMainTabSpecialDiceController(deps: {
         end
         if requestUseItem(selectedId) then
             autoUsePending = true
-            task.defer(refreshDropdown)
+            deferUiOnHeartbeat(refreshDropdown)
         end
     end
 
@@ -606,7 +626,7 @@ local function createMainTabSpecialDiceController(deps: {
         itemsListenerConn = signal:Connect(function(newItems)
             if type(newItems) == "table" then
                 itemsSave = deps.cloneTable(newItems)
-                task.defer(refreshDropdown)
+                deferUiOnHeartbeat(refreshDropdown)
             end
         end)
     end
@@ -632,7 +652,7 @@ local function createMainTabSpecialDiceController(deps: {
                     selectedName = nil
                     autoUsePending = false
                     deps.onParagraphDirty()
-                    task.defer(refreshDropdown)
+                    deferUiOnHeartbeat(refreshDropdown)
                     return
                 end
                 local diceId = displayToId[picked]
@@ -653,7 +673,7 @@ local function createMainTabSpecialDiceController(deps: {
                 autoUsePending = false
                 local used = requestUseItem(diceId)
                 deps.onParagraphDirty()
-                task.defer(refreshDropdown)
+                deferUiOnHeartbeat(refreshDropdown)
                 if not used then
                     mountNotify({
                         Title = "Special Dice",
@@ -889,7 +909,7 @@ local function mountItemsInventoryPageSection(
         Flag = "main_inventory_refresh",
         Callback = refresh,
     })
-    task.defer(refresh)
+    deferUiOnHeartbeat(refresh)
 end
 
 -- */  Main Tab  /* --
