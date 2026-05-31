@@ -1879,80 +1879,62 @@ local function mountUfoEventSection(
         return findZoneHitbox(zoneId) ~= nil
     end
 
-    local function collectActiveUfoZoneIds(state: any): { number }
-        local ids: { number } = {}
-        local function add(raw: any)
-            local n = tonumber(raw)
-            if not n then
-                return
-            end
-            for _, existing in ipairs(ids) do
-                if existing == n then
-                    return
-                end
-            end
-            table.insert(ids, n)
-        end
-        for _, field in ipairs({ "zoneIds", "ufoZoneIds", "activeZoneIds", "zones" }) do
-            local value = state[field]
-            if type(value) == "table" then
-                for _, entry in ipairs(value) do
-                    add(entry)
-                end
-                if #value == 0 then
-                    for _, entry in pairs(value) do
-                        add(entry)
-                    end
+    local function getPlayerZoneId(): number?
+        packages = ReplicatedStorage:FindFirstChild("Packages")
+        dsMod = packages and packages:FindFirstChild("DataService")
+        if dsMod and dsMod:IsA("ModuleScript") then
+            ok, ds = pcall(require, dsMod)
+            if ok and type(ds) == "table" and type(ds.client) == "table" then
+                zone = SlimeRngUtil.readDataServiceNumber(ds.client, "zone")
+                if zone then
+                    return math.max(math.floor(zone), 1)
                 end
             end
         end
-        add(state.zoneId)
-        local seed = tonumber(state.zoneId)
-        if seed then
-            add(seed + 1)
-            add(seed + 2)
-        end
-        local zonesFolder = Workspace:FindFirstChild("Zones")
-        if zonesFolder then
-            for _, child in ipairs(zonesFolder:GetChildren()) do
-                local zid = tonumber(child.Name)
-                if zid then
-                    for _, inst in ipairs(child:GetDescendants()) do
-                        if inst.Name == "UFO" or inst.Name == "GoldUFO" then
-                            add(zid)
-                            break
-                        end
-                    end
-                end
-            end
-        end
-        local valid: { number } = {}
-        for _, id in ipairs(ids) do
-            if zoneExists(id) then
-                table.insert(valid, id)
-            end
-        end
-        table.sort(valid)
-        return valid
+        return nil
     end
 
-    local function highestActiveUfoZoneId(state: any): number?
-        local ids = collectActiveUfoZoneIds(state)
-        if #ids == 0 then
+    local function workspaceUfoZoneId(): number?
+        zonesFolder = Workspace:FindFirstChild("Zones")
+        if not zonesFolder then
             return nil
         end
-        return ids[#ids]
+        for _, child in ipairs(zonesFolder:GetChildren()) do
+            zid = tonumber(child.Name)
+            if zid then
+                for _, inst in ipairs(child:GetDescendants()) do
+                    if inst.Name == "UFO" or inst.Name == "GoldUFO" then
+                        return zid
+                    end
+                end
+            end
+        end
+        return nil
     end
 
     local function isUfoEventActive(state: any?): boolean
         return type(state) == "table" and type(state.phase) == "string" and state.phase ~= "idle"
     end
 
+    local function activeUfoZoneId(state: any): number?
+        if not isUfoEventActive(state) then
+            return nil
+        end
+        id = tonumber(state.zoneId)
+        if id and zoneExists(id) then
+            return id
+        end
+        return workspaceUfoZoneId()
+    end
+
     local function ufoEventKey(state: any): string?
         if not isUfoEventActive(state) then
             return nil
         end
-        return tostring(state.phaseStartTime or "") .. ":" .. tostring(state.zoneId or "")
+        activeZone = activeUfoZoneId(state)
+        return tostring(state.phaseStartTime or "")
+            .. ":"
+            .. tostring(activeZone or state.zoneId or "")
     end
 
     local function saveReturnPosition()
@@ -2022,17 +2004,28 @@ local function mountUfoEventSection(
             return
         end
         if isUfoEventActive(state) then
-            local key = ufoEventKey(state)
-            if key and s.teleportedForEventKey ~= key then
+            activeZone = activeUfoZoneId(state)
+            if not activeZone then
+                return
+            end
+            key = ufoEventKey(state)
+            if not key then
+                return
+            end
+            playerZone = getPlayerZoneId()
+            if playerZone and playerZone == activeZone then
+                s.teleportedForEventKey = key
+                return
+            end
+            if s.teleportedForEventKey ~= key then
                 if not s.savedReturnCframe then
                     saveReturnPosition()
                 end
-                local zoneId = highestActiveUfoZoneId(state)
-                if zoneId and teleportToZoneId(zoneId, false) then
+                if teleportToZoneId(activeZone, false) then
                     s.teleportedForEventKey = key
                     mountNotify({
                         Title = "UFO",
-                        Content = "Auto teleported to " .. zoneLabel(zoneId) .. " (highest of active UFO zones).",
+                        Content = "Auto teleported to " .. zoneLabel(activeZone) .. " (active UFO zone).",
                         Icon = "check",
                     })
                 end
@@ -2079,16 +2072,20 @@ local function mountUfoEventSection(
             end
         else
             table.insert(lines, "Status: ACTIVE (" .. phase .. ")")
-            local activeZoneIds = collectActiveUfoZoneIds(state)
-            if #activeZoneIds > 0 then
-                local labels: { string } = {}
-                for _, id in ipairs(activeZoneIds) do
-                    table.insert(labels, zoneLabel(id))
-                end
-                table.insert(lines, "UFO zones: " .. table.concat(labels, ", "))
-                table.insert(lines, "Target (highest): " .. zoneLabel(activeZoneIds[#activeZoneIds]))
+            activeZone = activeUfoZoneId(state)
+            if activeZone then
+                table.insert(lines, "Active UFO zone: " .. zoneLabel(activeZone))
             elseif state.zoneId ~= nil then
-                table.insert(lines, "Zone: " .. zoneLabel(state.zoneId))
+                table.insert(lines, "Active UFO zone: " .. zoneLabel(state.zoneId))
+            else
+                table.insert(lines, "Active UFO zone: unknown")
+            end
+            playerZone = getPlayerZoneId()
+            if playerZone then
+                table.insert(lines, "Your zone: " .. zoneLabel(playerZone))
+                if activeZone and playerZone == activeZone then
+                    table.insert(lines, "Already in UFO zone (no teleport)")
+                end
             end
             if typeof(state.hoverPosition) == "Vector3" then
                 table.insert(lines, "Hover: " .. formatVector3(state.hoverPosition))
@@ -2133,12 +2130,21 @@ local function mountUfoEventSection(
                 })
                 return
             end
-            local zoneId = highestActiveUfoZoneId(state)
+            zoneId = activeUfoZoneId(state)
             if not zoneId then
                 mountNotify({
                     Title = "UFO",
-                    Content = "No UFO zones found.",
+                    Content = "No active UFO zone found.",
                     Icon = "x",
+                })
+                return
+            end
+            playerZone = getPlayerZoneId()
+            if playerZone and playerZone == zoneId then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "Already in " .. zoneLabel(zoneId) .. ".",
+                    Icon = "info",
                 })
                 return
             end
