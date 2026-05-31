@@ -2008,29 +2008,24 @@ local function mountUfoEventSection(
             if not activeZone then
                 return
             end
-            key = ufoEventKey(state)
-            if not key then
+            zoneKey = ufoEventKey(state)
+            if not zoneKey then
                 return
             end
-            playerZone = getPlayerZoneId()
-            if playerZone and playerZone == activeZone then
-                s.teleportedForEventKey = key
-                return
+            if not s.savedReturnCframe then
+                saveReturnPosition()
             end
-            if s.teleportedForEventKey ~= key then
-                if not s.savedReturnCframe then
-                    saveReturnPosition()
-                end
+            if s.teleportedForEventKey ~= zoneKey then
                 if teleportToZoneId(activeZone, false) then
-                    s.teleportedForEventKey = key
+                    s.teleportedForEventKey = zoneKey
                     mountNotify({
                         Title = "UFO",
-                        Content = "Auto teleported to " .. zoneLabel(activeZone) .. " (active UFO zone).",
+                        Content = "Auto teleported to " .. zoneLabel(activeZone) .. " (following UFO).",
                         Icon = "check",
                     })
                 end
             end
-        elseif s.teleportedForEventKey and s.savedReturnCframe then
+        elseif s.savedReturnCframe then
             restoreReturnPosition()
             s.teleportedForEventKey = nil
             mountNotify({
@@ -2083,9 +2078,6 @@ local function mountUfoEventSection(
             playerZone = getPlayerZoneId()
             if playerZone then
                 table.insert(lines, "Your zone: " .. zoneLabel(playerZone))
-                if activeZone and playerZone == activeZone then
-                    table.insert(lines, "Already in UFO zone (no teleport)")
-                end
             end
             if typeof(state.hoverPosition) == "Vector3" then
                 table.insert(lines, "Hover: " .. formatVector3(state.hoverPosition))
@@ -2097,6 +2089,7 @@ local function mountUfoEventSection(
         end
         if s.autoTeleportEnabled then
             table.insert(lines, "Auto teleport: ON")
+            table.insert(lines, "Route: save → zone 1 → zone 2 → zone 3 → return")
             if s.savedReturnCframe then
                 table.insert(lines, "Return position: saved")
             end
@@ -2191,7 +2184,7 @@ local function mountUfoEventSection(
         Callback = function(enabled)
             s.autoTeleportEnabled = enabled == true
             if not s.autoTeleportEnabled then
-                if s.teleportedForEventKey and s.savedReturnCframe then
+                if s.savedReturnCframe then
                     restoreReturnPosition()
                 end
                 s.teleportedForEventKey = nil
