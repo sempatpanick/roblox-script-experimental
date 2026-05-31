@@ -26,5 +26,27 @@ if excludedGameIds[currentID] then
 end
 local scriptURL = games[currentID] or fallbackScriptURL
 
-loadstring(game:HttpGet(scriptURL))()
+do
+    local okGet, source = pcall(function()
+        return game:HttpGet(scriptURL)
+    end)
+    if not okGet or type(source) ~= "string" or #source < 64 then
+        warn("[sempatpanick] HttpGet failed for", scriptURL, tostring(source))
+        return
+    end
+    local compile = loadstring or load
+    if type(compile) ~= "function" then
+        warn("[sempatpanick] loadstring/load unavailable")
+        return
+    end
+    local chunk, err = compile(source, "sempatpanick_game_script")
+    if type(chunk) ~= "function" then
+        warn("[sempatpanick] compile failed:", tostring(err))
+        return
+    end
+    local okRun, runErr = pcall(chunk)
+    if not okRun then
+        warn("[sempatpanick] script error:", tostring(runErr))
+    end
+end
 
