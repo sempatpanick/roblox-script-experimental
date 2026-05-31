@@ -912,6 +912,694 @@ local function mountItemsInventoryPageSection(
     deferUiOnHeartbeat(refresh)
 end
 
+local function mountAutoFeedSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?,
+    lootUidFromInstanceFn: (Instance) -> string?
+)
+    mainTab:CreateSection("Auto Feed")
+
+    local s = {
+        none = "(None)",
+        systemFoods = {
+            { id = "apple", name = "Cheese", xp = 75 },
+            { id = "carrot", name = "Egg", xp = 100 },
+            { id = "cherries", name = "Fries", xp = 125 },
+            { id = "grapes", name = "Taco", xp = 150 },
+            { id = "banana", name = "Hotdog", xp = 175 },
+            { id = "watermelon", name = "Burger", xp = 200 },
+            { id = "pizza", name = "Pizza", xp = 225 },
+            { id = "chicken", name = "Chicken", xp = 250 },
+            { id = "drumstick", name = "Drumstick", xp = 275 },
+        } :: { { id: string, name: string, xp: number } },
+        foodById = {} :: { [string]: { id: string, name: string, xp: number } },
+        foodOptionToId = {} :: { [string]: string },
+        selectedFoodIds = {} :: { string },
+        foodDropdown = nil :: any,
+        foodCycleIndex = 0,
+        lastConsumablesList = nil :: Instance?,
+        consumablesConns = {} :: { RBXScriptConnection },
+        optionToUid = {} :: { [string]: string },
+        selectedUid = nil :: string?,
+        selectedOption = nil :: string?,
+        slimeDropdown = nil :: any,
+        enabled = false,
+        useAllFood = false,
+        loopToken = 0,
+        intervalSec = 2.5,
+        consumablesListPath = {
+            "Root",
+            "Inventory",
+            "PageItemsContent",
+            "ItemsInventoryPage",
+            "DefaultItemsView",
+            "ConsumablesPanel",
+            "ConsumablesList",
+        },
+        oddsSuffixMult = {
+            K = 1e3,
+            M = 1e6,
+            B = 1e9,
+            T = 1e12,
+            Qd = 1e15,
+            Qn = 1e18,
+            Sx = 1e21,
+            Sp = 1e24,
+            O = 1e27,
+            N = 1e30,
+            De = 1e33,
+            Ud = 1e36,
+            Dd = 1e39,
+            TdD = 1e42,
+            QdD = 1e45,
+            QnD = 1e48,
+            SxD = 1e51,
+            SpD = 1e54,
+            OcD = 1e57,
+            NvD = 1e60,
+        },
+    }
+    for _, food in ipairs(s.systemFoods) do
+        s.foodById[food.id] = food
+    end
+
+    local function trimGuiText(text: string): string
+        local t = string.gsub(text or "", "^%s+", "")
+        t = string.gsub(t, "%s+$", "")
+        t = string.gsub(t, "\r\n", " ")
+        t = string.gsub(t, "\n", " ")
+        return t
+    end
+
+    local function guiInstanceTextContent(d: Instance): string
+        if d:IsA("TextLabel") then
+            return (d :: TextLabel).Text
+        end
+        if d:IsA("TextButton") then
+            return (d :: TextButton).Text
+        end
+        if d:IsA("TextBox") then
+            return (d :: TextBox).Text
+        end
+        return ""
+    end
+
+    local function findConsumablesList(): Instance?
+        local lp = Players.LocalPlayer
+        local pg = lp and lp:FindFirstChild("PlayerGui")
+        if not pg then
+            return nil
+        end
+        local cur: Instance? = pg
+        for _, seg in ipairs(s.consumablesListPath) do
+            local nextInst = cur and cur:FindFirstChild(seg)
+            if not nextInst then
+                cur = nil
+                break
+            end
+            cur = nextInst
+        end
+        if cur then
+            return cur
+        end
+        return pg:FindFirstChild("ConsumablesList", true)
+    end
+
+    local function parseConsumableAmountText(text: string): number
+        local t = trimGuiText(text or "")
+        local n = string.match(t, "[xX](%d+)")
+        if n then
+            return tonumber(n) or 0
+        end
+        n = string.match(t, "(%d+)")
+        return tonumber(n) or 0
+    end
+
+    local function scanOwnedFoodByDisplayName(): { [string]: number }
+        local out: { [string]: number } = {}
+        local list = findConsumablesList()
+        if not list then
+            return out
+        end
+        for _, ch in ipairs(list:GetChildren()) do
+            if ch:IsA("GuiObject") and string.match(ch.Name, "ItemButton$") then
+                local displayName = ""
+                local nameFrame = ch:FindFirstChild("TextLabelFrame")
+                if nameFrame then
+                    local tl = nameFrame:FindFirstChild("TextLabel")
+                    if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
+                        displayName = trimGuiText(guiInstanceTextContent(tl))
+                    end
+                end
+                local amt = 0
+                local amtFrame = ch:FindFirstChild("Amount")
+                if amtFrame then
+                    local atl = amtFrame:FindFirstChild("TextLabel")
+                    if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
+                        amt = parseConsumableAmountText(guiInstanceTextContent(atl))
+                    end
+                end
+                if displayName ~= "" then
+                    out[displayName] = (out[displayName] or 0) + amt
+                end
+            end
+        end
+        return out
+    end
+
+    local function foodDropdownOptionLabel(displayName: string, xp: number): string
+        return ('%s  %d XP'):format(displayName, xp)
+    end
+
+    local function foodNameFromOptionLabel(opt: string): string
+        local trimmed = trimGuiText(opt)
+        local name = string.match(trimmed, "^(.-)%s+%d+%s+XP")
+        if name then
+            return trimGuiText(name)
+        end
+        local withoutQty = string.match(trimmed, "^(.-)%s+x%d+$")
+        if withoutQty then
+            return foodNameFromOptionLabel(withoutQty)
+        end
+        return trimmed
+    end
+
+    local function buildFoodDropdownOptions(): { string }
+        table.clear(s.foodOptionToId)
+        local foods: { { id: string, name: string, xp: number } } = {}
+        for _, food in ipairs(s.systemFoods) do
+            table.insert(foods, food)
+        end
+        table.sort(foods, function(a, b)
+            if a.xp ~= b.xp then
+                return a.xp > b.xp
+            end
+            return a.name < b.name
+        end)
+        local opts: { string } = {}
+        for _, food in ipairs(foods) do
+            local option = foodDropdownOptionLabel(food.name, food.xp)
+            s.foodOptionToId[option] = food.id
+            table.insert(opts, option)
+        end
+        return opts
+    end
+
+    local function normalizeAutoFeedFoodConfigValueImpl(saved: any): any
+        if saved == nil then
+            return saved
+        end
+        buildFoodDropdownOptions()
+        local nameToOption: { [string]: string } = {}
+        for _, food in ipairs(s.systemFoods) do
+            nameToOption[food.name] = foodDropdownOptionLabel(food.name, food.xp)
+        end
+        local function mapOne(raw: any): string?
+            if type(raw) ~= "string" or raw == "" then
+                return nil
+            end
+            if s.foodOptionToId[raw] then
+                return raw
+            end
+            local name = foodNameFromOptionLabel(raw)
+            return nameToOption[name]
+        end
+        if type(saved) == "table" then
+            local out: { string } = {}
+            for _, v in ipairs(saved) do
+                local mapped = mapOne(v)
+                if mapped and not table.find(out, mapped) then
+                    table.insert(out, mapped)
+                end
+            end
+            return out
+        end
+        if type(saved) == "string" then
+            local mapped = mapOne(saved)
+            return mapped or saved
+        end
+        return saved
+    end
+
+    local function syncAutoFeedFoodFromConfig(saved: any)
+        local normalized = normalizeAutoFeedFoodConfigValueImpl(saved)
+        s.selectedFoodIds = {}
+        local picked: { string } = {}
+        if type(normalized) == "table" then
+            picked = normalized
+        elseif type(normalized) == "string" and normalized ~= "" then
+            picked = { normalized }
+        end
+        for _, opt in ipairs(picked) do
+            local id = s.foodOptionToId[opt]
+            if id and not table.find(s.selectedFoodIds, id) then
+                table.insert(s.selectedFoodIds, id)
+            end
+        end
+    end
+
+    normalizeAutoFeedFoodConfigValue = normalizeAutoFeedFoodConfigValueImpl
+
+    local function foodDropdownOptionsForIds(ids: { string }): { string }
+        local opts = buildFoodDropdownOptions()
+        local picked: { string } = {}
+        for _, opt in ipairs(opts) do
+            local id = s.foodOptionToId[opt]
+            if id and table.find(ids, id) then
+                table.insert(picked, opt)
+            end
+        end
+        return picked
+    end
+
+    local function disconnectConsumablesListeners()
+        for _, c in ipairs(s.consumablesConns) do
+            c:Disconnect()
+        end
+        table.clear(s.consumablesConns)
+        s.lastConsumablesList = nil
+    end
+
+    local function refreshFoodDropdown(showNotify: boolean)
+        local prevIds: { string } = {}
+        for _, id in ipairs(s.selectedFoodIds) do
+            table.insert(prevIds, id)
+        end
+        local opts = buildFoodDropdownOptions()
+        local newSelection = foodDropdownOptionsForIds(prevIds)
+        if s.foodDropdown and s.foodDropdown.Refresh then
+            s.foodDropdown:Refresh(opts)
+        end
+        s.selectedFoodIds = {}
+        for _, opt in ipairs(newSelection) do
+            local id = s.foodOptionToId[opt]
+            if id then
+                table.insert(s.selectedFoodIds, id)
+            end
+        end
+        if s.foodDropdown and s.foodDropdown.Set then
+            s.foodDropdown:Set(newSelection)
+        end
+        if showNotify then
+            mountNotify({
+                Title = "Auto Feed",
+                Content = "Food list updated (" .. tostring(#opts) .. " types).",
+            })
+        end
+    end
+
+    syncAutoFeedFoodAfterConfigLoad = function()
+        local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags["main_auto_feed_food_dropdown"]
+        if flagObj then
+            local saved = flagObj.CurrentValue
+            if saved == nil then
+                saved = flagObj.CurrentOption
+            end
+            syncAutoFeedFoodFromConfig(saved)
+        end
+        refreshFoodDropdown(false)
+    end
+
+    local function hookConsumableItemButton(btn: Instance)
+        local amtFrame = btn:FindFirstChild("Amount")
+        if not amtFrame then
+            return
+        end
+        local atl = amtFrame:FindFirstChild("TextLabel")
+        if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
+            table.insert(s.consumablesConns, atl:GetPropertyChangedSignal("Text"):Connect(function()
+                refreshFoodDropdown(false)
+            end))
+        end
+    end
+
+    local function bindConsumablesListeners()
+        disconnectConsumablesListeners()
+        local list = findConsumablesList()
+        if not list then
+            return
+        end
+        s.lastConsumablesList = list
+        local function bump()
+            refreshFoodDropdown(false)
+        end
+        table.insert(s.consumablesConns, list.ChildAdded:Connect(function(ch)
+            hookConsumableItemButton(ch)
+            bump()
+        end))
+        table.insert(s.consumablesConns, list.ChildRemoved:Connect(bump))
+        for _, ch in ipairs(list:GetChildren()) do
+            hookConsumableItemButton(ch)
+        end
+    end
+
+    local function ensureConsumablesWatch()
+        local list = findConsumablesList()
+        if list and list ~= s.lastConsumablesList then
+            bindConsumablesListeners()
+            refreshFoodDropdown(false)
+        end
+    end
+
+    local function activeFoodIds(): { string }
+        local owned = scanOwnedFoodByDisplayName()
+        local out: { string } = {}
+        for _, id in ipairs(s.selectedFoodIds) do
+            local def = s.foodById[id]
+            if def and (owned[def.name] or 0) > 0 then
+                table.insert(out, id)
+            end
+        end
+        return out
+    end
+
+    local function nextFoodId(): string?
+        local ids = activeFoodIds()
+        if #ids == 0 then
+            return nil
+        end
+        s.foodCycleIndex = (s.foodCycleIndex % #ids) + 1
+        return ids[s.foodCycleIndex]
+    end
+
+    local function ownedAmountForFoodId(foodId: string): number
+        local def = s.foodById[foodId]
+        if not def then
+            return 0
+        end
+        local owned = scanOwnedFoodByDisplayName()
+        return math.clamp(math.floor(owned[def.name] or 0), 0, 9999)
+    end
+
+    local function oddsSuffixMultiplier(suf: string): number
+        if suf == "" then
+            return 1
+        end
+        local lower = string.lower(suf)
+        for key, mult in pairs(s.oddsSuffixMult) do
+            if string.lower(key) == lower then
+                return mult
+            end
+        end
+        return 1
+    end
+
+    local function parseOddsSortKey(oddsText: string): number
+        local t = trimGuiText(oddsText or "")
+        if t == "" then
+            return 0
+        end
+        local rhs = string.match(t, "1%s*/%s*(.+)")
+        if not rhs then
+            rhs = t
+        end
+        rhs = trimGuiText(rhs)
+        local numStr, suf = string.match(rhs, "^([%d%.]+)%s*([%a]*)$")
+        if not numStr then
+            return 0
+        end
+        local n = tonumber(numStr)
+        if type(n) ~= "number" or n ~= n then
+            return 0
+        end
+        return n * oddsSuffixMultiplier(suf or "")
+    end
+
+    local function findWorkspaceSlimesFolders(): { Instance }
+        local out: { Instance } = {}
+        for _, ch in ipairs(Workspace:GetChildren()) do
+            if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
+                local slimes = ch:FindFirstChild("Slimes")
+                if slimes then
+                    table.insert(out, slimes)
+                end
+            end
+        end
+        return out
+    end
+
+    local function guiTextFromContentChild(content: Instance, childName: string): string
+        local node = content:FindFirstChild(childName)
+        if not node then
+            return ""
+        end
+        if node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox") then
+            local fromFmt = formatGuiInstanceTextForDisplay(node)
+            if fromFmt then
+                return trimGuiText(fromFmt)
+            end
+            return trimGuiText(guiInstanceTextContent(node))
+        end
+        local tl = node:FindFirstChildWhichIsA("TextLabel", true)
+        if tl then
+            local fromFmt = formatGuiInstanceTextForDisplay(tl)
+            if fromFmt then
+                return trimGuiText(fromFmt)
+            end
+            return trimGuiText(guiInstanceTextContent(tl))
+        end
+        return ""
+    end
+
+    local function slimeBillboardNameAndOdds(slime: Instance): (string, string)
+        local bb = slime:FindFirstChild("SlimeInfoBillboard", true)
+        if not bb then
+            return "", ""
+        end
+        local content = bb:FindFirstChild("Content")
+        if not content then
+            return "", ""
+        end
+        local name = guiTextFromContentChild(content, "Name")
+        local odds = ""
+        local oddsFolder = content:FindFirstChild("Odds")
+        if oddsFolder then
+            local tl = oddsFolder:FindFirstChild("TextLabel")
+            if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
+                local fromFmt = formatGuiInstanceTextForDisplay(tl)
+                odds = trimGuiText(fromFmt or guiInstanceTextContent(tl))
+            else
+                local any = oddsFolder:FindFirstChildWhichIsA("TextLabel", true)
+                if any then
+                    local fromFmt = formatGuiInstanceTextForDisplay(any)
+                    odds = trimGuiText(fromFmt or guiInstanceTextContent(any))
+                end
+            end
+        end
+        return name, odds
+    end
+
+    local function normalizeWorkspaceSlimeUid(uid: string): string
+        return string.gsub(uid, "#%d+$", "")
+    end
+
+    local function scanFeedableSlimeOptions(): { string }
+        table.clear(s.optionToUid)
+        local slimeFolders = findWorkspaceSlimesFolders()
+        if #slimeFolders == 0 then
+            return { s.none }
+        end
+        type SlimeFeedRow = { uid: string, name: string, odds: string, sortKey: number }
+        local rows: { SlimeFeedRow } = {}
+        local seenUid: { [string]: boolean } = {}
+        for _, folder in ipairs(slimeFolders) do
+            for _, slime in ipairs(folder:GetChildren()) do
+                local uid = normalizeWorkspaceSlimeUid(lootUidFromInstanceFn(slime) or slime.Name)
+                if uid == "" or seenUid[uid] then
+                    continue
+                end
+                seenUid[uid] = true
+                local name, odds = slimeBillboardNameAndOdds(slime)
+                if name == "" then
+                    name = slime.Name
+                end
+                table.insert(rows, {
+                    uid = uid,
+                    name = name,
+                    odds = odds,
+                    sortKey = parseOddsSortKey(odds),
+                })
+            end
+        end
+        table.sort(rows, function(a, b)
+            if a.sortKey ~= b.sortKey then
+                return a.sortKey > b.sortKey
+            end
+            if a.name ~= b.name then
+                return a.name < b.name
+            end
+            return a.uid < b.uid
+        end)
+        local opts: { string } = { s.none }
+        for _, row in ipairs(rows) do
+            local option: string
+            if row.odds ~= "" then
+                option = ('%s  %s'):format(row.name, row.odds)
+            else
+                option = ('%s'):format(row.name)
+            end
+            if #option > 190 then
+                option = string.sub(option, 1, 187) .. "..."
+            end
+            if not s.optionToUid[option] then
+                s.optionToUid[option] = row.uid
+                table.insert(opts, option)
+            end
+        end
+        if #opts == 1 then
+            return { s.none }
+        end
+        return opts
+    end
+
+    local function refreshSlimeDropdown(showNotify: boolean)
+        local opts = scanFeedableSlimeOptions()
+        if s.slimeDropdown and s.slimeDropdown.Refresh then
+            s.slimeDropdown:Refresh(opts)
+        end
+        if s.selectedOption and not table.find(opts, s.selectedOption) then
+            s.selectedOption = nil
+            s.selectedUid = nil
+            if s.slimeDropdown and s.slimeDropdown.Select then
+                s.slimeDropdown:Select(nil)
+            end
+            if s.slimeDropdown and s.slimeDropdown.Set then
+                s.slimeDropdown:Set({ s.none })
+            end
+        end
+        if showNotify then
+            mountNotify({
+                Title = "Auto Feed",
+                Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ", sorted rarest first).") or 'No slimes under Workspace → Gameplay* → Slimes (with SlimeInfoBillboard).',
+            })
+        end
+    end
+
+    s.foodDropdown = mainTab:CreateDropdown({
+        Name = "Foods",
+        Flag = "main_auto_feed_food_dropdown",
+        Options = buildFoodDropdownOptions(),
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
+        Callback = function(value)
+            s.selectedFoodIds = {}
+            if type(value) == "table" then
+                for _, opt in ipairs(value) do
+                    if type(opt) == "string" then
+                        local id = s.foodOptionToId[opt]
+                        if id and not table.find(s.selectedFoodIds, id) then
+                            table.insert(s.selectedFoodIds, id)
+                        end
+                    end
+                end
+            elseif type(value) == "string" then
+                local id = s.foodOptionToId[value]
+                if id then
+                    s.selectedFoodIds = { id }
+                end
+            end
+        end,
+    })
+
+    mainTab:CreateToggle({
+        Name = "Use All Food",
+        Flag = "main_auto_feed_use_all_food",
+        CurrentValue = false,
+        Callback = function(enabled)
+            s.useAllFood = enabled == true
+        end,
+    })
+
+    s.slimeDropdown = mainTab:CreateDropdown({
+        Name = "Slime",
+        Flag = "main_auto_feed_slime_dropdown",
+        Options = scanFeedableSlimeOptions(),
+        CurrentOption = { s.none },
+        Search = true,
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            s.selectedOption = if type(picked) == "string" then picked else nil
+            if not s.selectedOption or s.selectedOption == s.none then
+                s.selectedUid = nil
+                return
+            end
+            s.selectedUid = s.optionToUid[s.selectedOption]
+        end,
+    })
+
+    mainTab:CreateButton({
+        Name = "Refresh slime list",
+        Flag = "main_auto_feed_refresh_slimes",
+        Callback = function()
+            refreshSlimeDropdown(true)
+        end,
+    })
+
+    task.defer(function()
+        ensureConsumablesWatch()
+        refreshFoodDropdown(false)
+    end)
+
+    local lpForConsumables = Players.LocalPlayer
+    if lpForConsumables then
+        local pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
+        if pgWatch then
+            pgWatch.DescendantAdded:Connect(function()
+                ensureConsumablesWatch()
+            end)
+        end
+    end
+
+    mainTab:CreateToggle({
+        Name = "Auto Feed",
+        Flag = "main_auto_feed_enabled",
+        CurrentValue = false,
+        Callback = function(enabled)
+            s.enabled = enabled == true
+            s.loopToken = s.loopToken + 1
+            local myToken = s.loopToken
+
+            if not s.enabled then
+                return
+            end
+
+            ensureConsumablesWatch()
+            refreshFoodDropdown(false)
+            refreshSlimeDropdown(false)
+
+            task.spawn(function()
+                while myToken == s.loopToken and s.enabled do
+                    local foodId = nextFoodId()
+                    if not foodId then
+                        task.wait(s.intervalSec)
+                    else
+                        local useUid = s.selectedUid
+                        if not useUid then
+                            task.wait(s.intervalSec)
+                        else
+                            local inv = findNetworkerServiceRemotesFolderFn("InventoryService")
+                            local rf = inv and inv:FindFirstChild("RemoteFunction")
+                            if not rf or not rf:IsA("RemoteFunction") then
+                                task.wait(s.intervalSec)
+                            else
+                                local ownedAmt = ownedAmountForFoodId(foodId)
+                                if ownedAmt > 0 then
+                                    local useQty = if s.useAllFood then ownedAmt else 1
+                                    pcall(function()
+                                        (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, useQty)
+                                    end)
+                                end
+                                task.wait(s.intervalSec)
+                            end
+                        end
+                    end
+                end
+            end)
+        end,
+    })
+end
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
@@ -2857,690 +3545,7 @@ do
         end,
     })
 
-    MainTab:CreateSection("Auto Feed")
-
-    local AUTO_FEED_NONE = "(None)"
-    local AUTO_FEED_SYSTEM_FOODS: { { id: string, name: string, xp: number } } = {
-        { id = "apple", name = "Cheese", xp = 75 },
-        { id = "carrot", name = "Egg", xp = 100 },
-        { id = "cherries", name = "Fries", xp = 125 },
-        { id = "grapes", name = "Taco", xp = 150 },
-        { id = "banana", name = "Hotdog", xp = 175 },
-        { id = "watermelon", name = "Burger", xp = 200 },
-        { id = "pizza", name = "Pizza", xp = 225 },
-        { id = "chicken", name = "Chicken", xp = 250 },
-        { id = "drumstick", name = "Drumstick", xp = 275 },
-    }
-    local AUTO_FEED_FOOD_BY_ID: { [string]: { id: string, name: string, xp: number } } = {}
-    for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
-        AUTO_FEED_FOOD_BY_ID[food.id] = food
-    end
-    local autoFeedFoodOptionToId: { [string]: string } = {}
-    local selectedAutoFeedFoodIds: { string } = {}
-    local AutoFeedFoodDropdown: any = nil
-    local autoFeedFoodCycleIndex = 0
-    local lastConsumablesList: Instance? = nil
-    local consumablesListConns: { RBXScriptConnection } = {}
-    local autoFeedOptionToUid: { [string]: string } = {}
-    local selectedAutoFeedUid: string? = nil
-    local selectedAutoFeedOption: string? = nil
-    local AutoFeedSlimeDropdown: any = nil
-    local autoFeedEnabled = false
-    local autoFeedUseAllFood = false
-    local autoFeedLoopToken = 0
-    local AUTO_FEED_INTERVAL_SEC = 2.5
-
-    function mainTrimGuiText(s: string): string
-        local t = string.gsub(s or "", "^%s+", "")
-        t = string.gsub(t, "%s+$", "")
-        t = string.gsub(t, "\r\n", " ")
-        t = string.gsub(t, "\n", " ")
-        return t
-    end
-
-    function mainGuiInstanceTextContent(d: Instance): string
-        if d:IsA("TextLabel") then
-            return (d :: TextLabel).Text
-        end
-        if d:IsA("TextButton") then
-            return (d :: TextButton).Text
-        end
-        if d:IsA("TextBox") then
-            return (d :: TextBox).Text
-        end
-        return ""
-    end
-
-    -- …PlayerGui.Root.Inventory…DefaultItemsView.ConsumablesPanel.ConsumablesList
-    CONSUMABLES_LIST_PATH = {
-        "Root",
-        "Inventory",
-        "PageItemsContent",
-        "ItemsInventoryPage",
-        "DefaultItemsView",
-        "ConsumablesPanel",
-        "ConsumablesList",
-    }
-
-    function mainFindConsumablesList(): Instance?
-        local lp = Players.LocalPlayer
-        local pg = lp and lp:FindFirstChild("PlayerGui")
-        if not pg then
-            return nil
-        end
-        local cur: Instance? = pg
-        for _, seg in ipairs(CONSUMABLES_LIST_PATH) do
-            local nextInst = cur and cur:FindFirstChild(seg)
-            if not nextInst then
-                cur = nil
-                break
-            end
-            cur = nextInst
-        end
-        if cur then
-            return cur
-        end
-        return pg:FindFirstChild("ConsumablesList", true)
-    end
-
-    function mainParseConsumableAmountText(s: string): number
-        local t = mainTrimGuiText(s or "")
-        local n = string.match(t, "[xX](%d+)")
-        if n then
-            return tonumber(n) or 0
-        end
-        n = string.match(t, "(%d+)")
-        return tonumber(n) or 0
-    end
-
-    function mainScanOwnedFoodByDisplayName(): { [string]: number }
-        local out: { [string]: number } = {}
-        local list = mainFindConsumablesList()
-        if not list then
-            return out
-        end
-        for _, ch in ipairs(list:GetChildren()) do
-            if ch:IsA("GuiObject") and string.match(ch.Name, "ItemButton$") then
-                local displayName = ""
-                local nameFrame = ch:FindFirstChild("TextLabelFrame")
-                if nameFrame then
-                    local tl = nameFrame:FindFirstChild("TextLabel")
-                    if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
-                        displayName = mainTrimGuiText(mainGuiInstanceTextContent(tl))
-                    end
-                end
-                local amt = 0
-                local amtFrame = ch:FindFirstChild("Amount")
-                if amtFrame then
-                    local atl = amtFrame:FindFirstChild("TextLabel")
-                    if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
-                        amt = mainParseConsumableAmountText(mainGuiInstanceTextContent(atl))
-                    end
-                end
-                if displayName ~= "" then
-                    out[displayName] = (out[displayName] or 0) + amt
-                end
-            end
-        end
-        return out
-    end
-
-    function mainFoodDropdownOptionLabel(displayName: string, xp: number): string
-        return ('%s  %d XP'):format(displayName, xp)
-    end
-
-    function mainFoodNameFromOptionLabel(opt: string): string
-        local trimmed = mainTrimGuiText(opt)
-        local name = string.match(trimmed, "^(.-)%s+%d+%s+XP")
-        if name then
-            return mainTrimGuiText(name)
-        end
-        local withoutQty = string.match(trimmed, "^(.-)%s+x%d+$")
-        if withoutQty then
-            return mainFoodNameFromOptionLabel(withoutQty)
-        end
-        return trimmed
-    end
-
-    function mainBuildFoodDropdownOptions(): { string }
-        table.clear(autoFeedFoodOptionToId)
-        local foods: { { id: string, name: string, xp: number } } = {}
-        for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
-            table.insert(foods, food)
-        end
-        table.sort(foods, function(a, b)
-            if a.xp ~= b.xp then
-                return a.xp > b.xp
-            end
-            return a.name < b.name
-        end)
-        local opts: { string } = {}
-        for _, food in ipairs(foods) do
-            local option = mainFoodDropdownOptionLabel(food.name, food.xp)
-            autoFeedFoodOptionToId[option] = food.id
-            table.insert(opts, option)
-        end
-        return opts
-    end
-
-    function mainNormalizeAutoFeedFoodConfigValue(saved: any): any
-        if saved == nil then
-            return saved
-        end
-        mainBuildFoodDropdownOptions()
-        local nameToOption: { [string]: string } = {}
-        for _, food in ipairs(AUTO_FEED_SYSTEM_FOODS) do
-            nameToOption[food.name] = mainFoodDropdownOptionLabel(food.name, food.xp)
-        end
-        local function mapOne(raw: any): string?
-            if type(raw) ~= "string" or raw == "" then
-                return nil
-            end
-            if autoFeedFoodOptionToId[raw] then
-                return raw
-            end
-            local name = mainFoodNameFromOptionLabel(raw)
-            return nameToOption[name]
-        end
-        if type(saved) == "table" then
-            local out: { string } = {}
-            for _, v in ipairs(saved) do
-                local mapped = mapOne(v)
-                if mapped and not table.find(out, mapped) then
-                    table.insert(out, mapped)
-                end
-            end
-            return out
-        end
-        if type(saved) == "string" then
-            local mapped = mapOne(saved)
-            return mapped or saved
-        end
-        return saved
-    end
-
-    function mainSyncAutoFeedFoodFromConfig(saved: any)
-        local normalized = mainNormalizeAutoFeedFoodConfigValue(saved)
-        selectedAutoFeedFoodIds = {}
-        local picked: { string } = {}
-        if type(normalized) == "table" then
-            picked = normalized
-        elseif type(normalized) == "string" and normalized ~= "" then
-            picked = { normalized }
-        end
-        for _, opt in ipairs(picked) do
-            local id = autoFeedFoodOptionToId[opt]
-            if id and not table.find(selectedAutoFeedFoodIds, id) then
-                table.insert(selectedAutoFeedFoodIds, id)
-            end
-        end
-    end
-
-    normalizeAutoFeedFoodConfigValue = mainNormalizeAutoFeedFoodConfigValue
-
-    local function mainFoodDropdownOptionsForIds(ids: { string }): { string }
-        local opts = mainBuildFoodDropdownOptions()
-        local picked: { string } = {}
-        for _, opt in ipairs(opts) do
-            local id = autoFeedFoodOptionToId[opt]
-            if id and table.find(ids, id) then
-                table.insert(picked, opt)
-            end
-        end
-        return picked
-    end
-
-    function mainDisconnectConsumablesListeners()
-        for _, c in ipairs(consumablesListConns) do
-            c:Disconnect()
-        end
-        table.clear(consumablesListConns)
-        lastConsumablesList = nil
-    end
-
-    function refreshAutoFeedFoodDropdown(showNotify: boolean)
-        local prevIds: { string } = {}
-        for _, id in ipairs(selectedAutoFeedFoodIds) do
-            table.insert(prevIds, id)
-        end
-        local opts = mainBuildFoodDropdownOptions()
-        local newSelection = mainFoodDropdownOptionsForIds(prevIds)
-        if AutoFeedFoodDropdown and AutoFeedFoodDropdown.Refresh then
-            AutoFeedFoodDropdown:Refresh(opts)
-        end
-        selectedAutoFeedFoodIds = {}
-        for _, opt in ipairs(newSelection) do
-            local id = autoFeedFoodOptionToId[opt]
-            if id then
-                table.insert(selectedAutoFeedFoodIds, id)
-            end
-        end
-        if AutoFeedFoodDropdown and AutoFeedFoodDropdown.Set then
-            AutoFeedFoodDropdown:Set(newSelection)
-        end
-        if showNotify then
-            mountNotify({
-                Title = "Auto Feed",
-                Content = "Food list updated (" .. tostring(#opts) .. " types).",
-            })
-        end
-    end
-
-    syncAutoFeedFoodAfterConfigLoad = function()
-        local flagObj = RayfieldLibrary.Flags and RayfieldLibrary.Flags["main_auto_feed_food_dropdown"]
-        if flagObj then
-            local saved = flagObj.CurrentValue
-            if saved == nil then
-                saved = flagObj.CurrentOption
-            end
-            mainSyncAutoFeedFoodFromConfig(saved)
-        end
-        refreshAutoFeedFoodDropdown(false)
-    end
-
-    function mainHookConsumableItemButton(btn: Instance)
-        local amtFrame = btn:FindFirstChild("Amount")
-        if not amtFrame then
-            return
-        end
-        local atl = amtFrame:FindFirstChild("TextLabel")
-        if atl and (atl:IsA("TextLabel") or atl:IsA("TextButton") or atl:IsA("TextBox")) then
-            table.insert(consumablesListConns, atl:GetPropertyChangedSignal("Text"):Connect(function()
-                refreshAutoFeedFoodDropdown(false)
-            end))
-        end
-    end
-
-    function mainBindConsumablesListeners()
-        mainDisconnectConsumablesListeners()
-        local list = mainFindConsumablesList()
-        if not list then
-            return
-        end
-        lastConsumablesList = list
-        local function bump()
-            refreshAutoFeedFoodDropdown(false)
-        end
-        table.insert(consumablesListConns, list.ChildAdded:Connect(function(ch)
-            mainHookConsumableItemButton(ch)
-            bump()
-        end))
-        table.insert(consumablesListConns, list.ChildRemoved:Connect(bump))
-        for _, ch in ipairs(list:GetChildren()) do
-            mainHookConsumableItemButton(ch)
-        end
-    end
-
-    function mainEnsureConsumablesWatch()
-        local list = mainFindConsumablesList()
-        if list and list ~= lastConsumablesList then
-            mainBindConsumablesListeners()
-            refreshAutoFeedFoodDropdown(false)
-        end
-    end
-
-    function mainAutoFeedActiveFoodIds(): { string }
-        local owned = mainScanOwnedFoodByDisplayName()
-        local out: { string } = {}
-        for _, id in ipairs(selectedAutoFeedFoodIds) do
-            local def = AUTO_FEED_FOOD_BY_ID[id]
-            if def and (owned[def.name] or 0) > 0 then
-                table.insert(out, id)
-            end
-        end
-        return out
-    end
-
-    function mainAutoFeedNextFoodId(): string?
-        local ids = mainAutoFeedActiveFoodIds()
-        if #ids == 0 then
-            return nil
-        end
-        autoFeedFoodCycleIndex = (autoFeedFoodCycleIndex % #ids) + 1
-        return ids[autoFeedFoodCycleIndex]
-    end
-
-    function mainAutoFeedOwnedAmountForFoodId(foodId: string): number
-        local def = AUTO_FEED_FOOD_BY_ID[foodId]
-        if not def then
-            return 0
-        end
-        local owned = mainScanOwnedFoodByDisplayName()
-        return math.clamp(math.floor(owned[def.name] or 0), 0, 9999)
-    end
-
-    ODDS_SUFFIX_MULT = {
-        K = 1e3,
-        M = 1e6,
-        B = 1e9,
-        T = 1e12,
-        Qd = 1e15,
-        Qn = 1e18,
-        Sx = 1e21,
-        Sp = 1e24,
-        O = 1e27,
-        N = 1e30,
-        De = 1e33,
-        Ud = 1e36,
-        Dd = 1e39,
-        TdD = 1e42,
-        QdD = 1e45,
-        QnD = 1e48,
-        SxD = 1e51,
-        SpD = 1e54,
-        OcD = 1e57,
-        NvD = 1e60,
-   
-    }
-
-    function mainOddsSuffixMultiplier(suf: string): number
-        if suf == "" then
-            return 1
-        end
-        local lower = string.lower(suf)
-        for key, mult in pairs(ODDS_SUFFIX_MULT) do
-            if string.lower(key) == lower then
-                return mult
-            end
-        end
-        return 1
-    end
-
-    -- "1 / 119B" → numeric denominator for sort (higher = rarer).
-    function mainParseOddsSortKey(oddsText: string): number
-        local t = mainTrimGuiText(oddsText or "")
-        if t == "" then
-            return 0
-        end
-        local rhs = string.match(t, "1%s*/%s*(.+)")
-        if not rhs then
-            rhs = t
-        end
-        rhs = mainTrimGuiText(rhs)
-        local numStr, suf = string.match(rhs, "^([%d%.]+)%s*([%a]*)$")
-        if not numStr then
-            return 0
-        end
-        local n = tonumber(numStr)
-        if type(n) ~= "number" or n ~= n then
-            return 0
-        end
-        return n * mainOddsSuffixMultiplier(suf or "")
-    end
-
-    function mainFindWorkspaceSlimesFolders(): { Instance }
-        local out: { Instance } = {}
-        for _, ch in ipairs(Workspace:GetChildren()) do
-            if string.sub(ch.Name, 1, #"Gameplay") == "Gameplay" then
-                local slimes = ch:FindFirstChild("Slimes")
-                if slimes then
-                    table.insert(out, slimes)
-                end
-            end
-        end
-        return out
-    end
-
-    function mainGuiTextFromContentChild(content: Instance, childName: string): string
-        local node = content:FindFirstChild(childName)
-        if not node then
-            return ""
-        end
-        if node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox") then
-            local fromFmt = formatGuiInstanceTextForDisplay(node)
-            if fromFmt then
-                return mainTrimGuiText(fromFmt)
-            end
-            return mainTrimGuiText(mainGuiInstanceTextContent(node))
-        end
-        local tl = node:FindFirstChildWhichIsA("TextLabel", true)
-        if tl then
-            local fromFmt = formatGuiInstanceTextForDisplay(tl)
-            if fromFmt then
-                return mainTrimGuiText(fromFmt)
-            end
-            return mainTrimGuiText(mainGuiInstanceTextContent(tl))
-        end
-        return ""
-    end
-
-    function mainSlimeBillboardNameAndOdds(slime: Instance): (string, string)
-        local bb = slime:FindFirstChild("SlimeInfoBillboard", true)
-        if not bb then
-            return "", ""
-        end
-        local content = bb:FindFirstChild("Content")
-        if not content then
-            return "", ""
-        end
-        local name = mainGuiTextFromContentChild(content, "Name")
-        local odds = ""
-        local oddsFolder = content:FindFirstChild("Odds")
-        if oddsFolder then
-            local tl = oddsFolder:FindFirstChild("TextLabel")
-            if tl and (tl:IsA("TextLabel") or tl:IsA("TextButton") or tl:IsA("TextBox")) then
-                local fromFmt = formatGuiInstanceTextForDisplay(tl)
-                odds = mainTrimGuiText(fromFmt or mainGuiInstanceTextContent(tl))
-            else
-                local any = oddsFolder:FindFirstChildWhichIsA("TextLabel", true)
-                if any then
-                    local fromFmt = formatGuiInstanceTextForDisplay(any)
-                    odds = mainTrimGuiText(fromFmt or mainGuiInstanceTextContent(any))
-                end
-            end
-        end
-        return name, odds
-    end
-
-    function mainNormalizeWorkspaceSlimeUid(uid: string): string
-        return string.gsub(uid, "#%d+$", "")
-    end
-
-    function mainScanFeedableSlimeOptions(): { string }
-        table.clear(autoFeedOptionToUid)
-        local slimeFolders = mainFindWorkspaceSlimesFolders()
-        if #slimeFolders == 0 then
-            return { AUTO_FEED_NONE }
-        end
-        type SlimeFeedRow = { uid: string, name: string, odds: string, sortKey: number }
-        local rows: { SlimeFeedRow } = {}
-        local seenUid: { [string]: boolean } = {}
-        for _, folder in ipairs(slimeFolders) do
-            for _, slime in ipairs(folder:GetChildren()) do
-                local uid = mainNormalizeWorkspaceSlimeUid(lootUidFromInstance(slime) or slime.Name)
-                if uid == "" or seenUid[uid] then
-                    continue
-                end
-                seenUid[uid] = true
-                local name, odds = mainSlimeBillboardNameAndOdds(slime)
-                if name == "" then
-                    name = slime.Name
-                end
-                table.insert(rows, {
-                    uid = uid,
-                    name = name,
-                    odds = odds,
-                    sortKey = mainParseOddsSortKey(odds),
-                })
-            end
-        end
-        table.sort(rows, function(a, b)
-            if a.sortKey ~= b.sortKey then
-                return a.sortKey > b.sortKey
-            end
-            if a.name ~= b.name then
-                return a.name < b.name
-            end
-            return a.uid < b.uid
-        end)
-        local opts: { string } = { AUTO_FEED_NONE }
-        for _, row in ipairs(rows) do
-            local option: string
-            if row.odds ~= "" then
-                option = ('%s  %s'):format(row.name, row.odds)
-            else
-                option = ('%s'):format(row.name)
-            end
-            if #option > 190 then
-                option = string.sub(option, 1, 187) .. "..."
-            end
-            if not autoFeedOptionToUid[option] then
-                autoFeedOptionToUid[option] = row.uid
-                table.insert(opts, option)
-            end
-        end
-        if #opts == 1 then
-            return { AUTO_FEED_NONE }
-        end
-        return opts
-    end
-
-    function refreshAutoFeedSlimeDropdown(showNotify: boolean)
-        local opts = mainScanFeedableSlimeOptions()
-        if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Refresh then
-            AutoFeedSlimeDropdown:Refresh(opts)
-        end
-        if selectedAutoFeedOption and not table.find(opts, selectedAutoFeedOption) then
-            selectedAutoFeedOption = nil
-            selectedAutoFeedUid = nil
-            if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Select then
-                AutoFeedSlimeDropdown:Select(nil)
-            end
-            if AutoFeedSlimeDropdown and AutoFeedSlimeDropdown.Set then
-                AutoFeedSlimeDropdown:Set({ AUTO_FEED_NONE })
-            end
-        end
-        if showNotify then
-            mountNotify({
-                Title = "Auto Feed",
-                Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ", sorted rarest first).") or 'No slimes under Workspace → Gameplay* → Slimes (with SlimeInfoBillboard).',
-            })
-        end
-    end
-
-    AutoFeedFoodDropdown = MainTab:CreateDropdown({
-        Name = "Foods",
-        Flag = "main_auto_feed_food_dropdown",
-        Options = mainBuildFoodDropdownOptions(),
-        CurrentOption = {},
-        MultipleOptions = true,
-        Search = true,
-        Callback = function(value)
-            selectedAutoFeedFoodIds = {}
-            if type(value) == "table" then
-                for _, opt in ipairs(value) do
-                    if type(opt) == "string" then
-                        local id = autoFeedFoodOptionToId[opt]
-                        if id and not table.find(selectedAutoFeedFoodIds, id) then
-                            table.insert(selectedAutoFeedFoodIds, id)
-                        end
-                    end
-                end
-            elseif type(value) == "string" then
-                local id = autoFeedFoodOptionToId[value]
-                if id then
-                    selectedAutoFeedFoodIds = { id }
-                end
-            end
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Use All Food",
-        Flag = "main_auto_feed_use_all_food",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoFeedUseAllFood = enabled == true
-        end,
-    })
-
-    AutoFeedSlimeDropdown = MainTab:CreateDropdown({
-        Name = "Slime",
-        Flag = "main_auto_feed_slime_dropdown",
-        Options = mainScanFeedableSlimeOptions(),
-        CurrentOption = { AUTO_FEED_NONE },
-        Search = true,
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            selectedAutoFeedOption = if type(picked) == "string" then picked else nil
-            if not selectedAutoFeedOption or selectedAutoFeedOption == AUTO_FEED_NONE then
-                selectedAutoFeedUid = nil
-                return
-            end
-            selectedAutoFeedUid = autoFeedOptionToUid[selectedAutoFeedOption]
-        end,
-    })
-
-    MainTab:CreateButton({
-        Name = "Refresh slime list",
-        Flag = "main_auto_feed_refresh_slimes",
-        Callback = function()
-            refreshAutoFeedSlimeDropdown(true)
-        end,
-    })
-
-    task.defer(function()
-        mainEnsureConsumablesWatch()
-        refreshAutoFeedFoodDropdown(false)
-    end)
-
-    lpForConsumables = Players.LocalPlayer
-    if lpForConsumables then
-        pgWatch = lpForConsumables:FindFirstChild("PlayerGui") or lpForConsumables:WaitForChild("PlayerGui", 30)
-        if pgWatch then
-            pgWatch.DescendantAdded:Connect(function()
-                mainEnsureConsumablesWatch()
-            end)
-        end
-    end
-
-    MainTab:CreateToggle({
-        Name = "Auto Feed",
-        Flag = "main_auto_feed_enabled",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoFeedEnabled = enabled == true
-            autoFeedLoopToken = autoFeedLoopToken + 1
-            local myToken = autoFeedLoopToken
-
-            if not autoFeedEnabled then
-                return
-            end
-
-            mainEnsureConsumablesWatch()
-            refreshAutoFeedFoodDropdown(false)
-            refreshAutoFeedSlimeDropdown(false)
-
-            task.spawn(function()
-                while myToken == autoFeedLoopToken and autoFeedEnabled do
-                    local foodId = mainAutoFeedNextFoodId()
-                    if not foodId then
-                        task.wait(AUTO_FEED_INTERVAL_SEC)
-                    else
-                        local useUid = selectedAutoFeedUid
-                        if not useUid then
-                            task.wait(AUTO_FEED_INTERVAL_SEC)
-                        else
-                            local inv = findNetworkerServiceRemotesFolder("InventoryService")
-                            local rf = inv and inv:FindFirstChild("RemoteFunction")
-                            if not rf or not rf:IsA("RemoteFunction") then
-                                task.wait(AUTO_FEED_INTERVAL_SEC)
-                            else
-                                local ownedAmt = mainAutoFeedOwnedAmountForFoodId(foodId)
-                                if ownedAmt > 0 then
-                                    local useQty = if autoFeedUseAllFood then ownedAmt else 1
-                                    pcall(function()
-                                        (rf :: RemoteFunction):InvokeServer("requestUseFood", foodId, useUid, useQty)
-                                    end)
-                                end
-                                task.wait(AUTO_FEED_INTERVAL_SEC)
-                            end
-                        end
-                    end
-                end
-            end)
-        end,
-    })
+    mountAutoFeedSection(MainTab, findNetworkerServiceRemotesFolder, lootUidFromInstance)
 
     MainTab:CreateSection("Auto Equip Slimes")
 
