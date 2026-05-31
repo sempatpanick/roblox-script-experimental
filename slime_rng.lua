@@ -73,23 +73,43 @@ local function clearRayfieldDropdown(dropdown)
 end
 
 -- DataService / network callbacks may run off the main thread; Rayfield Refresh touches Instances.
-local function deferUiOnHeartbeat(fn: () -> ())
+local uiFlushQueued = false
+local uiFlushConn: RBXScriptConnection? = nil
+local uiJobsByKey: { [string]: () -> () } = {}
+local uiJobsList: { () -> () } = {}
+
+local function flushUiJobs()
+    if uiFlushConn then
+        uiFlushConn:Disconnect()
+        uiFlushConn = nil
+    end
+    uiFlushQueued = false
+    local keyed = uiJobsByKey
+    local list = uiJobsList
+    uiJobsByKey = {}
+    uiJobsList = {}
+    for _, job in pairs(keyed) do
+        pcall(job)
+    end
+    for _, job in ipairs(list) do
+        pcall(job)
+    end
+end
+
+local function deferUiOnHeartbeat(fn: () -> (), jobKey: string?)
     if type(fn) ~= "function" then
         return
     end
-    local scheduled = false
-    local conn: RBXScriptConnection? = nil
-    conn = RunService.Heartbeat:Connect(function()
-        if scheduled then
-            return
-        end
-        scheduled = true
-        if conn then
-            conn:Disconnect()
-            conn = nil
-        end
-        fn()
-    end)
+    if jobKey then
+        uiJobsByKey[jobKey] = fn
+    else
+        table.insert(uiJobsList, fn)
+    end
+    if uiFlushQueued then
+        return
+    end
+    uiFlushQueued = true
+    uiFlushConn = RunService.Heartbeat:Connect(flushUiJobs)
 end
 
 local HEARTBEAT_POLL_SEC = 1
@@ -666,7 +686,7 @@ local function createMainTabSpecialDiceController(deps: {
         return opts
     end
 
-    local function refreshDropdown()
+    local function refreshDropdownImpl()
         suppressDropdownCallback = true
         local opts = buildOptions()
         if dropdown and dropdown.Refresh then
@@ -688,6 +708,10 @@ local function createMainTabSpecialDiceController(deps: {
             dropdown:Set(NONE)
         end
         suppressDropdownCallback = false
+    end
+
+    local function refreshDropdown()
+        deferUiOnHeartbeat(refreshDropdownImpl, "mainSpecialDiceDropdown")
     end
 
     local function requestUseItem(itemId: string): boolean
@@ -716,7 +740,7 @@ local function createMainTabSpecialDiceController(deps: {
         end
         if requestUseItem(selectedId) then
             autoUsePending = true
-            deferUiOnHeartbeat(refreshDropdown)
+            refreshDropdown()
         end
     end
 
@@ -738,7 +762,7 @@ local function createMainTabSpecialDiceController(deps: {
         itemsListenerConn = signal:Connect(function(newItems)
             if type(newItems) == "table" then
                 itemsSave = deps.cloneTable(newItems)
-                deferUiOnHeartbeat(refreshDropdown)
+                refreshDropdown()
             end
         end)
     end
@@ -764,7 +788,7 @@ local function createMainTabSpecialDiceController(deps: {
                     selectedName = nil
                     autoUsePending = false
                     deps.onParagraphDirty()
-                    deferUiOnHeartbeat(refreshDropdown)
+                    refreshDropdown()
                     return
                 end
                 local diceId = displayToId[picked]
@@ -785,7 +809,7 @@ local function createMainTabSpecialDiceController(deps: {
                 autoUsePending = false
                 local used = requestUseItem(diceId)
                 deps.onParagraphDirty()
-                deferUiOnHeartbeat(refreshDropdown)
+                refreshDropdown()
                 if not used then
                     mountNotify({
                         Title = "Special Dice",
@@ -1019,9 +1043,11 @@ local function mountItemsInventoryPageSection(
     mainTab:CreateButton({
         Name = "Refresh inventory data",
         Flag = "main_inventory_refresh",
-        Callback = refresh,
+        Callback = function()
+            deferUiOnHeartbeat(refresh, "inventoryPageRefresh")
+        end,
     })
-    deferUiOnHeartbeat(refresh)
+    deferUiOnHeartbeat(refresh, "inventoryPageRefresh")
 end
 
 local function mountAutoFeedSection(
@@ -1270,7 +1296,7 @@ local function mountAutoFeedSection(
         s.lastConsumablesList = nil
     end
 
-    local function refreshFoodDropdown(showNotify: boolean)
+    local function refreshFoodDropdownImpl(showNotify: boolean)
         local prevIds: { string } = {}
         for _, id in ipairs(s.selectedFoodIds) do
             table.insert(prevIds, id)
@@ -1296,6 +1322,12 @@ local function mountAutoFeedSection(
                 Content = "Food list updated (" .. tostring(#opts) .. " types).",
             })
         end
+    end
+
+    local function refreshFoodDropdown(showNotify: boolean)
+        deferUiOnHeartbeat(function()
+            refreshFoodDropdownImpl(showNotify)
+        end, "autoFeedFoodDropdown")
     end
 
     syncAutoFeedFoodAfterConfigLoad = function()
@@ -1542,7 +1574,7 @@ local function mountAutoFeedSection(
         return opts
     end
 
-    local function refreshSlimeDropdown(showNotify: boolean)
+    local function refreshSlimeDropdownImpl(showNotify: boolean)
         local opts = scanFeedableSlimeOptions()
         if s.slimeDropdown and s.slimeDropdown.Refresh then
             s.slimeDropdown:Refresh(opts)
@@ -1563,6 +1595,12 @@ local function mountAutoFeedSection(
                 Content = #opts > 1 and ("Slime list updated (" .. tostring(#opts - 1) .. ", sorted rarest first).") or 'No slimes under Workspace → Gameplay* → Slimes (with SlimeInfoBillboard).',
             })
         end
+    end
+
+    local function refreshSlimeDropdown(showNotify: boolean)
+        deferUiOnHeartbeat(function()
+            refreshSlimeDropdownImpl(showNotify)
+        end, "autoFeedSlimeDropdown")
     end
 
     s.foodDropdown = mainTab:CreateDropdown({
@@ -1628,7 +1666,9 @@ local function mountAutoFeedSection(
 
     task.defer(function()
         ensureConsumablesWatch()
-        refreshFoodDropdown(false)
+        deferUiOnHeartbeat(function()
+            refreshFoodDropdownImpl(false)
+        end, "autoFeedFoodDropdown")
     end)
 
     local lpForConsumables = Players.LocalPlayer
@@ -3162,7 +3202,6 @@ do
     local autoGunEnabled = false
     local autoGunLoopToken = 0
     local autoGunEnemyListenerConns: { RBXScriptConnection } = {}
-    local autoGunEnemyRefreshScheduled = false
     local autoGunEnemiesListMaxLines = 0
 
     local EnemiesListParagraph = MainTab:CreateParagraph({
@@ -3420,14 +3459,7 @@ do
     end
 
     local function scheduleRefreshEnemiesListParagraph()
-        if autoGunEnemyRefreshScheduled then
-            return
-        end
-        autoGunEnemyRefreshScheduled = true
-        task.defer(function()
-            autoGunEnemyRefreshScheduled = false
-            refreshEnemiesListParagraph()
-        end)
+        deferUiOnHeartbeat(refreshEnemiesListParagraph, "autoGunEnemiesParagraph")
     end
 
     local function bindAutoGunEnemyListeners()
@@ -3819,8 +3851,6 @@ do
     local specialRollPreviousSelectedSet: { [string]: boolean } = {}
     local specialRollDropdownSeededAll = false
     local suppressSpecialRollDropdownCallback = false
-    local specialRollParagraphRefreshScheduled = false
-    local specialRollDropdownRefreshScheduled = false
     local SpecialRollDropdown: any = nil
     local autoCombineSpecialRollEnabled = false
     local specialRollCombineInvokePending: { [string]: boolean } = {}
@@ -3882,7 +3912,7 @@ do
             return resolveNetworkerRemoteFunction("InventoryService", LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION)
         end,
         onParagraphDirty = function()
-            refreshSpecialRollParagraph()
+            deferUiOnHeartbeat(refreshSpecialRollParagraph, "specialRollParagraph")
         end,
     })
 
@@ -3977,14 +4007,7 @@ do
     end
 
     local function scheduleRefreshSpecialRollParagraph()
-        if specialRollParagraphRefreshScheduled then
-            return
-        end
-        specialRollParagraphRefreshScheduled = true
-        deferUiOnHeartbeat(function()
-            specialRollParagraphRefreshScheduled = false
-            refreshSpecialRollParagraph()
-        end)
+        deferUiOnHeartbeat(refreshSpecialRollParagraph, "specialRollParagraph")
     end
 
     local function specialRollRebuildDisplayMap(): { string }
@@ -4043,9 +4066,9 @@ do
 
         table.clear(specialRollCombineInvokePending)
 
-        refreshSpecialRollParagraph()
+        deferUiOnHeartbeat(refreshSpecialRollParagraph, "specialRollParagraph")
         if autoCombineSpecialRollEnabled then
-            runAutoCombineSpecialRollPass()
+            deferUiOnHeartbeat(runAutoCombineSpecialRollPass, "specialRollAutoCombine")
         end
     end
 
@@ -4096,21 +4119,14 @@ do
         end
         suppressSpecialRollDropdownCallback = false
 
-        refreshSpecialRollParagraph()
+        deferUiOnHeartbeat(refreshSpecialRollParagraph, "specialRollParagraph")
         if autoCombineSpecialRollEnabled then
-            runAutoCombineSpecialRollPass()
+            deferUiOnHeartbeat(runAutoCombineSpecialRollPass, "specialRollAutoCombine")
         end
     end
 
     local function scheduleRefreshSpecialRollDropdown()
-        if specialRollDropdownRefreshScheduled then
-            return
-        end
-        specialRollDropdownRefreshScheduled = true
-        deferUiOnHeartbeat(function()
-            specialRollDropdownRefreshScheduled = false
-            refreshSpecialRollDropdownFromProgression()
-        end)
+        deferUiOnHeartbeat(refreshSpecialRollDropdownFromProgression, "specialRollDropdown")
     end
 
     local dataServiceProgressRemoteEvent: RemoteEvent? = nil
@@ -4416,9 +4432,9 @@ do
 
     local function bootstrapSpecialRollSection()
         ensureSpecialRollDataServiceListener()
-        refreshSpecialRollDropdownFromProgression()
         tryPullSpecialRollProgressionFromDataService()
-        refreshSpecialRollParagraph()
+        scheduleRefreshSpecialRollDropdown()
+        scheduleRefreshSpecialRollParagraph()
         specialDiceCtrl.refreshDropdown()
     end
 
@@ -4794,11 +4810,11 @@ do
         Name = "Refresh upgrades",
         Flag = "main_upgrades_refresh",
         Callback = function()
-            runUpgradesSectionRefresh()
+            deferUiOnHeartbeat(runUpgradesSectionRefresh, "upgradesSectionRefresh")
         end,
     })
 
-    task.defer(runUpgradesSectionRefresh)
+    deferUiOnHeartbeat(runUpgradesSectionRefresh, "upgradesSectionRefresh")
 
     mountItemsInventoryPageSection(MainTab, getDataServiceClient, cloneUpgradesTable)
 end
