@@ -1524,6 +1524,92 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     end)
 
     local rejoinTeleporting = false
+    local rejoinDisconnectMessage = "Rejoining server..."
+
+    local function beginRejoinViaDisconnect(placeId, jobId, isPrivateServer, accessCode, disconnectMessage)
+        local TeleportService = game:GetService("TeleportService")
+        local GuiService = game:GetService("GuiService")
+        local CoreGui = game:GetService("CoreGui")
+        local player = Players.LocalPlayer
+        local reconnecting = false
+        local conns = {}
+
+        local function cleanupListeners()
+            if conns.error then
+                conns.error:Disconnect()
+                conns.error = nil
+            end
+            if conns.prompt then
+                conns.prompt:Disconnect()
+                conns.prompt = nil
+            end
+        end
+
+        local function reconnect()
+            if reconnecting then
+                return
+            end
+            reconnecting = true
+            cleanupListeners()
+
+            task.spawn(function()
+                task.wait(0.5)
+                local ok, err = pcall(function()
+                    if isPrivateServer and accessCode then
+                        TeleportService:TeleportToPrivateServer(placeId, accessCode, { player })
+                    elseif jobId and #jobId > 0 then
+                        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+                    else
+                        TeleportService:Teleport(placeId, player)
+                    end
+                end)
+                if not ok then
+                    mountNotify({
+                        Title = "Rejoin",
+                        Content = "Failed: " .. tostring(err),
+                    })
+                    task.delay(3, function()
+                        rejoinTeleporting = false
+                    end)
+                end
+            end)
+        end
+
+        conns.error = GuiService.ErrorMessageChanged:Connect(function(message)
+            if message and message ~= "" then
+                reconnect()
+            end
+        end)
+
+        local robloxPrompt = CoreGui:FindFirstChild("RobloxPromptGui")
+        local overlay = robloxPrompt and robloxPrompt:FindFirstChild("promptOverlay")
+        if overlay then
+            conns.prompt = overlay.ChildAdded:Connect(function(child)
+                if child.Name == "ErrorPrompt" then
+                    reconnect()
+                end
+            end)
+        end
+
+        task.delay(15, function()
+            if not reconnecting then
+                cleanupListeners()
+                rejoinTeleporting = false
+            end
+        end)
+
+        local kickOk, kickErr = pcall(function()
+            player:Kick(disconnectMessage or "Rejoining server...")
+        end)
+        if not kickOk then
+            cleanupListeners()
+            rejoinTeleporting = false
+            mountNotify({
+                Title = "Rejoin",
+                Content = "Failed to disconnect: " .. tostring(kickErr),
+            })
+        end
+    end
 
     local cachedPlaceProductInfo = nil
     local ServerInfoParagraph
@@ -1707,6 +1793,17 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end)
     end)
 
+    LocalPlayerTab:CreateInput({
+        Name = "Rejoin disconnect message",
+        PlaceholderText = "Rejoining server...",
+        CurrentValue = rejoinDisconnectMessage,
+        Callback = function(value)
+            if type(value) == "string" and value ~= "" then
+                rejoinDisconnectMessage = value
+            end
+        end,
+    })
+
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
         Callback = function()
@@ -1715,14 +1812,13 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             end
 
             local TeleportService = game:GetService("TeleportService")
-            local player = Players.LocalPlayer
             local placeId = game.PlaceId
             local jobId = game.JobId
 
             local isPrivateServer = game.PrivateServerId ~= "" and game.PrivateServerId ~= nil
             local accessCode = nil
             local teleportData = TeleportService:GetLocalPlayerTeleportData()
- 
+
             if teleportData and type(teleportData) == "table" then
                 accessCode = teleportData.AccessCode
             end
@@ -1744,27 +1840,13 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             end
 
             rejoinTeleporting = true
-            local ok, err = pcall(function()
-                if isPrivateServer then
-                    if accessCode then
-                        TeleportService:TeleportToPrivateServer(placeId, accessCode, { player })
-                    else
-                        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
-                    end
-                else
-                    TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
-                end
-            end)
-
-            if not ok then
-                mountNotify({
-                    Title = "Rejoin",
-                    Content = "Failed: " .. tostring(err),
-                })
-                task.delay(3, function()
-                    rejoinTeleporting = false
-                end)
-            end
+            beginRejoinViaDisconnect(
+                placeId,
+                jobId,
+                isPrivateServer,
+                accessCode,
+                rejoinDisconnectMessage
+            )
         end,
     })
 
