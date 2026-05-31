@@ -2134,7 +2134,9 @@ do
     local lastSelectedSpecialRollTier: string? = nil
     local specialRollPreviousSelectedSet: { [string]: boolean } = {}
     local specialRollDropdownSeededAll = false
+    local suppressSpecialRollDropdownCallback = false
     local specialRollParagraphRefreshScheduled = false
+    local specialRollDropdownRefreshScheduled = false
     local SpecialRollDropdown: any = nil
     local autoCombineSpecialRollEnabled = false
     local specialRollCombineInvokePending: { [string]: boolean } = {}
@@ -2295,13 +2297,27 @@ do
             return
         end
         specialRollParagraphRefreshScheduled = true
-        task.defer(function()
+        deferUiOnHeartbeat(function()
             specialRollParagraphRefreshScheduled = false
             refreshSpecialRollParagraph()
         end)
     end
 
+    local function specialRollRebuildDisplayMap(): { string }
+        table.clear(specialRollDisplayToTier)
+        local opts: { string } = {}
+        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
+            local display = specialRollTierDisplayName(tier)
+            specialRollDisplayToTier[display] = tier
+            table.insert(opts, display)
+        end
+        return opts
+    end
+
     local function specialRollSetSelectedTierKeysFromDisplayOptions(value: any)
+        if suppressSpecialRollDropdownCallback then
+            return
+        end
         local nextKeys: { string } = {}
         local function addDisplay(opt: string)
             local tier = specialRollDisplayToTier[opt]
@@ -2350,18 +2366,17 @@ do
     end
 
     local function refreshSpecialRollDropdownFromProgression()
-        table.clear(specialRollDisplayToTier)
-        local opts: { string } = {}
-        local tierKeysAvailable: { string } = {}
-        for _, tier in ipairs(SPECIAL_ROLL_TIER_ORDER) do
-            local display = specialRollTierDisplayName(tier)
-            specialRollDisplayToTier[display] = tier
-            table.insert(opts, display)
-            table.insert(tierKeysAvailable, tier)
-        end
+        local opts = specialRollRebuildDisplayMap()
+        local tierKeysAvailable = table.clone(SPECIAL_ROLL_TIER_ORDER)
+
+        suppressSpecialRollDropdownCallback = true
         if SpecialRollDropdown and SpecialRollDropdown.Refresh then
-            SpecialRollDropdown:Refresh(opts)
+            pcall(function()
+                SpecialRollDropdown:Refresh(opts)
+            end)
         end
+
+        local displaySelected: { string } = {}
         if not specialRollDropdownSeededAll then
             selectedSpecialRollTierKeys = table.clone(tierKeysAvailable)
             lastSelectedSpecialRollTier = tierKeysAvailable[#tierKeysAvailable]
@@ -2370,36 +2385,48 @@ do
                 specialRollPreviousSelectedSet[tier] = true
             end
             specialRollDropdownSeededAll = true
-            if SpecialRollDropdown and SpecialRollDropdown.Set then
-                SpecialRollDropdown:Set(opts)
+            displaySelected = opts
+        else
+            local kept: { string } = {}
+            for _, tier in ipairs(selectedSpecialRollTierKeys) do
+                if specialRollProgressionByTier[tier] and not table.find(kept, tier) then
+                    table.insert(kept, tier)
+                end
             end
-            refreshSpecialRollParagraph()
-            return
-        end
-        local kept: { string } = {}
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            if specialRollProgressionByTier[tier] and not table.find(kept, tier) then
-                table.insert(kept, tier)
+            if #kept == 0 then
+                kept = table.clone(tierKeysAvailable)
+            end
+            selectedSpecialRollTierKeys = kept
+            if lastSelectedSpecialRollTier and not table.find(selectedSpecialRollTierKeys, lastSelectedSpecialRollTier) then
+                lastSelectedSpecialRollTier = selectedSpecialRollTierKeys[#selectedSpecialRollTierKeys]
+            end
+            for _, tier in ipairs(selectedSpecialRollTierKeys) do
+                table.insert(displaySelected, specialRollTierDisplayName(tier))
             end
         end
-        if #kept == 0 then
-            kept = table.clone(tierKeysAvailable)
-        end
-        selectedSpecialRollTierKeys = kept
-        if lastSelectedSpecialRollTier and not table.find(selectedSpecialRollTierKeys, lastSelectedSpecialRollTier) then
-            lastSelectedSpecialRollTier = selectedSpecialRollTierKeys[#selectedSpecialRollTierKeys]
-        end
-        local displaySelected: { string } = {}
-        for _, tier in ipairs(selectedSpecialRollTierKeys) do
-            table.insert(displaySelected, specialRollTierDisplayName(tier))
-        end
+
         if SpecialRollDropdown and SpecialRollDropdown.Set then
-            SpecialRollDropdown:Set(displaySelected)
+            pcall(function()
+                SpecialRollDropdown:Set(displaySelected)
+            end)
         end
+        suppressSpecialRollDropdownCallback = false
+
         refreshSpecialRollParagraph()
         if autoCombineSpecialRollEnabled then
             runAutoCombineSpecialRollPass()
         end
+    end
+
+    local function scheduleRefreshSpecialRollDropdown()
+        if specialRollDropdownRefreshScheduled then
+            return
+        end
+        specialRollDropdownRefreshScheduled = true
+        deferUiOnHeartbeat(function()
+            specialRollDropdownRefreshScheduled = false
+            refreshSpecialRollDropdownFromProgression()
+        end)
     end
 
     local dataServiceProgressRemoteEvent: RemoteEvent? = nil
@@ -2643,8 +2670,7 @@ do
             return
         end
         scheduleRefreshSpecialRollParagraph()
-        refreshSpecialRollDropdownFromProgression()
-        runAutoCombineSpecialRollPass()
+        scheduleRefreshSpecialRollDropdown()
     end
 
     local specialRollDataServiceConn: RBXScriptConnection? = nil
@@ -2712,10 +2738,12 @@ do
         specialDiceCtrl.refreshDropdown()
     end
 
+    local initialSpecialRollOpts = specialRollRebuildDisplayMap()
+
     SpecialRollDropdown = MainTab:CreateDropdown({
         Name = "Special Roll",
         Flag = "main_auto_adjust_special_roll_dropdown",
-        Options = {},
+        Options = initialSpecialRollOpts,
         CurrentOption = {},
         MultipleOptions = true,
         Search = true,
@@ -2726,9 +2754,7 @@ do
 
     specialDiceCtrl.mountDropdown()
 
-    task.defer(function()
-        bootstrapSpecialRollSection()
-    end)
+    deferUiOnHeartbeat(bootstrapSpecialRollSection)
 
     task.spawn(function()
         for _ = 1, 60 do
@@ -2742,8 +2768,8 @@ do
             end
             task.wait(0.5)
         end
-        refreshSpecialRollDropdownFromProgression()
-        refreshSpecialRollParagraph()
+        scheduleRefreshSpecialRollDropdown()
+        scheduleRefreshSpecialRollParagraph()
     end)
 
     MainTab:CreateButton({
