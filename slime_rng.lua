@@ -1743,7 +1743,7 @@ local function mountUfoEventSection(
         ufoClient = nil :: any,
         autoTeleportEnabled = false,
         savedReturnCframe = nil :: CFrame?,
-        teleportedForEventKey = nil :: string?,
+        lastAutoTeleportZoneId = nil :: number?,
     }
 
     local function tryLoadGameModules(): boolean
@@ -1927,14 +1927,18 @@ local function mountUfoEventSection(
         return workspaceUfoZoneId()
     end
 
-    local function ufoEventKey(state: any): string?
-        if not isUfoEventActive(state) then
-            return nil
+    local ZONES_NETWORKER_VERSION = "leifstout_networker@0.3.1"
+
+    local function requestTeleportZone(zoneId: number): boolean
+        fold = findNetworkerServiceRemotesFolderFn("ZonesService", ZONES_NETWORKER_VERSION)
+        rf = fold and fold:FindFirstChild("RemoteFunction")
+        if not rf or not rf:IsA("RemoteFunction") then
+            return false
         end
-        activeZone = activeUfoZoneId(state)
-        return tostring(state.phaseStartTime or "")
-            .. ":"
-            .. tostring(activeZone or state.zoneId or "")
+        ok, success = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestTeleportZone", zoneId)
+        end)
+        return ok and success == true
     end
 
     local function saveReturnPosition()
@@ -1957,21 +1961,18 @@ local function mountUfoEventSection(
     end
 
     local function teleportToZoneId(zoneId: number, showNotify: boolean): boolean
-        if s.zonesClient and type(s.zonesClient.teleportToZone) == "function" then
-            local ok = pcall(s.zonesClient.teleportToZone, s.zonesClient, zoneId)
-            if ok then
-                if showNotify then
-                    mountNotify({
-                        Title = "UFO",
-                        Content = "Teleported to " .. zoneLabel(zoneId) .. ".",
-                        Icon = "check",
-                    })
-                end
-                return true
+        if requestTeleportZone(zoneId) then
+            if showNotify then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "Teleported to " .. zoneLabel(zoneId) .. ".",
+                    Icon = "check",
+                })
             end
+            return true
         end
-        local hitbox = findZoneHitbox(zoneId)
-        local hrp = getHumanoidRootPart()
+        hitbox = findZoneHitbox(zoneId)
+        hrp = getHumanoidRootPart()
         if hitbox and hrp then
             hrp.AssemblyLinearVelocity = Vector3.zero
             hrp.CFrame = CFrame.new(hitbox.Position + Vector3.new(0, 5, 0))
@@ -2008,33 +2009,32 @@ local function mountUfoEventSection(
             if not activeZone then
                 return
             end
-            zoneKey = ufoEventKey(state)
-            if not zoneKey then
+            if s.lastAutoTeleportZoneId == activeZone then
                 return
             end
             if not s.savedReturnCframe then
                 saveReturnPosition()
             end
-            if s.teleportedForEventKey ~= zoneKey then
-                if teleportToZoneId(activeZone, false) then
-                    s.teleportedForEventKey = zoneKey
-                    mountNotify({
-                        Title = "UFO",
-                        Content = "Auto teleported to " .. zoneLabel(activeZone) .. " (following UFO).",
-                        Icon = "check",
-                    })
-                end
+            s.lastAutoTeleportZoneId = activeZone
+            if teleportToZoneId(activeZone, false) then
+                mountNotify({
+                    Title = "UFO",
+                    Content = "Auto teleported to " .. zoneLabel(activeZone) .. " (following UFO).",
+                    Icon = "check",
+                })
+            else
+                s.lastAutoTeleportZoneId = nil
             end
         elseif s.savedReturnCframe then
             restoreReturnPosition()
-            s.teleportedForEventKey = nil
+            s.lastAutoTeleportZoneId = nil
             mountNotify({
                 Title = "UFO",
                 Content = "UFO event ended — returned to saved position.",
                 Icon = "check",
             })
         else
-            s.teleportedForEventKey = nil
+            s.lastAutoTeleportZoneId = nil
         end
     end
 
@@ -2101,7 +2101,14 @@ local function mountUfoEventSection(
         if s.paragraph and s.paragraph.Set then
             s.paragraph:Set({ Title = "UFO", Content = buildBody() })
         end
-        processAutoTeleport()
+    end
+
+    local function scheduleUfoUiRefresh()
+        deferUiOnHeartbeat(refreshParagraph, "ufoParagraph")
+    end
+
+    local function scheduleUfoAutoTeleport()
+        deferUiOnHeartbeat(processAutoTeleport, "ufoAutoTeleport")
     end
 
     s.paragraph = mainTab:CreateParagraph({
@@ -2187,13 +2194,16 @@ local function mountUfoEventSection(
                 if s.savedReturnCframe then
                     restoreReturnPosition()
                 end
-                s.teleportedForEventKey = nil
+                s.lastAutoTeleportZoneId = nil
             end
         end,
     })
 
-    deferUiOnHeartbeat(refreshParagraph)
-    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, refreshParagraph)
+    scheduleUfoUiRefresh()
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, function()
+        scheduleUfoUiRefresh()
+        scheduleUfoAutoTeleport()
+    end)
 end
 
 local REBIRTH_NETWORKER_VERSION = "leifstout_networker@0.3.1"
