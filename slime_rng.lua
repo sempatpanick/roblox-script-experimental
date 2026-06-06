@@ -2905,7 +2905,6 @@ local function mountMachineUnlockerSection(
 
     MachineUnlockerSection = {
         dropdown = nil :: any,
-        paragraph = nil :: any,
         machines = {} :: { any },
         optionToId = {} :: { [string]: string },
         selectedId = nil :: string?,
@@ -3011,14 +3010,6 @@ local function mountMachineUnlockerSection(
         return upgrades[def.unlockKey] == true
     end
 
-    function MachineUnlockerSection.getCoinBalance(): number?
-        client = MachineUnlockerSection.getDataServiceClientFn()
-        if not client then
-            return nil
-        end
-        return SlimeRngUtil.readDataServiceNumber(client, "coins")
-    end
-
     function MachineUnlockerSection.dropdownOptionLabel(def: any): string
         if type(def) ~= "table" then
             return "?"
@@ -3055,42 +3046,6 @@ local function mountMachineUnlockerSection(
         end
     end
 
-    function MachineUnlockerSection.buildBody(): string
-        MachineUnlockerSection.tryLoadMachineCatalog()
-        def = MachineUnlockerSection.selectedMachineDef()
-        if not def then
-            return "Select a machine from the dropdown."
-        end
-        coins = MachineUnlockerSection.getCoinBalance()
-        price = tonumber(def.price) or 0
-        lines = {
-            "Machine: " .. def.label,
-            ("Price: %s %s"):format(SlimeRngUtil.formatSuffixNumber(price), tostring(def.currency or "coins")),
-            ("Status: %s"):format(MachineUnlockerSection.isMachineUnlocked(def) and "Unlocked" or "Locked"),
-        }
-        if coins ~= nil then
-            table.insert(lines, ("Coins: %s / %s"):format(
-                SlimeRngUtil.formatSuffixNumber(coins),
-                SlimeRngUtil.formatSuffixNumber(price)
-            ))
-            if not MachineUnlockerSection.isMachineUnlocked(def) then
-                table.insert(lines, ("Ready: %s"):format(coins >= price and "yes" or "no"))
-            end
-        else
-            table.insert(lines, "Coins: waiting for DataService")
-        end
-        return table.concat(lines, "\n")
-    end
-
-    function MachineUnlockerSection.refreshParagraph()
-        if MachineUnlockerSection.paragraph and MachineUnlockerSection.paragraph.Set then
-            MachineUnlockerSection.paragraph:Set({
-                Title = "Machine",
-                Content = MachineUnlockerSection.buildBody(),
-            })
-        end
-    end
-
     function MachineUnlockerSection.refreshDropdown()
         options = MachineUnlockerSection.buildDropdownOptions()
         if not MachineUnlockerSection.dropdown then
@@ -3120,10 +3075,7 @@ local function mountMachineUnlockerSection(
     end
 
     function MachineUnlockerSection.scheduleRefresh()
-        deferUiOnHeartbeat(function()
-            MachineUnlockerSection.refreshDropdown()
-            MachineUnlockerSection.refreshParagraph()
-        end, "machineUnlockerRefresh")
+        deferUiOnHeartbeat(MachineUnlockerSection.refreshDropdown, "machineUnlockerRefresh")
     end
 
     function MachineUnlockerSection.getServiceRemote(serviceName: string): RemoteFunction?
@@ -3194,11 +3146,6 @@ local function mountMachineUnlockerSection(
             })
         end
     end
-
-    MachineUnlockerSection.paragraph = mainTab:CreateParagraph({
-        Title = "Machine",
-        Content = "Loading…",
-    })
 
     initialOptions = MachineUnlockerSection.buildDropdownOptions()
     if #initialOptions > 0 then
