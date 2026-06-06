@@ -11,6 +11,38 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 
+local loadFunctionModule
+do
+    local ok, loader = pcall(require, "../../functions/load_module")
+    if ok and type(loader) == "function" then
+        loadFunctionModule = loader
+    else
+        local baseURL = shared.sempatpanick_baseURL
+        assert(type(baseURL) == "string", "[tabs] baseURL not set")
+        local okGet, source = pcall(function()
+            return game:HttpGet(baseURL .. "/functions/load_module.lua")
+        end)
+        assert(okGet and type(source) == "string", "[tabs] failed to load functions/load_module")
+        local chunk = (loadstring or load)(source, "functions/load_module")
+        loadFunctionModule = chunk()
+    end
+end
+
+local executorMod = loadFunctionModule("executor/resolve")
+local pathMod = loadFunctionModule("string/path")
+local jsonMod = loadFunctionModule("json/ordered_encode")
+local playerMod = loadFunctionModule("player/character")
+local recordingCaptureMod = loadFunctionModule("recording/capture")
+local playbackMod = loadFunctionModule("recording/playback")
+
+local resolveExecutorFn = executorMod.resolveExecutorFn
+local ensureFolderPath = executorMod.ensureFolderPath
+local normalizePath = pathMod.normalizePath
+local baseNameFromPath = pathMod.baseNameFromPath
+local isJsonPath = pathMod.isJsonPath
+local encodeRecordingJsonValue = jsonMod.encodeRecordingJsonValue
+local getCharacterHumanoidAndRoot = playerMod.getCharacterHumanoidAndRoot
+
 local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     local RecordingTab = windowRef:CreateTab("Recording", 4483362458)
 
@@ -23,35 +55,16 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
     local recordingMovementHz = DEFAULT_RECORDING_MOVEMENT_HZ
 
     local function getRecordingSampleInterval()
-        local hz = tonumber(recordingMovementHz) or DEFAULT_RECORDING_MOVEMENT_HZ
-        hz = math.clamp(hz, MIN_RECORDING_MOVEMENT_HZ, MAX_RECORDING_MOVEMENT_HZ)
-        return 1 / hz
+        return recordingCaptureMod.getRecordingSampleInterval(
+            recordingMovementHz,
+            MIN_RECORDING_MOVEMENT_HZ,
+            MAX_RECORDING_MOVEMENT_HZ,
+            DEFAULT_RECORDING_MOVEMENT_HZ
+        )
     end
-    local function resolveExecutorFn(name)
-        local v = rawget(_G, name)
-        if type(v) == "function" then
-            return v
-        end
-        local getGenvFn = rawget(_G, "getgenv")
-        local okGenv, genv = pcall(function()
-            return type(getGenvFn) == "function" and getGenvFn() or nil
-        end)
-        if okGenv and type(genv) == "table" then
-            local gv = rawget(genv, name) or genv[name]
-            if type(gv) == "function" then
-                return gv
-            end
-        end
-        local okFenv, fenv = pcall(function()
-            return getfenv and getfenv()
-        end)
-        if okFenv and type(fenv) == "table" then
-            local fv = rawget(fenv, name) or fenv[name]
-            if type(fv) == "function" then
-                return fv
-            end
-        end
-        return nil
+
+    local function captureAvatarProfileForCharacter(character)
+        return recordingCaptureMod.captureAvatarProfileForCharacter(character, getCharacterHumanoidAndRoot)
     end
 
     local makeFolderFn = resolveExecutorFn("makefolder")
@@ -146,32 +159,6 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         })
     end
 
-    local function splitPathSegments(path)        local segments = {}
-        for piece in string.gmatch(path, "[^/]+") do
-            if piece ~= "" and piece ~= "." then
-                table.insert(segments, piece)
-            end
-        end
-        return segments
-    end
-
-    local function normalizePath(path)
-        return string.gsub(path or "", "\\", "/")
-    end
-
-    local function baseNameFromPath(path)
-        local normalized = normalizePath(path)
-        local idx = string.match(normalized, "^.*()/")
-        if idx then
-            return string.sub(normalized, idx + 1)
-        end
-        return normalized
-    end
-
-    local function isJsonPath(path)
-        return string.sub(string.lower(path), -5) == ".json"
-    end
-
     local function updateSavedRecordingStatus(text)
         if not (savedRecordingStatusParagraph and savedRecordingStatusParagraph.Set) then
             return
@@ -245,15 +232,6 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         end
     end
 
-    local function refreshSelectionFromDropdownValue(value, pathMap)
-        local picked = (type(value) == "table" and value[1]) or value
-        if type(picked) ~= "string" or picked == "" or picked == SAVED_RECORDING_NONE then
-            selectedSavedRecordingPath = nil
-            return
-        end
-        selectedSavedRecordingPath = pathMap[picked]
-    end
-
     local function getSelectedRecordingPlayer()
         if type(selectedRecordingPlayerUserId) ~= "number" then
             return nil
@@ -266,206 +244,12 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         return nil
     end
 
-    local function ensureRecordingsDirectory()
-        makeFolderFn = makeFolderFn or resolveExecutorFn("makefolder")
-        isFolderFn = isFolderFn or resolveExecutorFn("isfolder")
-        if type(makeFolderFn) ~= "function" then
-            return false, "makefolder() is not available in this executor"
-        end
-        local segments = splitPathSegments(RECORDINGS_DIR)
-        local current = ""
-        for _, seg in ipairs(segments) do
-            current = (current == "") and seg or (current .. "/" .. seg)
-            local exists = false
-            if type(isFolderFn) == "function" then
-                local okExists, result = pcall(function()
-                    return isFolderFn(current)
-                end)
-                exists = okExists and result or false
-            end
-            if not exists then
-                local okMake, errMake = pcall(function()
-                    makeFolderFn(current)
-                end)
-                if not okMake then
-                    if type(isFolderFn) == "function" then
-                        local okRetry, retryExists = pcall(function()
-                            return isFolderFn(current)
-                        end)
-                        if okRetry and retryExists then
-                            exists = true
-                        else
-                            return false, tostring(errMake)
-                        end
-                    else
-                        return false, tostring(errMake)
-                    end
-                end
-            end
-        end
-        return true, nil
-    end
-
-    local captureAvatarProfileForCharacter
-
-    local META_FIELD_ORDER = {
-        "recorderName",
-        "playerName",
-        "avatarProfile",
-        "totalEvents",
-        "durationSeconds",
-        "movementSampleHz",
-        "startedAtUtc",
-        "gameId",
-        "placeId",
-        "jobId",
-    }
-
-    local function isSequentialArray(tbl)
-        local maxIndex = 0
-        local count = 0
-        for k, _ in pairs(tbl) do
-            if type(k) ~= "number" or k < 1 or k % 1 ~= 0 then
-                return false
-            end
-            if k > maxIndex then
-                maxIndex = k
-            end
-            count = count + 1
-        end
-        return maxIndex == count
-    end
-
-    local function orderedObjectKeys(tbl, parentKey)
-        local keys = {}
-        for k, _ in pairs(tbl) do
-            if type(k) == "string" then
-                table.insert(keys, k)
-            end
-        end
-
-        local ordered = {}
-        local used = {}
-        local preferredOrder = {}
-
-        if tbl.meta ~= nil and tbl.events ~= nil then
-            preferredOrder = { "meta", "events" }
-        elseif tbl.t ~= nil and tbl.kind ~= nil and tbl.data ~= nil then
-            preferredOrder = { "t", "kind", "data" }
-        elseif tbl.isGrounded ~= nil
-            and tbl.walkSpeed ~= nil
-            and tbl.jumpHeight ~= nil
-            and tbl.jumpPower ~= nil
-            and tbl.position ~= nil
-            and tbl.lookDirection ~= nil
-            and tbl.moveDirection ~= nil
-            and tbl.velocity ~= nil
-        then
-            preferredOrder = {
-                "isGrounded",
-                "walkSpeed",
-                "jumpHeight",
-                "jumpPower",
-                "position",
-                "lookDirection",
-                "moveDirection",
-                "velocity",
-            }
-        elseif parentKey == "meta" then
-            preferredOrder = META_FIELD_ORDER
-        elseif tbl.x ~= nil and tbl.y ~= nil and tbl.z ~= nil then
-            preferredOrder = { "x", "y", "z" }
-        end
-
-        for _, k in ipairs(preferredOrder) do
-            if tbl[k] ~= nil and not used[k] then
-                table.insert(ordered, k)
-                used[k] = true
-            end
-        end
-
-        local remaining = {}
-        for _, k in ipairs(keys) do
-            if not used[k] then
-                table.insert(remaining, k)
-            end
-        end
-        table.sort(remaining, function(a, b)
-            return a < b
-        end)
-        for _, k in ipairs(remaining) do
-            table.insert(ordered, k)
-        end
-        return ordered
-    end
-
-    local function encodeRecordingJsonValue(value, parentKey, pretty, depth)
-        local level = depth or 0
-        local valueType = type(value)
-        if value == nil then
-            return "null"
-        elseif valueType == "string" then
-            return HttpService:JSONEncode(value)
-        elseif valueType == "boolean" then
-            return value and "true" or "false"
-        elseif valueType == "number" then
-            if value ~= value or value == math.huge or value == -math.huge then
-                return "null"
-            end
-            return tostring(value)
-        elseif valueType ~= "table" then
-            return HttpService:JSONEncode(tostring(value))
-        end
-
-        if isSequentialArray(value) then
-            local parts = {}
-            for i = 1, #value do
-                local encoded = encodeRecordingJsonValue(value[i], nil, pretty, level + 1)
-                if pretty then
-                    local indent = string.rep("  ", level + 1)
-                    parts[i] = indent .. encoded
-                else
-                    parts[i] = encoded
-                end
-            end
-            if pretty then
-                if #parts == 0 then
-                    return "[]"
-                end
-                local closingIndent = string.rep("  ", level)
-                return "[\n" .. table.concat(parts, ",\n") .. "\n" .. closingIndent .. "]"
-            end
-            return "[" .. table.concat(parts, ",") .. "]"
-        end
-
-        local objectParts = {}
-        local keys = orderedObjectKeys(value, parentKey)
-        for _, k in ipairs(keys) do
-            local encodedKey = HttpService:JSONEncode(k)
-            local encodedValue = encodeRecordingJsonValue(value[k], k, pretty, level + 1)
-            if pretty then
-                local indent = string.rep("  ", level + 1)
-                table.insert(objectParts, indent .. encodedKey .. ": " .. encodedValue)
-            else
-                table.insert(objectParts, encodedKey .. ":" .. encodedValue)
-            end
-        end
-        if pretty then
-            if #objectParts == 0 then
-                return "{}"
-            end
-            local closingIndent = string.rep("  ", level)
-            return "{\n" .. table.concat(objectParts, ",\n") .. "\n" .. closingIndent .. "}"
-        end
-        return "{" .. table.concat(objectParts, ",") .. "}"
-    end
-
     local function saveRecordingAsJson()
         writeFileFn = writeFileFn or resolveExecutorFn("writefile")
         if type(writeFileFn) ~= "function" then
             return nil, "writefile() is not available in this executor"
         end
-        local okDir, dirErr = ensureRecordingsDirectory()
+        local okDir, dirErr = ensureFolderPath(RECORDINGS_DIR, makeFolderFn, isFolderFn)
         if not okDir then
             return nil, dirErr or "Unable to create recordings folder"
         end
@@ -507,109 +291,19 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         return path, nil
     end
 
-    local function getCharacterHumanoidAndRoot(character)
-        if not character then
-            return nil, nil
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        return humanoid, rootPart
-    end
-
-    captureAvatarProfileForCharacter = function(character)
-        local profile = {
-            capturedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        }
-        local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
-        if humanoid then
-            profile.rigType = tostring(humanoid.RigType)
-            profile.hipHeight = tonumber(string.format("%.3f", humanoid.HipHeight))
-            profile.walkSpeed = tonumber(string.format("%.3f", humanoid.WalkSpeed))
-            profile.jumpPower = tonumber(string.format("%.3f", humanoid.JumpPower))
-            profile.jumpHeight = tonumber(string.format("%.3f", humanoid.JumpHeight))
-            local bodyHeightScaleObj = humanoid:FindFirstChild("BodyHeightScale")
-            local bodyWidthScaleObj = humanoid:FindFirstChild("BodyWidthScale")
-            local bodyDepthScaleObj = humanoid:FindFirstChild("BodyDepthScale")
-            local bodyTypeScaleObj = humanoid:FindFirstChild("BodyTypeScale")
-            local headScaleObj = humanoid:FindFirstChild("HeadScale")
-            if bodyHeightScaleObj and bodyHeightScaleObj:IsA("NumberValue") then
-                profile.bodyHeightScale = tonumber(string.format("%.3f", bodyHeightScaleObj.Value))
-            end
-            if bodyWidthScaleObj and bodyWidthScaleObj:IsA("NumberValue") then
-                profile.bodyWidthScale = tonumber(string.format("%.3f", bodyWidthScaleObj.Value))
-            end
-            if bodyDepthScaleObj and bodyDepthScaleObj:IsA("NumberValue") then
-                profile.bodyDepthScale = tonumber(string.format("%.3f", bodyDepthScaleObj.Value))
-            end
-            if bodyTypeScaleObj and bodyTypeScaleObj:IsA("NumberValue") then
-                profile.bodyTypeScale = tonumber(string.format("%.3f", bodyTypeScaleObj.Value))
-            end
-            if headScaleObj and headScaleObj:IsA("NumberValue") then
-                profile.headScale = tonumber(string.format("%.3f", headScaleObj.Value))
-            end
-        end
-        if rootPart then
-            profile.rootPartSize = {
-                x = tonumber(string.format("%.3f", rootPart.Size.X)),
-                y = tonumber(string.format("%.3f", rootPart.Size.Y)),
-                z = tonumber(string.format("%.3f", rootPart.Size.Z)),
-            }
-        end
-        local rootSizeY = (rootPart and rootPart.Size and rootPart.Size.Y) or 0
-        local hipHeight = (humanoid and humanoid.HipHeight) or 0
-        profile.rootToFeetHeight = tonumber(string.format("%.3f", (rootSizeY * 0.5) + hipHeight))
-        return profile
-    end
-
     local function recordMovementSample(targetPlayer)
         local character = targetPlayer and targetPlayer.Character
         local humanoid, rootPart = getCharacterHumanoidAndRoot(character)
         if not humanoid or not rootPart then
             return
         end
-        local moveDir = humanoid.MoveDirection
-        local pos = rootPart.Position
-        local vel = rootPart.AssemblyLinearVelocity
-        local look = rootPart.CFrame.LookVector
-        local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
-        local signature = string.format(
-            "%.2f|%.2f|%.2f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.2f|%.2f|%.2f|%s",
-            moveDir.X, moveDir.Y, moveDir.Z,
-            pos.X, pos.Y, pos.Z,
-            vel.X, vel.Y, vel.Z,
-            look.X, look.Y, look.Z,
-            grounded and "1" or "0"
-        )
+        local sampleData = recordingCaptureMod.buildMovementSampleData(humanoid, rootPart)
+        local signature = recordingCaptureMod.buildMovementSampleSignature(sampleData)
         if signature == lastMovementSignature then
             return
         end
         lastMovementSignature = signature
-        appendRecordingEvent("movement", {
-            moveDirection = {
-                x = tonumber(string.format("%.3f", moveDir.X)),
-                y = tonumber(string.format("%.3f", moveDir.Y)),
-                z = tonumber(string.format("%.3f", moveDir.Z)),
-            },
-            position = {
-                x = tonumber(string.format("%.3f", pos.X)),
-                y = tonumber(string.format("%.3f", pos.Y)),
-                z = tonumber(string.format("%.3f", pos.Z)),
-            },
-            velocity = {
-                x = tonumber(string.format("%.3f", vel.X)),
-                y = tonumber(string.format("%.3f", vel.Y)),
-                z = tonumber(string.format("%.3f", vel.Z)),
-            },
-            lookDirection = {
-                x = tonumber(string.format("%.3f", look.X)),
-                y = tonumber(string.format("%.3f", look.Y)),
-                z = tonumber(string.format("%.3f", look.Z)),
-            },
-            isGrounded = grounded,
-            walkSpeed = tonumber(string.format("%.3f", humanoid.WalkSpeed)),
-            jumpPower = tonumber(string.format("%.3f", humanoid.JumpPower)),
-            jumpHeight = tonumber(string.format("%.3f", humanoid.JumpHeight)),
-        })
+        appendRecordingEvent("movement", sampleData)
     end
 
     local function attachCharacterRecordingHooks(character)
@@ -979,7 +673,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
             return
         end
 
-        ensureRecordingsDirectory()
+        ensureFolderPath(RECORDINGS_DIR, makeFolderFn, isFolderFn)
         local okList, filesOrErr = pcall(function()
             return listFilesFn(RECORDINGS_DIR)
         end)
@@ -1044,7 +738,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
         Search = true,
         Ext = true,
         Callback = function(value)
-            refreshSelectionFromDropdownValue(value, savedDisplayToPath)
+            selectedSavedRecordingPath = playbackMod.refreshSelectionFromDropdownValue(value, SAVED_RECORDING_NONE, savedDisplayToPath)
             if selectedSavedRecordingPath then
                 updateSavedRecordingStatus("Selected: " .. baseNameFromPath(selectedSavedRecordingPath))
             else
@@ -1128,109 +822,14 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
             })
 
             task.spawn(function()
-                local function extractRecordedAvatarProfile(payloadTable, eventsTable)
-                    if type(payloadTable) == "table" and type(payloadTable.meta) == "table" and type(payloadTable.meta.avatarProfile) == "table" then
-                        return payloadTable.meta.avatarProfile
-                    end
-                    if type(eventsTable) == "table" then
-                        for _, ev in ipairs(eventsTable) do
-                            if type(ev) == "table" and ev.kind == "recording_started" and type(ev.data) == "table" and type(ev.data.avatarProfile) == "table" then
-                                return ev.data.avatarProfile
-                            end
-                        end
-                    end
-                    return nil
-                end
-
-                local function buildPlaybackAvatarAdjustment(recordedAvatarProfile, localCharacter)
-                    if type(recordedAvatarProfile) ~= "table" then
-                        return {
-                            yOffset = 0,
-                            detail = "No avatar profile in recording",
-                        }
-                    end
-                    local currentAvatarProfile = captureAvatarProfileForCharacter(localCharacter)
-                    local recordedRootToFeet = tonumber(recordedAvatarProfile.rootToFeetHeight)
-                    local currentRootToFeet = tonumber(currentAvatarProfile.rootToFeetHeight)
-                    if not (recordedRootToFeet and currentRootToFeet) then
-                        return {
-                            yOffset = 0,
-                            detail = "Avatar profile missing root height",
-                        }
-                    end
-                    local yOffset = currentRootToFeet - recordedRootToFeet
-                    return {
-                        yOffset = yOffset,
-                        detail = string.format(
-                            "Avatar-adjusted Y %.2f (recorded %.2f -> current %.2f)",
-                            yOffset,
-                            recordedRootToFeet,
-                            currentRootToFeet
-                        ),
-                    }
-                end
-
-                local recordedAvatarProfile = extractRecordedAvatarProfile(payload, events)
+                local recordedAvatarProfile = playbackMod.extractRecordedAvatarProfile(payload, events)
                 local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
-                local playbackAvatarAdjust = buildPlaybackAvatarAdjustment(recordedAvatarProfile, localCharacter)
+                local playbackAvatarAdjust = playbackMod.buildPlaybackAvatarAdjustment(
+                    recordedAvatarProfile,
+                    captureAvatarProfileForCharacter(localCharacter)
+                )
                 if playbackAvatarAdjust and playbackAvatarAdjust.detail then
                     updateSavedRecordingStatus("Playing: " .. selectedName .. "\n" .. playbackAvatarAdjust.detail)
-                end
-
-                local function buildMovementTargetCFrame(rootPart, dataTable)
-                    local pos = dataTable.position
-                    if not rootPart or type(pos) ~= "table" then
-                        return nil
-                    end
-                    local x = tonumber(pos.x)
-                    local y = tonumber(pos.y)
-                    local z = tonumber(pos.z)
-                    if not (x and y and z) then
-                        return nil
-                    end
-
-                    local basePos = Vector3.new(x, y, z)
-                    if type(playbackAvatarAdjust) == "table" and type(playbackAvatarAdjust.yOffset) == "number" then
-                        basePos = basePos + Vector3.new(0, playbackAvatarAdjust.yOffset, 0)
-                    end
-                    local lookData = dataTable.lookDirection
-                    local lx, ly, lz = nil, nil, nil
-                    if type(lookData) == "table" then
-                        lx = tonumber(lookData.x)
-                        ly = tonumber(lookData.y)
-                        lz = tonumber(lookData.z)
-                    end
-                    if lx and ly and lz then
-                        local lookVec = Vector3.new(lx, ly, lz)
-                        if lookVec.Magnitude > 1e-4 then
-                            local planar = Vector3.new(lookVec.X, 0, lookVec.Z)
-                            if planar.Magnitude > 1e-4 then
-                                return CFrame.lookAt(basePos, basePos + planar.Unit)
-                            end
-                        end
-                    end
-
-                    local fallback = rootPart.CFrame.LookVector
-                    local fallbackPlanar = Vector3.new(fallback.X, 0, fallback.Z)
-                    if fallbackPlanar.Magnitude > 1e-4 then
-                        return CFrame.lookAt(basePos, basePos + fallbackPlanar.Unit)
-                    end
-                    return CFrame.new(basePos)
-                end
-
-                local function findMovementSegmentIndex(track, elapsed)
-                    if #track == 0 then
-                        return nil
-                    end
-                    local idx = 1
-                    while idx < #track do
-                        local nextT = tonumber(track[idx + 1].t) or 0
-                        if nextT > elapsed then
-                            break
-                        end
-                        idx = idx + 1
-                    end
-                    return idx
                 end
 
                 local started = os.clock()
@@ -1266,7 +865,7 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                             end)
                         end
 
-                        local segIdx = findMovementSegmentIndex(movementTrack, elapsed)
+                        local segIdx = playbackMod.findMovementSegmentIndex(movementTrack, elapsed)
                         if not segIdx then
                             return
                         end
@@ -1277,8 +876,8 @@ local function createRecordingTab(windowRef, notifyFn, recordingsDir)
                         local tB = tonumber(evB.t) or tA
                         local dataA = type(evA.data) == "table" and evA.data or {}
                         local dataB = type(evB.data) == "table" and evB.data or {}
-                        local cfA = buildMovementTargetCFrame(rootPart, dataA)
-                        local cfB = buildMovementTargetCFrame(rootPart, dataB)
+                        local cfA = playbackMod.buildMovementTargetCFrame(rootPart, dataA, playbackAvatarAdjust)
+                        local cfB = playbackMod.buildMovementTargetCFrame(rootPart, dataB, playbackAvatarAdjust)
                         if not (cfA and cfB) then
                             return
                         end

@@ -14,71 +14,31 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
-local function formatValueForDisplay(val)
-    if val == nil then
-        return "nil"
-    end
-    if typeof(val) == "Instance" then
-        return val.Name or tostring(val)
-    end
-    return tostring(val)
-end
-
-local function formatGuiInstanceTextForDisplay(inst)
-    if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
-        return nil
-    end
-    local okT, txt = pcall(function()
-        return inst.Text
-    end)
-    local display = (okT and type(txt) == "string") and txt or ""
-    if display == "" then
-        local okC, ct = pcall(function()
-            return inst.ContentText
+local loadFunctionModule
+do
+    local ok, loader = pcall(require, "../../functions/load_module")
+    if ok and type(loader) == "function" then
+        loadFunctionModule = loader
+    else
+        local baseURL = shared.sempatpanick_baseURL
+        assert(type(baseURL) == "string", "[tabs] baseURL not set")
+        local okGet, source = pcall(function()
+            return game:HttpGet(baseURL .. "/functions/load_module.lua")
         end)
-        if okC and type(ct) == "string" then
-            display = ct
-        end
+        assert(okGet and type(source) == "string", "[tabs] failed to load functions/load_module")
+        local chunk = (loadstring or load)(source, "functions/load_module")
+        loadFunctionModule = chunk()
     end
-    if display == "" then
-        return nil
-    end
-    display = string.gsub(display, "\r\n", " ")
-    display = string.gsub(display, "\n", " ")
-    if #display > 120 then
-        display = string.sub(display, 1, 120) .. "..."
-    end
-    display = string.gsub(display, '"', "'")
-    return display
 end
 
-local function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
-    if isShowDataType == false then
-        local ok, val = pcall(function() return inst.Value end)
-        if ok and val ~= nil then
-            return inst.Name .. " = " .. formatValueForDisplay(val)
-        end
-        local guiText = formatGuiInstanceTextForDisplay(inst)
-        if guiText then
-            return inst.Name .. ' = "' .. guiText .. '"'
-        end
-        return inst.Name .. " = "
-    end
-    local base = inst.Name .. " = " .. inst.ClassName
-    local ok, val = pcall(function() return inst.Value end)
-    if ok and val ~= nil then
-        base = base .. " (" .. formatValueForDisplay(val) .. ")"
-    end
-    local guiText = formatGuiInstanceTextForDisplay(inst)
-    if guiText then
-        base = base .. ' ("' .. guiText .. '")'
-    end
-    if isShowLocation and inst:IsA("BasePart") then
-        local p = inst.Position
-        base = base .. " [" .. string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z) .. "]"
-    end
-    return base
-end
+local dropdownMod = loadFunctionModule("rayfield/dropdown")
+local formatMod = loadFunctionModule("instance/format")
+local chunkMod = loadFunctionModule("string/chunk")
+local treeMod = loadFunctionModule("instance/tree")
+
+local formatValueForDisplay = formatMod.formatValueForDisplay
+local formatGuiInstanceTextForDisplay = formatMod.formatGuiInstanceTextForDisplay
+local formatInstanceDisplay = formatMod.formatInstanceDisplay
 
 local function createObjectsTab(windowRef, notifyFn, options)
     options = options or {}
@@ -150,18 +110,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
     local objectsNestExpandClassSet: { [string]: boolean } = {}
 
     local function syncObjectsNestExpandClassSetFromDropdownValue(value: any)
-        local s: { [string]: boolean } = {}
-        if type(value) == "table" then
-            for _, item in ipairs(value) do
-                local name = (type(item) == "table" and item.Title) or item
-                if type(name) == "string" and name ~= "" then
-                    s[name] = true
-                end
-            end
-        elseif type(value) == "string" and value ~= "" then
-            s[value] = true
-        end
-        objectsNestExpandClassSet = s
+        objectsNestExpandClassSet = treeMod.syncNestExpandClassSetFromDropdownValue(value)
     end
 
     syncObjectsNestExpandClassSetFromDropdownValue(OBJECTS_NEST_EXPAND_DEFAULT)
@@ -169,49 +118,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
     local NESTED_CHILDREN_TITLE = "Children (nested)"
 
     local function objectDropdownOptions(items)
-        local o = { OBJECTS_NONE }
-        for _, x in ipairs(items) do
-            table.insert(o, x)
-        end
-        return o
-    end
-
-
-    local function splitStringForParagraphChunks(s: string, maxChunk: number): { string }
-        if maxChunk < 256 then
-            maxChunk = 256
-        end
-        if s == nil or s == "" then
-            return { "" }
-        end
-        if #s <= maxChunk then
-            return { s }
-        end
-        local chunks: { string } = {}
-        local pos = 1
-        local n = #s
-        while pos <= n do
-            local endPos = math.min(pos + maxChunk - 1, n)
-            if endPos < n then
-                local searchStart = math.max(pos, endPos - 500)
-                local cut = 0
-                for i = endPos, searchStart, -1 do
-                    if string.byte(s, i) == 10 then
-                        cut = i
-                        break
-                    end
-                end
-                if cut > pos then
-                    endPos = cut
-                end
-            end
-            table.insert(chunks, string.sub(s, pos, endPos))
-            pos = endPos + 1
-        end
-        if #chunks == 0 then
-            return { s }
-        end
-        return chunks
+        return dropdownMod.prependNoneOption(items, OBJECTS_NONE)
     end
 
     local function clearObjectsTabOverflowParagraphs(refs: { any })
@@ -241,7 +148,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
             return
         end
         local body = (text and text ~= "") and text or emptyPlaceholder
-        local chunks = splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
+        local chunks = chunkMod.splitStringForParagraphChunks(body, OBJECTS_CHILDREN_DESC_MAX_CHARS)
         primaryParagraph:Set({
             Title = continuationTitleBase,
             Content = chunks[1] or body,
@@ -255,85 +162,19 @@ local function createObjectsTab(windowRef, notifyFn, options)
         end
     end
 
-    local function shouldNestChildrenInObjectsTree(inst: Instance): boolean
-        if next(objectsNestExpandClassSet) == nil then
-            return false
-        end
-        for className, _ in pairs(objectsNestExpandClassSet) do
-            if inst:IsA(className) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function buildNestedObjectChildrenListText(root: Instance): string
-        local lines = {}
-
-        local function appendChildren(parent: Instance, depth: number, indentStr: string)
-            if #lines >= OBJECTS_TREE_MAX_LINES or depth >= OBJECTS_TREE_MAX_DEPTH then
-                return
-            end
-            local children = parent:GetChildren()
-            table.sort(children, function(a, b)
-                return string.lower(a.Name) < string.lower(b.Name)
-            end)
-            for _, child in ipairs(children) do
-                if #lines >= OBJECTS_TREE_MAX_LINES then
-                    table.insert(lines, indentStr .. "... (truncated, max " .. OBJECTS_TREE_MAX_LINES .. " lines)")
-                    return
-                end
-                table.insert(lines, indentStr .. formatInstanceDisplay(child, nil, true))
-                local sub = child:GetChildren()
-                if #sub > 0 and shouldNestChildrenInObjectsTree(child) then
-                    if depth + 1 < OBJECTS_TREE_MAX_DEPTH then
-                        appendChildren(child, depth + 1, indentStr .. "  ")
-                    else
-                        table.insert(lines, indentStr .. "  ... (" .. #sub .. " children, max depth " .. OBJECTS_TREE_MAX_DEPTH .. ")")
-                    end
-                end
-            end
-        end
-
-        appendChildren(root, 0, "")
-        if #lines == 0 then
-            return "(no children)"
-        end
-        return table.concat(lines, "\n")
+    local function buildNestedObjectChildrenListText(inst: Instance): string
+        return treeMod.buildNestedObjectChildrenListText(inst, {
+            formatInstanceDisplay = formatInstanceDisplay,
+            expandClassSet = objectsNestExpandClassSet,
+            maxDepth = OBJECTS_TREE_MAX_DEPTH,
+            maxLines = OBJECTS_TREE_MAX_LINES,
+        })
     end
 
     -- WindUI passes the selected entry from Values as-is. Duplicate display strings
     -- would collide on a string-keyed map and break selection; use { Title, Instance }.
     local function buildObjectsServiceDropdownValues(children: { Instance }): { any }
-        local displayCounts: { [string]: number } = {}
-        local values: { any } = {}
-        for _, child in ipairs(children) do
-            local display = formatInstanceDisplay(child, nil, true)
-            local c = (displayCounts[display] or 0) + 1
-            displayCounts[display] = c
-            local title = display
-            if c > 1 then
-                title = display .. "  [" .. child:GetDebugId() .. "]"
-            end
-            table.insert(values, { Title = title, Instance = child })
-        end
-        return values
-    end
-
-    local function buildInstancePathUnderAncestor(inst: Instance, ancestor: Instance): string
-        if not ancestor or not inst then
-            return inst and inst.Name or ""
-        end
-        if not inst:IsDescendantOf(ancestor) then
-            return inst.Name
-        end
-        local parts = {}
-        local cur: Instance? = inst
-        while cur and cur ~= ancestor do
-            table.insert(parts, 1, cur.Name)
-            cur = cur.Parent
-        end
-        return table.concat(parts, ".")
+        return treeMod.buildObjectsServiceDropdownValues(children, formatInstanceDisplay)
     end
 
     local function runObjectsTabFindInstanceByName(
@@ -348,8 +189,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
             mountNotify({ Title = underDescription, Content = "Root not available.", Icon = "x" })
             return
         end
-        local raw = tostring(queryRaw or "")
-        local q = string.gsub(string.gsub(raw, "^%s+", ""), "%s+$", "")
+        local matches, q = treeMod.findInstancesByNameUnder(root, queryRaw)
         if q == "" then
             mountNotify({
                 Title = "Find (" .. underDescription .. ")",
@@ -358,17 +198,6 @@ local function createObjectsTab(windowRef, notifyFn, options)
             })
             return
         end
-        local ql = string.lower(q)
-        local matches: { Instance } = {}
-        for _, d in ipairs(root:GetDescendants()) do
-            if string.find(string.lower(d.Name), ql, 1, true) then
-                table.insert(matches, d)
-            end
-        end
-        table.sort(matches, function(a, b)
-            return string.lower(buildInstancePathUnderAncestor(a, root))
-                < string.lower(buildInstancePathUnderAncestor(b, root))
-        end)
         if #matches == 0 then
             setNestedChildrenParagraphsWithOverflow(
                 ObjectsTab,
@@ -387,7 +216,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
         end
         local pathLines: { string } = {}
         for _, m in ipairs(matches) do
-            table.insert(pathLines, buildInstancePathUnderAncestor(m, root))
+            table.insert(pathLines, treeMod.buildInstancePathUnderAncestor(m, root))
         end
         local pathsBlock = (#matches == 1) and ("Found:\n" .. pathLines[1])
             or ("Matches (" .. tostring(#matches) .. "):\n" .. table.concat(pathLines, "\n"))

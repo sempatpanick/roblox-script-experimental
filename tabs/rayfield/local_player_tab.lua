@@ -21,65 +21,45 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local function rayfieldDropdownFirst(valueOrTable)
-    if type(valueOrTable) == "table" then
-        return valueOrTable[1]
-    end
-    return valueOrTable
-end
-
-local function formatValueForDisplay(val)
-    if val == nil then
-        return "nil"
-    end
-    if typeof(val) == "Instance" then
-        return val.Name or tostring(val)
-    end
-    return tostring(val)
-end
-
-local function formatGuiInstanceTextForDisplay(inst)
-    if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
-        return nil
-    end
-    local okT, txt = pcall(function()
-        return inst.Text
-    end)
-    local display = (okT and type(txt) == "string") and txt or ""
-    if display == "" then
-        local okC, ct = pcall(function()
-            return inst.ContentText
+local loadFunctionModule
+do
+    local ok, loader = pcall(require, "../../functions/load_module")
+    if ok and type(loader) == "function" then
+        loadFunctionModule = loader
+    else
+        local baseURL = shared.sempatpanick_baseURL
+        assert(type(baseURL) == "string", "[tabs] baseURL not set")
+        local okGet, source = pcall(function()
+            return game:HttpGet(baseURL .. "/functions/load_module.lua")
         end)
-        if okC and type(ct) == "string" then
-            display = ct
-        end
+        assert(okGet and type(source) == "string", "[tabs] failed to load functions/load_module")
+        local chunk = (loadstring or load)(source, "functions/load_module")
+        loadFunctionModule = chunk()
     end
-    if display == "" then
-        return nil
-    end
-    display = string.gsub(display, "\r\n", " ")
-    display = string.gsub(display, "\n", " ")
-    if #display > 120 then
-        display = string.sub(display, 1, 120) .. "..."
-    end
-    display = string.gsub(display, '"', "'")
-    return display
 end
+
+local dropdownMod = loadFunctionModule("rayfield/dropdown")
+local formatMod = loadFunctionModule("instance/format")
+local playerMod = loadFunctionModule("player/character")
+local inspectMod = loadFunctionModule("player/inspect")
+local serverMod = loadFunctionModule("server/info")
+local teleportFlagsMod = loadFunctionModule("teleport/flags")
+
+local rayfieldDropdownFirst = dropdownMod.rayfieldDropdownFirst
+local formatValueForDisplay = formatMod.formatValueForDisplay
+local formatGuiInstanceTextForDisplay = formatMod.formatGuiInstanceTextForDisplay
+local formatInstanceDisplay = formatMod.formatInstanceDisplay
 
 local function createLocalPlayerTab(windowRef, notifyFn, options)
     options = options or {}
     local mountNotify = notifyFn
 
     local function uiFlag(suffix)
-        local prefix = options.flagsPrefix
-        if type(prefix) ~= "string" or prefix == "" then
-            return nil
-        end
-        return prefix .. "_" .. suffix
+        return teleportFlagsMod.resolveUiFlagPrefix(options, suffix)
     end
 
     local function withUiFlag(props, suffix)
-        local flag = uiFlag(suffix)
+        local flag = teleportFlagsMod.resolveUiFlagPrefix(options, suffix)
         if flag then
             props.Flag = flag
         end
@@ -496,19 +476,10 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     local defaultWalkSpeed = 16
 
     local function getCurrentCharacterWalkSpeed()
-        local character = Players.LocalPlayer.Character
-        if not character then
-            return nil, "Character not loaded"
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then
-            return nil, "Humanoid not found"
-        end
-        return humanoid.WalkSpeed
+        return playerMod.getCurrentCharacterWalkSpeed(Players, defaultWalkSpeed)
     end
 
-    local currentWalkSpeed = getCurrentCharacterWalkSpeed()
-    local walkSpeedCurrentValue = tostring(currentWalkSpeed or defaultWalkSpeed)
+    local walkSpeedValue = tostring(getCurrentCharacterWalkSpeed())
 
     local WalkSpeedInput = LocalPlayerTab:CreateInput({
         Name = "Speed",
@@ -520,15 +491,22 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     })
 
     local function syncWalkSpeedInputFromCharacter(showNotify)
-        local speed, errMessage = getCurrentCharacterWalkSpeed()
-        if not speed then
+        local character = Players.LocalPlayer.Character
+        if not character then
             if showNotify then
-                mountNotify({ Title = "Walk Speed", Content = errMessage })
+                mountNotify({ Title = "Walk Speed", Content = "Character not loaded" })
+            end
+            return false
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            if showNotify then
+                mountNotify({ Title = "Walk Speed", Content = "Humanoid not found" })
             end
             return false
         end
 
-        local speedText = tostring(speed)
+        local speedText = tostring(getCurrentCharacterWalkSpeed())
         walkSpeedValue = speedText
         if WalkSpeedInput and WalkSpeedInput.Set then
             WalkSpeedInput:Set(speedText)
@@ -590,19 +568,10 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     local defaultJumpHeight = 7.2
 
     local function getCurrentCharacterJumpHeight()
-        local character = Players.LocalPlayer.Character
-        if not character then
-            return nil, "Character not loaded"
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then
-            return nil, "Humanoid not found"
-        end
-        return humanoid.JumpHeight
+        return playerMod.getCurrentCharacterJumpHeight(Players, defaultJumpHeight)
     end
 
-    local currentJumpHeight = getCurrentCharacterJumpHeight()
-    local jumpHeightValue = tostring(currentJumpHeight or defaultJumpHeight)
+    local jumpHeightValue = tostring(getCurrentCharacterJumpHeight())
 
     local JumpHeightInput = LocalPlayerTab:CreateInput({
         Name = "Height",
@@ -614,15 +583,22 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     })
 
     local function syncJumpHeightInputFromCharacter(showNotify)
-        local jumpHeight, errMessage = getCurrentCharacterJumpHeight()
-        if not jumpHeight then
+        local character = Players.LocalPlayer.Character
+        if not character then
             if showNotify then
-                mountNotify({ Title = "Jump Height", Content = errMessage })
+                mountNotify({ Title = "Jump Height", Content = "Character not loaded" })
+            end
+            return false
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            if showNotify then
+                mountNotify({ Title = "Jump Height", Content = "Humanoid not found" })
             end
             return false
         end
 
-        local jumpHeightText = tostring(jumpHeight)
+        local jumpHeightText = tostring(getCurrentCharacterJumpHeight())
         jumpHeightValue = jumpHeightText
         if JumpHeightInput and JumpHeightInput.Set then
             JumpHeightInput:Set(jumpHeightText)
@@ -1057,287 +1033,11 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     local PlayersInfoDropdown
     local PlayersInfoParagraph
 
-    local function playerInfoLabel(player)
-        if not player then return "" end
-        local dn = player.DisplayName
-        if dn and dn ~= "" and dn ~= player.Name then
-            return string.format("%s (@%s)", dn, player.Name)
-        end
-        return player.Name
-    end
-
-    local function formatHumanoidChildLine(child)
-        if child:IsA("ValueBase") then
-            local ok, val = pcall(function()
-                return child.Value
-            end)
-            if not ok then
-                return "  " .. child.Name .. " (" .. child.ClassName .. ") = ?"
-            end
-            return "  " .. child.Name .. " (" .. child.ClassName .. ") = " .. formatValueForDisplay(val)
-        end
-        return "  " .. child.Name .. " = " .. child.ClassName
-    end
-
-    -- Fallback fields if runtime property discovery is unavailable.
-    local HUMANOID_INSPECT_PROPERTIES_FALLBACK = {
-        "AutoJumpEnabled",
-        "AutoRotate",
-        "BreakJointsOnDeath",
-        "CameraOffset",
-        "DisplayDistanceType",
-        "EvaluateStateMachine",
-        "FloorMaterial",
-        "Health",
-        "HealthDisplayType",
-        "HipHeight",
-        "Jump",
-        "JumpHeight",
-        "JumpPower",
-        "MaxHealth",
-        "MaxSlopeAngle",
-        "MeshHeadScale",
-        "MoveDirection",
-        "NameDisplayDistance",
-        "RequiresNeck",
-        "RigType",
-        "RootPart",
-        "SeatPart",
-        "Sit",
-        "TargetPoint",
-        "UseJumpPower",
-        "WalkSpeed",
-        "WalkToPart",
-        "WalkToPoint",
-    }
-
-    local PLAYER_INSPECT_PROPERTIES_FALLBACK = {
-        "AccountAge",
-        "AutoJumpEnabled",
-        "CanLoadCharacterAppearance",
-        "CharacterAppearanceId",
-        "DataComplexity",
-        "DataReady",
-        "DevComputerCameraMode",
-        "DevComputerMovementMode",
-        "DevEnableMouseLock",
-        "DevTouchCameraMode",
-        "DevTouchMovementMode",
-        "DisplayName",
-        "FollowUserId",
-        "GameplayPaused",
-        "HasVerifiedBadge",
-        "HealthDisplayDistance",
-        "LocaleId",
-        "MembershipType",
-        "Name",
-        "Neutral",
-        "RespawnLocation",
-        "SimulationRadius",
-        "Team",
-        "TeamColor",
-        "UserId",
-    }
-
-    local function getReadablePropertyNames(instance: Instance, fallbackList: { string }): { string }
-        local names = {}
-        local seen = {}
-        local function addName(name: string)
-            if name == "" or seen[name] then
-                return
-            end
-            seen[name] = true
-            table.insert(names, name)
-        end
-
-        local getPropertiesFn = rawget(_G, "getproperties")
-        if type(getPropertiesFn) == "function" then
-            local ok = pcall(function()
-                local discovered = getPropertiesFn(instance)
-                if type(discovered) == "table" then
-                    for _, name in ipairs(discovered) do
-                        if type(name) == "string" then
-                            addName(name)
-                        end
-                    end
-                end
-            end)
-            if not ok then
-                -- Ignore and fall back to static property lists below.
-            end
-        end
-
-        if #names == 0 then
-            for _, name in ipairs(fallbackList) do
-                addName(name)
-            end
-        end
-
-        table.sort(names, function(a, b)
-            return string.lower(a) < string.lower(b)
-        end)
-        return names
-    end
-
-    local function buildPlayersInfoText(player)
-        if not player then
-            return "Select a player from the list."
-        end
-        local lines = {}
-        table.insert(lines, "Username: " .. player.Name)
-        local dn = player.DisplayName
-        table.insert(lines, "Display name: " .. ((dn and dn ~= "") and dn or "(same as username)"))
-        table.insert(lines, "")
-        table.insert(lines, "Player attributes:")
-        if player.Parent then
-            local attrs = player:GetAttributes()
-            local attrRows = {}
-            for key, val in pairs(attrs) do
-                table.insert(attrRows, {
-                    key = tostring(key),
-                    text = "  " .. tostring(key) .. " = " .. formatValueForDisplay(val),
-                })
-            end
-            table.sort(attrRows, function(a, b)
-                return string.lower(a.key) < string.lower(b.key)
-            end)
-            if #attrRows == 0 then
-                table.insert(lines, "  (none)")
-            else
-                for _, row in ipairs(attrRows) do
-                    table.insert(lines, row.text)
-                end
-            end
-        else
-            table.insert(lines, "  (player left)")
-        end
-        table.insert(lines, "")
-        table.insert(lines, "Player properties:")
-        if player.Parent then
-            local propRows = {}
-            for _, propName in ipairs(getReadablePropertyNames(player, PLAYER_INSPECT_PROPERTIES_FALLBACK)) do
-                local ok, val = pcall(function()
-                    return player[propName]
-                end)
-                if ok then
-                    table.insert(propRows, {
-                        key = propName,
-                        text = "  " .. propName .. " = " .. formatValueForDisplay(val),
-                    })
-                end
-            end
-            table.sort(propRows, function(a, b)
-                return string.lower(a.key) < string.lower(b.key)
-            end)
-            if #propRows == 0 then
-                table.insert(lines, "  (none readable)")
-            else
-                for _, row in ipairs(propRows) do
-                    table.insert(lines, row.text)
-                end
-            end
-        else
-            table.insert(lines, "  (player left)")
-        end
-        local character = player.Character
-        if not character then
-            table.insert(lines, "Character: not loaded")
-            table.insert(lines, "Location: —")
-            table.insert(lines, "")
-            table.insert(lines, "Humanoid properties: —")
-            table.insert(lines, "Inside Humanoid (children): —")
-            return table.concat(lines, "\n")
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        local root = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
-        if root then
-            local p = root.Position
-            table.insert(lines, string.format("Location: %.2f, %.2f, %.2f", p.X, p.Y, p.Z))
-            local okVel, velMag = pcall(function()
-                return root.AssemblyLinearVelocity.Magnitude
-            end)
-            if okVel and velMag then
-                table.insert(lines, string.format("Velocity (mag): %.2f", velMag))
-            end
-        else
-            table.insert(lines, "Location: (no HumanoidRootPart / PrimaryPart)")
-        end
-        table.insert(lines, "")
-        table.insert(lines, "Humanoid attributes:")
-        if humanoid then
-            local humAttrs = humanoid:GetAttributes()
-            local humAttrRows = {}
-            for key, val in pairs(humAttrs) do
-                table.insert(humAttrRows, {
-                    key = tostring(key),
-                    text = "  " .. tostring(key) .. " = " .. formatValueForDisplay(val),
-                })
-            end
-            table.sort(humAttrRows, function(a, b)
-                return string.lower(a.key) < string.lower(b.key)
-            end)
-            if #humAttrRows == 0 then
-                table.insert(lines, "  (none)")
-            else
-                for _, row in ipairs(humAttrRows) do
-                    table.insert(lines, row.text)
-                end
-            end
-        else
-            table.insert(lines, "  (no Humanoid)")
-        end
-        table.insert(lines, "")
-        if humanoid then
-            table.insert(lines, "Humanoid properties:")
-            local propRows = {}
-            for _, propName in ipairs(getReadablePropertyNames(humanoid, HUMANOID_INSPECT_PROPERTIES_FALLBACK)) do
-                local ok, val = pcall(function()
-                    return humanoid[propName]
-                end)
-                if ok then
-                    table.insert(propRows, {
-                        key = propName,
-                        text = "  "
-                            .. propName
-                            .. " = "
-                            .. formatValueForDisplay(val),
-                    })
-                end
-            end
-            table.sort(propRows, function(a, b)
-                return string.lower(a.key) < string.lower(b.key)
-            end)
-            for _, row in ipairs(propRows) do
-                table.insert(lines, row.text)
-            end
-        else
-            table.insert(lines, "Humanoid properties: (no Humanoid)")
-        end
-        table.insert(lines, "")
-        table.insert(lines, "Inside Humanoid (children):")
-        if humanoid then
-            local children = humanoid:GetChildren()
-            table.sort(children, function(a, b)
-                return string.lower(a.Name) < string.lower(b.Name)
-            end)
-            if #children == 0 then
-                table.insert(lines, "  (none)")
-            else
-                for _, child in ipairs(children) do
-                    table.insert(lines, formatHumanoidChildLine(child))
-                end
-            end
-        else
-            table.insert(lines, "  (no Humanoid)")
-        end
-        return table.concat(lines, "\n")
-    end
-
     local function updatePlayersInfoParagraph()
         if PlayersInfoParagraph and PlayersInfoParagraph.Set then
             PlayersInfoParagraph:Set({
                 Title = "Details",
-                Content = buildPlayersInfoText(selectedInfoPlayer),
+                Content = inspectMod.buildPlayersInfoText(selectedInfoPlayer, formatValueForDisplay),
             })
         end
     end
@@ -1348,7 +1048,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr.ClassName == "Player" then
                 table.insert(infoPlayerList, plr)
-                table.insert(infoPlayerDisplayNames, playerInfoLabel(plr))
+                table.insert(infoPlayerDisplayNames, playerMod.playerInfoLabel(plr))
             end
         end
         if PlayersInfoDropdown and PlayersInfoDropdown.Refresh then
@@ -1611,7 +1311,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end
     end
 
-    local cachedPlaceProductInfo = nil
+    local placeProductInfoCache = {}
     local ServerInfoParagraph
     local ServerLiveParagraph
     local serverLiveHeartbeatConnection = nil
@@ -1619,100 +1319,22 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     local lastServerLivePlayerCount = nil
 
     local function getPlaceProductInfo()
-        if cachedPlaceProductInfo == false then
-            return nil
-        end
-        if cachedPlaceProductInfo then
-            return cachedPlaceProductInfo
-        end
-        local ok, info = pcall(function()
-            return MarketplaceService:GetProductInfo(game.PlaceId)
-        end)
-        if ok and type(info) == "table" then
-            cachedPlaceProductInfo = info
-            return info
-        end
-        cachedPlaceProductInfo = false
-        return nil
+        return serverMod.getPlaceProductInfo(MarketplaceService, game.PlaceId, placeProductInfoCache)
     end
 
     local function buildServerInfoText()
-        local lines = {}
-        local productInfo = getPlaceProductInfo()
-
-        local gameName = "…"
-        if productInfo and productInfo.Name then
-            gameName = productInfo.Name
-        end
-        table.insert(lines, "Game: " .. gameName)
-        table.insert(lines, "Place ID: " .. tostring(game.PlaceId))
-        table.insert(lines, "Universe ID: " .. tostring(game.GameId))
-
-        if productInfo and productInfo.Creator then
-            local creator = productInfo.Creator
-            local creatorLabel = creator.Name or tostring(creator.CreatorTargetId or "?")
-            if creator.CreatorType == Enum.CreatorType.Group then
-                creatorLabel = creatorLabel .. " (Group)"
-            elseif creator.CreatorType == Enum.CreatorType.User then
-                creatorLabel = creatorLabel .. " (User)"
-            end
-            table.insert(lines, "Creator: " .. creatorLabel)
-        else
-            table.insert(lines, "Creator ID: " .. tostring(game.CreatorId))
-        end
-
-        if productInfo and productInfo.Created then
-            table.insert(lines, "Created: " .. tostring(productInfo.Created))
-        end
-        if productInfo and productInfo.Updated then
-            table.insert(lines, "Updated: " .. tostring(productInfo.Updated))
-        end
-
-        table.insert(lines, "")
-        table.insert(lines, "Job ID: " .. ((game.JobId and game.JobId ~= "") and game.JobId or "—"))
-
-        local serverType = "Public"
-        if game.PrivateServerId ~= "" then
-            serverType = "Private"
-        elseif game.VIPServerOwnerId ~= 0 then
-            serverType = "VIP (Reserved)"
-        end
-        table.insert(lines, "Server type: " .. serverType)
-        if game.PrivateServerId ~= "" then
-            table.insert(lines, "Private server ID: " .. game.PrivateServerId)
-        end
-        if game.VIPServerOwnerId ~= 0 then
-            table.insert(lines, "VIP owner ID: " .. tostring(game.VIPServerOwnerId))
-        end
-
-        return table.concat(lines, "\n")
+        return serverMod.buildServerInfoText(getPlaceProductInfo(), {
+            placeId = game.PlaceId,
+            gameId = game.GameId,
+            creatorId = game.CreatorId,
+            jobId = game.JobId,
+            privateServerId = game.PrivateServerId,
+            vipServerOwnerId = game.VIPServerOwnerId,
+        })
     end
 
     local function buildServerLiveText()
-        local lines = {}
-        local playerCount = #Players:GetPlayers()
-        local maxPlayers = Players.MaxPlayers
-        if maxPlayers > 0 then
-            table.insert(lines, string.format("Players: %d / %d", playerCount, maxPlayers))
-        else
-            table.insert(lines, "Players: " .. tostring(playerCount))
-        end
-
-        local localPlayer = Players.LocalPlayer
-        if localPlayer then
-            local okPing, ping = pcall(function()
-                return localPlayer:GetNetworkPing()
-            end)
-            if okPing and ping then
-                table.insert(lines, string.format("Ping: %.0f ms", ping * 1000))
-            else
-                table.insert(lines, "Ping: —")
-            end
-        else
-            table.insert(lines, "Ping: —")
-        end
-
-        return table.concat(lines, "\n")
+        return serverMod.buildServerLiveText(Players, Players.LocalPlayer)
     end
 
     local function updateServerInfoParagraph()

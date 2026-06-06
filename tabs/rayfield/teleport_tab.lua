@@ -26,11 +26,37 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
-local function rayfieldDropdownFirst(valueOrTable)
-    if type(valueOrTable) == "table" then
-        return valueOrTable[1]
+local loadFunctionModule
+do
+    local ok, loader = pcall(require, "../../functions/load_module")
+    if ok and type(loader) == "function" then
+        loadFunctionModule = loader
+    else
+        local baseURL = shared.sempatpanick_baseURL
+        assert(type(baseURL) == "string", "[tabs] baseURL not set")
+        local okGet, source = pcall(function()
+            return game:HttpGet(baseURL .. "/functions/load_module.lua")
+        end)
+        assert(okGet and type(source) == "string", "[tabs] failed to load functions/load_module")
+        local chunk = (loadstring or load)(source, "functions/load_module")
+        loadFunctionModule = chunk()
     end
-    return valueOrTable
+end
+
+local dropdownMod = loadFunctionModule("rayfield/dropdown")
+local coordsMod = loadFunctionModule("string/coords")
+local playerMod = loadFunctionModule("player/character")
+local teleportFlagsMod = loadFunctionModule("teleport/flags")
+
+local rayfieldDropdownFirst = dropdownMod.rayfieldDropdownFirst
+local parseNumberTriple = coordsMod.parseNumberTriple
+local parsePositionString = coordsMod.parsePositionString
+local cframeFromInputs = coordsMod.cframeFromInputs
+local getLocalRootPart = function()
+    return playerMod.getLocalRootPart(Players)
+end
+local getLocalCharacterParts = function()
+    return playerMod.getLocalCharacterParts(Players)
 end
 
 local function createTeleportTab(windowRef, notifyFn, options)
@@ -46,32 +72,11 @@ local function createTeleportTab(windowRef, notifyFn, options)
     end
 
     local function tpFlag(key)
-        local flags = options.flags
-        if type(flags) == "table" and type(flags[key]) == "string" and flags[key] ~= "" then
-            return flags[key]
-        end
-        local prefix = options.flagsPrefix
-        if type(prefix) ~= "string" or prefix == "" then
-            return nil
-        end
-        local suffixMap = {
-            location = "location",
-            lookDirection = "lookDirection",
-            tweenDuration = "tweenDuration",
-            playerPick = "playerPick",
-            getCurrentLocation = "getCurrentLocation",
-            teleportCoords = "teleportCoords",
-            tweenToLocation = "tweenToLocation",
-        }
-        local suffix = suffixMap[key] or key
-        if key == "tweenDuration" and prefix == "mancing" then
-            return prefix .. "_tp_tweenDurationSec"
-        end
-        return prefix .. "_tp_" .. suffix
+        return teleportFlagsMod.resolveTeleportFlag(options, key)
     end
 
     local function withUiFlag(props, key)
-        local flag = tpFlag(key)
+        local flag = teleportFlagsMod.resolveTeleportFlag(options, key)
         if flag then
             props.Flag = flag
         end
@@ -79,59 +84,7 @@ local function createTeleportTab(windowRef, notifyFn, options)
     end
 
     local function withExt(props)
-        if options.ext then
-            props.Ext = true
-        end
-        return props
-    end
-
-    local function parseNumberTriple(str)
-        local s = (str or ""):gsub(",", " "):gsub("%s+", " ")
-        local parts = {}
-        for part in string.gmatch(s, "[%d%.%-]+") do
-            table.insert(parts, tonumber(part))
-        end
-        return parts
-    end
-
-    local function parsePositionString(str)
-        local parts = parseNumberTriple(str)
-        if #parts < 3 then
-            return nil
-        end
-        return Vector3.new(parts[1], parts[2], parts[3])
-    end
-
-    local function getLocalRootPart()
-        local character = Players.LocalPlayer.Character
-        return character and character:FindFirstChild("HumanoidRootPart")
-    end
-
-    local function getLocalCharacterParts()
-        local character = Players.LocalPlayer.Character
-        if not character then
-            return nil, nil, nil
-        end
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        return character, rootPart, humanoid
-    end
-
-    local function cframeFromInputs(posStr, lookStr)
-        local posParts = parseNumberTriple(posStr)
-        if #posParts < 3 then
-            return nil
-        end
-        local pos = Vector3.new(posParts[1], posParts[2], posParts[3])
-        local lookParts = parseNumberTriple(lookStr)
-        if #lookParts < 3 then
-            return CFrame.new(pos)
-        end
-        local dir = Vector3.new(lookParts[1], lookParts[2], lookParts[3])
-        if dir.Magnitude < 1e-5 then
-            return CFrame.new(pos)
-        end
-        return CFrame.lookAt(pos, pos + dir.Unit)
+        return teleportFlagsMod.withExtOption(props, options)
     end
 
     local TeleportTab = windowRef:CreateTab("Teleport", 4483362458)

@@ -25,12 +25,58 @@
 ]]
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local function rayfieldDropdownFirst(valueOrTable)
-    if type(valueOrTable) == "table" then
-        return valueOrTable[1]
+
+local loadFunctionModule
+do
+    local ok, mod = pcall(require, "../../functions/load_module")
+    if ok and type(mod) == "function" then
+        loadFunctionModule = mod
+    else
+        local baseURL = shared.sempatpanick_baseURL
+        if type(baseURL) ~= "string" or baseURL == "" then
+            error("[Config Tab] shared.sempatpanick_baseURL not set; cannot load function modules")
+        end
+        local url = baseURL .. "/functions/load_module.lua"
+        local okGet, source = pcall(function()
+            return game:HttpGet(url)
+        end)
+        if not okGet or type(source) ~= "string" or #source < 8 then
+            error("[Config Tab] HttpGet failed for " .. url .. ": " .. tostring(source))
+        end
+        local compile = loadstring or load
+        if type(compile) ~= "function" then
+            error("[Config Tab] loadstring/load unavailable")
+        end
+        local chunk, compileErr = compile(source, "functions/load_module")
+        if type(chunk) ~= "function" then
+            error("[Config Tab] compile failed for load_module: " .. tostring(compileErr))
+        end
+        local okRun, result = pcall(chunk)
+        if not okRun or type(result) ~= "function" then
+            error("[Config Tab] run failed for load_module: " .. tostring(result))
+        end
+        loadFunctionModule = result
     end
-    return valueOrTable
 end
+
+local dropdownMod = loadFunctionModule("rayfield/dropdown")
+local pathMod = loadFunctionModule("string/path")
+local color3Mod = loadFunctionModule("config/color3")
+local storageMod = loadFunctionModule("config/storage")
+
+local rayfieldDropdownFirst = dropdownMod.rayfieldDropdownFirst
+local slugFromConfigDir = pathMod.slugFromConfigDir
+local sanitizeConfigName = pathMod.sanitizeConfigName
+local profilePath = pathMod.profilePath
+local encodeColor3 = color3Mod.encodeColor3
+local decodeColor3 = color3Mod.decodeColor3
+local isWindUIConfigObject = color3Mod.isWindUIConfigObject
+local listProfiles = storageMod.listProfiles
+local readProfileDataTable = storageMod.readProfileDataTable
+local getSavedElement = storageMod.getSavedElement
+local readAutoLoadPersistedName = storageMod.readAutoLoadPersistedName
+local writeAutoLoadPersistedName = storageMod.writeAutoLoadPersistedName
+
 local function clearRayfieldDropdown(dropdown)
     if not dropdown then
         return
@@ -52,10 +98,7 @@ local function clearRayfieldDropdown(dropdown)
         table.clear(dropdown.CurrentOption)
     end
 end
-local function slugFromConfigDir(configDir)
-    local slug = tostring(configDir or ""):gsub("\\", "/"):match("([^/]+)$")
-    return slug or "config"
-end
+
 local function createConfigTab(windowRef, notifyFn, options)
     options = options or {}
     local mountNotify = notifyFn
@@ -90,11 +133,6 @@ local function createConfigTab(windowRef, notifyFn, options)
     local ConfigNameInput
     local autoLoadPickerSelection = nil
     local AutoLoadSavedDropdown
-    local function sanitizeConfigName(raw)
-        local s = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        s = s:gsub("[/\\]", "")
-        return s
-    end
     local function ensureConfigFolder()
         if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(CONFIG_DIR) then
             pcall(function()
@@ -104,23 +142,6 @@ local function createConfigTab(windowRef, notifyFn, options)
                 makefolder(CONFIG_DIR)
             end)
         end
-    end
-    local function profilePath(name)
-        return CONFIG_DIR .. "/" .. sanitizeConfigName(name) .. ".json"
-    end
-    local function encodeColor3(c)
-        return {
-            __type = "Color3",
-            R = math.floor(c.R * 255 + 0.5),
-            G = math.floor(c.G * 255 + 0.5),
-            B = math.floor(c.B * 255 + 0.5),
-        }
-    end
-    local function decodeColor3(v)
-        if type(v) == "table" and v.__type == "Color3" then
-            return Color3.fromRGB(tonumber(v.R) or 255, tonumber(v.G) or 255, tonumber(v.B) or 255)
-        end
-        return nil
     end
     local function collectCurrentConfigData()
         local data = {}
@@ -191,28 +212,6 @@ local function createConfigTab(windowRef, notifyFn, options)
         end
         return true
     end
-    local function listProfiles()
-        local names = {}
-        if type(listfiles) ~= "function" then
-            return names
-        end
-        ensureConfigFolder()
-        local ok, files = pcall(function()
-            return listfiles(CONFIG_DIR)
-        end)
-        if not ok or type(files) ~= "table" then
-            return names
-        end
-        for _, filePath in ipairs(files) do
-            local normalized = tostring(filePath):gsub("\\", "/")
-            local base = normalized:match("([^/]+)$")
-            if base and base:sub(-5) == ".json" and base ~= AUTOLOAD_FILE then
-                table.insert(names, base:sub(1, -6))
-            end
-        end
-        table.sort(names)
-        return names
-    end
     local function createConfigObject(name)
         local trimmed = sanitizeConfigName(name)
         return {
@@ -221,13 +220,13 @@ local function createConfigTab(windowRef, notifyFn, options)
                 if type(writefile) ~= "function" then
                     error("writefile is not available")
                 end
-                writefile(profilePath(trimmed), HttpService:JSONEncode(collectCurrentConfigData()))
+                writefile(profilePath(CONFIG_DIR, trimmed), HttpService:JSONEncode(collectCurrentConfigData()))
             end,
             Load = function()
                 if type(isfile) ~= "function" or type(readfile) ~= "function" then
                     return false, "Config system unavailable (missing file APIs)"
                 end
-                local path = profilePath(trimmed)
+                local path = profilePath(CONFIG_DIR, trimmed)
                 if not isfile(path) then
                     return false, "Config file not found or invalid"
                 end
@@ -256,7 +255,7 @@ local function createConfigTab(windowRef, notifyFn, options)
         return {
             Path = CONFIG_DIR .. "/",
             AllConfigs = function()
-                return listProfiles()
+                return listProfiles(CONFIG_DIR, AUTOLOAD_FILE, ensureConfigFolder, sanitizeConfigName)
             end,
             GetConfig = function(_, _)
                 return nil
@@ -268,7 +267,7 @@ local function createConfigTab(windowRef, notifyFn, options)
                 if type(delfile) ~= "function" or type(isfile) ~= "function" then
                     return false, "Delete is unavailable (missing file APIs)"
                 end
-                local path = profilePath(name)
+                local path = profilePath(CONFIG_DIR, name)
                 if not isfile(path) then
                     return false, "Config file not found"
                 end
@@ -281,46 +280,6 @@ local function createConfigTab(windowRef, notifyFn, options)
                 return true, 'Deleted "' .. sanitizeConfigName(name) .. '"'
             end,
         }
-    end
-    local function autoLoadMetaPath(cm)
-        return (cm.Path or "") .. AUTOLOAD_FILE
-    end
-    local function readAutoLoadPersistedName()
-        local cm = getConfigManager()
-        if not cm or type(isfile) ~= "function" or type(readfile) ~= "function" then
-            return ""
-        end
-        local path = autoLoadMetaPath(cm)
-        if not isfile(path) then
-            return ""
-        end
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(readfile(path))
-        end)
-        if ok and type(data) == "table" then
-            return sanitizeConfigName(tostring(data.name or data.profile or ""))
-        end
-        return ""
-    end
-    local function writeAutoLoadPersistedName(name)
-        local cm = getConfigManager()
-        if not cm or type(writefile) ~= "function" then
-            return false
-        end
-        local path = autoLoadMetaPath(cm)
-        local trimmed = sanitizeConfigName(name)
-        if trimmed == "" then
-            if type(delfile) == "function" and type(isfile) == "function" and isfile(path) then
-                pcall(function()
-                    delfile(path)
-                end)
-            end
-            return true
-        end
-        local ok = pcall(function()
-            writefile(path, HttpService:JSONEncode({ name = trimmed }))
-        end)
-        return ok
     end
     local function refreshSavedConfigDropdowns(showNotify)
         local cm = getConfigManager()
@@ -356,45 +315,12 @@ local function createConfigTab(windowRef, notifyFn, options)
             })
         end
     end
-    local function readProfileDataTable(cm, profileName)
-        local trimmed = sanitizeConfigName(profileName)
-        if trimmed == "" or type(isfile) ~= "function" or type(readfile) ~= "function" then
-            return nil
-        end
-        local path = cm.Path .. trimmed .. ".json"
-        if not isfile(path) then
-            return nil
-        end
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(readfile(path))
-        end)
-        if not ok or type(data) ~= "table" then
-            return nil
-        end
-        if not data.__version and data.__elements == nil then
-            return data
-        end
-        if not data.__version then
-            data = { __elements = data, __custom = {} }
-        end
-        return data.__elements or data
-    end
-    local function getSavedElement(elements, flag)
-        if type(elements) ~= "table" then
-            return nil
-        end
-        local s = elements[flag]
-        if s == nil then
-            s = elements[tostring(flag)]
-        end
-        return s
-    end
     local function applyConfigLoadSequentialSellTeleportLimited(cm, cfg, profileName)
         local seq = options.sequentialLoad
         if not seq or type(seq.flags) ~= "table" or #seq.flags == 0 then
             return
         end
-        local elements = readProfileDataTable(cm, profileName)
+        local elements = readProfileDataTable(cm.Path, profileName, sanitizeConfigName)
         if type(elements) ~= "table" then
             return
         end
@@ -504,9 +430,6 @@ local function createConfigTab(windowRef, notifyFn, options)
             end
         end,
     })
-    local function isWindUIConfigObject(v)
-        return type(v) == "table" and type(v.Save) == "function" and type(v.Load) == "function"
-    end
     local function getConfigObject(cm, name)
         local existing = cm:GetConfig(name)
         if isWindUIConfigObject(existing) then
@@ -518,7 +441,8 @@ local function createConfigTab(windowRef, notifyFn, options)
         if not AutoLoadSavedDropdown then
             return
         end
-        local persisted = readAutoLoadPersistedName()
+        local cm = getConfigManager()
+        local persisted = cm and readAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, sanitizeConfigName) or ""
         if persisted == "" or not table.find(savedConfigList, persisted) then
             return
         end
@@ -534,7 +458,7 @@ local function createConfigTab(windowRef, notifyFn, options)
         if not cm or type(isfile) ~= "function" then
             return
         end
-        local name = readAutoLoadPersistedName()
+        local name = readAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, sanitizeConfigName)
         if name == "" then
             return
         end
@@ -672,8 +596,8 @@ local function createConfigTab(windowRef, notifyFn, options)
             local okDel, msg = cm:DeleteConfig(name)
             refreshSavedConfigDropdowns(false)
             if okDel then
-                if readAutoLoadPersistedName() == name then
-                    writeAutoLoadPersistedName("")
+                if readAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, sanitizeConfigName) == name then
+                    writeAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, "", sanitizeConfigName)
                     autoLoadPickerSelection = nil
                     clearRayfieldDropdown(AutoLoadSavedDropdown)
                 end
@@ -743,7 +667,7 @@ local function createConfigTab(windowRef, notifyFn, options)
                 })
                 return
             end
-            if not writeAutoLoadPersistedName(pick) then
+            if not writeAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, pick, sanitizeConfigName) then
                 mountNotify({ Title = "Auto Load", Content = "Failed to write autoload file" })
                 return
             end
@@ -756,7 +680,10 @@ local function createConfigTab(windowRef, notifyFn, options)
     ConfigTab:CreateButton({
         Name = "Reset",
         Callback = function()
-            writeAutoLoadPersistedName("")
+            local cm = getConfigManager()
+            if cm then
+                writeAutoLoadPersistedName(cm.Path, AUTOLOAD_FILE, "", sanitizeConfigName)
+            end
             autoLoadPickerSelection = nil
             clearRayfieldDropdown(AutoLoadSavedDropdown)
             mountNotify({
