@@ -2645,24 +2645,275 @@ local function mountAutoOpenZoneSection(
     end)
 end
 
+local function mountAutoUpgradesSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?,
+    getDataServiceClientFn: () -> any?
+)
+    mainTab:CreateSection("Auto Upgrades")
+
+    AutoUpgradesSection = {
+        paragraph = nil :: any,
+        upgradeTreeMod = nil :: any,
+        upgradeCounterUtils = nil :: any,
+        upgradeServiceUtils = nil :: any,
+        enabled = false,
+        findNetworkerServiceRemotesFolderFn = findNetworkerServiceRemotesFolderFn,
+        getDataServiceClientFn = getDataServiceClientFn,
+    }
+
+    function AutoUpgradesSection.tryLoadUpgradeModules(): boolean
+        if AutoUpgradesSection.upgradeTreeMod
+            and AutoUpgradesSection.upgradeCounterUtils
+            and AutoUpgradesSection.upgradeServiceUtils then
+            return true
+        end
+        src = ReplicatedStorage:FindFirstChild("Source")
+        upgradesFolder = src and src:FindFirstChild("Features")
+        upgradesFolder = upgradesFolder and upgradesFolder:FindFirstChild("Upgrades")
+        treeMod = upgradesFolder and upgradesFolder:FindFirstChild("UpgradeTree")
+        counterMod = upgradesFolder and upgradesFolder:FindFirstChild("UpgradeCounterUtils")
+        utilsMod = upgradesFolder and upgradesFolder:FindFirstChild("UpgradeServiceUtils")
+        if treeMod and treeMod:IsA("ModuleScript") then
+            ok, result = pcall(require, treeMod)
+            if ok and type(result) == "table" then
+                AutoUpgradesSection.upgradeTreeMod = result
+            end
+        end
+        if counterMod and counterMod:IsA("ModuleScript") then
+            ok, result = pcall(require, counterMod)
+            if ok and type(result) == "table" then
+                AutoUpgradesSection.upgradeCounterUtils = result
+            end
+        end
+        if utilsMod and utilsMod:IsA("ModuleScript") then
+            ok, result = pcall(require, utilsMod)
+            if ok and type(result) == "table" then
+                AutoUpgradesSection.upgradeServiceUtils = result
+            end
+        end
+        return AutoUpgradesSection.upgradeTreeMod ~= nil
+            and AutoUpgradesSection.upgradeCounterUtils ~= nil
+            and AutoUpgradesSection.upgradeServiceUtils ~= nil
+    end
+
+    function AutoUpgradesSection.getUpgradesSave(): { [string]: any }
+        client = AutoUpgradesSection.getDataServiceClientFn()
+        if not client then
+            return {}
+        end
+        ok, data = pcall(function()
+            return client:get("upgrades")
+        end)
+        if ok and type(data) == "table" then
+            return data
+        end
+        return {}
+    end
+
+    function AutoUpgradesSection.getCurrencyAmount(currencyPath: string): number
+        client = AutoUpgradesSection.getDataServiceClientFn()
+        if not client then
+            return 0
+        end
+        amount = SlimeRngUtil.readDataServiceNumber(client, currencyPath)
+        if amount then
+            return amount
+        end
+        return 0
+    end
+
+    function AutoUpgradesSection.canPurchaseUpgrade(upgradeDef: any, upgradesSave: { [string]: any }): boolean
+        counter = AutoUpgradesSection.upgradeCounterUtils
+        if not counter or type(counter.canPurchase) ~= "function" then
+            return false
+        end
+        ok, yes = pcall(counter.canPurchase, upgradeDef, upgradesSave, function(currencyPath: string): number
+            return AutoUpgradesSection.getCurrencyAmount(currencyPath)
+        end)
+        return ok and yes == true
+    end
+
+    function AutoUpgradesSection.collectPurchasableUpgrades(): { any }
+        if not AutoUpgradesSection.tryLoadUpgradeModules() then
+            return {}
+        end
+        tree = AutoUpgradesSection.upgradeTreeMod
+        upgradesSave = AutoUpgradesSection.getUpgradesSave()
+        purchasable = {}
+        for _, treeDef in tree do
+            if type(treeDef) == "table" then
+                for upgradeId, upgradeDef in treeDef do
+                    if type(upgradeDef) == "table" and type(upgradeDef.cost) == "table" then
+                        if type(upgradeDef.id) ~= "string" then
+                            upgradeDef.id = upgradeId
+                        end
+                        if AutoUpgradesSection.canPurchaseUpgrade(upgradeDef, upgradesSave) then
+                            table.insert(purchasable, upgradeDef)
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(purchasable, function(a, b)
+            costA = type(a.cost) == "table" and tonumber(a.cost.amount) or math.huge
+            costB = type(b.cost) == "table" and tonumber(b.cost.amount) or math.huge
+            if costA ~= costB then
+                return costA < costB
+            end
+            return tostring(a.id or "") < tostring(b.id or "")
+        end)
+        return purchasable
+    end
+
+    function AutoUpgradesSection.cheapestPurchasableUpgrade(): any?
+        purchasable = AutoUpgradesSection.collectPurchasableUpgrades()
+        return purchasable[1]
+    end
+
+    function AutoUpgradesSection.upgradeLabel(upgradeDef: any): string
+        if type(upgradeDef) ~= "table" then
+            return "?"
+        end
+        name = type(upgradeDef.name) == "string" and upgradeDef.name or tostring(upgradeDef.id or "?")
+        cost = upgradeDef.cost
+        if type(cost) == "table" then
+            currency = tostring(cost.currency or "?")
+            amount = tonumber(cost.amount) or 0
+            return ('%s (%s %s)'):format(name, SlimeRngUtil.formatSuffixNumber(amount), currency)
+        end
+        return name
+    end
+
+    function AutoUpgradesSection.getUpgradeRemote(): RemoteFunction?
+        fold = AutoUpgradesSection.findNetworkerServiceRemotesFolderFn("UpgradeService", REBIRTH_NETWORKER_VERSION)
+        rf = fold and fold:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            return rf
+        end
+        return nil
+    end
+
+    function AutoUpgradesSection.requestUnlockUpgrade(upgradeId: string): (boolean, string?)
+        rf = AutoUpgradesSection.getUpgradeRemote()
+        if not rf then
+            return false, "UpgradeService RemoteFunction not found"
+        end
+        ok, success, errMsg = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestUnlock", upgradeId)
+        end)
+        if not ok then
+            return false, tostring(success)
+        end
+        if success == true then
+            return true, nil
+        end
+        if type(errMsg) == "string" and errMsg ~= "" then
+            return false, errMsg
+        end
+        return false, "Failed to unlock upgrade"
+    end
+
+    function AutoUpgradesSection.buildBody(): string
+        if not AutoUpgradesSection.tryLoadUpgradeModules() then
+            return "Waiting for upgrade modules (UpgradeTree / UpgradeCounterUtils)."
+        end
+        purchasable = AutoUpgradesSection.collectPurchasableUpgrades()
+        nextUpgrade = purchasable[1]
+        lines = {
+            ("Purchasable upgrades: %d"):format(#purchasable),
+        }
+        if nextUpgrade then
+            cost = nextUpgrade.cost
+            currency = type(cost) == "table" and tostring(cost.currency or "coins") or "coins"
+            price = type(cost) == "table" and tonumber(cost.amount) or 0
+            balance = AutoUpgradesSection.getCurrencyAmount(currency)
+            table.insert(lines, ("Next (lowest): %s"):format(AutoUpgradesSection.upgradeLabel(nextUpgrade)))
+            table.insert(lines, ("Balance: %s / %s (%s)"):format(
+                SlimeRngUtil.formatSuffixNumber(balance),
+                SlimeRngUtil.formatSuffixNumber(price),
+                currency
+            ))
+            table.insert(lines, ("Ready: %s"):format(balance >= price and "yes" or "no"))
+        else
+            table.insert(lines, "Next (lowest): none")
+            table.insert(lines, "Ready: no")
+        end
+        if AutoUpgradesSection.enabled then
+            table.insert(lines, "Auto upgrades: ON")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    function AutoUpgradesSection.refreshParagraph()
+        if AutoUpgradesSection.paragraph and AutoUpgradesSection.paragraph.Set then
+            AutoUpgradesSection.paragraph:Set({ Title = "Upgrades", Content = AutoUpgradesSection.buildBody() })
+        end
+    end
+
+    function AutoUpgradesSection.tryAutoUpgradesPass()
+        if not AutoUpgradesSection.enabled then
+            return
+        end
+        nextUpgrade = AutoUpgradesSection.cheapestPurchasableUpgrade()
+        if not nextUpgrade or type(nextUpgrade.id) ~= "string" then
+            return
+        end
+        ok, errMsg = AutoUpgradesSection.requestUnlockUpgrade(nextUpgrade.id)
+        if ok then
+            mountNotify({
+                Title = "Auto Upgrades",
+                Content = "Unlocked " .. AutoUpgradesSection.upgradeLabel(nextUpgrade) .. ".",
+                Icon = "check",
+            })
+        elseif errMsg and errMsg ~= "Not enough currency" then
+            mountNotify({
+                Title = "Auto Upgrades",
+                Content = errMsg,
+                Icon = "x",
+            })
+        end
+    end
+
+    AutoUpgradesSection.paragraph = mainTab:CreateParagraph({
+        Title = "Upgrades",
+        Content = "Loading…",
+    })
+
+    mainTab:CreateToggle({
+        Name = "Auto Upgrades",
+        Flag = "main_auto_upgrades",
+        CurrentValue = false,
+        Callback = function(enabled)
+            AutoUpgradesSection.enabled = enabled == true
+        end,
+    })
+
+    deferUiOnHeartbeat(AutoUpgradesSection.refreshParagraph)
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, function()
+        AutoUpgradesSection.refreshParagraph()
+        AutoUpgradesSection.tryAutoUpgradesPass()
+    end)
+end
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
 
     MainTab:CreateSection("Auto Collect Loot")
 
-    local function mainTryProximityInteractOnInstance(root: Instance)
-        local prompt = root:FindFirstChildWhichIsA("ProximityPrompt", true)
+    function mainTryProximityInteractOnInstance(root: Instance)
+        prompt = root:FindFirstChildWhichIsA("ProximityPrompt", true)
         if not prompt then
             return
         end
-        local usedFire = false
+        usedFire = false
         pcall(function()
-            local fp = rawget(_G, "fireproximityprompt")
+            fp = rawget(_G, "fireproximityprompt")
             if type(fp) ~= "function" then
-                local ge = rawget(_G, "getgenv")
+                ge = rawget(_G, "getgenv")
                 if type(ge) == "function" then
-                    local g = ge()
+                    g = ge()
                     if type(g) == "table" then
                         fp = rawget(g, "fireproximityprompt")
                     end
@@ -2690,8 +2941,8 @@ do
         end)
     end
 
-    local autoCollectLootEnabled = false
-    local autoCollectLootLoopToken = 0
+    autoCollectLootEnabled = false
+    autoCollectLootLoopToken = 0
     type LootQueueEntry = { uid: string, label: string }
     local lootProcessQueue: { LootQueueEntry } = {}
     local lootChildAddedConn: RBXScriptConnection? = nil
@@ -2702,47 +2953,45 @@ do
     local lootServiceEventConn: RBXScriptConnection? = nil
     local lootPendingAck: { [string]: boolean } = {}
     local collectedLootLines: { string } = {}
-    local COLLECTED_LOOT_MAX_LINES = 50
+    COLLECTED_LOOT_MAX_LINES = 50
     -- `Packages._Index` leifstout_networker versions (newest first for generic remotes).
-    local LEIFSTOUT_NETWORKER_VERSIONS: { string } = {
+    LEIFSTOUT_NETWORKER_VERSIONS = {
         "leifstout_networker@0.3.1",
         "leifstout_networker@0.2.1",
     }
-    -- DataService `specialRollProgression` is only fired on this package version.
-    local LEIFSTOUT_NETWORKER_DATA_SERVICE_VERSION = "leifstout_networker@0.2.1"
     -- RollService `requestSetSpecialRollPaused` must use this package version.
-    local LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION = "leifstout_networker@0.3.1"
+    LEIFSTOUT_NETWORKER_ROLL_SERVICE_VERSION = "leifstout_networker@0.3.1"
 
-    local LootCollectedParagraph = MainTab:CreateParagraph({
+    LootCollectedParagraph = MainTab:CreateParagraph({
         Title = "Collected loot",
         Content = "None",
     })
 
-    local function getNetworkerRemotesRoot(indexFolderName: string): Instance?
-        local packages = ReplicatedStorage:FindFirstChild("Packages")
+    function getNetworkerRemotesRoot(indexFolderName: string): Instance?
+        packages = ReplicatedStorage:FindFirstChild("Packages")
         if not packages then
             return nil
         end
-        local idx = packages:FindFirstChild("_Index")
+        idx = packages:FindFirstChild("_Index")
         if not idx then
             return nil
         end
-        local pkg = idx:FindFirstChild(indexFolderName)
+        pkg = idx:FindFirstChild(indexFolderName)
         if not pkg then
             return nil
         end
-        local net = pkg:FindFirstChild("networker")
+        net = pkg:FindFirstChild("networker")
         if not net then
             return nil
         end
-        local rem = net:FindFirstChild("_remotes")
+        rem = net:FindFirstChild("_remotes")
         if not rem then
             return nil
         end
         return rem
     end
 
-    local function findNetworkerServiceRemotesFolder(serviceFolderName: string, indexFolderName: string?): Instance?
+    function findNetworkerServiceRemotesFolder(serviceFolderName: string, indexFolderName: string?): Instance?
         local versions: { string }
         if indexFolderName then
             versions = { indexFolderName }
@@ -2750,7 +2999,7 @@ do
             versions = LEIFSTOUT_NETWORKER_VERSIONS
         end
         for _, folderName in ipairs(versions) do
-            local rem = getNetworkerRemotesRoot(folderName)
+            rem = getNetworkerRemotesRoot(folderName)
             if rem then
                 local svc = rem:FindFirstChild(serviceFolderName)
                 if svc then
@@ -2761,7 +3010,7 @@ do
         return nil
     end
 
-    local function findNetworkerRemoteInService(
+    function findNetworkerRemoteInService(
         serviceFolderName: string,
         remoteChildName: string,
         remoteClass: string,
@@ -4571,6 +4820,8 @@ do
     mountAutoRebirthSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
 
     mountAutoOpenZoneSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
+
+    mountAutoUpgradesSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
 
     mountUfoEventSection(MainTab, findNetworkerServiceRemotesFolder)
 
