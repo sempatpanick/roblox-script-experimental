@@ -1,6 +1,6 @@
 --[[
   Recording tab module for Rayfield scripts.
-  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/recording_tab.lua
+  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/rayfield/recording_tab.lua
 
   Usage:
     createRecordingTab(Window, mountNotify, "sempatpanick/<script_name>/recordings")

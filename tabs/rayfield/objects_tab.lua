@@ -1,6 +1,6 @@
 --[[
   Objects tab module for Rayfield scripts.
-  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/objects_tab.lua
+  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/rayfield/objects_tab.lua
 
   Usage:
     createObjectsTab(Window, mountNotify, options)

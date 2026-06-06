@@ -1,6 +1,6 @@
 --[[
   Local Player tab module for Rayfield scripts.
-  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/local_player_tab.lua
+  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/rayfield/local_player_tab.lua
 
   Usage:
     createLocalPlayerTab(Window, mountNotify, options)

@@ -1,20 +1,20 @@
 local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
 
 local games = {
-    [83369512629707] = baseURL .. "/sawah_indo.lua",
-    [128070940451265] = baseURL .. "/speed_bike_escape.lua",
-    [2693023319] = baseURL .. "/expedition_antartica.lua",
-    [103593441753340] = baseURL .. "/find_the_button.lua",
-    [82775216869079] = baseURL .. "/find_the_button.lua",
-    [14963184269] = baseURL .. "/mount_sumbing.lua",
-    [76964310785698] = baseURL .. "/mount_yahayuk.lua",
-    [118098747383977] = baseURL .. "/mancing_indo.lua",
-    [78404864377525] = baseURL .. "/mancing_indo_galatama.lua",
-    [92416421522960] = baseURL .. "/slime_rng.lua",
-    [93978595733734] = baseURL .. "/violence_district.lua",
+    [83369512629707] = baseURL .. "/games/rayfield/sawah_indo.lua",
+    [128070940451265] = baseURL .. "/games/rayfield/speed_bike_escape.lua",
+    [2693023319] = baseURL .. "/games/rayfield/expedition_antartica.lua",
+    [103593441753340] = baseURL .. "/games/rayfield/find_the_button.lua",
+    [82775216869079] = baseURL .. "/games/rayfield/find_the_button.lua",
+    [14963184269] = baseURL .. "/games/rayfield/mount_sumbing.lua",
+    [76964310785698] = baseURL .. "/games/rayfield/mount_yahayuk.lua",
+    [118098747383977] = baseURL .. "/games/rayfield/mancing_indo.lua",
+    [78404864377525] = baseURL .. "/games/rayfield/mancing_indo_galatama.lua",
+    [92416421522960] = baseURL .. "/games/rayfield/slime_rng.lua",
+    [93978595733734] = baseURL .. "/games/rayfield/violence_district.lua",
 }
 
-local fallbackScriptURL = baseURL .. "/others.lua"
+local fallbackScriptURL = baseURL .. "/games/rayfield/others.lua"
 local excludedGameIds = {
     [121864768012064] = true,
     [79378095465365] = true,

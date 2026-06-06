@@ -18,7 +18,7 @@ local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-ex
 
 do
     local ok, result = pcall(function()
-        return require("./rayfield_library")
+        return require("../../rayfield_library")
     end)
 
     if ok then
@@ -59,7 +59,7 @@ end
 -- */  Recording Tab (module)  /* --
 local function loadCreateRecordingTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/recording_tab")
+        return require("../../tabs/rayfield/recording_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -104,7 +104,7 @@ local function loadCreateRecordingTab(repoUrl)
     return result
 end
 
-local createRecordingTab = loadCreateRecordingTab(baseURL .. "/tabs/recording_tab.lua")
+local createRecordingTab = loadCreateRecordingTab(baseURL .. "/tabs/rayfield/recording_tab.lua")
 if not createRecordingTab then
     createRecordingTab = function(_windowRef, notifyFn, _recordingsDir)
         notifyFn({ Title = "Recording", Content = "Failed to load recording tab module", Icon = "x" })
@@ -112,10 +112,10 @@ if not createRecordingTab then
 end
 
 -- */  Local Player Tab (module)  /* --
-local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/local_player_tab.lua"
+local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/rayfield/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/local_player_tab")
+        return require("../../tabs/rayfield/local_player_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -167,10 +167,10 @@ if not createLocalPlayerTab then
     end
 end
 -- */  Objects Tab (module)  /* --
-local OBJECTS_TAB_REPO = baseURL .. "/tabs/objects_tab.lua"
+local OBJECTS_TAB_REPO = baseURL .. "/tabs/rayfield/objects_tab.lua"
 local function loadCreateObjectsTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/objects_tab")
+        return require("../../tabs/rayfield/objects_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -222,10 +222,10 @@ if not createObjectsTab then
     end
 end
 -- */  Teleport Tab (module)  /* --
-local TELEPORT_TAB_REPO = baseURL .. "/tabs/teleport_tab.lua"
+local TELEPORT_TAB_REPO = baseURL .. "/tabs/rayfield/teleport_tab.lua"
 local function loadCreateTeleportTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/teleport_tab")
+        return require("../../tabs/rayfield/teleport_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -277,10 +277,10 @@ if not createTeleportTab then
     end
 end
 -- */  Config Tab (module)  /* --
-local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local CONFIG_TAB_REPO = baseURL .. "/tabs/rayfield/config_tab.lua"
 local function loadCreateConfigTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/config_tab")
+        return require("../../tabs/rayfield/config_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod

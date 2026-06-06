@@ -1,6 +1,6 @@
 --[[
   Teleport tab module for Rayfield scripts.
-  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/teleport_tab.lua
+  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/rayfield/teleport_tab.lua
 
   Usage:
     createTeleportTab(Window, mountNotify, options)

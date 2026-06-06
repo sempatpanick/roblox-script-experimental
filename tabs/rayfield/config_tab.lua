@@ -1,6 +1,6 @@
 --[[
   Config tab module for Rayfield scripts.
-  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/config_tab.lua
+  Loaded from: https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main/tabs/rayfield/config_tab.lua
   Usage:
     createConfigTab(Window, mountNotify, options)
   options (required):

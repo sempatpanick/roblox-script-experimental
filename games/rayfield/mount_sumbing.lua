@@ -4,7 +4,6 @@ local cloneref = (cloneref or clonereference or function(instance) return instan
 --                        CORE SERVICES
 -- ====================================================================
 local Players = game:GetService("Players")
-local UserService = game:GetService("UserService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
@@ -19,7 +18,7 @@ local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-ex
 
 do
     local ok, result = pcall(function()
-        return require("./rayfield_library")
+        return require("../../rayfield_library")
     end)
 
     if ok then
@@ -57,10 +56,10 @@ local function rayfieldDropdownFirst(valueOrTable)
 end
 
 -- */  Recording Tab (module)  /* --
-local RECORDING_TAB_REPO = baseURL .. "/tabs/recording_tab.lua"
+local RECORDING_TAB_REPO = baseURL .. "/tabs/rayfield/recording_tab.lua"
 local function loadCreateRecordingTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/recording_tab")
+        return require("../../tabs/rayfield/recording_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -113,10 +112,10 @@ if not createRecordingTab then
 end
 
 -- */  Local Player Tab (module)  /* --
-local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/local_player_tab.lua"
+local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/rayfield/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/local_player_tab")
+        return require("../../tabs/rayfield/local_player_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -168,10 +167,10 @@ if not createLocalPlayerTab then
     end
 end
 -- */  Objects Tab (module)  /* --
-local OBJECTS_TAB_REPO = baseURL .. "/tabs/objects_tab.lua"
+local OBJECTS_TAB_REPO = baseURL .. "/tabs/rayfield/objects_tab.lua"
 local function loadCreateObjectsTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/objects_tab")
+        return require("../../tabs/rayfield/objects_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -223,10 +222,10 @@ if not createObjectsTab then
     end
 end
 -- */  Teleport Tab (module)  /* --
-local TELEPORT_TAB_REPO = baseURL .. "/tabs/teleport_tab.lua"
+local TELEPORT_TAB_REPO = baseURL .. "/tabs/rayfield/teleport_tab.lua"
 local function loadCreateTeleportTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/teleport_tab")
+        return require("../../tabs/rayfield/teleport_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -278,10 +277,10 @@ if not createTeleportTab then
     end
 end
 -- */  Config Tab (module)  /* --
-local CONFIG_TAB_REPO = baseURL .. "/tabs/config_tab.lua"
+local CONFIG_TAB_REPO = baseURL .. "/tabs/rayfield/config_tab.lua"
 local function loadCreateConfigTab(repoUrl)
     local okReq, mod = pcall(function()
-        return require("./tabs/config_tab")
+        return require("../../tabs/rayfield/config_tab")
     end)
     if okReq and type(mod) == "function" then
         return mod
@@ -334,14 +333,14 @@ if not createConfigTab then
 end
 -- */  Window  /* --
 local Window = RayfieldLibrary:CreateWindow({
-    Name = "sempatpanick | Violence District",
+    Name = "sempatpanick | Mount Sumbing",
     LoadingTitle = "sempatpanick",
-    LoadingSubtitle = "Violence District",
+    LoadingSubtitle = "Mount Sumbing",
     Icon = 4483362458,
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "sempatpanick",
-        FileName = "violence_district",
+        FileName = "mount_sumbing",
     },
     DisableRayfieldPrompts = true,
     DisableBuildWarnings = true,
@@ -410,6 +409,7 @@ function formatInstanceDisplay(inst, isShowDataType, isShowLocation)
     if guiText then
         base = base .. ' ("' .. guiText .. '")'
     end
+    -- Show position for Parts and other BaseParts (MeshPart, etc.) when requested
     if isShowLocation and inst:IsA("BasePart") then
         local p = inst.Position
         base = base .. " [" .. string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z) .. "]"
@@ -420,310 +420,307 @@ end
 -- */  Local Player Tab  /* --
 createLocalPlayerTab(Window, mountNotify)
 
--- */  Main Tab  /* --
+local QuestTabShared = Window:CreateTab("Quest", 4483362458)
+
+-- */  Quest Tab  /* --
 do
-    local MainTab = Window:CreateTab("Main", 4483362458)
+    local QuestTab = QuestTabShared
 
-    MainTab:CreateSection("Cursor")
+    QuestTab:CreateSection("Deposit Cat Coin")
+    local CatDataFolderParagraph
+    local catCoinTokenNames = { "Cat Token (Light)", "Cat Token (Dark)" }
+    local CatCoinDropdown
+    local selectedCatCoin = nil
+    local catCoinQty = ""
 
-    local MOVE_CURSOR_RENDER_STEP = "SempatPanickViolenceDistrictMoveCursor"
-    local moveCursorEnabled = false
-    local moveCursorToggle: any = nil
-
-    local function stopMoveCursor()
-        moveCursorEnabled = false
-        RunService:UnbindFromRenderStep(MOVE_CURSOR_RENDER_STEP)
-    end
-
-    local function startMoveCursor()
-        stopMoveCursor()
-        moveCursorEnabled = true
-        RunService:BindToRenderStep(MOVE_CURSOR_RENDER_STEP, Enum.RenderPriority.Last.Value, function()
-            if not moveCursorEnabled then
-                return
-            end
-            pcall(function()
-                RunService:UnbindFromRenderStep("ShiftLock")
-            end)
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
-        end)
-    end
-
-    local function setMoveCursorEnabled(enabled)
-        if enabled then
-            startMoveCursor()
+    local function refreshCatDataFolderDisplay()
+        local folder = Players.LocalPlayer:FindFirstChild("CatDataFolder")
+        local lines = {}
+        if not folder then
+            table.insert(lines, "(CatDataFolder not found)")
         else
-            stopMoveCursor()
+            for _, child in ipairs(folder:GetChildren()) do
+                table.insert(lines, formatInstanceDisplay(child, false))
+            end
+            if #lines == 0 then
+                table.insert(lines, "(no children)")
+            end
+        end
+        local text = table.concat(lines, "\n")
+        if CatDataFolderParagraph and CatDataFolderParagraph.Set then
+            CatDataFolderParagraph:Set({ Content = text })
         end
     end
 
-    moveCursorToggle = MainTab:CreateToggle({
-        Name = "Move Cursor",
-        Flag = "main_move_cursor",
-        CurrentValue = false,
-        Callback = function(enabled)
-            setMoveCursorEnabled(enabled == true)
-        end,
+    CatDataFolderParagraph = QuestTab:CreateParagraph({
+        Title = "LocalPlayer.CatDataFolder",
+        Content = "(loading...)",
     })
 
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then
-            return
+    local function getCatCoinDropdownValues()
+        local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+        local counts = {}
+        for _, name in ipairs(catCoinTokenNames) do
+            counts[name] = 0
         end
-        if UserInputService:GetFocusedTextBox() then
-            return
-        end
-        if input.UserInputType ~= Enum.UserInputType.Keyboard or input.KeyCode ~= Enum.KeyCode.L then
-            return
-        end
-        local nextEnabled = not moveCursorEnabled
-        if moveCursorToggle and moveCursorToggle.Set then
-            pcall(function()
-                moveCursorToggle:Set(nextEnabled)
-            end)
-        else
-            setMoveCursorEnabled(nextEnabled)
-        end
-    end)
-
-    MainTab:CreateSection("Generators")
-
-    local GENERATOR_NONE = "(No generators)"
-    local generatorDisplayToInstance = {}
-    local generatorDropdownOptions = { GENERATOR_NONE }
-    local selectedGeneratorLabel = GENERATOR_NONE
-    local generatorDropdown: any = nil
-
-    local function getGeneratorWorldPosition(inst)
-        if not inst then
-            return nil
-        end
-        if inst:IsA("BasePart") then
-            return inst.Position
-        end
-        if inst:IsA("Model") then
-            if inst.PrimaryPart then
-                return inst.PrimaryPart.Position
-            end
-            local okPivot, pivot = pcall(function()
-                return inst:GetPivot()
-            end)
-            if okPivot and pivot then
-                return pivot.Position
-            end
-            local okBb, cf = pcall(function()
-                return inst:GetBoundingBox()
-            end)
-            if okBb and cf then
-                return cf.Position
-            end
-        end
-        local part = inst:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.Position
-        end
-        return nil
-    end
-
-    local function getGeneratorFolderNameForLocalPlayer()
-        local lp = Players.LocalPlayer
-        if lp and lp.Team then
-            local teamName = string.lower(lp.Team.Name)
-            if string.find(teamName, "killer", 1, true) then
-                return "Gens"
-            end
-        end
-        return "Generators"
-    end
-
-    local function getGeneratorListFolder()
-        local folderName = getGeneratorFolderNameForLocalPlayer()
-        local folder = Workspace:FindFirstChild(folderName)
-        if folder and (folder:IsA("Folder") or folder:IsA("Model")) then
-            return folder, folderName
-        end
-        return nil, folderName
-    end
-
-    local generatorFolderWatchConnections = {}
-    local refreshGeneratorDropdown
-
-    local function clearGeneratorFolderWatchers()
-        for _, conn in ipairs(generatorFolderWatchConnections) do
-            pcall(function()
-                conn:Disconnect()
-            end)
-        end
-        table.clear(generatorFolderWatchConnections)
-    end
-
-    local function watchGeneratorFolder(folder)
-        clearGeneratorFolderWatchers()
-        if not folder then
-            return
-        end
-        table.insert(generatorFolderWatchConnections, folder.ChildAdded:Connect(function()
-            refreshGeneratorDropdown(false)
-        end))
-        table.insert(generatorFolderWatchConnections, folder.ChildRemoved:Connect(function()
-            refreshGeneratorDropdown(false)
-        end))
-    end
-
-    local function setupGeneratorFolderWatchers()
-        clearGeneratorFolderWatchers()
-        local folder, folderName = getGeneratorListFolder()
-        if folder then
-            watchGeneratorFolder(folder)
-            return
-        end
-        local waitConn
-        waitConn = Workspace.ChildAdded:Connect(function(child)
-            if child.Name ~= folderName then
-                return
-            end
-            if waitConn then
-                pcall(function()
-                    waitConn:Disconnect()
-                end)
-                waitConn = nil
-            end
-            watchGeneratorFolder(child)
-            refreshGeneratorDropdown(true)
-        end)
-        table.insert(generatorFolderWatchConnections, waitConn)
-    end
-
-    local function buildGeneratorDropdownData()
-        table.clear(generatorDisplayToInstance)
-        local options = {}
-        local gensFolder = getGeneratorListFolder()
-        if not gensFolder then
-            table.insert(options, GENERATOR_NONE)
-            generatorDisplayToInstance[GENERATOR_NONE] = nil
-            return options
-        end
-
-        local children = gensFolder:GetChildren()
-        table.sort(children, function(a, b)
-            return a.Name < b.Name or (a.Name == b.Name and a:GetFullName() < b:GetFullName())
-        end)
-
-        local nameCounts = {}
-        for _, child in ipairs(children) do
-            nameCounts[child.Name] = (nameCounts[child.Name] or 0) + 1
-        end
-
-        local nameIndex = {}
-        for _, child in ipairs(children) do
-            local label = child.Name
-            if nameCounts[child.Name] > 1 then
-                nameIndex[child.Name] = (nameIndex[child.Name] or 0) + 1
-                local pos = getGeneratorWorldPosition(child)
-                if pos then
-                    label = string.format(
-                        "%s #%d (%.0f, %.0f, %.0f)",
-                        child.Name,
-                        nameIndex[child.Name],
-                        pos.X,
-                        pos.Y,
-                        pos.Z
-                    )
-                else
-                    label = string.format("%s #%d", child.Name, nameIndex[child.Name])
+        if backpack then
+            for _, child in ipairs(backpack:GetChildren()) do
+                if counts[child.Name] ~= nil then
+                    counts[child.Name] = counts[child.Name] + 1
                 end
             end
-            generatorDisplayToInstance[label] = child
-            table.insert(options, label)
         end
-
-        if #options == 0 then
-            table.insert(options, GENERATOR_NONE)
-            generatorDisplayToInstance[GENERATOR_NONE] = nil
+        local values = {}
+        for _, name in ipairs(catCoinTokenNames) do
+            table.insert(values, name .. " (" .. tostring(counts[name]) .. ")")
         end
-        return options
+        return values
     end
 
-    refreshGeneratorDropdown = function(selectFirst)
-        generatorDropdownOptions = buildGeneratorDropdownData()
-        if generatorDropdown and generatorDropdown.Refresh then
-            generatorDropdown:Refresh(generatorDropdownOptions)
-        end
-        local pick = selectedGeneratorLabel
-        if selectFirst or not table.find(generatorDropdownOptions, pick) then
-            pick = generatorDropdownOptions[1] or GENERATOR_NONE
-        end
-        selectedGeneratorLabel = pick
-        if generatorDropdown and generatorDropdown.Set then
-            pcall(function()
-                generatorDropdown:Set(pick)
-            end)
+    local function refreshCatCoinDropdown()
+        local values = getCatCoinDropdownValues()
+        if CatCoinDropdown and CatCoinDropdown.Refresh then
+            CatCoinDropdown:Refresh(values)
         end
     end
-
-    generatorDropdown = MainTab:CreateDropdown({
-        Name = "Generators",
-        Flag = "main_generator_pick",
-        Options = generatorDropdownOptions,
-        CurrentOption = { generatorDropdownOptions[1] },
-        Callback = function(value)
-            selectedGeneratorLabel = rayfieldDropdownFirst(value) or GENERATOR_NONE
-        end,
-    })
 
     task.defer(function()
-        refreshGeneratorDropdown(true)
-        setupGeneratorFolderWatchers()
-        local lp = Players.LocalPlayer
-        if lp then
-            lp:GetPropertyChangedSignal("Team"):Connect(function()
-                refreshGeneratorDropdown(true)
-                setupGeneratorFolderWatchers()
-            end)
-        end
+        refreshCatDataFolderDisplay()
+        refreshCatCoinDropdown()
     end)
 
-    MainTab:CreateButton({
-        Name = "Teleport to Generator",
+    CatCoinDropdown = QuestTab:CreateDropdown({
+        Name = "Token",
+        Flag = "sumbing_quest_catCoinToken",
+        Options = getCatCoinDropdownValues(),
+        CurrentOption = {},
+        Callback = function(value)
+            selectedCatCoin = rayfieldDropdownFirst(value)
+        end
+    })
+
+    QuestTab:CreateInput({
+        Name = "Qty",
+        PlaceholderText = "e.g. 1",
+        Flag = "sumbing_quest_catCoinQty",
+        CurrentValue = catCoinQty,
+        Callback = function(value)
+            catCoinQty = value
+        end
+    })
+
+    QuestTab:CreateButton({
+        Name = "Get Nearby Token",
         Callback = function()
-            local rootPart = Players.LocalPlayer.Character
-                and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             if not rootPart then
-                mountNotify({ Title = "Generators", Content = "Character not loaded", Icon = "x" })
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Character not loaded" })
                 return
             end
-            local target = generatorDisplayToInstance[selectedGeneratorLabel]
-            if not target then
-                mountNotify({ Title = "Generators", Content = "Select a generator first", Icon = "x" })
+            local catToken = Workspace:FindFirstChild("CatToken")
+            if not catToken or not catToken:IsA("Folder") then
+                mountNotify({ Title = "Deposit Cat Coin", Content = "No CatToken folder found in Workspace" })
                 return
             end
-            local pos = getGeneratorWorldPosition(target)
+            local playerPos = rootPart.Position
+            local pos = nil
+            local nearestChild = nil
+            local bestDist = math.huge
+            for _, child in ipairs(catToken:GetChildren()) do
+                local childPos = nil
+                if child:IsA("BasePart") then
+                    childPos = child.Position
+                elseif child:IsA("Model") and child.PrimaryPart then
+                    childPos = child.PrimaryPart.Position
+                end
+                if childPos then
+                    local dist = (playerPos - childPos).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        pos = childPos
+                        nearestChild = child
+                    end
+                end
+            end
+
             if not pos then
-                mountNotify({ Title = "Generators", Content = "Could not get generator position", Icon = "x" })
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Could not get CatToken position" })
                 return
             end
-            rootPart.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+            local yOffset = 3
+            local teleportPos = Vector3.new(pos.X, pos.Y + yOffset, pos.Z)
+            rootPart.CFrame = CFrame.new(teleportPos)
+            task.wait(0.2)
+            -- Trigger pickup: try ClickDetector (simulate mouse/tap) then ProximityPrompt
+            local didInteract = false
+            local clickDetector = nearestChild and (nearestChild:FindFirstChildOfClass("ClickDetector") or nearestChild:FindFirstChild("ClickDetector"))
+            if not clickDetector and nearestChild then
+                for _, d in ipairs(nearestChild:GetDescendants()) do
+                    if d:IsA("ClickDetector") then
+                        clickDetector = d
+                        break
+                    end
+                end
+            end
+            if clickDetector and clickDetector:IsA("ClickDetector") then
+                -- Simulate mouse/tap click: 3D position -> screen position -> VirtualUser click
+                local clickWorldPos = pos
+                local parent = clickDetector.Parent
+                if parent then
+                    if parent:IsA("BasePart") then
+                        clickWorldPos = parent.Position
+                    elseif parent:IsA("Model") and parent.PrimaryPart then
+                        clickWorldPos = parent.PrimaryPart.Position
+                    elseif parent:IsA("Model") then
+                        local cf = parent:GetBoundingBox()
+                        clickWorldPos = cf.Position
+                    end
+                end
+                local camera = Workspace.CurrentCamera
+                if camera then
+                    local screenPos, onScreen = camera:WorldToScreenPoint(clickWorldPos)
+                    if onScreen then
+                        local okClick = pcall(function()
+                            VirtualUser:ClickButton1(screenPos)
+                        end)
+                        if okClick then
+                            didInteract = true
+                        end
+                    end
+                end
+            end
+            if not didInteract then
+                local prompt = nearestChild and (nearestChild:FindFirstChildOfClass("ProximityPrompt") or nearestChild:FindFirstChild("ProximityPrompt"))
+                if not prompt and nearestChild then
+                    for _, d in ipairs(nearestChild:GetDescendants()) do
+                        if d:IsA("ProximityPrompt") then
+                            prompt = d
+                            break
+                        end
+                    end
+                end
+                if prompt and prompt:IsA("ProximityPrompt") then
+                    local holdDuration = prompt.HoldDuration
+                    prompt:InputHoldBegin()
+                    task.wait(holdDuration > 0 and holdDuration or 0.5)
+                    prompt:InputHoldEnd()
+                    didInteract = true
+                end
+            end
             mountNotify({
-                Title = "Generators",
-                Content = "Teleported to " .. selectedGeneratorLabel,
-                Icon = "check",
+                Title = "Deposit Cat Coin",
+                Content = didInteract and string.format("Teleported and picked up token (%.1f, %.1f, %.1f)", teleportPos.X, teleportPos.Y, teleportPos.Z)
+                    or string.format("Teleported to CatToken (%.1f, %.1f, %.1f)", teleportPos.X, teleportPos.Y, teleportPos.Z),
             })
+        end
+    })
+
+    QuestTab:CreateButton({
+        Name = "Deposit",
+        Callback = function()
+            if not selectedCatCoin then
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Select a token first" })
+                return
+            end
+            local baseName = selectedCatCoin:match("^(.+) %(%d+%)$") or selectedCatCoin
+            local qty = tonumber(catCoinQty) or 0
+            if qty <= 0 then
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Enter a valid quantity" })
+                return
+            end
+            local backpack = Players.LocalPlayer:FindFirstChild("Backpack")
+            local toolToEquip = nil
+            if backpack then
+                for _, child in ipairs(backpack:GetChildren()) do
+                    if child:IsA("Tool") and child.Name == baseName then
+                        toolToEquip = child
+                        break
+                    end
+                end
+            end
+            if not toolToEquip then
+                mountNotify({ Title = "Deposit Cat Coin", Content = "No " .. baseName .. " in Backpack to equip" })
+                return
+            end
+            local character = Players.LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.EquipTool then
+                humanoid:EquipTool(toolToEquip)
+            end
+            if not rootPart then
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Character not loaded" })
+                return
+            end
+            task.wait(0.2)
+            -- Tween to deposit location
+            local depositPos = Vector3.new(-415.95, 5.41, 186.06)
+            local tweenDuration = 3
+            local tweenInfo = TweenInfo.new(tweenDuration)
+            local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = CFrame.new(depositPos) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.3)
+            -- Interact with object nearby (ProximityPrompt)
+            local targetPos = depositPos
+            local interactRadius = 15
+            local foundPrompt = nil
+            for _, descendant in ipairs(Workspace:GetDescendants()) do
+                if descendant:IsA("ProximityPrompt") then
+                    local promptPos = descendant.Parent and descendant.Parent:IsA("BasePart") and descendant.Parent.Position
+                        or (descendant.Parent and descendant.Parent:IsA("Model") and descendant.Parent.PrimaryPart and descendant.Parent.PrimaryPart.Position)
+                    if promptPos and (promptPos - targetPos).Magnitude <= interactRadius then
+                        foundPrompt = descendant
+                        break
+                    end
+                end
+            end
+            if foundPrompt then
+                local holdDuration = foundPrompt.HoldDuration
+                foundPrompt:InputHoldBegin()
+                task.wait(holdDuration > 0 and holdDuration or 0.5)
+                foundPrompt:InputHoldEnd()
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Teleported and interacted" })
+            else
+                mountNotify({ Title = "Deposit Cat Coin", Content = "Teleported (no ProximityPrompt nearby)" })
+            end
+        end
+    })
+
+    QuestTab:CreateSection("Daily Reward")
+    QuestTab:CreateButton({
+        Name = "Claim Daily Reward",
+        Callback = function()
+            local function GetNil(Name, DebugId)
+                for _, Object in getnilinstances() do
+                    if Object.Name == Name and Object:GetDebugId() == DebugId then
+                        return Object
+                    end
+                end
+            end
+            local Event = GetNil("DailyReward", "1_283461")
+            if Event then
+                Event:FireServer()
+                mountNotify({ Title = "Daily Reward", Content = "Claimed daily reward" })
+            else
+                mountNotify({ Title = "Daily Reward", Content = "DailyReward event not found" })
+            end
         end,
     })
 end
 
 -- */  Teleport Tab  /* --
-createTeleportTab(Window, mountNotify, { flagsPrefix = "violence_district" })
+createTeleportTab(Window, mountNotify, { flagsPrefix = "sumbing" })
 
 -- */  Objects Tab  /* --
 createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
 
 -- */  Recording Tab  /* --
-createRecordingTab(Window, mountNotify, "sempatpanick/violence_district/recordings")
+createRecordingTab(Window, mountNotify, "sempatpanick/mount_sumbing/recordings")
 
 -- */  Config Tab  /* --
 createConfigTab(Window, mountNotify, {
-    configDir = "sempatpanick/violence_district",
+    configDir = "sempatpanick/mount_sumbing",
     rayfieldLibrary = RayfieldLibrary,
 })
