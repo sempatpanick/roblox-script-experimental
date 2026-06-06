@@ -2896,6 +2896,339 @@ local function mountAutoUpgradesSection(
     end)
 end
 
+local function mountMachineUnlockerSection(
+    mainTab: any,
+    findNetworkerServiceRemotesFolderFn: (string, string?) -> Instance?,
+    getDataServiceClientFn: () -> any?
+)
+    mainTab:CreateSection("Machine Unlocker")
+
+    MachineUnlockerSection = {
+        dropdown = nil :: any,
+        paragraph = nil :: any,
+        machines = {} :: { any },
+        optionToId = {} :: { [string]: string },
+        selectedId = nil :: string?,
+        findNetworkerServiceRemotesFolderFn = findNetworkerServiceRemotesFolderFn,
+        getDataServiceClientFn = getDataServiceClientFn,
+    }
+
+    function MachineUnlockerSection.tryLoadMachineCatalog(): boolean
+        if #MachineUnlockerSection.machines > 0 then
+            return true
+        end
+        MachineUnlockerSection.machines = {
+            {
+                id = "crafting",
+                label = "Crafting Machine",
+                service = "CraftingService",
+                unlockKey = "craftingMachine",
+                price = 1000000,
+                currency = "coins",
+                utilsMods = { "Crafting", "CraftingServiceUtils" },
+                priceField = "CRAFTING_MACHINE_UNLOCK_PRICE",
+                keyField = "CRAFTING_MACHINE_UNLOCK_KEY",
+            },
+            {
+                id = "xpTransfer",
+                label = "XP Transfer Machine",
+                service = "XpTransferService",
+                unlockKey = "xpTransferMachine",
+                price = 1000000,
+                currency = "coins",
+                utilsMods = { "XpTransfer", "XpTransferServiceUtils" },
+                priceField = "XP_TRANSFER_MACHINE_UNLOCK_PRICE",
+                keyField = "XP_TRANSFER_MACHINE_UNLOCK_KEY",
+            },
+            {
+                id = "fruitExtractor",
+                label = "Fruit Extractor Machine",
+                service = "FruitExtractorService",
+                unlockKey = "fruitExtractor",
+                price = 2000000,
+                currency = "coins",
+                utilsMods = { "FruitExtractor", "FruitExtractorServiceUtils" },
+                priceField = "FRUIT_EXTRACTOR_UNLOCK_PRICE",
+                keyField = "FRUIT_EXTRACTOR_UNLOCK_KEY",
+            },
+        }
+        src = ReplicatedStorage:FindFirstChild("Source")
+        features = src and src:FindFirstChild("Features")
+        if not features then
+            return true
+        end
+        for _, def in ipairs(MachineUnlockerSection.machines) do
+            folder = features:FindFirstChild(def.utilsMods[1])
+            mod = folder and folder:FindFirstChild(def.utilsMods[2])
+            if mod and mod:IsA("ModuleScript") then
+                ok, utils = pcall(require, mod)
+                if ok and type(utils) == "table" then
+                    price = utils[def.priceField]
+                    key = utils[def.keyField]
+                    if type(price) == "number" then
+                        def.price = price
+                    end
+                    if type(key) == "string" and key ~= "" then
+                        def.unlockKey = key
+                    end
+                end
+            end
+        end
+        return true
+    end
+
+    function MachineUnlockerSection.getUpgradesSave(): { [string]: any }
+        client = MachineUnlockerSection.getDataServiceClientFn()
+        if not client then
+            return {}
+        end
+        ok, data = pcall(function()
+            return client:get("upgrades")
+        end)
+        if ok and type(data) == "table" then
+            return data
+        end
+        return {}
+    end
+
+    function MachineUnlockerSection.getMachineDef(machineId: string?): any?
+        if not machineId then
+            return nil
+        end
+        for _, def in ipairs(MachineUnlockerSection.machines) do
+            if def.id == machineId then
+                return def
+            end
+        end
+        return nil
+    end
+
+    function MachineUnlockerSection.isMachineUnlocked(def: any): boolean
+        if type(def) ~= "table" then
+            return false
+        end
+        upgrades = MachineUnlockerSection.getUpgradesSave()
+        return upgrades[def.unlockKey] == true
+    end
+
+    function MachineUnlockerSection.getCoinBalance(): number?
+        client = MachineUnlockerSection.getDataServiceClientFn()
+        if not client then
+            return nil
+        end
+        return SlimeRngUtil.readDataServiceNumber(client, "coins")
+    end
+
+    function MachineUnlockerSection.dropdownOptionLabel(def: any): string
+        if type(def) ~= "table" then
+            return "?"
+        end
+        priceText = SlimeRngUtil.formatSuffixNumber(def.price or 0)
+        currency = tostring(def.currency or "coins")
+        owned = MachineUnlockerSection.isMachineUnlocked(def) and " [OWNED]" or ""
+        return ('%s — %s %s%s'):format(def.label, priceText, currency, owned)
+    end
+
+    function MachineUnlockerSection.buildDropdownOptions(): { string }
+        MachineUnlockerSection.tryLoadMachineCatalog()
+        options = {}
+        MachineUnlockerSection.optionToId = {}
+        for _, def in ipairs(MachineUnlockerSection.machines) do
+            opt = MachineUnlockerSection.dropdownOptionLabel(def)
+            table.insert(options, opt)
+            MachineUnlockerSection.optionToId[opt] = def.id
+        end
+        table.sort(options)
+        return options
+    end
+
+    function MachineUnlockerSection.selectedMachineDef(): any?
+        return MachineUnlockerSection.getMachineDef(MachineUnlockerSection.selectedId)
+    end
+
+    function MachineUnlockerSection.syncSelectionFromDropdown(value: any)
+        picked = rayfieldDropdownFirst(value)
+        if type(picked) == "string" then
+            MachineUnlockerSection.selectedId = MachineUnlockerSection.optionToId[picked]
+        else
+            MachineUnlockerSection.selectedId = nil
+        end
+    end
+
+    function MachineUnlockerSection.buildBody(): string
+        MachineUnlockerSection.tryLoadMachineCatalog()
+        def = MachineUnlockerSection.selectedMachineDef()
+        if not def then
+            return "Select a machine from the dropdown."
+        end
+        coins = MachineUnlockerSection.getCoinBalance()
+        price = tonumber(def.price) or 0
+        lines = {
+            "Machine: " .. def.label,
+            ("Price: %s %s"):format(SlimeRngUtil.formatSuffixNumber(price), tostring(def.currency or "coins")),
+            ("Status: %s"):format(MachineUnlockerSection.isMachineUnlocked(def) and "Unlocked" or "Locked"),
+        }
+        if coins ~= nil then
+            table.insert(lines, ("Coins: %s / %s"):format(
+                SlimeRngUtil.formatSuffixNumber(coins),
+                SlimeRngUtil.formatSuffixNumber(price)
+            ))
+            if not MachineUnlockerSection.isMachineUnlocked(def) then
+                table.insert(lines, ("Ready: %s"):format(coins >= price and "yes" or "no"))
+            end
+        else
+            table.insert(lines, "Coins: waiting for DataService")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    function MachineUnlockerSection.refreshParagraph()
+        if MachineUnlockerSection.paragraph and MachineUnlockerSection.paragraph.Set then
+            MachineUnlockerSection.paragraph:Set({
+                Title = "Machine",
+                Content = MachineUnlockerSection.buildBody(),
+            })
+        end
+    end
+
+    function MachineUnlockerSection.refreshDropdown()
+        options = MachineUnlockerSection.buildDropdownOptions()
+        if not MachineUnlockerSection.dropdown then
+            return
+        end
+        current = nil
+        if MachineUnlockerSection.selectedId then
+            for opt, id in pairs(MachineUnlockerSection.optionToId) do
+                if id == MachineUnlockerSection.selectedId then
+                    current = opt
+                    break
+                end
+            end
+        end
+        if not current and #options > 0 then
+            current = options[1]
+            MachineUnlockerSection.selectedId = MachineUnlockerSection.optionToId[current]
+        end
+        if MachineUnlockerSection.dropdown.Set then
+            pcall(function()
+                MachineUnlockerSection.dropdown:Set({
+                    Options = options,
+                    CurrentOption = if current then { current } else {},
+                })
+            end)
+        end
+    end
+
+    function MachineUnlockerSection.scheduleRefresh()
+        deferUiOnHeartbeat(function()
+            MachineUnlockerSection.refreshDropdown()
+            MachineUnlockerSection.refreshParagraph()
+        end, "machineUnlockerRefresh")
+    end
+
+    function MachineUnlockerSection.getServiceRemote(serviceName: string): RemoteFunction?
+        fold = MachineUnlockerSection.findNetworkerServiceRemotesFolderFn(serviceName, REBIRTH_NETWORKER_VERSION)
+        rf = fold and fold:FindFirstChild("RemoteFunction")
+        if rf and rf:IsA("RemoteFunction") then
+            return rf
+        end
+        return nil
+    end
+
+    function MachineUnlockerSection.requestUnlockMachine(def: any): (boolean, string?)
+        if type(def) ~= "table" or type(def.service) ~= "string" then
+            return false, "Invalid machine"
+        end
+        if MachineUnlockerSection.isMachineUnlocked(def) then
+            return false, "Already unlocked"
+        end
+        rf = MachineUnlockerSection.getServiceRemote(def.service)
+        if not rf then
+            return false, def.service .. " RemoteFunction not found"
+        end
+        ok, success, errMsg = pcall(function()
+            return (rf :: RemoteFunction):InvokeServer("requestUnlockMachine")
+        end)
+        if not ok then
+            return false, tostring(success)
+        end
+        if success == true then
+            return true, nil
+        end
+        if type(errMsg) == "string" and errMsg ~= "" then
+            return false, errMsg
+        end
+        return false, "Failed to unlock machine"
+    end
+
+    function MachineUnlockerSection.unlockSelectedMachine()
+        def = MachineUnlockerSection.selectedMachineDef()
+        if not def then
+            mountNotify({
+                Title = "Machine Unlocker",
+                Content = "Select a machine first.",
+                Icon = "x",
+            })
+            return
+        end
+        if MachineUnlockerSection.isMachineUnlocked(def) then
+            mountNotify({
+                Title = "Machine Unlocker",
+                Content = def.label .. " is already unlocked.",
+            })
+            return
+        end
+        ok, errMsg = MachineUnlockerSection.requestUnlockMachine(def)
+        if ok then
+            mountNotify({
+                Title = "Machine Unlocker",
+                Content = "Unlocked " .. def.label .. ".",
+                Icon = "check",
+            })
+            MachineUnlockerSection.scheduleRefresh()
+        else
+            mountNotify({
+                Title = "Machine Unlocker",
+                Content = errMsg or "Unlock failed.",
+                Icon = "x",
+            })
+        end
+    end
+
+    MachineUnlockerSection.paragraph = mainTab:CreateParagraph({
+        Title = "Machine",
+        Content = "Loading…",
+    })
+
+    initialOptions = MachineUnlockerSection.buildDropdownOptions()
+    if #initialOptions > 0 then
+        MachineUnlockerSection.selectedId = MachineUnlockerSection.optionToId[initialOptions[1]]
+    end
+
+    MachineUnlockerSection.dropdown = mainTab:CreateDropdown({
+        Name = "Machine",
+        Flag = "main_machine_unlocker_dropdown",
+        Options = initialOptions,
+        CurrentOption = if #initialOptions > 0 then { initialOptions[1] } else {},
+        Search = true,
+        Callback = function(value)
+            MachineUnlockerSection.syncSelectionFromDropdown(value)
+            MachineUnlockerSection.scheduleRefresh()
+        end,
+    })
+
+    mainTab:CreateButton({
+        Name = "Unlock Machine",
+        Flag = "main_machine_unlock_button",
+        Callback = function()
+            MachineUnlockerSection.unlockSelectedMachine()
+        end,
+    })
+
+    MachineUnlockerSection.scheduleRefresh()
+    schedulePeriodicOnHeartbeat(HEARTBEAT_POLL_SEC, MachineUnlockerSection.scheduleRefresh)
+end
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", 4483362458)
@@ -4822,6 +5155,8 @@ do
     mountAutoOpenZoneSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
 
     mountAutoUpgradesSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
+
+    mountMachineUnlockerSection(MainTab, findNetworkerServiceRemotesFolder, getDataServiceClient)
 
     mountUfoEventSection(MainTab, findNetworkerServiceRemotesFolder)
 
