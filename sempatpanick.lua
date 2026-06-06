@@ -44,6 +44,7 @@ do
         warn("[sempatpanick] compile failed:", tostring(err))
         return
     end
+    shared.sempatpanick_baseURL = baseURL
     local okRun, runErr = pcall(chunk)
     if not okRun then
         warn("[sempatpanick] script error:", tostring(runErr))

@@ -14,7 +14,8 @@ local TweenService = game:GetService("TweenService")
 
 local RayfieldLibrary
 
-local baseURL = "https://raw.githubusercontent.com/sempatpanick/roblox-script-experimental/refs/heads/main"
+local baseURL = shared.sempatpanick_baseURL
+assert(type(baseURL) == "string" and #baseURL > 0, "[sempatpanick] baseURL not set - load via sempatpanick.lua or sempatpanick_local.lua")
 
 do
     local ok, result = pcall(function()
