@@ -3,6 +3,13 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local function loadCoordsMod()
+	local loadFunctionModule = shared.__sempatpanick_load_function_module
+	if type(loadFunctionModule) == "function" then
+		local ok, mod = pcall(loadFunctionModule, "string/coords")
+		if ok then
+			return mod
+		end
+	end
 	local ok, mod = pcall(require, "../../string/coords")
 	if ok then
 		return mod
@@ -11,13 +18,25 @@ local function loadCoordsMod()
 	if ok then
 		return mod
 	end
-	local okLoader, loadFunctionModule = pcall(require, "../../load_module")
-	if okLoader then
-		return loadFunctionModule("string/coords")
-	end
-	okLoader, loadFunctionModule = pcall(require, "../load_module")
-	if okLoader then
-		return loadFunctionModule("string/coords")
+	local baseURL = shared.sempatpanick_baseURL
+	if type(baseURL) == "string" and baseURL ~= "" then
+		local url = baseURL .. "/functions/string/coords.lua"
+		local okGet, source = pcall(function()
+			return game:HttpGet(url)
+		end)
+		if okGet and type(source) == "string" and #source >= 8 then
+			if source:byte(1) == 0xEF and source:byte(2) == 0xBB and source:byte(3) == 0xBF then
+				source = source:sub(4)
+			end
+			local compile = loadstring or load
+			local chunk, compileErr = compile(source, "functions/string/coords")
+			if type(chunk) == "function" then
+				local okRun, result = pcall(chunk)
+				if okRun then
+					return result
+				end
+			end
+		end
 	end
 	error("[expedition_antartica/routes] failed to load string/coords")
 end

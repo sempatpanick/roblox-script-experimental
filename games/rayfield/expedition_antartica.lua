@@ -1,4 +1,4 @@
-local cloneref = (cloneref or clonereference or function(instance) return instance end)
+﻿local cloneref = (cloneref or clonereference or function(instance) return instance end)
 
 -- ====================================================================
 --                        CORE SERVICES
@@ -56,6 +56,13 @@ local function rayfieldDropdownFirst(valueOrTable)
     return valueOrTable
 end
 
+local function stripSourceBom(source)
+    if type(source) == "string" and source:byte(1) == 0xEF and source:byte(2) == 0xBB and source:byte(3) == 0xBF then
+        return source:sub(4)
+    end
+    return source
+end
+
 -- */  Recording Tab (module)  /* --
 local RECORDING_TAB_REPO = baseURL .. "/tabs/rayfield/recording_tab.lua"
 local function loadCreateRecordingTab(repoUrl)
@@ -73,6 +80,7 @@ local function loadCreateRecordingTab(repoUrl)
         warn("[Recording Tab] HttpGet failed:", tostring(source))
         return nil
     end
+    source = stripSourceBom(source)
 
     local chunk, compileErr
     if type(load) == "function" then
@@ -129,6 +137,7 @@ local function loadCreateLocalPlayerTab(repoUrl)
         warn("[Local Player] HttpGet failed:", tostring(source))
         return nil
     end
+    source = stripSourceBom(source)
 
     local chunk, compileErr
     if type(load) == "function" then
@@ -184,6 +193,7 @@ local function loadCreateObjectsTab(repoUrl)
         warn("[Objects] HttpGet failed:", tostring(source))
         return nil
     end
+    source = stripSourceBom(source)
 
     local chunk, compileErr
     if type(load) == "function" then
@@ -239,6 +249,7 @@ local function loadCreateTeleportTab(repoUrl)
         warn("[Teleport Tab] HttpGet failed:", tostring(source))
         return nil
     end
+    source = stripSourceBom(source)
 
     local chunk, compileErr
     if type(load) == "function" then
@@ -294,6 +305,7 @@ local function loadCreateConfigTab(repoUrl)
         warn("[Config Tab] HttpGet failed:", tostring(source))
         return nil
     end
+    source = stripSourceBom(source)
 
     local chunk, compileErr
     if type(load) == "function" then
@@ -358,6 +370,7 @@ do
             return game:HttpGet(baseURL .. "/functions/load_module.lua")
         end)
         assert(okGet and type(source) == "string", "[expedition_antartica] failed to load functions/load_module")
+        source = stripSourceBom(source)
         local chunk = (loadstring or load)(source, "functions/load_module")
         loadFunctionModule = chunk()
     end
@@ -365,9 +378,14 @@ end
 
 local playerMod = loadFunctionModule("player/character")
 local formatMod = loadFunctionModule("instance/format")
+local coordsMod = loadFunctionModule("string/coords")
 local gameMod = loadFunctionModule("games/expedition_antartica")
 
 local getLocalCharacterParts = playerMod.getLocalCharacterParts
+local getLocalRootPart = function()
+    return playerMod.getLocalRootPart(Players)
+end
+local parsePositionString = coordsMod.parsePositionString
 
 local function notify(title, content, icon)
     mountNotify({ Title = title, Content = content or "", Icon = icon or "check" })
@@ -476,6 +494,59 @@ do
         end,
     })
 
+    AutomationTab:CreateSection("Teleport to Camp")
+    local teleportCampNames = {}
+    for _, camp in ipairs(gameMod.teleportCamps) do
+        table.insert(teleportCampNames, camp.name)
+    end
+    local selectedTeleportCamp = teleportCampNames[1]
+
+    AutomationTab:CreateDropdown({
+        Ext = true,
+        Name = "Camp",
+        Flag = "expedition_teleport_camp_select",
+        Options = teleportCampNames,
+        CurrentOption = { selectedTeleportCamp },
+        Callback = function(opts)
+            local value = type(opts) == "table" and opts[1] or opts
+            selectedTeleportCamp = value
+        end,
+    })
+
+    AutomationTab:CreateButton({
+        Name = "Teleport",
+        Ext = true,
+        Callback = function()
+            local rootPart = getLocalRootPart()
+            if not rootPart then
+                notify("Teleport to Camp", "Character not loaded", "x")
+                return
+            end
+            if not selectedTeleportCamp then
+                notify("Teleport to Camp", "Select a camp first", "x")
+                return
+            end
+            local posStr = nil
+            for _, camp in ipairs(gameMod.teleportCamps) do
+                if camp.name == selectedTeleportCamp then
+                    posStr = camp.position
+                    break
+                end
+            end
+            if not posStr then
+                notify("Teleport to Camp", "Camp not found", "x")
+                return
+            end
+            local targetPos = parsePositionString(posStr)
+            if not targetPos then
+                notify("Teleport to Camp", "Invalid position", "x")
+                return
+            end
+            rootPart.CFrame = CFrame.new(targetPos)
+            notify("Teleport to Camp", "Teleported to " .. selectedTeleportCamp)
+        end,
+    })
+
     local AutoSummitCpParagraph
     local function updateAutoSummitCpParagraph()
         if not AutoSummitCpParagraph then
@@ -499,7 +570,7 @@ do
     AutomationTab:CreateSection("Auto Summit")
     AutoSummitCpParagraph = AutomationTab:CreateParagraph({
         Title = "Current camp / checkpoint",
-        Content = "CHECKPOINT: â€”\nProgress #0 Â· Next leg: Camp 1",
+        Content = "CHECKPOINT: -\nProgress #0 - Next leg: Camp 1",
     })
     task.defer(updateAutoSummitCpParagraph)
 
@@ -569,11 +640,6 @@ createTeleportTab(Window, mountNotify, {
     walkToLocation = true,
     playerSearch = true,
     playerNoneOption = true,
-    campTeleport = {
-        sectionTitle = "Teleport to Camp",
-        mode = "dropdown",
-        camps = gameMod.teleportCamps,
-    },
 })
 
 -- */  Objects Tab  /* --

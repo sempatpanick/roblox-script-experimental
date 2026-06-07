@@ -31,6 +31,10 @@ local function loadFunctionModule(subpath)
 		error("[functions] HttpGet failed for " .. url .. ": " .. tostring(source))
 	end
 
+	if source:byte(1) == 0xEF and source:byte(2) == 0xBB and source:byte(3) == 0xBF then
+		source = source:sub(4)
+	end
+
 	local compile = loadstring or load
 	if type(compile) ~= "function" then
 		error("[functions] loadstring/load unavailable")
@@ -48,5 +52,8 @@ local function loadFunctionModule(subpath)
 
 	return result
 end
+
+-- HttpGet-loaded chunks cannot require() sibling modules; expose loader globally.
+shared.__sempatpanick_load_function_module = loadFunctionModule
 
 return loadFunctionModule

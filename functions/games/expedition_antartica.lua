@@ -3,20 +3,20 @@
   Load via: loadFunctionModule("games/expedition_antartica")
 ]]
 
-local loadFunctionModule
-do
+local loadFunctionModule = shared.__sempatpanick_load_function_module
+if type(loadFunctionModule) ~= "function" then
 	local ok, mod = pcall(require, "../load_module")
-	if ok then
+	if ok and type(mod) == "function" then
 		loadFunctionModule = mod
 	else
 		ok, mod = pcall(require, "../../load_module")
-		if ok then
+		if ok and type(mod) == "function" then
 			loadFunctionModule = mod
 		end
 	end
 end
 
-if not loadFunctionModule then
+if type(loadFunctionModule) ~= "function" then
 	error("[games/expedition_antartica] load_module unavailable")
 end
 

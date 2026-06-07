@@ -34,6 +34,9 @@ do
         warn("[sempatpanick] HttpGet failed for", scriptURL, tostring(source))
         return
     end
+    if source:byte(1) == 0xEF and source:byte(2) == 0xBB and source:byte(3) == 0xBF then
+        source = source:sub(4)
+    end
     local compile = loadstring or load
     if type(compile) ~= "function" then
         warn("[sempatpanick] loadstring/load unavailable")
