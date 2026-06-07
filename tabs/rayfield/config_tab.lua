@@ -108,9 +108,14 @@ local function createConfigTab(windowRef, notifyFn, options)
         warn("[Config Tab] configDir is required")
         return
     end
+    local useWindUIConfig = options.useWindUIConfig == true and windowRef.ConfigManager ~= nil
     if not RayfieldLibrary then
-        warn("[Config Tab] rayfieldLibrary is required")
-        return
+        if useWindUIConfig then
+            RayfieldLibrary = { Flags = {} }
+        else
+            warn("[Config Tab] rayfieldLibrary is required")
+            return
+        end
     end
     local slug = slugFromConfigDir(CONFIG_DIR)
     local gameLabel = options.gameLabel or slug:gsub("_", " ")
@@ -248,6 +253,9 @@ local function createConfigTab(windowRef, notifyFn, options)
         }
     end
     local function getConfigManager()
+        if useWindUIConfig and windowRef.ConfigManager then
+            return windowRef.ConfigManager
+        end
         if type(writefile) ~= "function" and type(readfile) ~= "function" then
             return nil
         end
