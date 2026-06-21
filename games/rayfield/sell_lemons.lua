@@ -363,7 +363,7 @@ do
 
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
-    local autoPickFruitDelaySec = 2
+    local autoPickFruitDelaySec = 5
 
     local autoPickCashDropRunning = false
     local autoPickCashDropLoopId = 0
@@ -1452,6 +1452,21 @@ do
         or (typeof(clickdetector) == "function" and clickdetector)
         or nil
 
+    local function isUnderWorkspaceTycoon(instance)
+        local current = instance
+        while current and current ~= Workspace do
+            local parent = current.Parent
+            if parent == Workspace then
+                local numberPart = string.sub(current.Name, 7)
+                return string.sub(current.Name, 1, 6) == "Tycoon"
+                    and numberPart ~= ""
+                    and tonumber(numberPart) ~= nil
+            end
+            current = parent
+        end
+        return false
+    end
+
     local function pickFruitOnce()
         if not fireClickDetectorFn then
             return false
@@ -1459,7 +1474,7 @@ do
 
         local picked = 0
         for _, fruit in CollectionService:GetTagged("ClickFruit") do
-            if fruit:IsDescendantOf(Workspace) then
+            if isUnderWorkspaceTycoon(fruit) then
                 local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
                 if detector then
                     pcall(function()
@@ -1469,6 +1484,11 @@ do
                 end
             end
         end
+        mountNotify({
+            Title = "Auto Pick Fruit",
+            Content = "Picked " .. picked .. " fruits",
+            Icon = "check",
+        })
         return true, picked
     end
 
