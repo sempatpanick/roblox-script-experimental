@@ -365,6 +365,10 @@ do
     local autoPickupFruitLoopId = 0
     local autoPickupFruitDelaySec = 0.15
 
+    local autoPickCashDropRunning = false
+    local autoPickCashDropLoopId = 0
+    local autoPickCashDropDelaySec = 0.5
+
     local autoAcceptOfferRunning = false
     local autoAcceptOfferLoopId = 0
     local autoAcceptOfferDelaySec = 0.5
@@ -1496,6 +1500,102 @@ do
                 while autoPickupFruitRunning and loopId == autoPickupFruitLoopId do
                     local ok = pcall(pickFruitOnce)
                     local delay = math.max(0.05, tonumber(autoPickupFruitDelaySec) or 0.15)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    local function getLocalHumanoidRootPart()
+        local player = Players.LocalPlayer
+        local character = player and player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+        return nil
+    end
+
+    local function getCashDropPosition(cashDrop)
+        if not cashDrop or not cashDrop.Parent then
+            return nil
+        end
+
+        local bag = cashDrop:FindFirstChild("Bag")
+        if bag and bag:IsA("BasePart") then
+            return bag.Position
+        end
+
+        if cashDrop:IsA("Model") then
+            return cashDrop:GetPivot().Position
+        end
+
+        if cashDrop:IsA("BasePart") then
+            return cashDrop.Position
+        end
+
+        return nil
+    end
+
+    local function collectCashDrops()
+        local folder = Workspace:FindFirstChild("CashDrops")
+        if not folder then
+            return {}
+        end
+
+        local drops = {}
+        for _, child in folder:GetChildren() do
+            if child.Name == "CashDrop" and child.Parent then
+                table.insert(drops, child)
+            end
+        end
+        return drops
+    end
+
+    local function pickCashDropsOnce()
+        local root = getLocalHumanoidRootPart()
+        if not root then
+            return false
+        end
+
+        local drops = collectCashDrops()
+        if #drops == 0 then
+            return false
+        end
+
+        local savedCFrame = root.CFrame
+        for _, cashDrop in ipairs(drops) do
+            if not autoPickCashDropRunning then
+                break
+            end
+
+            local dropPos = getCashDropPosition(cashDrop)
+            if dropPos then
+                root.CFrame = CFrame.new(dropPos + Vector3.new(0, 2, 0))
+                task.wait(2)
+                root.CFrame = savedCFrame
+            end
+        end
+
+        return true
+    end
+
+    MainTab:CreateToggle({
+        Name = "Auto Pick Cash Drop",
+        Flag = "main_auto_pick_cash_drop",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoPickCashDropRunning = enabled == true
+            if not autoPickCashDropRunning then
+                return
+            end
+
+            autoPickCashDropLoopId += 1
+            local loopId = autoPickCashDropLoopId
+            task.spawn(function()
+                while autoPickCashDropRunning and loopId == autoPickCashDropLoopId do
+                    local ok = pcall(pickCashDropsOnce)
+                    local delay = math.max(0.1, tonumber(autoPickCashDropDelaySec) or 0.5)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
