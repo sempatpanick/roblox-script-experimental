@@ -361,6 +361,10 @@ do
     local upgradeListParagraph
     local upgradeRefreshInProgress = false
 
+    local autoClaimCashRunning = false
+    local autoClaimCashLoopId = 0
+    local autoClaimCashDelaySec = 0.5
+
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
@@ -1338,6 +1342,94 @@ do
         return false
     end
 
+    local function findWakeIncomeStreamRemote(tycoonInstance)
+        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+        local wakeRemote = remotes and remotes:FindFirstChild("WakeIncomeStream")
+        if wakeRemote and wakeRemote:IsA("RemoteFunction") then
+            return wakeRemote
+        end
+        return nil
+    end
+
+    local function getEarnerStreamName(entity, instance)
+        if entity and type(entity.Name) == "string" and entity.Name ~= "" then
+            return entity.Name
+        end
+        return alphanumericName(instance.Name)
+    end
+
+    local function isEarnerCashClaimable(entity)
+        if not entity then
+            return false
+        end
+
+        if type(entity.IsEnabled) == "function" then
+            local ok, enabled = pcall(function()
+                return entity:IsEnabled() == true
+            end)
+            if ok and not enabled then
+                return false
+            end
+        end
+
+        if type(entity.GetEstimatedNextEarnTime) ~= "function" then
+            return false
+        end
+
+        local ok, remaining = pcall(function()
+            return entity:GetEstimatedNextEarnTime()
+        end)
+        if not ok then
+            return false
+        end
+
+        -- Matches UIManageTileEarner Progress.Active: nil means cash is ready to collect.
+        return remaining == nil
+    end
+
+    local function tryAutoClaimCashOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local tycoonInstance = tycoon.Instance
+        local remote = findWakeIncomeStreamRemote(tycoonInstance)
+        if not remote then
+            return false
+        end
+
+        local claimedAny = false
+        for _, instance in tycoonInstance:GetDescendants() do
+            if instance:HasTag("Tycoon.Earner") then
+                local entity = getEarnerEntity(ctx, instance)
+                if isEarnerCashClaimable(entity) then
+                    local streamName = getEarnerStreamName(entity, instance)
+                    if streamName ~= "" then
+                        local ok = pcall(function()
+                            remote:InvokeServer(streamName)
+                        end)
+                        if ok then
+                            claimedAny = true
+                            mountNotify({
+                                Title = "Auto Claim Cash",
+                                Content = "Claimed " .. getEarnerDisplayName(entity, instance),
+                                Icon = "check",
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        return claimedAny
+    end
+
     MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
@@ -1420,7 +1512,7 @@ do
         end
     end)
 
-    MainTab:CreateSection("Auto Upgrade")
+    MainTab:CreateSection("Cash Earner")
 
     upgradeListParagraph = MainTab:CreateParagraph({
         Title = "Cash Earned",
@@ -1463,6 +1555,41 @@ do
                         requestUpgradeListRefresh(false)
                     end)
                     local delay = math.max(0.1, tonumber(autoUpgradeDelaySec) or 0.5)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Claim Delay (seconds)",
+        PlaceholderText = "Seconds between auto cash claims",
+        Flag = "main_auto_claim_cash_delay",
+        CurrentValue = tostring(autoClaimCashDelaySec),
+        Callback = function(value)
+            autoClaimCashDelaySec = math.max(0.1, tonumber(value) or 0.5)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Claim Cash",
+        Flag = "main_auto_claim_cash",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoClaimCashRunning = enabled == true
+            if not autoClaimCashRunning then
+                return
+            end
+
+            autoClaimCashLoopId += 1
+            local loopId = autoClaimCashLoopId
+            task.spawn(function()
+                while autoClaimCashRunning and loopId == autoClaimCashLoopId do
+                    local ok = pcall(function()
+                        tryAutoClaimCashOnce()
+                        applyPlayerInfoParagraph()
+                    end)
+                    local delay = math.max(0.1, tonumber(autoClaimCashDelaySec) or 0.5)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
