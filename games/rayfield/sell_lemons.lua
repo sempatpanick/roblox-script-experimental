@@ -375,6 +375,15 @@ do
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
+    local autoPickFruitMode = "Normal"
+    local AUTO_PICK_FRUIT_MODES = { "Normal" }
+
+    local function rayfieldDropdownFirst(valueOrTable)
+        if type(valueOrTable) == "table" then
+            return valueOrTable[1]
+        end
+        return valueOrTable
+    end
 
     local autoPickCashDropRunning = false
     local autoPickCashDropLoopId = 0
@@ -1926,7 +1935,7 @@ do
         return false
     end
 
-    local function pickFruitOnce()
+    local function pickFruitNormalOnce()
         if not fireClickDetectorFn then
             return false
         end
@@ -1951,7 +1960,37 @@ do
         return true, picked
     end
 
-    MainTab:CreateSection("Auto")
+    local function runAutoPickFruitOnce()
+        if autoPickFruitMode == "Normal" then
+            return pickFruitNormalOnce()
+        end
+        return false
+    end
+
+    MainTab:CreateSection("Auto Pick Fruit")
+
+    MainTab:CreateDropdown({
+        Name = "Mode",
+        Flag = "main_auto_pick_fruit_mode",
+        Options = AUTO_PICK_FRUIT_MODES,
+        CurrentOption = { autoPickFruitMode },
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if picked and table.find(AUTO_PICK_FRUIT_MODES, picked) then
+                autoPickFruitMode = picked
+            end
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto fruit picks",
+        Flag = "main_auto_pick_fruit_delay",
+        CurrentValue = tostring(autoPickFruitDelaySec),
+        Callback = function(value)
+            autoPickFruitDelaySec = math.max(0.05, tonumber(value) or autoPickFruitDelaySec)
+        end,
+    })
 
     MainTab:CreateToggle({
         Name = "Auto Pick Fruit",
@@ -1977,13 +2016,15 @@ do
             local loopId = autoPickFruitLoopId
             task.spawn(function()
                 while autoPickFruitRunning and loopId == autoPickFruitLoopId do
-                    local ok = pcall(pickFruitOnce)
-                    local delay = math.max(0.05, tonumber(autoPickFruitDelaySec) or 0.15)
+                    local ok = pcall(runAutoPickFruitOnce)
+                    local delay = math.max(0.05, tonumber(autoPickFruitDelaySec) or 5)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
         end,
     })
+
+    MainTab:CreateSection("Auto")
 
     local function getLocalHumanoidRootPart()
         local player = Players.LocalPlayer
