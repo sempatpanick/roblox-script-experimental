@@ -372,6 +372,12 @@ do
     local autoRebirthLoopId = 0
     local autoRebirthDelaySec = 1
 
+    local evolutionInfoParagraph
+    local evolutionInfoAutoRefreshSec = 1
+    local autoEvolveRunning = false
+    local autoEvolveLoopId = 0
+    local autoEvolveDelaySec = 1
+
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
@@ -413,6 +419,7 @@ do
         ClientTycoonPurchase = { "Modules", "Tycoon", "Entity", "Client", "ClientTycoonPurchase" },
         ClientTycoonBalances = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonBalances" },
         ClientTycoonRebirth = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonRebirth" },
+        ClientTycoonEvolution = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonEvolution" },
     }
 
     local function resolveModuleScript(pathParts)
@@ -474,6 +481,7 @@ do
             ClientTycoonPurchase = tryRequirePath(MODULE_PATHS.ClientTycoonPurchase),
             ClientTycoonBalances = tryRequirePath(MODULE_PATHS.ClientTycoonBalances),
             ClientTycoonRebirth = tryRequirePath(MODULE_PATHS.ClientTycoonRebirth),
+            ClientTycoonEvolution = tryRequirePath(MODULE_PATHS.ClientTycoonEvolution),
         }
         return cachedOptionalCtx
     end
@@ -496,6 +504,7 @@ do
             ctx.ClientTycoonPurchase = optional.ClientTycoonPurchase
             ctx.ClientTycoonBalances = optional.ClientTycoonBalances
             ctx.ClientTycoonRebirth = optional.ClientTycoonRebirth
+            ctx.ClientTycoonEvolution = optional.ClientTycoonEvolution
         end
         return ctx
     end
@@ -1680,6 +1689,212 @@ do
         return ok
     end
 
+    local function getTycoonEvolutionComponent(ctx, tycoon)
+        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonEvolution then
+            local ok, component = pcall(function()
+                return tycoon:GetComponent(ctx.ClientTycoonEvolution)
+            end)
+            if ok and component then
+                return component
+            end
+        end
+        return nil
+    end
+
+    local function getEvolutionDisplayName(evolution, displayInfo)
+        if type(displayInfo) == "table" and type(displayInfo.Name) == "string" and displayInfo.Name ~= "" then
+            return displayInfo.Name
+        end
+        return tostring(evolution)
+    end
+
+    local function formatEvolutionProgressPercent(progress)
+        if type(progress) ~= "number" then
+            return "?"
+        end
+        local shown = progress
+        if shown < 1 then
+            shown = math.min(shown, 0.9945)
+        end
+        local decimals = if shown > 0.0995 then 0 else 1
+        local text = string.format("%." .. tostring(decimals) .. "f", shown * 100)
+        return text:gsub("%.?0+$", "") .. "%"
+    end
+
+    local function getEvolutionProgressInfo(ctx, tycoon)
+        local evolution = getTycoonEvolutionComponent(ctx, tycoon)
+        if not evolution or type(evolution.GetEvolutionProgress) ~= "function" then
+            return nil
+        end
+
+        local ok, progress, startingBonus = pcall(function()
+            return evolution:GetEvolutionProgress()
+        end)
+        if not ok then
+            return nil
+        end
+
+        return {
+            progress = progress,
+            startingBonus = startingBonus,
+            ready = type(progress) == "number" and progress >= 1,
+        }
+    end
+
+    local function getEvolutionInfoContent()
+        local ctx, ctxErr = getSellLemonsGameContext(true)
+        if not ctx then
+            return ctxErr or "Could not load game data."
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return "Waiting for tycoon..."
+        end
+
+        local evolution = getTycoonEvolutionComponent(ctx, tycoon)
+        if not evolution then
+            return "Could not read evolution data."
+        end
+
+        local currentLevel
+        local currentDisplay
+        local nextDisplay
+        local incomeBonus
+        local okLevel, levelOrErr = pcall(function()
+            return evolution:GetEvolution()
+        end)
+        if not okLevel then
+            return "Could not read evolution level."
+        end
+        currentLevel = levelOrErr
+
+        local okCurrent, currentInfo = pcall(function()
+            return evolution:GetEvolutionDisplayInfo()
+        end)
+        if okCurrent then
+            currentDisplay = currentInfo
+        end
+
+        local okNext, nextInfo = pcall(function()
+            return evolution:GetEvolutionDisplayInfo(currentLevel + 1)
+        end)
+        if okNext then
+            nextDisplay = nextInfo
+        end
+
+        local okBonus, bonusOrErr = pcall(function()
+            return evolution:GetEvolutionBonus()
+        end)
+        if okBonus and type(bonusOrErr) == "number" then
+            incomeBonus = bonusOrErr
+        end
+
+        local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
+        if not progressInfo then
+            return "Could not read evolution progress."
+        end
+
+        local lines = {
+            string.format("Current Fruit: %s", getEvolutionDisplayName(currentLevel, currentDisplay)),
+            string.format("Current Evolution: %s", tostring(currentLevel)),
+            string.format(
+                "Next Fruit: %s",
+                getEvolutionDisplayName(currentLevel + 1, nextDisplay)
+            ),
+            string.format("Progress: %s", formatEvolutionProgressPercent(progressInfo.progress)),
+        }
+
+        if progressInfo.ready and progressInfo.startingBonus ~= nil then
+            table.insert(lines, string.format(
+                "Starting Bonus: %s",
+                formatHugeAmount(ctx, progressInfo.startingBonus)
+            ))
+        end
+
+        if incomeBonus then
+            table.insert(lines, string.format(
+                "Income Bonus: x%s income speed",
+                tostring(math.round(incomeBonus))
+            ))
+        end
+
+        table.insert(lines, string.format(
+            "Ready to Evolve: %s",
+            if progressInfo.ready then "Yes" else "No"
+        ))
+
+        return table.concat(lines, "\n")
+    end
+
+    local function applyEvolutionInfoParagraph(content)
+        if not evolutionInfoParagraph then
+            return
+        end
+        task.defer(function()
+            if not evolutionInfoParagraph then
+                return
+            end
+            evolutionInfoParagraph:Set({
+                Title = "Evolution",
+                Content = content,
+            })
+        end)
+    end
+
+    local function requestEvolutionInfoRefresh()
+        task.spawn(function()
+            local ok, contentOrErr = pcall(getEvolutionInfoContent)
+            applyEvolutionInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+        end)
+    end
+
+    local function findEvolveRemote(tycoonInstance)
+        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+        local evolveRemote = remotes and remotes:FindFirstChild("Evolve")
+        if evolveRemote and evolveRemote:IsA("RemoteFunction") then
+            return evolveRemote
+        end
+        return nil
+    end
+
+    local function tryAutoEvolveOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
+        if not progressInfo or not progressInfo.ready then
+            return false
+        end
+
+        local remote = findEvolveRemote(tycoon.Instance)
+        if not remote then
+            return false
+        end
+
+        local ok = pcall(function()
+            remote:InvokeServer(nil)
+        end)
+        if ok then
+            mountNotify({
+                Title = "Auto Evolve",
+                Content = string.format(
+                    "Evolved at %s progress.",
+                    formatEvolutionProgressPercent(progressInfo.progress)
+                ),
+                Icon = "check",
+            })
+        end
+        return ok
+    end
+
     MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
@@ -1913,6 +2128,57 @@ do
         while rebirthInfoParagraph do
             task.wait(rebirthInfoAutoRefreshSec)
             requestRebirthInfoRefresh()
+        end
+    end)
+
+    MainTab:CreateSection("Auto Evolve")
+
+    evolutionInfoParagraph = MainTab:CreateParagraph({
+        Title = "Evolution",
+        Content = "Loading...",
+    })
+
+    MainTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto evolve checks",
+        Flag = "main_auto_evolve_delay",
+        CurrentValue = tostring(autoEvolveDelaySec),
+        Callback = function(value)
+            autoEvolveDelaySec = math.max(0.1, tonumber(value) or 1)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Evolve",
+        Flag = "main_auto_evolve",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoEvolveRunning = enabled == true
+            if not autoEvolveRunning then
+                return
+            end
+
+            autoEvolveLoopId += 1
+            local loopId = autoEvolveLoopId
+            task.spawn(function()
+                while autoEvolveRunning and loopId == autoEvolveLoopId do
+                    local ok = pcall(function()
+                        tryAutoEvolveOnce()
+                        requestEvolutionInfoRefresh()
+                        applyPlayerInfoParagraph()
+                    end)
+                    local delay = math.max(0.1, tonumber(autoEvolveDelaySec) or 1)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    task.spawn(function()
+        requestEvolutionInfoRefresh()
+        while evolutionInfoParagraph do
+            task.wait(evolutionInfoAutoRefreshSec)
+            requestEvolutionInfoRefresh()
         end
     end)
 
