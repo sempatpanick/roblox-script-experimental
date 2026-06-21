@@ -1221,39 +1221,59 @@ do
         return table.concat(lines, "\n")
     end
 
-    local function applyUpgradeListSnapshot(entries, statusText)
+    local function getUpgradeListSnapshot()
+        local ctx, ctxErr = getSellLemonsGameContext(true)
+        if not ctx then
+            return {
+                title = "Cash Earned",
+                content = ctxErr or "Could not load game data.",
+                count = 0,
+            }
+        end
+
+        local entries, statusText = collectEarnerUpgrades(ctx)
+        if statusText then
+            return {
+                title = "Cash Earned",
+                content = statusText,
+                count = 0,
+            }
+        end
+
+        return {
+            title = string.format("Cash Earned (%d)", #entries),
+            content = buildUpgradeListText(entries),
+            count = #entries,
+        }
+    end
+
+    local function computeUpgradeListSnapshot()
+        local ok, snapshotOrErr = pcall(function()
+            return getUpgradeListSnapshot()
+        end)
+        if ok then
+            return snapshotOrErr
+        end
+        return {
+            title = "Cash Earned",
+            content = "Refresh error: " .. tostring(snapshotOrErr),
+            count = 0,
+        }
+    end
+
+    local function applyUpgradeSnapshot(snapshot)
         if not upgradeListParagraph then
             return
         end
-        local count = entries and #entries or 0
-        upgradeListParagraph:Set({
-            Title = if statusText then "Cash Earned" else string.format("Cash Earned (%d)", count),
-            Content = buildUpgradeListText(entries, statusText),
-        })
-    end
-
-    local function refreshUpgradeListParagraph(showRefreshing)
-        if showRefreshing and upgradeListParagraph then
-            upgradeListParagraph:Set({
-                Title = "Cash Earned",
-                Content = "Refreshing...",
-            })
-        end
-
-        local ok, entries, statusText = pcall(function()
-            local ctx, ctxErr = getSellLemonsGameContext(true)
-            if not ctx then
-                return nil, ctxErr or "Could not load game data."
+        task.defer(function()
+            if not upgradeListParagraph then
+                return
             end
-            return collectEarnerUpgrades(ctx)
+            upgradeListParagraph:Set({
+                Title = snapshot.title,
+                Content = snapshot.content,
+            })
         end)
-
-        if not ok then
-            applyUpgradeListSnapshot(nil, "Refresh error: " .. tostring(entries))
-            return
-        end
-
-        applyUpgradeListSnapshot(entries, statusText)
     end
 
     local function requestUpgradeListRefresh(showRefreshing)
@@ -1261,9 +1281,18 @@ do
             return
         end
         upgradeRefreshInProgress = true
+        if showRefreshing then
+            applyUpgradeSnapshot({
+                title = "Cash Earned",
+                content = "Refreshing...",
+                count = 0,
+            })
+        end
+
         task.spawn(function()
-            refreshUpgradeListParagraph(showRefreshing)
+            local snapshot = computeUpgradeListSnapshot()
             upgradeRefreshInProgress = false
+            applyUpgradeSnapshot(snapshot)
         end)
     end
 
