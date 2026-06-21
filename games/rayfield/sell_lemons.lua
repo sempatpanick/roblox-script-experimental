@@ -353,6 +353,13 @@ do
     local playerInfoParagraph
     local purchaseListParagraph
     local refreshInProgress = false
+
+    local autoUpgradeRunning = false
+    local autoUpgradeLoopId = 0
+    local autoUpgradeDelaySec = 0.5
+    local upgradeListAutoRefreshSec = 1
+    local upgradeListParagraph
+    local upgradeRefreshInProgress = false
     local lastPurchaseSnapshot = {
         title = "Buyable Buttons",
         content = "Loading...",
@@ -1079,6 +1086,217 @@ do
         return false
     end
 
+    local function formatUpgradePriceText(ctx, price)
+        if price == nil then
+            return "?"
+        end
+        if ctx.Huge and type(ctx.Huge.formatLong) == "function" then
+            local ok, numText, magnitudeName = pcall(function()
+                return ctx.Huge.formatLong(price, "$")
+            end)
+            if ok and type(numText) == "string" and #numText > 0 then
+                if type(magnitudeName) == "string" and #magnitudeName > 0 then
+                    return numText .. " " .. magnitudeName
+                end
+                return numText
+            end
+        end
+        return "$" .. tostring(price)
+    end
+
+    local function getEarnerEntity(ctx, instance)
+        if ctx.Entity and type(ctx.Entity.getUnsafe) == "function" then
+            local ok, entity = pcall(function()
+                return ctx.Entity.getUnsafe(instance)
+            end)
+            if ok and entity then
+                return entity
+            end
+        end
+        return nil
+    end
+
+    local function getEarnerDisplayName(entity, instance)
+        if entity and type(entity.DisplayName) == "string" and entity.DisplayName ~= "" then
+            return entity.DisplayName
+        end
+        return prettifyPurchaseName(instance.Name)
+    end
+
+    local function getEarnerUpgradeInfo(entity)
+        if entity and type(entity.GetNextUpgradeInfo) == "function" then
+            local ok, info = pcall(function()
+                return entity:GetNextUpgradeInfo()
+            end)
+            if ok and type(info) == "table" then
+                return info
+            end
+        end
+        return nil
+    end
+
+    local function findUpgradeRemote(instance, entity)
+        if entity and entity.UpgradeRemote and type(entity.UpgradeRemote.InvokeServer) == "function" then
+            return entity.UpgradeRemote
+        end
+
+        local direct = instance:FindFirstChild("Upgrade")
+        if direct and direct:IsA("RemoteFunction") then
+            return direct
+        end
+
+        for _, descendant in instance:GetDescendants() do
+            if descendant.Name == "Upgrade" and descendant:IsA("RemoteFunction") then
+                return descendant
+            end
+        end
+
+        return nil
+    end
+
+    local function collectEarnerUpgrades(ctx)
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return nil, "Waiting for tycoon..."
+        end
+
+        local tycoonInstance = tycoon.Instance
+        local entries = {}
+        for _, instance in tycoonInstance:GetDescendants() do
+            if instance:HasTag("Tycoon.Earner") then
+                local entity = getEarnerEntity(ctx, instance)
+                local displayName = getEarnerDisplayName(entity, instance)
+                local info = getEarnerUpgradeInfo(entity)
+
+                local price, isMax, count
+                if info then
+                    price = info.Price
+                    count = info.Count
+                    isMax = info.Max == true or info.Count == 0
+                end
+
+                table.insert(entries, {
+                    displayName = displayName,
+                    price = price,
+                    priceText = if isMax then "MAX" else formatUpgradePriceText(ctx, price),
+                    count = count or 1,
+                    isMax = isMax == true,
+                    instance = instance,
+                    entity = entity,
+                })
+            end
+        end
+
+        table.sort(entries, function(a, b)
+            return a.displayName < b.displayName
+        end)
+
+        return entries
+    end
+
+    local function buildUpgradeListText(entries, statusText)
+        if statusText then
+            return statusText
+        end
+        if not entries or #entries == 0 then
+            return "No upgradeable earners right now."
+        end
+
+        local lines = {}
+        for _, entry in ipairs(entries) do
+            table.insert(lines, string.format("%s — %s", entry.displayName, entry.priceText))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function applyUpgradeListSnapshot(entries, statusText)
+        if not upgradeListParagraph then
+            return
+        end
+        local count = entries and #entries or 0
+        upgradeListParagraph:Set({
+            Title = if statusText then "Cash Earned" else string.format("Cash Earned (%d)", count),
+            Content = buildUpgradeListText(entries, statusText),
+        })
+    end
+
+    local function refreshUpgradeListParagraph(showRefreshing)
+        if showRefreshing and upgradeListParagraph then
+            upgradeListParagraph:Set({
+                Title = "Cash Earned",
+                Content = "Refreshing...",
+            })
+        end
+
+        local ok, entries, statusText = pcall(function()
+            local ctx, ctxErr = getSellLemonsGameContext(true)
+            if not ctx then
+                return nil, ctxErr or "Could not load game data."
+            end
+            return collectEarnerUpgrades(ctx)
+        end)
+
+        if not ok then
+            applyUpgradeListSnapshot(nil, "Refresh error: " .. tostring(entries))
+            return
+        end
+
+        applyUpgradeListSnapshot(entries, statusText)
+    end
+
+    local function requestUpgradeListRefresh(showRefreshing)
+        if upgradeRefreshInProgress then
+            return
+        end
+        upgradeRefreshInProgress = true
+        task.spawn(function()
+            refreshUpgradeListParagraph(showRefreshing)
+            upgradeRefreshInProgress = false
+        end)
+    end
+
+    local function tryAutoUpgradeOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local cash = getPlayerCashAmount(ctx, tycoon)
+        if cash == nil then
+            return false
+        end
+
+        local entries = collectEarnerUpgrades(ctx)
+        if type(entries) ~= "table" then
+            return false
+        end
+
+        for _, entry in ipairs(entries) do
+            if not entry.isMax and entry.price ~= nil and canAffordPurchasePrice(cash, entry.price) then
+                local remote = findUpgradeRemote(entry.instance, entry.entity)
+                if remote then
+                    local ok = pcall(function()
+                        remote:InvokeServer(entry.count or 1)
+                    end)
+                    if ok then
+                        mountNotify({
+                            Title = "Auto Upgrade",
+                            Content = "Upgraded " .. entry.displayName .. " (" .. entry.priceText .. ")",
+                            Icon = "check",
+                        })
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
+
     MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
@@ -1158,6 +1376,63 @@ do
         while purchaseListParagraph do
             task.wait(purchaseListAutoRefreshSec)
             requestPurchaseListRefresh(false, false)
+        end
+    end)
+
+    MainTab:CreateSection("Auto Upgrade")
+
+    upgradeListParagraph = MainTab:CreateParagraph({
+        Title = "Cash Earned",
+        Content = "Loading...",
+    })
+
+    MainTab:CreateButton({
+        Name = "Refresh",
+        Callback = function()
+            requestUpgradeListRefresh(true)
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto upgrades",
+        Flag = "main_auto_upgrade_delay",
+        CurrentValue = tostring(autoUpgradeDelaySec),
+        Callback = function(value)
+            autoUpgradeDelaySec = math.max(0.1, tonumber(value) or 0.5)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Upgrade",
+        Flag = "main_auto_upgrade",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoUpgradeRunning = enabled == true
+            if not autoUpgradeRunning then
+                return
+            end
+
+            autoUpgradeLoopId += 1
+            local loopId = autoUpgradeLoopId
+            task.spawn(function()
+                while autoUpgradeRunning and loopId == autoUpgradeLoopId do
+                    local ok = pcall(function()
+                        tryAutoUpgradeOnce()
+                        requestUpgradeListRefresh(false)
+                    end)
+                    local delay = math.max(0.1, tonumber(autoUpgradeDelaySec) or 0.5)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    task.spawn(function()
+        requestUpgradeListRefresh(false)
+        while upgradeListParagraph do
+            task.wait(upgradeListAutoRefreshSec)
+            requestUpgradeListRefresh(false)
         end
     end)
 end
