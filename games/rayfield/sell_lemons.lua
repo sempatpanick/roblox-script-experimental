@@ -360,6 +360,10 @@ do
     local upgradeListAutoRefreshSec = 1
     local upgradeListParagraph
     local upgradeRefreshInProgress = false
+
+    local autoPickupFruitRunning = false
+    local autoPickupFruitLoopId = 0
+    local autoPickupFruitDelaySec = 0.15
     local lastPurchaseSnapshot = {
         title = "Buyable Buttons",
         content = "Loading...",
@@ -1435,6 +1439,64 @@ do
             requestUpgradeListRefresh(false)
         end
     end)
+
+    local fireClickDetectorFn = (typeof(fireclickdetector) == "function" and fireclickdetector)
+        or (typeof(clickdetector) == "function" and clickdetector)
+        or nil
+
+    local function pickFruitOnce()
+        if not fireClickDetectorFn then
+            return false
+        end
+
+        local picked = 0
+        for _, fruit in CollectionService:GetTagged("ClickFruit") do
+            if fruit:IsDescendantOf(Workspace) then
+                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+                if detector then
+                    pcall(function()
+                        fireClickDetectorFn(detector, 1, "MouseClick")
+                    end)
+                    picked += 1
+                end
+            end
+        end
+        return true, picked
+    end
+
+    MainTab:CreateSection("Auto")
+
+    MainTab:CreateToggle({
+        Name = "Auto Pickup Fruit",
+        Flag = "main_auto_pickup_fruit",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoPickupFruitRunning = enabled == true
+            if not autoPickupFruitRunning then
+                return
+            end
+
+            if not fireClickDetectorFn then
+                autoPickupFruitRunning = false
+                mountNotify({
+                    Title = "Auto Pickup Fruit",
+                    Content = "Your executor does not support fireclickdetector.",
+                    Icon = "x",
+                })
+                return
+            end
+
+            autoPickupFruitLoopId += 1
+            local loopId = autoPickupFruitLoopId
+            task.spawn(function()
+                while autoPickupFruitRunning and loopId == autoPickupFruitLoopId do
+                    local ok = pcall(pickFruitOnce)
+                    local delay = math.max(0.05, tonumber(autoPickupFruitDelaySec) or 0.15)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
 end
 
 -- */  Teleport Tab  /* --
