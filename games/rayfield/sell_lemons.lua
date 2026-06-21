@@ -361,9 +361,9 @@ do
     local upgradeListParagraph
     local upgradeRefreshInProgress = false
 
-    local autoPickupFruitRunning = false
-    local autoPickupFruitLoopId = 0
-    local autoPickupFruitDelaySec = 0.15
+    local autoPickFruitRunning = false
+    local autoPickFruitLoopId = 0
+    local autoPickFruitDelaySec = 2
 
     local autoPickCashDropRunning = false
     local autoPickCashDropLoopId = 0
@@ -1475,31 +1475,31 @@ do
     MainTab:CreateSection("Auto")
 
     MainTab:CreateToggle({
-        Name = "Auto Pickup Fruit",
-        Flag = "main_auto_pickup_fruit",
+        Name = "Auto Pick Fruit",
+        Flag = "main_auto_pick_fruit",
         CurrentValue = false,
         Callback = function(enabled)
-            autoPickupFruitRunning = enabled == true
-            if not autoPickupFruitRunning then
+            autoPickFruitRunning = enabled == true
+            if not autoPickFruitRunning then
                 return
             end
 
             if not fireClickDetectorFn then
-                autoPickupFruitRunning = false
+                autoPickFruitRunning = false
                 mountNotify({
-                    Title = "Auto Pickup Fruit",
+                    Title = "Auto Pick Fruit",
                     Content = "Your executor does not support fireclickdetector.",
                     Icon = "x",
                 })
                 return
             end
 
-            autoPickupFruitLoopId += 1
-            local loopId = autoPickupFruitLoopId
+            autoPickFruitLoopId += 1
+            local loopId = autoPickFruitLoopId
             task.spawn(function()
-                while autoPickupFruitRunning and loopId == autoPickupFruitLoopId do
+                while autoPickFruitRunning and loopId == autoPickFruitLoopId do
                     local ok = pcall(pickFruitOnce)
-                    local delay = math.max(0.05, tonumber(autoPickupFruitDelaySec) or 0.15)
+                    local delay = math.max(0.05, tonumber(autoPickFruitDelaySec) or 0.15)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
