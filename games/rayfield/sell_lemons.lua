@@ -661,7 +661,67 @@ do
         return nil
     end
 
-    local function getPurchasePrice(ctx, entity, purchaseKey)
+    local function getPurchaseDisplayName(instance)
+        local displayAttr = instance:GetAttribute("DisplayName")
+        if type(displayAttr) == "string" and displayAttr ~= "" then
+            return displayAttr
+        end
+
+        local titleLabel = instance:FindFirstChild("Title", true)
+        if titleLabel and (titleLabel:IsA("TextLabel") or titleLabel:IsA("TextButton")) then
+            local titleText = titleLabel.Text
+            if type(titleText) == "string" and titleText ~= "" then
+                return titleText
+            end
+        end
+
+        return prettifyPurchaseName(instance.Name)
+    end
+
+    local function lookupBalancePurchasePrice(prices, instance)
+        if type(prices) ~= "table" then
+            return nil, alphanumericName(instance.Name)
+        end
+
+        local nameKey = alphanumericName(instance.Name)
+        if prices[nameKey] ~= nil then
+            return prices[nameKey], nameKey
+        end
+
+        local displayAttr = instance:GetAttribute("DisplayName")
+        if type(displayAttr) == "string" and displayAttr ~= "" then
+            local displayKey = alphanumericName(displayAttr)
+            if prices[displayKey] ~= nil then
+                return prices[displayKey], displayKey
+            end
+        end
+
+        return nil, nameKey
+    end
+
+    local function getBillboardPriceText(instance)
+        for _, descendant in instance:GetDescendants() do
+            if descendant:IsA("TextLabel") and descendant.Name:lower():find("price", 1, true) then
+                local text = descendant.Text
+                if type(text) == "string" and text ~= "" then
+                    return text
+                end
+            end
+        end
+
+        for _, descendant in instance:GetDescendants() do
+            if descendant:IsA("TextLabel") then
+                local text = descendant.Text
+                if type(text) == "string" and text:find("$", 1, true) then
+                    return text
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function getPurchasePrice(ctx, entity, instance)
         if entity and type(entity.GetPrice) == "function" then
             local ok, price = pcall(function()
                 return entity:GetPrice()
@@ -672,10 +732,26 @@ do
         end
 
         local prices = ctx.Balance and ctx.Balance.PurchasePrices
-        if type(prices) == "table" then
-            return prices[purchaseKey]
+        local price = lookupBalancePurchasePrice(prices, instance)
+        if price ~= nil then
+            return price
         end
+
         return nil
+    end
+
+    local function getPurchasePriceText(ctx, entity, instance)
+        local price = getPurchasePrice(ctx, entity, instance)
+        if price ~= nil then
+            return formatPurchasePrice(ctx, price)
+        end
+
+        local billboardPrice = getBillboardPriceText(instance)
+        if billboardPrice then
+            return billboardPrice
+        end
+
+        return "Free"
     end
 
     local function isPurchaseBuyable(instance, entity)
@@ -737,9 +813,10 @@ do
             if instance:HasTag("Tycoon.Purchase") and isPurchaseBuyableInstance(instance) then
                 local entity = includeEntities and getPurchaseEntity(ctx, instance) or nil
                 if not includeEntities or isPurchaseBuyable(instance, entity) then
-                    local rawName = instance:GetAttribute("DisplayName") or instance.Name
-                    local purchaseKey = alphanumericName(rawName)
-                    local price = getPurchasePrice(ctx, entity, purchaseKey)
+                    local _, balanceKey = lookupBalancePurchasePrice(ctx.Balance.PurchasePrices, instance)
+                    local displayName = getPurchaseDisplayName(instance)
+                    local price = getPurchasePrice(ctx, entity, instance)
+                    local priceText = getPurchasePriceText(ctx, entity, instance)
                     local canAfford = false
                     if cash ~= nil and price ~= nil then
                         local ok, affordable = pcall(function()
@@ -748,15 +825,15 @@ do
                         canAfford = ok and affordable == true
                     end
 
-                    byName[purchaseKey] = {
-                        name = purchaseKey,
-                        displayName = prettifyPurchaseName(rawName),
+                    byName[balanceKey] = {
+                        name = balanceKey,
+                        displayName = prettifyPurchaseName(displayName),
                         price = price,
-                        priceText = formatPurchasePrice(ctx, price),
+                        priceText = priceText,
                         canAfford = canAfford,
                         instance = instance,
                         entity = entity,
-                        order = orderRank[purchaseKey] or 999999,
+                        order = orderRank[balanceKey] or 999999,
                     }
                 end
             end
