@@ -382,7 +382,8 @@ do
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
     local autoPickFruitMode = "Normal"
-    local AUTO_PICK_FRUIT_MODES = { "Normal" }
+    local autoPickFruitNearbyClickDelaySec = 0.2
+    local AUTO_PICK_FRUIT_MODES = { "Normal", "Nearby" }
 
     local function rayfieldDropdownFirst(valueOrTable)
         if type(valueOrTable) == "table" then
@@ -2363,19 +2364,31 @@ do
         or (typeof(clickdetector) == "function" and clickdetector)
         or nil
 
-    local function isUnderWorkspaceTycoon(instance)
-        local current = instance
-        while current and current ~= Workspace do
-            local parent = current.Parent
-            if parent == Workspace then
-                local numberPart = string.sub(current.Name, 7)
-                return string.sub(current.Name, 1, 6) == "Tycoon"
-                    and numberPart ~= ""
-                    and tonumber(numberPart) ~= nil
-            end
-            current = parent
+    local function getLocalHumanoidRootPart()
+        local player = Players.LocalPlayer
+        local character = player and player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
         end
-        return false
+        return nil
+    end
+
+    local function getFruitPosition(fruit)
+        if not fruit or not fruit.Parent then
+            return nil
+        end
+        if fruit:IsA("Model") then
+            return fruit:GetPivot().Position
+        end
+        if fruit:IsA("BasePart") then
+            return fruit.Position
+        end
+        local part = fruit:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.Position
+        end
+        return nil
     end
 
     local function pickFruitNormalOnce()
@@ -2385,14 +2398,15 @@ do
 
         local picked = 0
         for _, fruit in CollectionService:GetTagged("ClickFruit") do
-            if isUnderWorkspaceTycoon(fruit) then
-                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
-                if detector then
-                    pcall(function()
-                        fireClickDetectorFn(detector, 1, "MouseClick")
-                    end)
-                    picked += 1
-                end
+            if not fruit.Parent then
+                continue
+            end
+            local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+            if detector then
+                pcall(function()
+                    fireClickDetectorFn(detector, 1, "MouseClick")
+                end)
+                picked += 1
             end
         end
         mountNotify({
@@ -2403,9 +2417,81 @@ do
         return true, picked
     end
 
+    local function pickFruitNearbyOnce()
+        if not fireClickDetectorFn then
+            return false
+        end
+
+        local root = getLocalHumanoidRootPart()
+        if not root then
+            return false
+        end
+
+        local rootPos = root.Position
+        local nearby = {}
+        for _, fruit in CollectionService:GetTagged("ClickFruit") do
+            if not fruit.Parent then
+                continue
+            end
+            local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+            local fruitPos = getFruitPosition(fruit)
+            if detector and fruitPos then
+                local distance = (rootPos - fruitPos).Magnitude
+                local maxDistance = detector.MaxActivationDistance
+                if maxDistance <= 0 then
+                    maxDistance = 32
+                end
+                if distance <= maxDistance then
+                    table.insert(nearby, {
+                        detector = detector,
+                        distance = distance,
+                    })
+                end
+            end
+        end
+
+        table.sort(nearby, function(a, b)
+            return a.distance < b.distance
+        end)
+
+        if #nearby == 0 then
+            return false, 0
+        end
+
+        local picked = 0
+        local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.5)
+        for index, entry in ipairs(nearby) do
+            if not autoPickFruitRunning then
+                break
+            end
+
+            pcall(function()
+                fireClickDetectorFn(entry.detector, 1, "MouseClick")
+            end)
+            picked += 1
+
+            if index < #nearby then
+                task.wait(clickDelay)
+            end
+        end
+
+        if picked > 0 then
+            mountNotify({
+                Title = "Auto Pick Fruit",
+                Content = "Picked " .. picked .. " nearby fruits",
+                Icon = "check",
+            })
+        end
+
+        return picked > 0, picked
+    end
+
     local function runAutoPickFruitOnce()
         if autoPickFruitMode == "Normal" then
             return pickFruitNormalOnce()
+        end
+        if autoPickFruitMode == "Nearby" then
+            return pickFruitNearbyOnce()
         end
         return false
     end
@@ -2468,16 +2554,6 @@ do
     })
 
     MainTab:CreateSection("Auto")
-
-    local function getLocalHumanoidRootPart()
-        local player = Players.LocalPlayer
-        local character = player and player.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        if root and root:IsA("BasePart") then
-            return root
-        end
-        return nil
-    end
 
     local function getCashDropPosition(cashDrop)
         if not cashDrop or not cashDrop.Parent then
