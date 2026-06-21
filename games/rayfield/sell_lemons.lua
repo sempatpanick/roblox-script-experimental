@@ -347,6 +347,7 @@ do
     local MainTab = Window:CreateTab("Main", 4483362458)
 
     local autoPurchaseRunning = false
+    local autoPurchaseLoopId = 0
     local autoPurchaseDelaySec = 0.5
     local purchaseListAutoRefreshSec = 1
     local playerInfoParagraph
@@ -511,6 +512,41 @@ do
         return nil
     end
 
+    local function getLeaderstatsCashValue()
+        local player = Players.LocalPlayer
+        if not player then
+            return nil
+        end
+
+        local leaderstats = player:FindFirstChild("leaderstats")
+        if not leaderstats then
+            return nil
+        end
+
+        local cashStat = leaderstats:FindFirstChild("Cash")
+        if not (cashStat and cashStat:IsA("ValueBase")) then
+            return nil
+        end
+
+        local rawValue = cashStat.Value
+        ensureHugeLoaded()
+
+        if cachedHuge and type(cachedHuge.toHuge) == "function" then
+            local ok, hugeValue = pcall(function()
+                return cachedHuge.toHuge(rawValue)
+            end)
+            if ok and hugeValue ~= nil then
+                return hugeValue
+            end
+        end
+
+        if type(rawValue) == "number" then
+            return rawValue
+        end
+
+        return rawValue
+    end
+
     local function getLeaderstatsCashText()
         local player = Players.LocalPlayer
         if not player then
@@ -661,6 +697,25 @@ do
         return nil
     end
 
+    local function getPlayerCashAmount(ctx, tycoon)
+        local tycoonCash = getPlayerCash(ctx, tycoon)
+        if tycoonCash ~= nil then
+            return tycoonCash
+        end
+        return getLeaderstatsCashValue()
+    end
+
+    local function canAffordPurchasePrice(cash, price)
+        if cash == nil or price == nil then
+            return false
+        end
+
+        local ok, affordable = pcall(function()
+            return price <= cash
+        end)
+        return ok and affordable == true
+    end
+
     local function getPurchaseDisplayName(instance)
         local displayAttr = instance:GetAttribute("DisplayName")
         if type(displayAttr) == "string" and displayAttr ~= "" then
@@ -805,7 +860,7 @@ do
         end
 
         local tycoonInstance = tycoon.Instance
-        local cash = includeEntities and getPlayerCash(ctx, tycoon) or nil
+        local cash = includeEntities and getPlayerCashAmount(ctx, tycoon) or nil
         local orderRank = cachedPurchaseOrderRank or {}
 
         local byName = {}
@@ -817,13 +872,7 @@ do
                     local displayName = getPurchaseDisplayName(instance)
                     local price = getPurchasePrice(ctx, entity, instance)
                     local priceText = getPurchasePriceText(ctx, entity, instance)
-                    local canAfford = false
-                    if cash ~= nil and price ~= nil then
-                        local ok, affordable = pcall(function()
-                            return price <= cash
-                        end)
-                        canAfford = ok and affordable == true
-                    end
+                    local canAfford = canAffordPurchasePrice(cash, price)
 
                     byName[balanceKey] = {
                         name = balanceKey,
@@ -967,28 +1016,59 @@ do
         end)
     end
 
+    local function waitForPurchaseComplete(instance, timeoutSec)
+        if instance:GetAttribute("Purchased") then
+            return true
+        end
+
+        local deadline = os.clock() + (timeoutSec or 3)
+        while autoPurchaseRunning and os.clock() < deadline do
+            if instance:GetAttribute("Purchased") then
+                return true
+            end
+            task.wait(0.1)
+        end
+
+        return instance:GetAttribute("Purchased") == true
+    end
+
     local function tryAutoPurchaseOnce()
         local ctx = getSellLemonsGameContext(true)
         if not ctx then
             return false
         end
 
-        local entries = collectBuyablePurchases(ctx, true)
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local cash = getPlayerCashAmount(ctx, tycoon)
+        if cash == nil then
+            return false
+        end
+
+        -- Match the Buyable Buttons list (instance Shown/Purchased/Enabled), not entity IsEnabled.
+        local entries = collectBuyablePurchases(ctx, false)
         if type(entries) ~= "table" then
             return false
         end
 
         for _, entry in ipairs(entries) do
-            if entry.canAfford then
-                local remote = findPurchaseRemote(entry.instance, entry.entity)
+            local entity = getPurchaseEntity(ctx, entry.instance)
+            local price = getPurchasePrice(ctx, entity, entry.instance)
+            local priceText = getPurchasePriceText(ctx, entity, entry.instance)
+            if price ~= nil and canAffordPurchasePrice(cash, price) then
+                local remote = findPurchaseRemote(entry.instance, entity)
                 if remote then
                     local ok = pcall(function()
                         remote:InvokeServer(false)
                     end)
                     if ok then
+                        waitForPurchaseComplete(entry.instance, 3)
                         mountNotify({
                             Title = "Auto Purchase",
-                            Content = "Bought " .. entry.displayName .. " (" .. entry.priceText .. ")",
+                            Content = "Bought " .. entry.displayName .. " (" .. priceText .. ")",
                             Icon = "check",
                         })
                         return true
@@ -1053,12 +1133,18 @@ do
             if not autoPurchaseRunning then
                 return
             end
+
+            autoPurchaseLoopId += 1
+            local loopId = autoPurchaseLoopId
             task.spawn(function()
-                while autoPurchaseRunning do
-                    local bought = tryAutoPurchaseOnce()
-                    refreshPurchaseListParagraphAsync(true, false)
+                while autoPurchaseRunning and loopId == autoPurchaseLoopId do
+                    local ok = pcall(function()
+                        tryAutoPurchaseOnce()
+                        applyPlayerInfoParagraph()
+                        requestPurchaseListRefresh(false, false)
+                    end)
                     local delay = math.max(0.1, tonumber(autoPurchaseDelaySec) or 0.5)
-                    task.wait(if bought then 0.25 else delay)
+                    task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
         end,
