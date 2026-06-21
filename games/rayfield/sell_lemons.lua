@@ -364,6 +364,10 @@ do
     local autoPickupFruitRunning = false
     local autoPickupFruitLoopId = 0
     local autoPickupFruitDelaySec = 0.15
+
+    local autoAcceptOfferRunning = false
+    local autoAcceptOfferLoopId = 0
+    local autoAcceptOfferDelaySec = 0.5
     local lastPurchaseSnapshot = {
         title = "Buyable Buttons",
         content = "Loading...",
@@ -1492,6 +1496,89 @@ do
                 while autoPickupFruitRunning and loopId == autoPickupFruitLoopId do
                     local ok = pcall(pickFruitOnce)
                     local delay = math.max(0.05, tonumber(autoPickupFruitDelaySec) or 0.15)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    local function getPhoneOfferOptionsContainer()
+        local player = Players.LocalPlayer
+        if not player then
+            return nil
+        end
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        local phone = playerGui and playerGui:FindFirstChild("Phone")
+        local phoneInner = phone and phone:FindFirstChild("Phone")
+        local screen = phoneInner and phoneInner:FindFirstChild("Screen")
+        local footer = screen and screen:FindFirstChild("Footer")
+
+        return footer and footer:FindFirstChild("Container")
+    end
+
+    local function hasPhoneOfferOptions(container)
+        if not container then
+            return false
+        end
+
+        for _, optionName in ipairs({ "Option1", "Option2", "Option3" }) do
+            if container:FindFirstChild(optionName) then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local function findPhoneOfferRemote()
+        local tycoonInstance = findLocalTycoonInstance()
+        if not tycoonInstance then
+            return nil
+        end
+
+        local remotes = tycoonInstance:FindFirstChild("Remotes")
+        local phoneOffer = remotes and remotes:FindFirstChild("PhoneOffer")
+        if phoneOffer and phoneOffer:IsA("RemoteEvent") then
+            return phoneOffer
+        end
+
+        return nil
+    end
+
+    local function tryAcceptPhoneOfferOnce()
+        local container = getPhoneOfferOptionsContainer()
+        if not hasPhoneOfferOptions(container) then
+            return false
+        end
+
+        local remote = findPhoneOfferRemote()
+        if not remote then
+            return false
+        end
+
+        local ok = pcall(function()
+            remote:FireServer("Accept")
+        end)
+        return ok
+    end
+
+    MainTab:CreateToggle({
+        Name = "Auto Accept Offer",
+        Flag = "main_auto_accept_offer",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoAcceptOfferRunning = enabled == true
+            if not autoAcceptOfferRunning then
+                return
+            end
+
+            autoAcceptOfferLoopId += 1
+            local loopId = autoAcceptOfferLoopId
+            task.spawn(function()
+                while autoAcceptOfferRunning and loopId == autoAcceptOfferLoopId do
+                    local ok = pcall(tryAcceptPhoneOfferOnce)
+                    local delay = math.max(0.1, tonumber(autoAcceptOfferDelaySec) or 0.5)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
