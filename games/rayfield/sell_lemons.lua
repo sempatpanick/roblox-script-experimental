@@ -348,6 +348,8 @@ do
 
     local autoPurchaseRunning = false
     local autoPurchaseDelaySec = 0.5
+    local purchaseListAutoRefreshSec = 1
+    local playerInfoParagraph
     local purchaseListParagraph
     local refreshInProgress = false
     local lastPurchaseSnapshot = {
@@ -507,6 +509,85 @@ do
             end
         end
         return nil
+    end
+
+    local function getLeaderstatsCashText()
+        local player = Players.LocalPlayer
+        if not player then
+            return "N/A"
+        end
+
+        local leaderstats = player:FindFirstChild("leaderstats")
+        if not leaderstats then
+            return "N/A"
+        end
+
+        local cashStat = leaderstats:FindFirstChild("Cash")
+        if not cashStat then
+            return "N/A"
+        end
+
+        if not cashStat:IsA("ValueBase") then
+            return "N/A"
+        end
+
+        local rawValue = cashStat.Value
+        ensureHugeLoaded()
+
+        if cachedHuge then
+            local ok, text = pcall(function()
+                local hugeValue = rawValue
+                if type(rawValue) == "number" and type(cachedHuge.toHuge) == "function" then
+                    hugeValue = cachedHuge.toHuge(rawValue)
+                elseif type(rawValue) == "string" and type(cachedHuge.toHuge) == "function" then
+                    hugeValue = cachedHuge.toHuge(rawValue)
+                end
+                if type(cachedHuge.formatAbbreviated) == "function" then
+                    return cachedHuge.formatAbbreviated(hugeValue, "$")
+                end
+                return nil
+            end)
+            if ok and type(text) == "string" and #text > 0 then
+                return text
+            end
+        end
+
+        if type(rawValue) == "number" then
+            return "$" .. tostring(rawValue)
+        end
+        if type(rawValue) == "string" and rawValue ~= "" then
+            if rawValue:sub(1, 1) == "$" then
+                return rawValue
+            end
+            return "$" .. rawValue
+        end
+        return tostring(rawValue)
+    end
+
+    local function getTycoonAtText()
+        local tycoonInstance = findLocalTycoonInstance()
+        if not tycoonInstance then
+            return "Not assigned"
+        end
+        return tycoonInstance:GetFullName()
+    end
+
+    local function getPlayerInfoContent()
+        return string.format(
+            "Tycoon at: %s\nCash: %s",
+            getTycoonAtText(),
+            getLeaderstatsCashText()
+        )
+    end
+
+    local function applyPlayerInfoParagraph()
+        if not playerInfoParagraph then
+            return
+        end
+        playerInfoParagraph:Set({
+            Title = "Player Information",
+            Content = getPlayerInfoContent(),
+        })
     end
 
     local function getLocalTycoon(ctx)
@@ -774,6 +855,7 @@ do
         end
 
         local snapshot = computePurchaseListSnapshot(includeEntities)
+        applyPlayerInfoParagraph()
         applyPurchaseSnapshot(snapshot)
         return snapshot
     end
@@ -787,6 +869,7 @@ do
         end
 
         refreshInProgress = true
+        applyPlayerInfoParagraph()
         if showRefreshing then
             applyPurchaseSnapshot({
                 title = "Buyable Buttons",
@@ -799,6 +882,7 @@ do
         task.spawn(function()
             local snapshot = computePurchaseListSnapshot(includeEntities)
             refreshInProgress = false
+            applyPlayerInfoParagraph()
             applyPurchaseSnapshot(snapshot)
             if onComplete then
                 onComplete(snapshot, false)
@@ -839,6 +923,11 @@ do
     end
 
     MainTab:CreateSection("Auto Purchase")
+
+    playerInfoParagraph = MainTab:CreateParagraph({
+        Title = "Player Information",
+        Content = "Loading...",
+    })
 
     purchaseListParagraph = MainTab:CreateParagraph({
         Title = "Buyable Buttons",
@@ -898,8 +987,13 @@ do
         end,
     })
 
-    task.defer(function()
+    task.spawn(function()
+        applyPlayerInfoParagraph()
         requestPurchaseListRefresh(false, false)
+        while purchaseListParagraph do
+            task.wait(purchaseListAutoRefreshSec)
+            requestPurchaseListRefresh(false, false)
+        end
     end)
 end
 
