@@ -349,12 +349,23 @@ do
     local autoPurchaseRunning = false
     local autoPurchaseLoopId = 0
     local autoPurchaseDelaySec = 0.5
+    local autoUpgradeRunning = false
+    local autoUpgradeLoopId = 0
+    local autoUpgradeDelaySec = 0.5
     local purchaseListAutoRefreshSec = 1
     local playerInfoParagraph
     local purchaseListParagraph
+    local upgradeListParagraph
     local refreshInProgress = false
+    local upgradeRefreshInProgress = false
     local lastPurchaseSnapshot = {
         title = "Buyable Buttons",
+        content = "Loading...",
+        count = 0,
+        icon = nil,
+    }
+    local lastUpgradeSnapshot = {
+        title = "Cash Income Upgrades",
         content = "Loading...",
         count = 0,
         icon = nil,
@@ -474,6 +485,13 @@ do
         return name:gsub("[^%w]", "")
     end
 
+    local function normalizeCashDisplay(text)
+        if type(text) ~= "string" or text == "" then
+            return text
+        end
+        return "$" .. text:gsub("^%$+", "")
+    end
+
     local function formatPurchasePrice(ctx, price)
         if price == nil or price == 0 then
             return "Free"
@@ -483,7 +501,7 @@ do
                 return ctx.Huge.formatAbbreviated(price, "$")
             end)
             if ok and type(text) == "string" and #text > 0 then
-                return text
+                return normalizeCashDisplay(text)
             end
         end
         return "$" .. tostring(price)
@@ -584,7 +602,7 @@ do
                 return nil
             end)
             if ok and type(text) == "string" and #text > 0 then
-                return text
+                return normalizeCashDisplay(text)
             end
         end
 
@@ -592,10 +610,7 @@ do
             return "$" .. tostring(rawValue)
         end
         if type(rawValue) == "string" and rawValue ~= "" then
-            if rawValue:sub(1, 1) == "$" then
-                return rawValue
-            end
-            return "$" .. rawValue
+            return normalizeCashDisplay(rawValue)
         end
         return tostring(rawValue)
     end
@@ -1032,6 +1047,373 @@ do
         return instance:GetAttribute("Purchased") == true
     end
 
+    local function getLocalPlayerGui()
+        local player = Players.LocalPlayer
+        if not player then
+            return nil
+        end
+        return player:FindFirstChild("PlayerGui")
+    end
+
+    local function isGuiChainVisible(guiObject)
+        if not guiObject or not guiObject:IsA("GuiObject") then
+            return false
+        end
+        local cursor = guiObject
+        while cursor do
+            if cursor:IsA("GuiObject") and not cursor.Visible then
+                return false
+            end
+            cursor = cursor.Parent
+        end
+        return true
+    end
+
+    local function getGuiText(node)
+        if not node then
+            return nil
+        end
+        if node:IsA("TextLabel") or node:IsA("TextButton") then
+            local text = node.Text
+            if type(text) == "string" and text ~= "" then
+                return text
+            end
+        end
+        return nil
+    end
+
+    local function isUpgradeUiAvailable(upgradeNode)
+        if not upgradeNode then
+            return false
+        end
+        if upgradeNode:GetAttribute("Enabled") == false then
+            return false
+        end
+        if upgradeNode:IsA("GuiObject") then
+            if not upgradeNode.Visible then
+                return false
+            end
+            if upgradeNode:IsA("GuiButton") and upgradeNode.Active == false then
+                return false
+            end
+            return isGuiChainVisible(upgradeNode)
+        end
+        return true
+    end
+
+    local function parseUpgradePriceText(ctx, priceText)
+        if type(priceText) ~= "string" or priceText == "" then
+            return nil
+        end
+
+        local stripped = priceText:gsub("^%s*%$%s*", "")
+        if ctx.Huge then
+            for _, fnName in ipairs({ "toHuge", "fromAbbreviated", "parse", "fromString" }) do
+                local fn = ctx.Huge[fnName]
+                if type(fn) == "function" then
+                    local ok, value = pcall(function()
+                        return fn(stripped)
+                    end)
+                    if ok and value ~= nil then
+                        return value
+                    end
+                    ok, value = pcall(function()
+                        return fn(priceText)
+                    end)
+                    if ok and value ~= nil then
+                        return value
+                    end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function findPurchaseInstanceForNode(node, tycoonInstance)
+        local cursor = node
+        while cursor and cursor ~= tycoonInstance do
+            if cursor:HasTag("Tycoon.Purchase") then
+                return cursor
+            end
+            cursor = cursor.Parent
+        end
+        return nil
+    end
+
+    local function findUpgradeRemoteByTitle(tycoonInstance, titleText, itemName)
+        if not tycoonInstance then
+            return nil
+        end
+
+        local titleKey = alphanumericName(titleText or "")
+        local itemKey = alphanumericName(itemName or "")
+
+        for _, descendant in tycoonInstance:GetDescendants() do
+            if descendant.Name == "Upgrade" and descendant:IsA("RemoteFunction") then
+                local purchaseInstance = findPurchaseInstanceForNode(descendant.Parent, tycoonInstance)
+                    or descendant.Parent
+                local displayName = getPurchaseDisplayName(purchaseInstance)
+                local candidates = {
+                    alphanumericName(displayName),
+                    alphanumericName(purchaseInstance.Name),
+                    alphanumericName(descendant.Parent.Name),
+                }
+                for _, candidate in ipairs(candidates) do
+                    if candidate ~= "" and (candidate == titleKey or candidate == itemKey) then
+                        return descendant, purchaseInstance
+                    end
+                end
+                if type(titleText) == "string" and titleText ~= "" then
+                    if displayName == titleText or purchaseInstance.Name == titleText then
+                        return descendant, purchaseInstance
+                    end
+                end
+            end
+        end
+
+        local purchases = tycoonInstance:FindFirstChild("Purchases")
+        if purchases then
+            local searchNames = {}
+            if type(titleText) == "string" and titleText ~= "" then
+                table.insert(searchNames, titleText)
+            end
+            if type(itemName) == "string" and itemName ~= "" and itemName ~= titleText then
+                table.insert(searchNames, itemName)
+            end
+
+            for _, searchName in ipairs(searchNames) do
+                local cursor = purchases
+                for _ = 1, 6 do
+                    local nextNode = cursor:FindFirstChild(searchName)
+                    if not nextNode then
+                        break
+                    end
+                    cursor = nextNode
+                    local upgradeRemote = cursor:FindFirstChild("Upgrade")
+                    if upgradeRemote and upgradeRemote:IsA("RemoteFunction") then
+                        return upgradeRemote, findPurchaseInstanceForNode(cursor, tycoonInstance) or cursor
+                    end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function collectUpgradeableCashIncome(ctx, includeAffordance)
+        local playerGui = getLocalPlayerGui()
+        if not playerGui then
+            return nil, "Waiting for PlayerGui..."
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return nil, "Waiting for tycoon..."
+        end
+
+        local tycoonInstance = tycoon.Instance
+        local cash = includeAffordance and getPlayerCashAmount(ctx, tycoon) or nil
+        local orderRank = cachedPurchaseOrderRank or {}
+        local byTitle = {}
+
+        for _, guiItem in playerGui:GetDescendants() do
+            local upgradeNode = guiItem:FindFirstChild("Upgrade")
+            local titleNode = guiItem:FindFirstChild("Title")
+            if not (upgradeNode and titleNode) then
+                continue
+            end
+            if not isUpgradeUiAvailable(upgradeNode) then
+                continue
+            end
+
+            local titleText = getGuiText(titleNode) or prettifyPurchaseName(guiItem.Name)
+            local priceNode = upgradeNode:FindFirstChild("Price", true)
+            local priceText = getGuiText(priceNode) or "?"
+            if type(priceText) == "string" and priceText:lower():find("max", 1, true) then
+                continue
+            end
+
+            local price = parseUpgradePriceText(ctx, priceText)
+            local remote, purchaseInstance = findUpgradeRemoteByTitle(tycoonInstance, titleText, guiItem.Name)
+            local balanceKey = alphanumericName(titleText)
+            if purchaseInstance then
+                local _, purchaseKey = lookupBalancePurchasePrice(ctx.Balance.PurchasePrices, purchaseInstance)
+                if type(purchaseKey) == "string" and purchaseKey ~= "" then
+                    balanceKey = purchaseKey
+                end
+            end
+
+            local canAfford = canAffordPurchasePrice(cash, price)
+            local order = orderRank[balanceKey] or 0
+            local existing = byTitle[titleText]
+            if existing and existing.order >= order then
+                continue
+            end
+
+            byTitle[titleText] = {
+                title = titleText,
+                priceText = priceText,
+                price = price,
+                canAfford = canAfford,
+                remote = remote,
+                purchaseInstance = purchaseInstance,
+                guiItem = guiItem,
+                order = order,
+            }
+        end
+
+        local entries = {}
+        for _, entry in pairs(byTitle) do
+            table.insert(entries, entry)
+        end
+        table.sort(entries, function(a, b)
+            if a.order == b.order then
+                return a.title > b.title
+            end
+            return a.order > b.order
+        end)
+
+        return entries
+    end
+
+    local function buildUpgradeListParagraphText(entries, statusText)
+        if statusText then
+            return statusText
+        end
+        if not entries or #entries == 0 then
+            return "No cash income upgrades available right now."
+        end
+
+        local lines = {}
+        for _, entry in ipairs(entries) do
+            local remoteHint = entry.remote and "" or " (remote not found)"
+            table.insert(lines, string.format("%s — %s%s", entry.title, entry.priceText, remoteHint))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local function getUpgradeListSnapshot(includeAffordance)
+        local ctx, ctxErr = getSellLemonsGameContext(includeAffordance == true)
+        if not ctx then
+            return {
+                title = "Cash Income Upgrades",
+                content = ctxErr or "Could not load game data.",
+                count = 0,
+                icon = "x",
+            }
+        end
+
+        local entries, statusText = collectUpgradeableCashIncome(ctx, includeAffordance == true)
+        if statusText then
+            return {
+                title = "Cash Income Upgrades",
+                content = statusText,
+                count = 0,
+                icon = nil,
+            }
+        end
+
+        return {
+            title = string.format("Cash Income Upgrades (%d)", #entries),
+            content = buildUpgradeListParagraphText(entries),
+            count = #entries,
+            icon = if #entries > 0 then "check" else nil,
+        }
+    end
+
+    local function applyUpgradeSnapshot(snapshot)
+        lastUpgradeSnapshot = snapshot
+        if upgradeListParagraph then
+            upgradeListParagraph:Set({
+                Title = snapshot.title,
+                Content = snapshot.content,
+            })
+        end
+    end
+
+    local function computeUpgradeListSnapshot(includeAffordance)
+        local ok, snapshotOrErr = pcall(function()
+            return getUpgradeListSnapshot(includeAffordance)
+        end)
+        if ok then
+            return snapshotOrErr
+        end
+        return {
+            title = "Cash Income Upgrades",
+            content = "Refresh error: " .. tostring(snapshotOrErr),
+            count = 0,
+            icon = "x",
+        }
+    end
+
+    local function requestUpgradeListRefresh(includeAffordance, showRefreshing, onComplete)
+        if upgradeRefreshInProgress then
+            if onComplete then
+                onComplete(lastUpgradeSnapshot, true)
+            end
+            return
+        end
+
+        upgradeRefreshInProgress = true
+        if showRefreshing then
+            applyUpgradeSnapshot({
+                title = "Cash Income Upgrades",
+                content = "Refreshing...",
+                count = 0,
+                icon = nil,
+            })
+        end
+
+        task.spawn(function()
+            local snapshot = computeUpgradeListSnapshot(includeAffordance)
+            upgradeRefreshInProgress = false
+            applyUpgradeSnapshot(snapshot)
+            if onComplete then
+                onComplete(snapshot, false)
+            end
+        end)
+    end
+
+    local function tryAutoUpgradeOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local cash = getPlayerCashAmount(ctx, tycoon)
+        if cash == nil then
+            return false
+        end
+
+        local entries = collectUpgradeableCashIncome(ctx, true)
+        if type(entries) ~= "table" then
+            return false
+        end
+
+        for _, entry in ipairs(entries) do
+            if entry.remote and (entry.price == nil or canAffordPurchasePrice(cash, entry.price)) then
+                local ok = pcall(function()
+                    entry.remote:InvokeServer(1)
+                end)
+                if ok then
+                    mountNotify({
+                        Title = "Auto Upgrade",
+                        Content = "Upgraded " .. entry.title .. " (" .. entry.priceText .. ")",
+                        Icon = "check",
+                    })
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
     local function tryAutoPurchaseOnce()
         local ctx = getSellLemonsGameContext(true)
         if not ctx then
@@ -1079,12 +1461,14 @@ do
         return false
     end
 
-    MainTab:CreateSection("Auto Purchase")
+    MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
         Title = "Player Information",
         Content = "Loading...",
     })
+
+    MainTab:CreateSection("Auto Purchase")
 
     purchaseListParagraph = MainTab:CreateParagraph({
         Title = "Buyable Buttons",
@@ -1150,12 +1534,80 @@ do
         end,
     })
 
+    MainTab:CreateSection("Auto Upgrade")
+
+    upgradeListParagraph = MainTab:CreateParagraph({
+        Title = "Cash Income Upgrades",
+        Content = "Loading...",
+    })
+
+    MainTab:CreateButton({
+        Name = "Refresh Upgrades",
+        Callback = function()
+            requestUpgradeListRefresh(true, true, function(snapshot, alreadyRefreshing)
+                if alreadyRefreshing then
+                    mountNotify({
+                        Title = "Cash Income Upgrades",
+                        Content = "Already refreshing...",
+                        Icon = "x",
+                    })
+                    return
+                end
+
+                mountNotify({
+                    Title = snapshot.title,
+                    Content = snapshot.content,
+                    Icon = snapshot.icon,
+                    Duration = 8,
+                })
+            end)
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Upgrade Delay (seconds)",
+        PlaceholderText = "Seconds between auto upgrades",
+        Flag = "main_auto_upgrade_delay",
+        CurrentValue = tostring(autoUpgradeDelaySec),
+        Callback = function(value)
+            autoUpgradeDelaySec = math.max(0.1, tonumber(value) or 0.5)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Upgrade",
+        Flag = "main_auto_upgrade",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoUpgradeRunning = enabled == true
+            if not autoUpgradeRunning then
+                return
+            end
+
+            autoUpgradeLoopId += 1
+            local loopId = autoUpgradeLoopId
+            task.spawn(function()
+                while autoUpgradeRunning and loopId == autoUpgradeLoopId do
+                    local ok = pcall(function()
+                        tryAutoUpgradeOnce()
+                        applyPlayerInfoParagraph()
+                        requestUpgradeListRefresh(true, false)
+                    end)
+                    local delay = math.max(0.1, tonumber(autoUpgradeDelaySec) or 0.5)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
     task.spawn(function()
         applyPlayerInfoParagraph()
         requestPurchaseListRefresh(false, false)
-        while purchaseListParagraph do
+        requestUpgradeListRefresh(true, false)
+        while purchaseListParagraph or upgradeListParagraph do
             task.wait(purchaseListAutoRefreshSec)
             requestPurchaseListRefresh(false, false)
+            requestUpgradeListRefresh(true, false)
         end
     end)
 end
