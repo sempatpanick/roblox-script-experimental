@@ -365,6 +365,13 @@ do
     local autoClaimCashLoopId = 0
     local autoClaimCashDelaySec = 0.5
 
+    local rebirthInfoParagraph
+    local rebirthTargetPercent = 1000
+    local rebirthInfoAutoRefreshSec = 1
+    local autoRebirthRunning = false
+    local autoRebirthLoopId = 0
+    local autoRebirthDelaySec = 1
+
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
@@ -396,6 +403,7 @@ do
         LocalTycoon = { "Modules", "Tycoon", "LocalTycoon" },
         ClientTycoonPurchase = { "Modules", "Tycoon", "Entity", "Client", "ClientTycoonPurchase" },
         ClientTycoonBalances = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonBalances" },
+        ClientTycoonRebirth = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonRebirth" },
     }
 
     local function resolveModuleScript(pathParts)
@@ -456,6 +464,7 @@ do
             LocalTycoon = tryRequirePath(MODULE_PATHS.LocalTycoon),
             ClientTycoonPurchase = tryRequirePath(MODULE_PATHS.ClientTycoonPurchase),
             ClientTycoonBalances = tryRequirePath(MODULE_PATHS.ClientTycoonBalances),
+            ClientTycoonRebirth = tryRequirePath(MODULE_PATHS.ClientTycoonRebirth),
         }
         return cachedOptionalCtx
     end
@@ -477,6 +486,7 @@ do
             ctx.LocalTycoon = optional.LocalTycoon
             ctx.ClientTycoonPurchase = optional.ClientTycoonPurchase
             ctx.ClientTycoonBalances = optional.ClientTycoonBalances
+            ctx.ClientTycoonRebirth = optional.ClientTycoonRebirth
         end
         return ctx
     end
@@ -1430,6 +1440,237 @@ do
         return claimedAny
     end
 
+    local function formatHugeAmount(ctx, value, prefix)
+        if value == nil then
+            return "?"
+        end
+        if ctx.Huge and type(ctx.Huge.formatAbbreviated) == "function" then
+            local ok, text = pcall(function()
+                return ctx.Huge.formatAbbreviated(value, prefix or "")
+            end)
+            if ok and type(text) == "string" and #text > 0 then
+                return text
+            end
+        end
+        return tostring(value)
+    end
+
+    local function hugeGreaterOrEqual(a, b)
+        if a == nil or b == nil then
+            return false
+        end
+        local ok, result = pcall(function()
+            return a >= b
+        end)
+        return ok and result == true
+    end
+
+    local function hugeAdd(a, b)
+        if a == nil or b == nil then
+            return nil
+        end
+        if cachedHuge and type(cachedHuge.add) == "function" then
+            local ok, sum = pcall(function()
+                return cachedHuge.add(a, b)
+            end)
+            if ok then
+                return sum
+            end
+        end
+        if type(a) == "number" and type(b) == "number" then
+            return a + b
+        end
+        return nil
+    end
+
+    local function hugeMultiply(a, scalar)
+        if a == nil or scalar == nil then
+            return nil
+        end
+        if cachedHuge and type(cachedHuge.multiply) == "function" and type(cachedHuge.toHuge) == "function" then
+            local ok, product = pcall(function()
+                return cachedHuge.multiply(a, cachedHuge.toHuge(scalar))
+            end)
+            if ok then
+                return product
+            end
+        end
+        if type(a) == "number" and type(scalar) == "number" then
+            return a * scalar
+        end
+        return nil
+    end
+
+    local function getTycoonRebirthComponent(ctx, tycoon)
+        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonRebirth then
+            local ok, component = pcall(function()
+                return tycoon:GetComponent(ctx.ClientTycoonRebirth)
+            end)
+            if ok and component then
+                return component
+            end
+        end
+        return nil
+    end
+
+    local function getTycoonBalancesComponent(ctx, tycoon)
+        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonBalances then
+            local ok, component = pcall(function()
+                return tycoon:GetComponent(ctx.ClientTycoonBalances)
+            end)
+            if ok and component then
+                return component
+            end
+        end
+        return nil
+    end
+
+    local function getCurrentInvestors(ctx, tycoon)
+        local balances = getTycoonBalancesComponent(ctx, tycoon)
+        if balances and type(balances.GetInvestors) == "function" then
+            local ok, investors = pcall(function()
+                return balances:GetInvestors()
+            end)
+            if ok and investors ~= nil then
+                return investors
+            end
+        end
+        return nil
+    end
+
+    local function getPotentialInvestorsFromRebirth(ctx, tycoon)
+        local rebirth = getTycoonRebirthComponent(ctx, tycoon)
+        if rebirth and type(rebirth.GetPotentialInvestors) == "function" then
+            local ok, investors = pcall(function()
+                return rebirth:GetPotentialInvestors()
+            end)
+            if ok and investors ~= nil then
+                return investors
+            end
+        end
+        return nil
+    end
+
+    local function getRequiredRebirthGain(currentInvestors, targetPercent)
+        local percent = tonumber(targetPercent)
+        if not currentInvestors or not percent or percent <= 0 then
+            return nil
+        end
+        return hugeMultiply(currentInvestors, percent / 100)
+    end
+
+    local function shouldAutoRebirth(currentInvestors, potentialInvestors, targetPercent)
+        local requiredGain = getRequiredRebirthGain(currentInvestors, targetPercent)
+        if not requiredGain or not potentialInvestors then
+            return false
+        end
+        return hugeGreaterOrEqual(potentialInvestors, requiredGain)
+    end
+
+    local function findRebirthRemote(tycoonInstance)
+        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+        local rebirthRemote = remotes and remotes:FindFirstChild("Rebirth")
+        if rebirthRemote and rebirthRemote:IsA("RemoteFunction") then
+            return rebirthRemote
+        end
+        return nil
+    end
+
+    local function getRebirthInfoContent()
+        local ctx, ctxErr = getSellLemonsGameContext(true)
+        if not ctx then
+            return ctxErr or "Could not load game data."
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return "Waiting for tycoon..."
+        end
+
+        local currentInvestors = getCurrentInvestors(ctx, tycoon)
+        local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
+        if currentInvestors == nil or potentialInvestors == nil then
+            return "Could not read investor data."
+        end
+
+        local afterRebirth = hugeAdd(currentInvestors, potentialInvestors)
+        local requiredGain = getRequiredRebirthGain(currentInvestors, rebirthTargetPercent)
+        local ready = shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent)
+
+        local lines = {
+            string.format("Own Investors: %s", formatHugeAmount(ctx, currentInvestors)),
+            string.format("Gain from Rebirth: %s", formatHugeAmount(ctx, potentialInvestors)),
+            string.format("After Rebirth: %s", formatHugeAmount(ctx, afterRebirth)),
+            string.format(
+                "Target Gain (%s%%): %s",
+                tostring(rebirthTargetPercent),
+                formatHugeAmount(ctx, requiredGain)
+            ),
+            string.format("Ready to Rebirth: %s", if ready then "Yes" else "No"),
+        }
+        return table.concat(lines, "\n")
+    end
+
+    local function applyRebirthInfoParagraph(content)
+        if not rebirthInfoParagraph then
+            return
+        end
+        task.defer(function()
+            if not rebirthInfoParagraph then
+                return
+            end
+            rebirthInfoParagraph:Set({
+                Title = "Investors",
+                Content = content,
+            })
+        end)
+    end
+
+    local function requestRebirthInfoRefresh()
+        task.spawn(function()
+            local ok, contentOrErr = pcall(getRebirthInfoContent)
+            applyRebirthInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+        end)
+    end
+
+    local function tryAutoRebirthOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local currentInvestors = getCurrentInvestors(ctx, tycoon)
+        local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
+        if not shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent) then
+            return false
+        end
+
+        local remote = findRebirthRemote(tycoon.Instance)
+        if not remote then
+            return false
+        end
+
+        local ok = pcall(function()
+            remote:InvokeServer(nil)
+        end)
+        if ok then
+            mountNotify({
+                Title = "Auto Rebirth",
+                Content = string.format(
+                    "Rebirthed with %s investors gained.",
+                    formatHugeAmount(ctx, potentialInvestors)
+                ),
+                Icon = "check",
+            })
+        end
+        return ok
+    end
+
     MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
@@ -1601,6 +1842,68 @@ do
         while upgradeListParagraph do
             task.wait(upgradeListAutoRefreshSec)
             requestUpgradeListRefresh(false)
+        end
+    end)
+
+    MainTab:CreateSection("Auto Rebirth")
+
+    rebirthInfoParagraph = MainTab:CreateParagraph({
+        Title = "Investors",
+        Content = "Loading...",
+    })
+
+    MainTab:CreateInput({
+        Name = "Target Gain (%)",
+        PlaceholderText = "Percent of own investors to gain before rebirth",
+        Flag = "main_rebirth_target_percent",
+        CurrentValue = tostring(rebirthTargetPercent),
+        Callback = function(value)
+            rebirthTargetPercent = math.max(0, tonumber(value) or rebirthTargetPercent)
+            requestRebirthInfoRefresh()
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "Delay (seconds)",
+        PlaceholderText = "Seconds between auto rebirth checks",
+        Flag = "main_auto_rebirth_delay",
+        CurrentValue = tostring(autoRebirthDelaySec),
+        Callback = function(value)
+            autoRebirthDelaySec = math.max(0.1, tonumber(value) or 1)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Rebirth",
+        Flag = "main_auto_rebirth",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoRebirthRunning = enabled == true
+            if not autoRebirthRunning then
+                return
+            end
+
+            autoRebirthLoopId += 1
+            local loopId = autoRebirthLoopId
+            task.spawn(function()
+                while autoRebirthRunning and loopId == autoRebirthLoopId do
+                    local ok = pcall(function()
+                        tryAutoRebirthOnce()
+                        requestRebirthInfoRefresh()
+                        applyPlayerInfoParagraph()
+                    end)
+                    local delay = math.max(0.1, tonumber(autoRebirthDelaySec) or 1)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    task.spawn(function()
+        requestRebirthInfoRefresh()
+        while rebirthInfoParagraph do
+            task.wait(rebirthInfoAutoRefreshSec)
+            requestRebirthInfoRefresh()
         end
     end)
 
