@@ -398,6 +398,11 @@ do
     local autoAcceptOfferRunning = false
     local autoAcceptOfferLoopId = 0
     local autoAcceptOfferDelaySec = 0.5
+
+    local autoBuyPowersRunning = false
+    local autoBuyPowersLoopId = 0
+    local autoBuyPowersDelaySec = 120
+
     local lastPurchaseSnapshot = {
         title = "Buyable Buttons",
         content = "Loading...",
@@ -420,6 +425,8 @@ do
         ClientTycoonBalances = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonBalances" },
         ClientTycoonRebirth = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonRebirth" },
         ClientTycoonEvolution = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonEvolution" },
+        ClientTycoonPowers = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonPowers" },
+        Config = { "Config" },
     }
 
     local function resolveModuleScript(pathParts)
@@ -482,6 +489,8 @@ do
             ClientTycoonBalances = tryRequirePath(MODULE_PATHS.ClientTycoonBalances),
             ClientTycoonRebirth = tryRequirePath(MODULE_PATHS.ClientTycoonRebirth),
             ClientTycoonEvolution = tryRequirePath(MODULE_PATHS.ClientTycoonEvolution),
+            ClientTycoonPowers = tryRequirePath(MODULE_PATHS.ClientTycoonPowers),
+            Config = tryRequirePath(MODULE_PATHS.Config),
         }
         return cachedOptionalCtx
     end
@@ -505,6 +514,8 @@ do
             ctx.ClientTycoonBalances = optional.ClientTycoonBalances
             ctx.ClientTycoonRebirth = optional.ClientTycoonRebirth
             ctx.ClientTycoonEvolution = optional.ClientTycoonEvolution
+            ctx.ClientTycoonPowers = optional.ClientTycoonPowers
+            ctx.Config = optional.Config
         end
         return ctx
     end
@@ -1895,6 +1906,172 @@ do
         return ok
     end
 
+    local function getTycoonPowersComponent(ctx, tycoon)
+        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonPowers then
+            local ok, component = pcall(function()
+                return tycoon:GetComponent(ctx.ClientTycoonPowers)
+            end)
+            if ok and component then
+                return component
+            end
+        end
+        return nil
+    end
+
+    local function isInvestorsDiscovered(ctx, tycoon)
+        local rebirth = getTycoonRebirthComponent(ctx, tycoon)
+        if not rebirth or type(rebirth.IsDiscovered) ~= "function" then
+            return false
+        end
+        local ok, discovered = pcall(function()
+            return rebirth:IsDiscovered() == true
+        end)
+        return ok and discovered == true
+    end
+
+    local function getPowerDisplayTitle(ctx, powerName)
+        local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
+        if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Title) == "string" then
+            return powerConfig.Display.Title
+        end
+        return prettifyPurchaseName(powerName)
+    end
+
+    local function getPowerDisplayOrder(ctx, powerName)
+        local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
+        if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Order) == "number" then
+            return powerConfig.Display.Order
+        end
+        return 0
+    end
+
+    local function compareHugeDescending(a, b)
+        if a == nil or b == nil then
+            return false
+        end
+        local ok, greaterOrEqual = pcall(function()
+            return a >= b
+        end)
+        return ok and greaterOrEqual == true
+    end
+
+    local function collectAffordablePowerUpgrades(ctx, tycoon)
+        local powers = getTycoonPowersComponent(ctx, tycoon)
+        if not powers or not ctx.Config or type(ctx.Config.Powers) ~= "table" then
+            return nil
+        end
+        if not isInvestorsDiscovered(ctx, tycoon) then
+            return {}
+        end
+
+        local investors = getCurrentInvestors(ctx, tycoon)
+        if investors == nil then
+            return nil
+        end
+
+        local entries = {}
+        for powerName in pairs(ctx.Config.Powers) do
+            if ctx.ClientTycoonPowers and type(ctx.ClientTycoonPowers.isPower) == "function" then
+                local okPower, isPower = pcall(function()
+                    return ctx.ClientTycoonPowers.isPower(powerName) == true
+                end)
+                if not okPower or not isPower then
+                    continue
+                end
+            end
+
+            local okMax, maxLevel = pcall(function()
+                return powers:GetMaxLevel(powerName)
+            end)
+            if not okMax or not maxLevel then
+                continue
+            end
+
+            local okLevel, currentLevel = pcall(function()
+                return powers:GetLevel(powerName)
+            end)
+            if not okLevel or currentLevel == nil or currentLevel >= maxLevel then
+                continue
+            end
+
+            local okPrice, price = pcall(function()
+                return powers:GetUpgradePrice(powerName)
+            end)
+            if not okPrice or price == nil then
+                continue
+            end
+
+            if canAffordPurchasePrice(investors, price) then
+                table.insert(entries, {
+                    name = powerName,
+                    price = price,
+                    displayOrder = getPowerDisplayOrder(ctx, powerName),
+                    displayTitle = getPowerDisplayTitle(ctx, powerName),
+                })
+            end
+        end
+
+        table.sort(entries, function(a, b)
+            if compareHugeDescending(a.price, b.price) then
+                return true
+            end
+            if compareHugeDescending(b.price, a.price) then
+                return false
+            end
+            return a.displayOrder > b.displayOrder
+        end)
+
+        return entries
+    end
+
+    local function findUpgradePowerLevelRemote(tycoonInstance)
+        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+        local upgradeRemote = remotes and remotes:FindFirstChild("UpgradePowerLevel")
+        if upgradeRemote and upgradeRemote:IsA("RemoteFunction") then
+            return upgradeRemote
+        end
+        return nil
+    end
+
+    local function tryAutoBuyPowersOnce()
+        local ctx = getSellLemonsGameContext(true)
+        if not ctx then
+            return false
+        end
+
+        local tycoon = getLocalTycoon(ctx)
+        if not tycoon then
+            return false
+        end
+
+        local entries = collectAffordablePowerUpgrades(ctx, tycoon)
+        if type(entries) ~= "table" or #entries == 0 then
+            return false
+        end
+
+        local target = entries[1]
+        local remote = findUpgradePowerLevelRemote(tycoon.Instance)
+        if not remote then
+            return false
+        end
+
+        local ok = pcall(function()
+            remote:InvokeServer(target.name)
+        end)
+        if ok then
+            mountNotify({
+                Title = "Auto Buy Powers",
+                Content = string.format(
+                    "Upgraded %s (%s investors).",
+                    target.displayTitle,
+                    formatHugeAmount(ctx, target.price)
+                ),
+                Icon = "check",
+            })
+        end
+        return ok
+    end
+
     MainTab:CreateSection("Player Information")
 
     playerInfoParagraph = MainTab:CreateParagraph({
@@ -2465,6 +2642,28 @@ do
                 while autoAcceptOfferRunning and loopId == autoAcceptOfferLoopId do
                     local ok = pcall(tryAcceptPhoneOfferOnce)
                     local delay = math.max(0.1, tonumber(autoAcceptOfferDelaySec) or 0.5)
+                    task.wait(if ok then delay else math.max(delay, 1))
+                end
+            end)
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Buy Powers",
+        Flag = "main_auto_buy_powers",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoBuyPowersRunning = enabled == true
+            if not autoBuyPowersRunning then
+                return
+            end
+
+            autoBuyPowersLoopId += 1
+            local loopId = autoBuyPowersLoopId
+            task.spawn(function()
+                while autoBuyPowersRunning and loopId == autoBuyPowersLoopId do
+                    local ok = pcall(tryAutoBuyPowersOnce)
+                    local delay = math.max(1, tonumber(autoBuyPowersDelaySec) or 120)
                     task.wait(if ok then delay else math.max(delay, 1))
                 end
             end)
