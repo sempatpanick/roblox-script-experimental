@@ -382,8 +382,10 @@ do
     local autoPickFruitLoopId = 0
     local autoPickFruitDelaySec = 5
     local autoPickFruitMode = "Normal"
-    local autoPickFruitNearbyClickDelaySec = 0.2
-    local AUTO_PICK_FRUIT_MODES = { "Normal", "Nearby" }
+    local autoPickFruitNearbyClickDelaySec = 0.25
+    local autoPickFruitTeleportStaySec = 2.5
+    local autoPickFruitTeleportTreeIndex = 0
+    local AUTO_PICK_FRUIT_MODES = { "Normal", "Nearby", "Nearby with Teleport" }
 
     local function rayfieldDropdownFirst(valueOrTable)
         if type(valueOrTable) == "table" then
@@ -2391,6 +2393,73 @@ do
         return nil
     end
 
+    local function getInstancePosition(instance)
+        if not instance or not instance.Parent then
+            return nil
+        end
+        if instance:IsA("Model") then
+            return instance:GetPivot().Position
+        end
+        if instance:IsA("BasePart") then
+            return instance.Position
+        end
+        local part = instance:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.Position
+        end
+        return nil
+    end
+
+    local function findLemonTreeAncestor(instance, tycoonInstance)
+        local current = instance
+        while current and current ~= tycoonInstance do
+            if current.Name == "LemonTree" then
+                return current
+            end
+            current = current.Parent
+        end
+        return nil
+    end
+
+    local function teleportRootToPosition(root, position)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(position + Vector3.new(0, 2, 0))
+    end
+
+    local function collectOwnTycoonLemonTreesWithFruit(tycoonInstance, originPos)
+        if not tycoonInstance or not originPos then
+            return {}
+        end
+
+        local trees = {}
+        local seen = {}
+        for _, fruit in CollectionService:GetTagged("ClickFruit") do
+            if fruit.Parent and fruit:IsDescendantOf(tycoonInstance) then
+                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+                if not detector then
+                    continue
+                end
+                local lemonTree = findLemonTreeAncestor(fruit, tycoonInstance)
+                if lemonTree and not seen[lemonTree] then
+                    seen[lemonTree] = true
+                    local treePos = getInstancePosition(lemonTree)
+                    if treePos then
+                        table.insert(trees, {
+                            tree = lemonTree,
+                            position = treePos,
+                            distance = (originPos - treePos).Magnitude,
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(trees, function(a, b)
+            return a.distance < b.distance
+        end)
+        return trees
+    end
+
     local function pickFruitNormalOnce()
         if not fireClickDetectorFn then
             return false
@@ -2417,7 +2486,11 @@ do
         return true, picked
     end
 
-    local function pickFruitNearbyOnce()
+    local function pickFruitNearbyOnce(showNotify)
+        if showNotify == nil then
+            showNotify = true
+        end
+
         if not fireClickDetectorFn then
             return false
         end
@@ -2475,7 +2548,7 @@ do
             end
         end
 
-        if picked > 0 then
+        if picked > 0 and showNotify then
             mountNotify({
                 Title = "Auto Pick Fruit",
                 Content = "Picked " .. picked .. " nearby fruits",
@@ -2486,12 +2559,67 @@ do
         return picked > 0, picked
     end
 
+    local function pickFruitNearbyWithTeleportOnce()
+        if not fireClickDetectorFn then
+            return false
+        end
+
+        pickFruitNearbyOnce(false)
+
+        local root = getLocalHumanoidRootPart()
+        if not root or not autoPickFruitRunning then
+            return false
+        end
+
+        local tycoonInstance = findLocalTycoonInstance()
+        if not tycoonInstance then
+            return true
+        end
+
+        local trees = collectOwnTycoonLemonTreesWithFruit(tycoonInstance, root.Position)
+        if #trees == 0 then
+            return true
+        end
+
+        autoPickFruitTeleportTreeIndex = (autoPickFruitTeleportTreeIndex % #trees) + 1
+        local entry = trees[autoPickFruitTeleportTreeIndex]
+        if not entry or not entry.tree.Parent then
+            return true
+        end
+
+        local savedCFrame = root.CFrame
+        teleportRootToPosition(root, entry.position)
+
+        local staySec = math.max(0.05, tonumber(autoPickFruitTeleportStaySec) or 1.5)
+        local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.2)
+        local stayEnd = tick() + staySec
+        while autoPickFruitRunning and tick() < stayEnd do
+            pickFruitNearbyOnce(false)
+            local remaining = stayEnd - tick()
+            if remaining <= 0 then
+                break
+            end
+            task.wait(math.min(clickDelay, remaining))
+        end
+
+        root = getLocalHumanoidRootPart()
+        if root then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.CFrame = savedCFrame
+        end
+
+        return true
+    end
+
     local function runAutoPickFruitOnce()
         if autoPickFruitMode == "Normal" then
             return pickFruitNormalOnce()
         end
         if autoPickFruitMode == "Nearby" then
             return pickFruitNearbyOnce()
+        end
+        if autoPickFruitMode == "Nearby with Teleport" then
+            return pickFruitNearbyWithTeleportOnce()
         end
         return false
     end
@@ -2541,6 +2669,7 @@ do
                 return
             end
 
+            autoPickFruitTeleportTreeIndex = 0
             autoPickFruitLoopId += 1
             local loopId = autoPickFruitLoopId
             task.spawn(function()
