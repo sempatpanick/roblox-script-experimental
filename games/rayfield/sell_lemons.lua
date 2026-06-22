@@ -1458,11 +1458,6 @@ do
                         end)
                         if ok then
                             claimedAny = true
-                            mountNotify({
-                                Title = "Auto Claim Cash",
-                                Content = "Claimed " .. getEarnerDisplayName(entity, instance),
-                                Icon = "check",
-                            })
                         end
                     end
                 end
