@@ -2426,6 +2426,47 @@ do
         root.CFrame = CFrame.new(position + Vector3.new(0, 2, 0))
     end
 
+    local teleportActionQueue = {}
+    local teleportQueueWorkerRunning = false
+
+    local function processNextTeleportAction()
+        if teleportQueueWorkerRunning then
+            return
+        end
+
+        local job = table.remove(teleportActionQueue, 1)
+        if not job then
+            return
+        end
+
+        teleportQueueWorkerRunning = true
+        task.spawn(function()
+            pcall(job)
+            teleportQueueWorkerRunning = false
+            processNextTeleportAction()
+        end)
+    end
+
+    local function enqueueTeleportAction(actionFn)
+        table.insert(teleportActionQueue, actionFn)
+        processNextTeleportAction()
+    end
+
+    local function runInTeleportQueue(actionFn)
+        local finished = false
+        enqueueTeleportAction(function()
+            local ok, err = pcall(actionFn)
+            if not ok then
+                warn("[Sell Lemons Teleport Queue]", err)
+            end
+            finished = true
+        end)
+
+        while not finished do
+            task.wait()
+        end
+    end
+
     local function collectOwnTycoonLemonTreesWithFruit(tycoonInstance, originPos)
         if not tycoonInstance or not originPos then
             return {}
@@ -2566,47 +2607,53 @@ do
 
         pickFruitNearbyOnce(false)
 
-        local root = getLocalHumanoidRootPart()
-        if not root or not autoPickFruitRunning then
+        if not autoPickFruitRunning then
             return false
         end
 
-        local tycoonInstance = findLocalTycoonInstance()
-        if not tycoonInstance then
-            return true
-        end
-
-        local trees = collectOwnTycoonLemonTreesWithFruit(tycoonInstance, root.Position)
-        if #trees == 0 then
-            return true
-        end
-
-        autoPickFruitTeleportTreeIndex = (autoPickFruitTeleportTreeIndex % #trees) + 1
-        local entry = trees[autoPickFruitTeleportTreeIndex]
-        if not entry or not entry.tree.Parent then
-            return true
-        end
-
-        local savedCFrame = root.CFrame
-        teleportRootToPosition(root, entry.position)
-
-        local staySec = math.max(0.05, tonumber(autoPickFruitTeleportStaySec) or 1.5)
-        local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.2)
-        local stayEnd = tick() + staySec
-        while autoPickFruitRunning and tick() < stayEnd do
-            pickFruitNearbyOnce(false)
-            local remaining = stayEnd - tick()
-            if remaining <= 0 then
-                break
+        runInTeleportQueue(function()
+            local root = getLocalHumanoidRootPart()
+            if not root or not autoPickFruitRunning then
+                return
             end
-            task.wait(math.min(clickDelay, remaining))
-        end
 
-        root = getLocalHumanoidRootPart()
-        if root then
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.CFrame = savedCFrame
-        end
+            local tycoonInstance = findLocalTycoonInstance()
+            if not tycoonInstance then
+                return
+            end
+
+            local trees = collectOwnTycoonLemonTreesWithFruit(tycoonInstance, root.Position)
+            if #trees == 0 then
+                return
+            end
+
+            autoPickFruitTeleportTreeIndex = (autoPickFruitTeleportTreeIndex % #trees) + 1
+            local entry = trees[autoPickFruitTeleportTreeIndex]
+            if not entry or not entry.tree.Parent then
+                return
+            end
+
+            local savedCFrame = root.CFrame
+            teleportRootToPosition(root, entry.position)
+
+            local staySec = math.max(0.05, tonumber(autoPickFruitTeleportStaySec) or 1.5)
+            local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.2)
+            local stayEnd = tick() + staySec
+            while autoPickFruitRunning and tick() < stayEnd do
+                pickFruitNearbyOnce(false)
+                local remaining = stayEnd - tick()
+                if remaining <= 0 then
+                    break
+                end
+                task.wait(math.min(clickDelay, remaining))
+            end
+
+            root = getLocalHumanoidRootPart()
+            if root then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.CFrame = savedCFrame
+            end
+        end)
 
         return true
     end
@@ -2731,19 +2778,31 @@ do
             return false
         end
 
-        local savedCFrame = root.CFrame
-        for _, cashDrop in ipairs(drops) do
-            if not autoPickCashDropRunning then
-                break
+        runInTeleportQueue(function()
+            root = getLocalHumanoidRootPart()
+            if not root then
+                return
             end
 
-            local dropPos = getCashDropPosition(cashDrop)
-            if dropPos then
-                root.CFrame = CFrame.new(dropPos + Vector3.new(0, 2, 0))
-                task.wait(2)
-                root.CFrame = savedCFrame
+            local savedCFrame = root.CFrame
+            for _, cashDrop in ipairs(drops) do
+                if not autoPickCashDropRunning then
+                    break
+                end
+
+                local dropPos = getCashDropPosition(cashDrop)
+                if dropPos then
+                    teleportRootToPosition(root, dropPos)
+                    task.wait(2)
+                    root = getLocalHumanoidRootPart()
+                    if not root then
+                        break
+                    end
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.CFrame = savedCFrame
+                end
             end
-        end
+        end)
 
         return true
     end
