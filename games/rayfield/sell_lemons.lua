@@ -377,6 +377,7 @@ do
     local autoEvolveRunning = false
     local autoEvolveLoopId = 0
     local autoEvolveDelaySec = 1
+    local autoEvolveStartingBonusTarget = "0"
 
     local autoPickFruitRunning = false
     local autoPickFruitLoopId = 0
@@ -1528,6 +1529,67 @@ do
         return nil
     end
 
+    local function parseHugeInput(value)
+        if value == nil then
+            return nil
+        end
+
+        local strValue = if type(value) == "string" then value:match("^%s*(.-)%s*$") else nil
+        local plainNumber = tonumber(strValue or value)
+
+        -- Plain numbers must use tonumber first; Huge.toHuge("1000") mis-parses digit strings.
+        if plainNumber ~= nil and (strValue == nil or strValue:match("^[+-]?%d*%.?%d+$")) then
+            ensureHugeLoaded()
+            if cachedHuge and type(cachedHuge.toHuge) == "function" then
+                local ok, hugeValue = pcall(function()
+                    return cachedHuge.toHuge(plainNumber)
+                end)
+                if ok and hugeValue ~= nil then
+                    return hugeValue
+                end
+            end
+            return plainNumber
+        end
+
+        ensureHugeLoaded()
+        if cachedHuge and type(cachedHuge.toHuge) == "function" then
+            local ok, hugeValue = pcall(function()
+                return cachedHuge.toHuge(strValue or value)
+            end)
+            if ok and hugeValue ~= nil then
+                return hugeValue
+            end
+        end
+        return plainNumber
+    end
+
+    local function getAutoEvolveStartingBonusTarget()
+        local parsed = parseHugeInput(autoEvolveStartingBonusTarget)
+        if parsed == nil then
+            return 0
+        end
+        return parsed
+    end
+
+    local function shouldAutoEvolve(progressInfo, startingBonusTarget)
+        if not progressInfo or not progressInfo.ready then
+            return false
+        end
+        if progressInfo.startingBonus == nil then
+            return false
+        end
+        if startingBonusTarget == nil then
+            return true
+        end
+        local ok, isZeroOrLess = pcall(function()
+            return startingBonusTarget <= 0
+        end)
+        if ok and isZeroOrLess then
+            return true
+        end
+        return hugeGreaterOrEqual(progressInfo.startingBonus, startingBonusTarget)
+    end
+
     local function getTycoonRebirthComponent(ctx, tycoon)
         if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonRebirth then
             local ok, component = pcall(function()
@@ -1828,9 +1890,16 @@ do
             ))
         end
 
+        local startingBonusTarget = getAutoEvolveStartingBonusTarget()
+        local ready = shouldAutoEvolve(progressInfo, startingBonusTarget)
+        table.insert(lines, string.format(
+            "Target Starting Bonus: %s",
+            formatHugeAmount(ctx, startingBonusTarget)
+        ))
+
         table.insert(lines, string.format(
             "Ready to Evolve: %s",
-            if progressInfo.ready then "Yes" else "No"
+            if ready then "Yes" else "No"
         ))
 
         return table.concat(lines, "\n")
@@ -1879,7 +1948,7 @@ do
         end
 
         local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
-        if not progressInfo or not progressInfo.ready then
+        if not progressInfo or not shouldAutoEvolve(progressInfo, getAutoEvolveStartingBonusTarget()) then
             return false
         end
 
@@ -1895,8 +1964,9 @@ do
             mountNotify({
                 Title = "Auto Evolve",
                 Content = string.format(
-                    "Evolved at %s progress.",
-                    formatEvolutionProgressPercent(progressInfo.progress)
+                    "Evolved at %s progress with %s starting bonus.",
+                    formatEvolutionProgressPercent(progressInfo.progress),
+                    formatHugeAmount(ctx, progressInfo.startingBonus)
                 ),
                 Icon = "check",
             })
@@ -2311,6 +2381,21 @@ do
     evolutionInfoParagraph = MainTab:CreateParagraph({
         Title = "Evolution",
         Content = "Loading...",
+    })
+
+    MainTab:CreateInput({
+        Name = "Starting Bonus",
+        PlaceholderText = "Minimum starting bonus before evolve (0 = any)",
+        Flag = "main_auto_evolve_starting_bonus",
+        CurrentValue = tostring(autoEvolveStartingBonusTarget),
+        Callback = function(value)
+            if type(value) == "string" and #value > 0 then
+                autoEvolveStartingBonusTarget = value
+            else
+                autoEvolveStartingBonusTarget = tostring(tonumber(value) or 0)
+            end
+            requestEvolutionInfoRefresh()
+        end,
     })
 
     MainTab:CreateInput({
