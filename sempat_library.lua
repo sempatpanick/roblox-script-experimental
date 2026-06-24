@@ -167,6 +167,7 @@ local ELEMENT_HEIGHT = 52
 local SECTION_HEADER_HEIGHT = 36
 local CORNER = 10
 local CARD_CORNER = 8
+local DROPDOWN_MENU_CORNER = 8
 local SIDEBAR_WIDTH = 150
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
@@ -2438,6 +2439,7 @@ function SempatLibrary:CreateWindow(settings)
 	local defaultWindowTransparency = windowTransparency
 
 	local windowPanels = { root, headerBar, sidebar, sidebarCover, content, contentCover }
+	local settingsGearButton
 
 	local function applyWindowTransparency(transparency)
 		for _, panel in ipairs(windowPanels) do
@@ -2566,7 +2568,6 @@ function SempatLibrary:CreateWindow(settings)
 	local windowVisible = true
 	local mobileFab
 	local uiSettingsPage
-	local settingsGearButton
 	local lastSelectedTabId
 
 	local function persistUiSettings()
