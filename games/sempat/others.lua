@@ -344,26 +344,30 @@ local Window = SempatLibrary:CreateWindow({
 
 
 -- */  Local Player Tab  /* --
-createLocalPlayerTab(Window, mountNotify, { flagsPrefix = "lp" })
+createLocalPlayerTab(Window, mountNotify, { flagsPrefix = "lp", tabIcon = "user" })
 
 -- */  Teleport Tab  /* --
-createTeleportTab(Window, mountNotify, { flagsPrefix = "others" })
+createTeleportTab(Window, mountNotify, { flagsPrefix = "others", tabIcon = "map-pin" })
 
 -- */  Objects Tab  /* --
-createObjectsTab(Window, mountNotify, { replicatedStorage = ReplicatedStorage })
+createObjectsTab(Window, mountNotify, {
+    replicatedStorage = ReplicatedStorage,
+    tabIcon = "boxes",
+})
 
 -- */  Recording Tab  /* --
-createRecordingTab(Window, mountNotify, "sempatpanick/others/recordings")
+createRecordingTab(Window, mountNotify, "sempatpanick/others/recordings", { tabIcon = "video" })
 
 -- */  Config Tab  /* --
 createConfigTab(Window, mountNotify, {
     configDir = "sempatpanick/others",
     rayfieldLibrary = SempatLibrary,
+    tabIcon = "settings",
 })
 
 -- */  Avatar Tab  /* --
 do
-    local AvatarTab = Window:CreateTab("Avatar", 7076763398)
+    local AvatarTab = Window:CreateTab("Avatar", "circle-user")
 
     AvatarTab:CreateSection("Look Up Player")
 
@@ -391,6 +395,7 @@ do
         Title: string?,
         Description: string?,
         ImageSize: number?,
+        ImageAlign: string?,
     })
         if not AvatarPreviewImage then
             return
@@ -402,6 +407,7 @@ do
                     Title = opts.Title or "Avatar",
                     Description = opts.Description or "",
                     ImageSize = opts.ImageSize or 150,
+                    ImageAlign = opts.ImageAlign or "center",
                 })
             end)
             return
@@ -429,6 +435,7 @@ do
             Title = "Avatar",
             Image = "",
             ImageSize = 150,
+            ImageAlign = "center",
             Description = "Results appear after Search.",
         }
         if type(AvatarTab.CreateImage) == "function" then

@@ -9,6 +9,7 @@
     replicatedStorage = ReplicatedStorage  -- use cloneref wrapper from host script if needed
     useInstanceDropdownValues = true       -- pass {Title, Instance} rows directly (mancing_indo style)
     nestClassesFlag = "flag_name"          -- Rayfield ConfigurationSaving flag for nest types dropdown
+    tabIcon = "boxes"                      -- optional; Lucide name or rbx asset id (Sempat UI)
 ]]
 
 local Players = game:GetService("Players")
@@ -46,7 +47,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
     local ReplicatedStorage = options.replicatedStorage or game:GetService("ReplicatedStorage")
     local useInstanceDropdownValues = options.useInstanceDropdownValues == true
     local nestClassesFlag = options.nestClassesFlag
-    local ObjectsTab = windowRef:CreateTab("Objects", 4483362458)
+    local ObjectsTab = windowRef:CreateTab("Objects", options.tabIcon or 4483362458)
 
     -- Nested tree: only under Instance types selected in Show Children (see section at top of this tab).
     local OBJECTS_TREE_MAX_DEPTH = 14

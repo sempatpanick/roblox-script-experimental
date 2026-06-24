@@ -22,6 +22,7 @@
       warnLabel = "Mancing Indo",
     }
     onAfterLoad = function(name, cfg, cm) end
+    tabIcon = "settings"               -- optional; Lucide name or rbx asset id (Sempat UI)
 ]]
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
@@ -129,7 +130,7 @@ local function createConfigTab(windowRef, notifyFn, options)
             applyLastSet[flagName] = true
         end
     end
-    local ConfigTab = windowRef:CreateTab("Config", 4483362458)
+    local ConfigTab = windowRef:CreateTab("Config", options.tabIcon or 4483362458)
     ConfigTab:CreateSection("Config management")
     local configMgmtName = ""
     local savedConfigList = {}

@@ -10,6 +10,7 @@
     notifyIcons = true                 -- pass Icon in mountNotify calls
     coordSectionTitle = "Teleport"     -- sawah_indo uses "Coordinates"
     flagsPrefix = "sumbing"            -- -> sumbing_tp_location, sumbing_tp_lookDirection, ...
+    tabIcon = "map-pin"                -- optional; Lucide name or rbx asset id (Sempat UI)
     flags = { location = "...", ... }  -- explicit Rayfield flags (overrides prefix)
     walkToLocation = true              -- Humanoid:MoveTo button (expedition_antartica)
     playerSearch = true                -- Search on player dropdown
@@ -87,7 +88,7 @@ local function createTeleportTab(windowRef, notifyFn, options)
         return teleportFlagsMod.withExtOption(props, options)
     end
 
-    local TeleportTab = windowRef:CreateTab("Teleport", 4483362458)
+    local TeleportTab = windowRef:CreateTab("Teleport", options.tabIcon or 4483362458)
     TeleportTab:CreateSection(options.coordSectionTitle or "Teleport")
 
     local teleportInputValue = ""

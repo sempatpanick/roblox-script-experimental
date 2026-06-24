@@ -10,6 +10,7 @@
     shiftLockRenderStepId = "MountYahayukCenterShiftLockCamera"
     persistNoClip = true
     flagsPrefix = "lp"  -- Rayfield/Sempat ConfigurationSaving flags -> lp_<suffix>
+    tabIcon = "user"  -- optional; Lucide name or rbx asset id (Sempat UI)
     autoSellTripAssist = {}  -- mancing_indo: table receives .begin function
 
   Flag suffixes (when flagsPrefix is set):
@@ -68,7 +69,8 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         return props
     end
 
-    local LocalPlayerTab = windowRef:CreateTab("Local Player", 4483362458)
+    local tabIcon = options.tabIcon or 4483362458
+    local LocalPlayerTab = windowRef:CreateTab("Local Player", tabIcon)
 
     LocalPlayerTab:CreateSection("Misc")
     local infiniteJumpConnection = nil

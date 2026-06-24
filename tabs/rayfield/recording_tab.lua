@@ -4,6 +4,7 @@
 
   Usage:
     createRecordingTab(Window, mountNotify, "sempatpanick/<script_name>/recordings")
+    createRecordingTab(Window, mountNotify, "sempatpanick/<script_name>/recordings", { tabIcon = "video" })
 ]]
 
 local Players = game:GetService("Players")
@@ -43,8 +44,10 @@ local isJsonPath = pathMod.isJsonPath
 local encodeRecordingJsonValue = jsonMod.encodeRecordingJsonValue
 local getCharacterHumanoidAndRoot = playerMod.getCharacterHumanoidAndRoot
 
-local function createRecordingTab(windowRef, notifyFn, recordingsDir)
-    local RecordingTab = windowRef:CreateTab("Recording", 4483362458)
+local function createRecordingTab(windowRef, notifyFn, recordingsDir, options)
+    options = options or {}
+    local tabIcon = options.tabIcon or 4483362458
+    local RecordingTab = windowRef:CreateTab("Recording", tabIcon)
 
     RecordingTab:CreateSection("Record Roblox Activities")
 
