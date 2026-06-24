@@ -96,7 +96,15 @@ local function resolveElementColor(color)
 	return nil
 end
 
-local DROPDOWN_MENU_CORNER = 12
+local function normalizeWindowTransparency(value)
+	if type(value) ~= "number" then
+		return 0
+	end
+	if value > 1 then
+		return math.clamp(value / 100, 0, 0.95)
+	end
+	return math.clamp(value, 0, 0.95)
+end
 local DROPDOWN_ITEM_HEIGHT = 34
 local DROPDOWN_SEARCH_HEIGHT = 36
 local DROPDOWN_MAX_HEIGHT = 240
@@ -1488,7 +1496,7 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = screenGui,
 	})
 	corner(root, CORNER)
-	stroke(root, THEME.stroke, 0.25)
+	local rootStroke = stroke(root, THEME.stroke, 0.25)
 
 	local sidebar = new("Frame", {
 		Name = "Sidebar",
@@ -1661,6 +1669,26 @@ function SempatLibrary:CreateWindow(settings)
 		Size = UDim2.new(0, CORNER, 1, 0),
 		Parent = content,
 	})
+
+	local windowTransparency = 0
+	if settings.WindowTransparency ~= nil then
+		windowTransparency = normalizeWindowTransparency(settings.WindowTransparency)
+	elseif settings.Transparency ~= nil then
+		windowTransparency = normalizeWindowTransparency(settings.Transparency)
+	end
+
+	local windowPanels = { root, sidebar, sidebarCover, content, contentCover }
+
+	local function applyWindowTransparency(transparency)
+		for _, panel in ipairs(windowPanels) do
+			panel.BackgroundTransparency = transparency
+		end
+		if rootStroke then
+			rootStroke.Transparency = 0.25 + (transparency * 0.5)
+		end
+	end
+
+	applyWindowTransparency(windowTransparency)
 
 	local topBar = new("Frame", {
 		BackgroundTransparency = 1,
@@ -1864,6 +1892,19 @@ function SempatLibrary:CreateWindow(settings)
 
 	function window:IsOpen()
 		return windowVisible
+	end
+
+	function window:SetTransparency(value)
+		if type(value) ~= "number" then
+			return windowTransparency
+		end
+		windowTransparency = normalizeWindowTransparency(value)
+		applyWindowTransparency(windowTransparency)
+		return windowTransparency
+	end
+
+	function window:GetTransparency()
+		return math.floor(windowTransparency * 100 + 0.5)
 	end
 
 	function window:Destroy()
