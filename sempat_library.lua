@@ -115,6 +115,179 @@ local ACCENT_PRESETS = {
 	{ name = "Crimson", color = Color3.fromRGB(239, 68, 68) },
 }
 
+local DEFAULT_THEME_NAME = "Default"
+
+local function themePalette(colors)
+	return {
+		window = colors.window,
+		sidebar = colors.sidebar,
+		content = colors.content,
+		card = colors.card,
+		cardHover = colors.cardHover,
+		stroke = colors.stroke,
+		text = colors.text,
+		muted = colors.muted,
+		toggleOff = colors.toggleOff,
+		sliderTrack = colors.sliderTrack,
+		dropdownMenu = colors.dropdownMenu,
+		dropdownSearch = colors.dropdownSearch,
+		dropdownItemHover = colors.dropdownItemHover,
+	}
+end
+
+local THEME_PRESETS = {
+	{
+		name = DEFAULT_THEME_NAME,
+		colors = themePalette({
+			window = Color3.fromRGB(18, 20, 26),
+			sidebar = Color3.fromRGB(22, 24, 31),
+			content = Color3.fromRGB(20, 22, 28),
+			card = Color3.fromRGB(28, 30, 38),
+			cardHover = Color3.fromRGB(34, 36, 46),
+			stroke = Color3.fromRGB(48, 50, 62),
+			text = Color3.fromRGB(245, 246, 250),
+			muted = Color3.fromRGB(140, 144, 156),
+			toggleOff = Color3.fromRGB(58, 60, 72),
+			sliderTrack = Color3.fromRGB(40, 42, 52),
+			dropdownMenu = Color3.fromRGB(24, 26, 34),
+			dropdownSearch = Color3.fromRGB(32, 34, 44),
+			dropdownItemHover = Color3.fromRGB(44, 46, 58),
+		}),
+	},
+	{
+		name = "Dark",
+		colors = themePalette({
+			window = Color3.fromRGB(14, 16, 22),
+			sidebar = Color3.fromRGB(16, 18, 24),
+			content = Color3.fromRGB(14, 16, 20),
+			card = Color3.fromRGB(22, 24, 30),
+			cardHover = Color3.fromRGB(28, 30, 36),
+			stroke = Color3.fromRGB(40, 42, 50),
+			text = Color3.fromRGB(245, 246, 250),
+			muted = Color3.fromRGB(128, 132, 144),
+			toggleOff = Color3.fromRGB(48, 50, 58),
+			sliderTrack = Color3.fromRGB(32, 34, 40),
+			dropdownMenu = Color3.fromRGB(18, 20, 26),
+			dropdownSearch = Color3.fromRGB(26, 28, 34),
+			dropdownItemHover = Color3.fromRGB(36, 38, 46),
+		}),
+	},
+	{
+		name = "Light",
+		colors = themePalette({
+			window = Color3.fromRGB(240, 242, 248),
+			sidebar = Color3.fromRGB(232, 234, 240),
+			content = Color3.fromRGB(245, 246, 250),
+			card = Color3.fromRGB(255, 255, 255),
+			cardHover = Color3.fromRGB(236, 238, 244),
+			stroke = Color3.fromRGB(200, 204, 214),
+			text = Color3.fromRGB(24, 26, 32),
+			muted = Color3.fromRGB(100, 104, 118),
+			toggleOff = Color3.fromRGB(210, 214, 224),
+			sliderTrack = Color3.fromRGB(220, 224, 232),
+			dropdownMenu = Color3.fromRGB(255, 255, 255),
+			dropdownSearch = Color3.fromRGB(248, 250, 254),
+			dropdownItemHover = Color3.fromRGB(236, 240, 248),
+		}),
+	},
+	{
+		name = "AMOLED",
+		colors = themePalette({
+			window = Color3.fromRGB(0, 0, 0),
+			sidebar = Color3.fromRGB(0, 0, 0),
+			content = Color3.fromRGB(0, 0, 0),
+			card = Color3.fromRGB(16, 16, 16),
+			cardHover = Color3.fromRGB(24, 24, 24),
+			stroke = Color3.fromRGB(36, 36, 36),
+			text = Color3.fromRGB(245, 246, 250),
+			muted = Color3.fromRGB(130, 130, 140),
+			toggleOff = Color3.fromRGB(28, 28, 28),
+			sliderTrack = Color3.fromRGB(20, 20, 20),
+			dropdownMenu = Color3.fromRGB(12, 12, 12),
+			dropdownSearch = Color3.fromRGB(18, 18, 18),
+			dropdownItemHover = Color3.fromRGB(28, 28, 28),
+		}),
+	},
+}
+
+local appliedThemeName = DEFAULT_THEME_NAME
+local themeTargets = {}
+local themeRefreshers = {}
+
+local function getThemePresetByName(name)
+	if type(name) ~= "string" then
+		return THEME_PRESETS[1]
+	end
+	for _, preset in ipairs(THEME_PRESETS) do
+		if preset.name == name then
+			return preset
+		end
+	end
+	return THEME_PRESETS[1]
+end
+
+local function applyThemeColors(palette)
+	for key, color in pairs(palette) do
+		THEME[key] = color
+	end
+end
+
+local function registerThemeTarget(instance, role)
+	if instance and type(role) == "string" then
+		table.insert(themeTargets, { instance = instance, role = role })
+	end
+end
+
+local function registerThemeRefresher(refresher)
+	if type(refresher) == "function" then
+		table.insert(themeRefreshers, refresher)
+	end
+end
+
+local function clearThemeRegistry()
+	table.clear(themeTargets)
+	table.clear(themeRefreshers)
+end
+
+local function applyThemeRole(instance, role)
+	if not instance or not instance.Parent then
+		return
+	end
+	if role == "card" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.card
+	elseif role == "text" and instance:IsA("TextLabel") then
+		instance.TextColor3 = THEME.text
+	elseif role == "muted" and instance:IsA("TextLabel") then
+		instance.TextColor3 = THEME.muted
+	elseif role == "dropdownSearch" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.dropdownSearch
+	elseif role == "inputBg" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.dropdownSearch
+	elseif role == "sliderTrack" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.sliderTrack
+	elseif role == "stroke" and instance:IsA("UIStroke") then
+		instance.Color = THEME.stroke
+	elseif role == "window" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.window
+	elseif role == "sidebar" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.sidebar
+	elseif role == "content" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.content
+	end
+end
+
+local function runThemeRefreshers()
+	for _, refresher in ipairs(themeRefreshers) do
+		pcall(refresher)
+	end
+end
+
+local function applyThemeTargets()
+	for _, entry in ipairs(themeTargets) do
+		applyThemeRole(entry.instance, entry.role)
+	end
+end
+
 local function applyAccentTheme(color)
 	appliedAccentColor = color
 	THEME.accent = color
@@ -353,6 +526,7 @@ local function createMobileFab(screenGui, settings, title, onOpen, options)
 		Parent = screenGui,
 	})
 	corner(fab, MOBILE_FAB_CORNER)
+	registerThemeTarget(fab, "card")
 	stroke(fab, THEME.accent, 0.15, 1.5)
 
 	if iconKind == "image" then
@@ -510,6 +684,7 @@ local function createElementCard(parent, title, desc, rightWidth)
 		Parent = parent,
 	})
 	corner(card, CARD_CORNER)
+	registerThemeTarget(card, "card")
 	new("UISizeConstraint", {
 		MinSize = Vector2.new(0, ELEMENT_HEIGHT),
 		Parent = card,
@@ -550,6 +725,7 @@ local function createElementCard(parent, title, desc, rightWidth)
 		Text = title or "",
 		Parent = left,
 	})
+	registerThemeTarget(titleLabel, "text")
 
 	local descLabel
 	if hasDesc then
@@ -576,6 +752,7 @@ local function createElementCard(parent, title, desc, rightWidth)
 			LayoutOrder = 2,
 			Parent = left,
 		})
+		registerThemeTarget(descLabel, "muted")
 	else
 		titleLabel.AnchorPoint = Vector2.new(0, 0.5)
 		titleLabel.Position = UDim2.new(0, 0, 0.5, 0)
@@ -950,6 +1127,11 @@ local function buildToggle(contentParent, props, scrollFrame)
 			track.BackgroundColor3 = element.CurrentValue and color or THEME.toggleOff
 		end
 	end)
+	registerThemeRefresher(function()
+		if track.Parent then
+			track.BackgroundColor3 = element.CurrentValue and THEME.toggleOn or THEME.toggleOff
+		end
+	end)
 
 	if props.Flag and not props.Ext then
 		registerFlag(props.Flag, element)
@@ -997,6 +1179,7 @@ local function buildSlider(contentParent, props, scrollFrame)
 		Parent = right,
 	})
 	corner(track, 3)
+	registerThemeTarget(track, "sliderTrack")
 
 	local fill = new("Frame", {
 		Name = "Fill",
@@ -1262,9 +1445,11 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		Parent = right,
 	})
 	corner(button, 8)
-	stroke(button, THEME.stroke, 0.45)
+	local buttonStroke = stroke(button, THEME.stroke, 0.45)
+	registerThemeTarget(button, "dropdownSearch")
+	registerThemeTarget(buttonStroke, "stroke")
 
-	new("TextLabel", {
+	local chevron = new("TextLabel", {
 		Name = "Chevron",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1277,6 +1462,12 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		Rotation = CHEVRON_DOWN_ROTATION,
 		Parent = button,
 	})
+	registerThemeTarget(chevron, "muted")
+	registerThemeRefresher(function()
+		if button.Parent then
+			button.TextColor3 = THEME.text
+		end
+	end)
 
 	local element = {
 		Value = isMulti and copyOptionList(selectedList) or selected,
@@ -1734,6 +1925,11 @@ local function buildButton(contentParent, props, scrollFrame)
 				applyButtonColor(color)
 			end
 		end)
+		registerThemeRefresher(function()
+			if button.Parent then
+				button.TextColor3 = getButtonTextColor()
+			end
+		end)
 	end
 
 	scheduleCanvasUpdate(scrollFrame)
@@ -1760,7 +1956,15 @@ local function buildInput(contentParent, props, scrollFrame)
 		Parent = right,
 	})
 	corner(box, 6)
-	stroke(box, THEME.stroke, 0.4)
+	local boxStroke = stroke(box, THEME.stroke, 0.4)
+	registerThemeTarget(box, "inputBg")
+	registerThemeTarget(boxStroke, "stroke")
+	registerThemeRefresher(function()
+		if box.Parent then
+			box.TextColor3 = THEME.text
+			box.PlaceholderColor3 = THEME.muted
+		end
+	end)
 
 	local element = {
 		CurrentValue = box.Text,
@@ -1808,6 +2012,7 @@ local function buildParagraph(contentParent, props, scrollFrame)
 	})
 	corner(frame, CARD_CORNER)
 	padding(frame, 12, 12, 12, 12)
+	registerThemeTarget(frame, "card")
 
 	local titleLabel = new("TextLabel", {
 		Name = "Title",
@@ -1820,6 +2025,7 @@ local function buildParagraph(contentParent, props, scrollFrame)
 		Text = props.Title or props.Name or "Paragraph",
 		Parent = frame,
 	})
+	registerThemeTarget(titleLabel, "text")
 
 	local contentLabel = new("TextLabel", {
 		Name = "Content",
@@ -1836,6 +2042,7 @@ local function buildParagraph(contentParent, props, scrollFrame)
 		Text = props.Content or props.Desc or "",
 		Parent = frame,
 	})
+	registerThemeTarget(contentLabel, "muted")
 
 	local element = {}
 
@@ -1901,6 +2108,7 @@ local function createSection(contentParent, title, scrollFrame)
 		LayoutOrder = 1,
 		Parent = section,
 	})
+	registerThemeTarget(header, "muted")
 
 	local accent = new("Frame", {
 		BackgroundColor3 = THEME.accent,
@@ -1930,6 +2138,7 @@ local function createSection(contentParent, title, scrollFrame)
 		Rotation = CHEVRON_DOWN_ROTATION,
 		Parent = header,
 	})
+	registerThemeTarget(chevron, "muted")
 
 	local body = new("Frame", {
 		Name = "Body",
@@ -2105,9 +2314,16 @@ local function createSidebarButton(sidebarList, windowState, tabData, accentIndi
 		table.insert(accentIndicators, indicator)
 	end
 
+	local isTabSelected = false
+	local function applyTabTheme()
+		button.BackgroundColor3 = isTabSelected and THEME.card or THEME.content
+		button.TextColor3 = isTabSelected and THEME.text or THEME.muted
+	end
+	registerThemeRefresher(applyTabTheme)
+
 	local function setSelected(selected)
-		button.BackgroundColor3 = selected and THEME.card or THEME.content
-		button.TextColor3 = selected and THEME.text or THEME.muted
+		isTabSelected = selected == true
+		applyTabTheme()
 		indicator.Visible = selected
 		tabData.frame.Visible = selected
 	end
@@ -2159,8 +2375,24 @@ local function createUiSettingsPage(pagesContainer, config)
 	for _, preset in ipairs(ACCENT_PRESETS) do
 		table.insert(presetNames, preset.name)
 	end
+	local themePresetNames = {}
+	for _, preset in ipairs(THEME_PRESETS) do
+		table.insert(themePresetNames, preset.name)
+	end
 
 	local appearance = createSection(scroll, "Appearance", scroll)
+	local themeDropdown = appearance:CreateDropdown({
+		Name = "Theme",
+		Content = "Overall color palette for panels, cards, and text",
+		Options = themePresetNames,
+		CurrentOption = { config.getThemePreset() },
+		Callback = function(value)
+			local picked = type(value) == "table" and value[1] or value
+			if type(picked) == "string" then
+				config.setThemePreset(picked)
+			end
+		end,
+	})
 	local transparencySlider = appearance:CreateSlider({
 		Name = "Window Transparency",
 		Content = "How see-through the window panels are",
@@ -2256,6 +2488,7 @@ local function createUiSettingsPage(pagesContainer, config)
 	})
 
 	local function refreshControls()
+		themeDropdown:Set(config.getThemePreset())
 		transparencySlider:Set(config.getTransparencyPercent())
 		accentDropdown:Set(colorToPresetName(config.getAccentColor()))
 		scaleSlider:Set(config.getWindowScale())
@@ -2331,6 +2564,7 @@ end
 
 function SempatLibrary:CreateWindow(settings)
 	settings = settings or {}
+	clearThemeRegistry()
 	local parent = settings.Parent or getGuiParent()
 	ensureOverlayGuis(parent)
 
@@ -2428,6 +2662,7 @@ function SempatLibrary:CreateWindow(settings)
 		Text = title,
 		Parent = headerBrand,
 	})
+	registerThemeTarget(titleLabel, "text")
 
 	local subtitleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -2484,6 +2719,7 @@ function SempatLibrary:CreateWindow(settings)
 			Parent = headerBar,
 		})
 		corner(highlight, 8)
+		registerThemeTarget(highlight, "card")
 
 		local btn = new("TextButton", {
 			Name = buttonName,
@@ -2588,6 +2824,7 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = sidebar,
 	})
 	corner(profileCard, 10)
+	registerThemeTarget(profileCard, "card")
 
 	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + 8
 	local profileTextRight = PROFILE_PAD_X
@@ -2666,6 +2903,8 @@ function SempatLibrary:CreateWindow(settings)
 
 	local windowPanels = { root, headerBar, sidebar, sidebarCover, content, contentCover }
 	local settingsGearButton
+	local defaultThemeName = DEFAULT_THEME_NAME
+	local themeName = defaultThemeName
 
 	local function applyWindowTransparency(transparency)
 		for _, panel in ipairs(windowPanels) do
@@ -2707,8 +2946,30 @@ function SempatLibrary:CreateWindow(settings)
 		runAccentRefreshers(color)
 	end
 
-	applyWindowTransparency(windowTransparency)
-	applyWindowAccent(appliedAccentColor)
+	local pageTitle
+
+	local function applyWindowTheme(name)
+		local preset = getThemePresetByName(name or defaultThemeName)
+		themeName = preset.name
+		appliedThemeName = preset.name
+		applyThemeColors(preset.colors)
+		root.BackgroundColor3 = THEME.window
+		headerBar.BackgroundColor3 = THEME.sidebar
+		sidebar.BackgroundColor3 = THEME.content
+		sidebarCover.BackgroundColor3 = THEME.content
+		content.BackgroundColor3 = THEME.content
+		contentCover.BackgroundColor3 = THEME.content
+		profileCard.BackgroundColor3 = THEME.card
+		if rootStroke then
+			rootStroke.Color = THEME.stroke
+		end
+		if pageTitle and pageTitle.Parent then
+			pageTitle.TextColor3 = THEME.text
+		end
+		applyThemeTargets()
+		runThemeRefreshers()
+		applyWindowAccent(appliedAccentColor)
+	end
 
 	local topBar = new("Frame", {
 		BackgroundTransparency = 1,
@@ -2716,7 +2977,7 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = content,
 	})
 
-	local pageTitle = new("TextLabel", {
+	pageTitle = new("TextLabel", {
 		Name = "PageTitle",
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 20, 0, 10),
@@ -2729,6 +2990,10 @@ function SempatLibrary:CreateWindow(settings)
 		Active = false,
 		Parent = topBar,
 	})
+	registerThemeTarget(pageTitle, "text")
+
+	applyWindowTheme(themeName)
+	applyWindowTransparency(windowTransparency)
 
 	local defaultContentTitleSize = DEFAULT_CONTENT_TITLE_SIZE
 	local contentTitleSize = defaultContentTitleSize
@@ -2831,6 +3096,7 @@ function SempatLibrary:CreateWindow(settings)
 				transparency = math.floor(windowTransparency * 100 + 0.5),
 				toggleKey = toggleKeyName,
 				accentPreset = colorToPresetName(appliedAccentColor),
+				themePreset = themeName,
 				windowScale = windowScale,
 				windowWidth = root.Size.X.Offset,
 				windowHeight = root.Size.Y.Offset,
@@ -2881,6 +3147,9 @@ function SempatLibrary:CreateWindow(settings)
 					break
 				end
 			end
+		end
+		if type(decoded.themePreset) == "string" then
+			applyWindowTheme(decoded.themePreset)
 		end
 		if type(decoded.toggleKey) == "string" and decoded.toggleKey ~= "" then
 			toggleKeyName = string.upper(decoded.toggleKey)
@@ -3033,6 +3302,7 @@ function SempatLibrary:CreateWindow(settings)
 		windowTransparency = defaultWindowTransparency
 		applyWindowTransparency(windowTransparency)
 		applyWindowAccent(defaultAccentColor)
+		applyWindowTheme(defaultThemeName)
 		toggleKeyName = defaultToggleKeyName
 		connectToggleKey(resolveToggleKeyCode(toggleKeyName))
 		windowScale = defaultWindowScale
@@ -3085,6 +3355,17 @@ function SempatLibrary:CreateWindow(settings)
 		end,
 		setAccentColor = function(color)
 			applyWindowAccent(color)
+			persistUiSettings()
+		end,
+		getThemePreset = function()
+			return themeName
+		end,
+		setThemePreset = function(value)
+			local picked = type(value) == "table" and value[1] or value
+			if type(picked) ~= "string" or picked == "" then
+				return
+			end
+			applyWindowTheme(picked)
 			persistUiSettings()
 		end,
 		resetToDefaults = resetUiSettingsToDefaults,
@@ -3277,6 +3558,19 @@ function SempatLibrary:CreateWindow(settings)
 		return appliedAccentColor
 	end
 
+	function window:GetThemePreset()
+		return themeName
+	end
+
+	function window:SetThemePreset(name)
+		if type(name) ~= "string" or trimText(name) == "" then
+			return themeName
+		end
+		applyWindowTheme(name)
+		persistUiSettings()
+		return themeName
+	end
+
 	function window:SetToggleKeybind(keyName)
 		if type(keyName) ~= "string" or trimText(keyName) == "" then
 			return toggleKeyName
@@ -3313,6 +3607,7 @@ function SempatLibrary:CreateWindow(settings)
 	function window:Destroy()
 		disconnectToggleKey()
 		clearAccentRefreshers()
+		clearThemeRegistry()
 		screenGui:Destroy()
 	end
 
