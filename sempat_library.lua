@@ -65,6 +65,80 @@ local WINDOW_SIZE = Vector2.new(600, 440)
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 
+local layoutQueue = {}
+local layoutScheduled = false
+
+local function scheduleCanvasUpdate(scrollFrame)
+	if not scrollFrame or not scrollFrame.Parent then
+		return
+	end
+	layoutQueue[scrollFrame] = true
+	if layoutScheduled then
+		return
+	end
+	layoutScheduled = true
+	task.defer(function()
+		layoutScheduled = false
+		local queue = layoutQueue
+		layoutQueue = {}
+		for frame in pairs(queue) do
+			if frame.Parent then
+				local layout = frame:FindFirstChildOfClass("UIListLayout")
+				if layout then
+					local padding = frame:FindFirstChildOfClass("UIPadding")
+					local padY = 0
+					if padding then
+						padY = padding.PaddingTop.Offset + padding.PaddingBottom.Offset
+					end
+					frame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + padY)
+				end
+			end
+		end
+	end)
+end
+
+local function new(className, props, children)
+	local inst = Instance.new(className)
+	for key, value in pairs(props or {}) do
+		if key ~= "Parent" then
+			inst[key] = value
+		end
+	end
+	for _, child in ipairs(children or {}) do
+		child.Parent = inst
+	end
+	if props and props.Parent then
+		inst.Parent = props.Parent
+	end
+	return inst
+end
+
+local function corner(parent, radius)
+	return new("UICorner", {
+		CornerRadius = UDim.new(0, radius or CORNER),
+		Parent = parent,
+	})
+end
+
+local function padding(parent, top, bottom, left, right)
+	return new("UIPadding", {
+		PaddingTop = UDim.new(0, top or 0),
+		PaddingBottom = UDim.new(0, bottom or 0),
+		PaddingLeft = UDim.new(0, left or 0),
+		PaddingRight = UDim.new(0, right or 0),
+		Parent = parent,
+	})
+end
+
+local function stroke(parent, color, transparency, thickness)
+	return new("UIStroke", {
+		Color = color or THEME.stroke,
+		Transparency = transparency or 0.35,
+		Thickness = thickness or 1,
+		Parent = parent,
+	})
+end
+
 local function trimText(text)
 	if type(text) ~= "string" then
 		return ""
@@ -152,80 +226,6 @@ local function createMobileFab(screenGui, settings, title, onOpen)
 
 	fab.MouseButton1Click:Connect(onOpen)
 	return fab
-end
-
-local layoutQueue = {}
-local layoutScheduled = false
-
-local function scheduleCanvasUpdate(scrollFrame)
-	if not scrollFrame or not scrollFrame.Parent then
-		return
-	end
-	layoutQueue[scrollFrame] = true
-	if layoutScheduled then
-		return
-	end
-	layoutScheduled = true
-	task.defer(function()
-		layoutScheduled = false
-		local queue = layoutQueue
-		layoutQueue = {}
-		for frame in pairs(queue) do
-			if frame.Parent then
-				local layout = frame:FindFirstChildOfClass("UIListLayout")
-				if layout then
-					local padding = frame:FindFirstChildOfClass("UIPadding")
-					local padY = 0
-					if padding then
-						padY = padding.PaddingTop.Offset + padding.PaddingBottom.Offset
-					end
-					frame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + padY)
-				end
-			end
-		end
-	end)
-end
-
-local function new(className, props, children)
-	local inst = Instance.new(className)
-	for key, value in pairs(props or {}) do
-		if key ~= "Parent" then
-			inst[key] = value
-		end
-	end
-	for _, child in ipairs(children or {}) do
-		child.Parent = inst
-	end
-	if props and props.Parent then
-		inst.Parent = props.Parent
-	end
-	return inst
-end
-
-local function corner(parent, radius)
-	return new("UICorner", {
-		CornerRadius = UDim.new(0, radius or CORNER),
-		Parent = parent,
-	})
-end
-
-local function padding(parent, top, bottom, left, right)
-	return new("UIPadding", {
-		PaddingTop = UDim.new(0, top or 0),
-		PaddingBottom = UDim.new(0, bottom or 0),
-		PaddingLeft = UDim.new(0, left or 0),
-		PaddingRight = UDim.new(0, right or 0),
-		Parent = parent,
-	})
-end
-
-local function stroke(parent, color, transparency, thickness)
-	return new("UIStroke", {
-		Color = color or THEME.stroke,
-		Transparency = transparency or 0.35,
-		Thickness = thickness or 1,
-		Parent = parent,
-	})
 end
 
 local function safeCallback(callback, ...)
