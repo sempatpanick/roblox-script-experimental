@@ -122,6 +122,35 @@ local function applyAccentTheme(color)
 	THEME.sliderFill = color
 end
 
+local accentRefreshers = {}
+local activeDropdown
+
+local function registerAccentRefresher(refresher)
+	if type(refresher) ~= "function" then
+		return
+	end
+	table.insert(accentRefreshers, refresher)
+end
+
+local function clearAccentRefreshers()
+	table.clear(accentRefreshers)
+end
+
+local function runAccentRefreshers(color)
+	for _, refresher in ipairs(accentRefreshers) do
+		pcall(refresher, color)
+	end
+	if activeDropdown and activeDropdown.Parent then
+		local menu = activeDropdown:FindFirstChild("DropdownMenu")
+		if menu then
+			local scroll = menu:FindFirstChild("OptionsScroll")
+			if scroll and scroll:IsA("ScrollingFrame") then
+				scroll.ScrollBarImageColor3 = color
+			end
+		end
+	end
+end
+
 local function colorToPresetName(color)
 	for _, preset in ipairs(ACCENT_PRESETS) do
 		if preset.color == color then
@@ -142,7 +171,7 @@ local SIDEBAR_WIDTH = 196
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local WINDOW_SIZE = Vector2.new(600, 440)
-local GEAR_ICON = "rbxassetid://6034503363"
+local GEAR_BUTTON_TEXT = "⚙"
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 
@@ -553,6 +582,12 @@ local function buildToggle(contentParent, props, scrollFrame)
 		element:Set(not element.CurrentValue)
 	end)
 
+	registerAccentRefresher(function(color)
+		if track.Parent then
+			track.BackgroundColor3 = element.CurrentValue and color or THEME.toggleOff
+		end
+	end)
+
 	if props.Flag and not props.Ext then
 		registerFlag(props.Flag, element)
 	end
@@ -697,6 +732,15 @@ local function buildSlider(contentParent, props, scrollFrame)
 		element:Set(newValue)
 	end
 
+	registerAccentRefresher(function(color)
+		if fill.Parent then
+			fill.BackgroundColor3 = color
+		end
+		if valueLabel.Parent then
+			valueLabel.TextColor3 = color
+		end
+	end)
+
 	function element:SetVisible(visible)
 		card.Visible = visible == true
 		scheduleCanvasUpdate(scrollFrame)
@@ -710,7 +754,6 @@ local function buildSlider(contentParent, props, scrollFrame)
 	return element
 end
 
-local activeDropdown
 local dropdownOpening = false
 
 local function closeActiveDropdown()
@@ -1243,6 +1286,17 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		registerFlag(props.Flag, element)
 	end
 
+	registerAccentRefresher(function(color)
+		for _, pooled in ipairs(optionPool) do
+			if pooled.Visible and pooled.Parent then
+				local pooledValue = pooled:GetAttribute("OptionValue")
+				if pooledValue ~= nil then
+					applyOptionVisual(pooled, pooledValue)
+				end
+			end
+		end
+	end)
+
 	scheduleCanvasUpdate(scrollFrame)
 	return element
 end
@@ -1300,6 +1354,16 @@ local function buildButton(contentParent, props, scrollFrame)
 		if data.Color ~= nil then
 			applyButtonColor(resolveElementColor(data.Color) or appliedAccentColor)
 		end
+	end
+
+	local usesThemeAccent = props.Color == nil
+		or (type(props.Color) == "string" and string.lower(props.Color) == "accent")
+	if usesThemeAccent then
+		registerAccentRefresher(function(color)
+			if button.Parent then
+				applyButtonColor(color)
+			end
+		end)
 	end
 
 	scheduleCanvasUpdate(scrollFrame)
@@ -1475,6 +1539,12 @@ local function createSection(contentParent, title, scrollFrame)
 	})
 	corner(accent, 2)
 	header.Text = "   " .. string.upper(title or "Section")
+
+	registerAccentRefresher(function(color)
+		if accent.Parent then
+			accent.BackgroundColor3 = color
+		end
+	end)
 
 	local chevron = new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -1941,7 +2011,7 @@ function SempatLibrary:CreateWindow(settings)
 		return btn
 	end
 
-	local function windowIconButton(buttonName, icon, xOffset, onClick)
+	local function windowIconButton(buttonName, text, xOffset, onClick)
 		local highlight = new("Frame", {
 			Name = "Highlight",
 			BackgroundColor3 = THEME.card,
@@ -1955,15 +2025,16 @@ function SempatLibrary:CreateWindow(settings)
 		})
 		corner(highlight, 8)
 
-		local btn = new("ImageButton", {
+		local btn = new("TextButton", {
 			Name = buttonName,
 			BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, xOffset, 0.5, 0),
 			Size = UDim2.new(0, 32, 0, 32),
-			Image = icon,
-			ImageColor3 = THEME.muted,
-			ScaleType = Enum.ScaleType.Fit,
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = THEME.muted,
+			Text = text,
 			AutoButtonColor = false,
 			ZIndex = 5,
 			Parent = headerBar,
@@ -1972,7 +2043,7 @@ function SempatLibrary:CreateWindow(settings)
 		local active = false
 
 		local function refreshIconColor()
-			btn.ImageColor3 = active and appliedAccentColor or THEME.muted
+			btn.TextColor3 = active and appliedAccentColor or THEME.muted
 		end
 
 		local function setActive(isActive)
@@ -1983,7 +2054,7 @@ function SempatLibrary:CreateWindow(settings)
 
 		btn.MouseEnter:Connect(function()
 			if not active then
-				btn.ImageColor3 = THEME.text
+				btn.TextColor3 = THEME.text
 			end
 		end)
 		btn.MouseLeave:Connect(function()
@@ -2159,6 +2230,7 @@ function SempatLibrary:CreateWindow(settings)
 		if settingsGearButton and settingsGearButton.IsActive() then
 			settingsGearButton.RefreshAccent()
 		end
+		runAccentRefreshers(color)
 	end
 
 	applyWindowTransparency(windowTransparency)
@@ -2431,7 +2503,7 @@ function SempatLibrary:CreateWindow(settings)
 
 	uiSettingsPage = createUiSettingsPage(pages, uiSettingsConfig)
 
-	settingsGearButton = windowIconButton("SettingsButton", GEAR_ICON, -76, function()
+	settingsGearButton = windowIconButton("SettingsButton", GEAR_BUTTON_TEXT, -76, function()
 		if uiSettingsPage.IsOpen() then
 			uiSettingsPage.Close()
 			settingsGearButton.SetActive(false)
@@ -2589,6 +2661,7 @@ function SempatLibrary:CreateWindow(settings)
 
 	function window:Destroy()
 		disconnectToggleKey()
+		clearAccentRefreshers()
 		screenGui:Destroy()
 	end
 
