@@ -335,6 +335,8 @@ local Window = SempatLibrary:CreateWindow({
     WindowTransparency = 30,
     ConfigurationSaving = {
         Enabled = true,
+        AutoSave = false,
+        AutoLoad = false,
         FolderName = "sempatpanick",
         FileName = "others",
     },

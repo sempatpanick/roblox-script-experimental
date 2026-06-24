@@ -848,6 +848,8 @@ local CONFIG_EXTENSION = ".rfld"
 
 local configurationSaving = {
 	enabled = false,
+	autoSave = false,
+	autoLoad = false,
 	folder = "SempatUI",
 	fileName = "config",
 	loaded = false,
@@ -912,7 +914,7 @@ local function collectConfigurationData()
 end
 
 local function notifyConfigurationChanged()
-	if not configurationSaving.enabled or not configurationSaving.loaded then
+	if not configurationSaving.enabled or not configurationSaving.autoSave or not configurationSaving.loaded then
 		return
 	end
 	if configurationSaving.saveScheduled then
@@ -2649,6 +2651,10 @@ function SempatLibrary:CreateWindow(settings)
 		or "SempatUI"
 	local configSettings = settings.ConfigurationSaving or {}
 	configurationSaving.enabled = configSettings.Enabled == true
+	configurationSaving.autoSave = configurationSaving.enabled
+		and (configSettings.AutoSave == true)
+	configurationSaving.autoLoad = configurationSaving.enabled
+		and (configSettings.AutoLoad == true)
 	configurationSaving.folder = configSettings.FolderName or folderName
 	configurationSaving.fileName = configSettings.FileName or tostring(game.PlaceId)
 	configurationSaving.autoNotify = configSettings.AutoNotify == true
@@ -2656,7 +2662,7 @@ function SempatLibrary:CreateWindow(settings)
 	if configurationSaving.enabled then
 		ensureConfigurationFolder(configurationSaving.folder)
 	end
-	local configAutoLoad = configSettings.AutoLoad ~= false
+	local configAutoLoad = configurationSaving.autoLoad
 	local isMobile = isMobileDevice()
 
 	if typeof(settings.AccentColor) == "Color3" then
