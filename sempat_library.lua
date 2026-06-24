@@ -182,7 +182,7 @@ local THEME_PRESETS = {
 			cardHover = Color3.fromRGB(236, 238, 244),
 			stroke = Color3.fromRGB(200, 204, 214),
 			text = Color3.fromRGB(24, 26, 32),
-			muted = Color3.fromRGB(100, 104, 118),
+			muted = Color3.fromRGB(80, 84, 96),
 			toggleOff = Color3.fromRGB(210, 214, 224),
 			sliderTrack = Color3.fromRGB(220, 224, 232),
 			dropdownMenu = Color3.fromRGB(255, 255, 255),
@@ -232,6 +232,24 @@ local function applyThemeColors(palette)
 	end
 end
 
+local function isLightUiTheme()
+	return THEME.text.R < 0.5
+end
+
+local function getChromeIconColor()
+	if isLightUiTheme() then
+		return Color3.fromRGB(48, 52, 64)
+	end
+	return THEME.muted
+end
+
+local function getHeaderSubtitleColor()
+	if isLightUiTheme() then
+		return THEME.muted
+	end
+	return appliedAccentColor
+end
+
 local function registerThemeTarget(instance, role)
 	if instance and type(role) == "string" then
 		table.insert(themeTargets, { instance = instance, role = role })
@@ -255,10 +273,12 @@ local function applyThemeRole(instance, role)
 	end
 	if role == "card" and instance:IsA("GuiObject") then
 		instance.BackgroundColor3 = THEME.card
-	elseif role == "text" and instance:IsA("TextLabel") then
+	elseif role == "text" and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
 		instance.TextColor3 = THEME.text
-	elseif role == "muted" and instance:IsA("TextLabel") then
+	elseif role == "muted" and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
 		instance.TextColor3 = THEME.muted
+	elseif role == "chrome" and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
+		instance.TextColor3 = getChromeIconColor()
 	elseif role == "dropdownSearch" and instance:IsA("GuiObject") then
 		instance.BackgroundColor3 = THEME.dropdownSearch
 	elseif role == "inputBg" and instance:IsA("GuiObject") then
@@ -272,6 +292,8 @@ local function applyThemeRole(instance, role)
 	elseif role == "sidebar" and instance:IsA("GuiObject") then
 		instance.BackgroundColor3 = THEME.sidebar
 	elseif role == "content" and instance:IsA("GuiObject") then
+		instance.BackgroundColor3 = THEME.content
+	elseif role == "body" and instance:IsA("GuiObject") then
 		instance.BackgroundColor3 = THEME.content
 	end
 end
@@ -360,7 +382,8 @@ local MIN_WINDOW_HEIGHT = 320
 local MAX_WINDOW_WIDTH = 960
 local MAX_WINDOW_HEIGHT = 720
 local RESIZE_HANDLE_SIZE = 16
-local GEAR_BUTTON_TEXT = "⚙"
+local GEAR_GLYPH_SIZE = 14
+local GEAR_TOOTH_COUNT = 8
 local CHEVRON_MARK = ">"
 local CHEVRON_DOWN_ROTATION = 90
 local CHEVRON_RIGHT_ROTATION = 0
@@ -445,6 +468,57 @@ local function corner(parent, radius)
 		CornerRadius = UDim.new(0, radius or CORNER),
 		Parent = parent,
 	})
+end
+
+local function createChromeGearIcon(parent, color)
+	local root = new("Frame", {
+		Name = "GearIcon",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(GEAR_GLYPH_SIZE, GEAR_GLYPH_SIZE),
+		Parent = parent,
+	})
+
+	local parts = {}
+
+	local function addPart(props)
+		local part = new("Frame", props)
+		part.BorderSizePixel = 0
+		part.BackgroundColor3 = color
+		table.insert(parts, part)
+		return part
+	end
+
+	local hub = addPart({
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(6, 6),
+		Parent = root,
+	})
+	corner(hub, 3)
+
+	local radius = GEAR_GLYPH_SIZE * 0.32
+	for i = 0, GEAR_TOOTH_COUNT - 1 do
+		local angle = (math.pi * 2 / GEAR_TOOTH_COUNT) * i
+		addPart({
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, math.cos(angle) * radius, 0.5, math.sin(angle) * radius),
+			Size = UDim2.fromOffset(2, 3),
+			Rotation = math.deg(angle) + 90,
+			Parent = root,
+		})
+	end
+
+	return {
+		setColor = function(tint)
+			for _, part in ipairs(parts) do
+				if part.Parent then
+					part.BackgroundColor3 = tint
+				end
+			end
+		end,
+	}
 end
 
 local function padding(parent, top, bottom, left, right)
@@ -2671,12 +2745,11 @@ function SempatLibrary:CreateWindow(settings)
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = appliedAccentColor,
+		TextColor3 = getHeaderSubtitleColor(),
 		Text = subtitle,
 		Active = false,
 		Parent = headerBrand,
 	})
-	table.insert(accentTargets, subtitleLabel)
 
 	local headerDragHandle = new("Frame", {
 		Name = "DragHandle",
@@ -2696,7 +2769,7 @@ function SempatLibrary:CreateWindow(settings)
 			Size = UDim2.new(0, 32, 0, 32),
 			Font = Enum.Font.GothamBold,
 			TextSize = 18,
-			TextColor3 = THEME.muted,
+			TextColor3 = getChromeIconColor(),
 			Text = text,
 			AutoButtonColor = false,
 			ZIndex = 5,
@@ -2706,7 +2779,7 @@ function SempatLibrary:CreateWindow(settings)
 		return btn
 	end
 
-	local function windowIconButton(buttonName, text, xOffset, onClick)
+	local function windowIconButton(buttonName, xOffset, onClick, chromeColorSource)
 		local highlight = new("Frame", {
 			Name = "Highlight",
 			BackgroundColor3 = THEME.card,
@@ -2727,19 +2800,25 @@ function SempatLibrary:CreateWindow(settings)
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, xOffset, 0.5, 0),
 			Size = UDim2.new(0, 32, 0, 32),
-			Font = Enum.Font.GothamBold,
-			TextSize = 16,
-			TextColor3 = THEME.muted,
-			Text = text,
+			Text = "",
 			AutoButtonColor = false,
 			ZIndex = 5,
 			Parent = headerBar,
 		})
 
+		local function getIdleChromeColor()
+			if chromeColorSource and chromeColorSource.Parent then
+				return chromeColorSource.TextColor3
+			end
+			return getChromeIconColor()
+		end
+
+		local gearIcon = createChromeGearIcon(btn, getIdleChromeColor())
+
 		local active = false
 
 		local function refreshIconColor()
-			btn.TextColor3 = active and appliedAccentColor or THEME.muted
+			gearIcon.setColor(active and appliedAccentColor or getIdleChromeColor())
 		end
 
 		local function setActive(isActive)
@@ -2748,15 +2827,8 @@ function SempatLibrary:CreateWindow(settings)
 			refreshIconColor()
 		end
 
-		btn.MouseEnter:Connect(function()
-			if not active then
-				btn.TextColor3 = THEME.text
-			end
-		end)
-		btn.MouseLeave:Connect(function()
-			refreshIconColor()
-		end)
 		btn.Activated:Connect(onClick)
+		registerThemeRefresher(refreshIconColor)
 
 		return {
 			button = btn,
@@ -2768,21 +2840,22 @@ function SempatLibrary:CreateWindow(settings)
 		}
 	end
 
-	local sidebar = new("Frame", {
-		Name = "Sidebar",
+	local body = new("Frame", {
+		Name = "Body",
 		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, HEADER_HEIGHT),
-		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -HEADER_HEIGHT),
+		Size = UDim2.new(1, 0, 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
 
-	local sidebarCover = new("Frame", {
-		BackgroundColor3 = THEME.content,
+	local sidebar = new("Frame", {
+		Name = "Sidebar",
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.new(1, -CORNER, 0, 0),
-		Size = UDim2.new(0, CORNER, 1, 0),
-		Parent = sidebar,
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0),
+		Parent = body,
 	})
 
 	padding(sidebar, 16, 0, 0, 0)
@@ -2853,7 +2926,7 @@ function SempatLibrary:CreateWindow(settings)
 		end)
 	end
 
-	new("TextLabel", {
+	local profileDisplayName = new("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, profileTextLeft, 0, 10),
 		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 16),
@@ -2864,8 +2937,9 @@ function SempatLibrary:CreateWindow(settings)
 		Text = displayName,
 		Parent = profileCard,
 	})
+	registerThemeTarget(profileDisplayName, "text")
 
-	new("TextLabel", {
+	local profileUserName = new("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, profileTextLeft, 0, 28),
 		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
@@ -2876,21 +2950,15 @@ function SempatLibrary:CreateWindow(settings)
 		Text = userName,
 		Parent = profileCard,
 	})
+	registerThemeTarget(profileUserName, "muted")
 
 	local content = new("Frame", {
 		Name = "Content",
-		BackgroundColor3 = THEME.content,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, SIDEBAR_WIDTH - 1, 0, HEADER_HEIGHT),
-		Size = UDim2.new(1, -(SIDEBAR_WIDTH - 1), 1, -HEADER_HEIGHT),
-		Parent = root,
-	})
-
-	local contentCover = new("Frame", {
-		BackgroundColor3 = THEME.content,
-		BorderSizePixel = 0,
-		Size = UDim2.new(0, CORNER, 1, 0),
-		Parent = content,
+		Position = UDim2.new(0, SIDEBAR_WIDTH, 0, 0),
+		Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, 0),
+		Parent = body,
 	})
 
 	local windowTransparency = 0
@@ -2901,7 +2969,7 @@ function SempatLibrary:CreateWindow(settings)
 	end
 	local defaultWindowTransparency = windowTransparency
 
-	local windowPanels = { root, headerBar, sidebar, sidebarCover, content, contentCover }
+	local windowPanels = { root, headerBar, body }
 	local settingsGearButton
 	local defaultThemeName = DEFAULT_THEME_NAME
 	local themeName = defaultThemeName
@@ -2940,8 +3008,11 @@ function SempatLibrary:CreateWindow(settings)
 				scrollbar.ScrollBarImageColor3 = color
 			end
 		end
-		if settingsGearButton and settingsGearButton.IsActive() then
+		if settingsGearButton then
 			settingsGearButton.RefreshAccent()
+		end
+		if subtitleLabel and subtitleLabel.Parent then
+			subtitleLabel.TextColor3 = getHeaderSubtitleColor()
 		end
 		runAccentRefreshers(color)
 	end
@@ -2955,10 +3026,7 @@ function SempatLibrary:CreateWindow(settings)
 		applyThemeColors(preset.colors)
 		root.BackgroundColor3 = THEME.window
 		headerBar.BackgroundColor3 = THEME.sidebar
-		sidebar.BackgroundColor3 = THEME.content
-		sidebarCover.BackgroundColor3 = THEME.content
-		content.BackgroundColor3 = THEME.content
-		contentCover.BackgroundColor3 = THEME.content
+		body.BackgroundColor3 = THEME.content
 		profileCard.BackgroundColor3 = THEME.card
 		if rootStroke then
 			rootStroke.Color = THEME.stroke
@@ -2968,6 +3036,9 @@ function SempatLibrary:CreateWindow(settings)
 		end
 		applyThemeTargets()
 		runThemeRefreshers()
+		if subtitleLabel and subtitleLabel.Parent then
+			subtitleLabel.TextColor3 = getHeaderSubtitleColor()
+		end
 		applyWindowAccent(appliedAccentColor)
 	end
 
@@ -3231,11 +3302,13 @@ function SempatLibrary:CreateWindow(settings)
 		table.insert(accentTargets, mobileFabInitial)
 	end
 
-	windowButton("MinimizeButton", "—", -44, toggleWindowVisible)
+	local minimizeButton = windowButton("MinimizeButton", "—", -44, toggleWindowVisible)
+	registerThemeTarget(minimizeButton, "chrome")
 
-	windowButton("CloseButton", "×", -12, function()
+	local closeButton = windowButton("CloseButton", "×", -12, function()
 		setWindowVisible(false)
 	end)
+	registerThemeTarget(closeButton, "chrome")
 
 	local pages = new("Frame", {
 		Name = "Pages",
@@ -3423,7 +3496,7 @@ function SempatLibrary:CreateWindow(settings)
 
 	uiSettingsPage = createUiSettingsPage(pages, uiSettingsConfig)
 
-	settingsGearButton = windowIconButton("SettingsButton", GEAR_BUTTON_TEXT, -76, function()
+	settingsGearButton = windowIconButton("SettingsButton", -76, function()
 		if uiSettingsPage.IsOpen() then
 			uiSettingsPage.Close()
 			settingsGearButton.SetActive(false)
@@ -3434,7 +3507,7 @@ function SempatLibrary:CreateWindow(settings)
 			lastSelectedTabId = window._selected
 			selectSettings()
 		end
-	end)
+	end, minimizeButton)
 
 	function window:CreateTab(tabTitle, _iconId)
 		self._tabOrder += 1
