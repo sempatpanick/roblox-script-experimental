@@ -169,6 +169,9 @@ local CORNER = 10
 local CARD_CORNER = 8
 local DROPDOWN_MENU_CORNER = 8
 local SIDEBAR_WIDTH = 150
+local PROFILE_CARD_HEIGHT = 54
+local PROFILE_AVATAR_SIZE = 32
+local PROFILE_PAD_X = 8
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local CONTENT_TOPBAR_HEIGHT = 40
@@ -2353,15 +2356,16 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = sidebar,
 	})
 
-	padding(sidebar, 16, 16, 14, 14)
+	padding(sidebar, 16, 0, 0, 0)
 
 	local tabList = new("Frame", {
 		Name = "TabList",
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(1, 0, 1, -150),
+		Size = UDim2.new(1, 0, 1, -PROFILE_CARD_HEIGHT),
 		Parent = sidebar,
 	})
+	padding(tabList, 0, 10, 10, 10)
 
 	new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
@@ -2376,19 +2380,22 @@ function SempatLibrary:CreateWindow(settings)
 		BorderSizePixel = 0,
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, 54),
+		Size = UDim2.new(1, 0, 0, PROFILE_CARD_HEIGHT),
 		Parent = sidebar,
 	})
 	corner(profileCard, 10)
 
+	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + 8
+	local profileTextRight = PROFILE_PAD_X
+
 	local avatar = new("ImageLabel", {
 		BackgroundColor3 = THEME.sidebar,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, 10, 0.5, -16),
-		Size = UDim2.new(0, 32, 0, 32),
+		Position = UDim2.new(0, PROFILE_PAD_X, 0.5, -PROFILE_AVATAR_SIZE / 2),
+		Size = UDim2.new(0, PROFILE_AVATAR_SIZE, 0, PROFILE_AVATAR_SIZE),
 		Parent = profileCard,
 	})
-	corner(avatar, 16)
+	corner(avatar, PROFILE_AVATAR_SIZE / 2)
 
 	local displayName = "Anonymous"
 	local userName = "@anonymous"
@@ -2407,8 +2414,8 @@ function SempatLibrary:CreateWindow(settings)
 
 	new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 50, 0, 10),
-		Size = UDim2.new(1, -58, 0, 16),
+		Position = UDim2.new(0, profileTextLeft, 0, 10),
+		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 16),
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -2419,8 +2426,8 @@ function SempatLibrary:CreateWindow(settings)
 
 	new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 50, 0, 28),
-		Size = UDim2.new(1, -58, 0, 14),
+		Position = UDim2.new(0, profileTextLeft, 0, 28),
+		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
