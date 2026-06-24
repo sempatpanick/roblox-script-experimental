@@ -171,7 +171,12 @@ local SIDEBAR_WIDTH = 196
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local CONTENT_TOPBAR_HEIGHT = 40
-local CONTENT_TITLE_SIZE = 18
+local DEFAULT_CONTENT_TITLE_SIZE = 18
+local DEFAULT_WINDOW_SCALE = 100
+local MIN_WINDOW_SCALE = 75
+local MAX_WINDOW_SCALE = 125
+local MIN_CONTENT_TITLE_SIZE = 14
+local MAX_CONTENT_TITLE_SIZE = 24
 local WINDOW_SIZE = Vector2.new(600, 440)
 local GEAR_BUTTON_TEXT = "⚙"
 local CHEVRON_MARK = ">"
@@ -1841,7 +1846,8 @@ local function createUiSettingsPage(pagesContainer, config)
 		table.insert(presetNames, preset.name)
 	end
 
-	local transparencySlider = buildSlider(scroll, {
+	local appearance = createSection(scroll, "Appearance", scroll)
+	local transparencySlider = appearance:CreateSlider({
 		Name = "Window Transparency",
 		Content = "How see-through the window panels are",
 		Range = { 0, 95 },
@@ -1851,9 +1857,8 @@ local function createUiSettingsPage(pagesContainer, config)
 		Callback = function(value)
 			config.setTransparencyPercent(value)
 		end,
-	}, scroll)
-
-	local accentDropdown = buildDropdown(scroll, {
+	})
+	local accentDropdown = appearance:CreateDropdown({
 		Name = "Accent Color",
 		Content = "Theme highlight color for buttons and accents",
 		Options = presetNames,
@@ -1867,11 +1872,34 @@ local function createUiSettingsPage(pagesContainer, config)
 				end
 			end
 		end,
-	}, scroll)
+	})
+	local scaleSlider = appearance:CreateSlider({
+		Name = "UI Scale",
+		Content = "Overall menu size as a percentage",
+		Range = { MIN_WINDOW_SCALE, MAX_WINDOW_SCALE },
+		Increment = 5,
+		Suffix = "%",
+		CurrentValue = config.getWindowScale(),
+		Callback = function(value)
+			config.setWindowScale(value)
+		end,
+	})
+	local titleSizeSlider = appearance:CreateSlider({
+		Name = "Content Title Size",
+		Content = "Tab title text size at the top of the page",
+		Range = { MIN_CONTENT_TITLE_SIZE, MAX_CONTENT_TITLE_SIZE },
+		Increment = 1,
+		Suffix = "px",
+		CurrentValue = config.getContentTitleSize(),
+		Callback = function(value)
+			config.setContentTitleSize(value)
+		end,
+	})
 
+	local controls = createSection(scroll, "Controls", scroll)
 	local keybindInput
 	if not config.isMobile then
-		keybindInput = buildInput(scroll, {
+		keybindInput = controls:CreateInput({
 			Name = "Toggle UI Key",
 			Content = "Keyboard key to show or hide the menu",
 			PlaceholderText = "e.g. K",
@@ -1879,36 +1907,86 @@ local function createUiSettingsPage(pagesContainer, config)
 			Callback = function(value)
 				config.setToggleKeyName(value)
 			end,
-		}, scroll)
+		})
+	end
+	local mobileFabToggle
+	if config.isMobile then
+		mobileFabToggle = controls:CreateToggle({
+			Name = "Show Mobile Button",
+			Content = "Floating button to reopen the menu when hidden",
+			CurrentValue = config.getShowMobileFab(),
+			Callback = function(value)
+				config.setShowMobileFab(value)
+			end,
+		})
 	end
 
-	buildButton(scroll, {
+	local windowSection = createSection(scroll, "Window", scroll)
+	local rememberPositionToggle = windowSection:CreateToggle({
+		Name = "Remember Position",
+		Content = "Save menu position between sessions",
+		CurrentValue = config.getRememberPosition(),
+		Callback = function(value)
+			config.setRememberPosition(value)
+		end,
+	})
+	windowSection:CreateButton({
+		Name = "Reset Window Position",
+		Callback = function()
+			config.resetWindowPosition()
+			SempatLibrary:Notify({
+				Title = "UI Configuration",
+				Content = "Window position reset to center.",
+			})
+		end,
+	})
+
+	local function refreshControls()
+		transparencySlider:Set(config.getTransparencyPercent())
+		accentDropdown:Set(colorToPresetName(config.getAccentColor()))
+		scaleSlider:Set(config.getWindowScale())
+		titleSizeSlider:Set(config.getContentTitleSize())
+		if keybindInput then
+			keybindInput:Set(config.getToggleKeyName())
+		end
+		if mobileFabToggle then
+			mobileFabToggle:Set(config.getShowMobileFab())
+		end
+		rememberPositionToggle:Set(config.getRememberPosition())
+	end
+
+	local actions = createSection(scroll, "Actions", scroll)
+	actions:CreateButton({
 		Name = "Reset to Defaults",
 		Callback = function()
 			config.resetToDefaults()
-			transparencySlider:Set(config.getTransparencyPercent())
-			accentDropdown:Set(colorToPresetName(config.getAccentColor()))
-			if keybindInput then
-				keybindInput:Set(config.getToggleKeyName())
-			end
+			refreshControls()
 			SempatLibrary:Notify({
 				Title = "UI Configuration",
 				Content = "Settings restored to defaults.",
 			})
 		end,
+	})
+	actions:CreateButton({
+		Name = "Clear Saved UI Settings",
+		Callback = function()
+			config.clearSavedUiSettings()
+			refreshControls()
+			SempatLibrary:Notify({
+				Title = "UI Configuration",
+				Content = "Saved UI settings file removed.",
+			})
+		end,
+	})
+
+	buildParagraph(scroll, {
+		Title = "About",
+		Content = config.getAboutText(),
 	}, scroll)
 
 	scheduleCanvasUpdate(scroll)
 
 	local isOpen = false
-
-	local function refreshControls()
-		transparencySlider:Set(config.getTransparencyPercent())
-		accentDropdown:Set(colorToPresetName(config.getAccentColor()))
-		if keybindInput then
-			keybindInput:Set(config.getToggleKeyName())
-		end
-	end
 
 	local function closePage()
 		if not isOpen then
@@ -2306,13 +2384,51 @@ function SempatLibrary:CreateWindow(settings)
 		Position = UDim2.new(0, 20, 0, 10),
 		Size = UDim2.new(1, -40, 0, 22),
 		Font = Enum.Font.GothamBold,
-		TextSize = CONTENT_TITLE_SIZE,
+		TextSize = DEFAULT_CONTENT_TITLE_SIZE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.text,
 		Text = title,
 		Active = false,
 		Parent = topBar,
 	})
+
+	local defaultContentTitleSize = DEFAULT_CONTENT_TITLE_SIZE
+	local contentTitleSize = defaultContentTitleSize
+	local defaultWindowScale = DEFAULT_WINDOW_SCALE
+	local windowScale = defaultWindowScale
+	local defaultRememberPosition = false
+	local rememberPosition = defaultRememberPosition
+	local defaultShowMobileFab = true
+	local showMobileFab = defaultShowMobileFab
+	local CENTER_WINDOW_POSITION = UDim2.fromScale(0.5, 0.5)
+
+	local function applyWindowScale(scalePercent)
+		local scale = math.clamp(scalePercent or defaultWindowScale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE) / 100
+		root.Size = UDim2.new(0, math.floor(WINDOW_SIZE.X * scale + 0.5), 0, math.floor(WINDOW_SIZE.Y * scale + 0.5))
+	end
+
+	local function applyContentTitleSize(size)
+		contentTitleSize = math.clamp(math.floor(size or defaultContentTitleSize), MIN_CONTENT_TITLE_SIZE, MAX_CONTENT_TITLE_SIZE)
+		pageTitle.TextSize = contentTitleSize
+	end
+
+	local function applySavedWindowPosition(positionData)
+		if type(positionData) ~= "table" then
+			return
+		end
+		if type(positionData.xScale) ~= "number" or type(positionData.yScale) ~= "number" then
+			return
+		end
+		root.Position = UDim2.new(
+			positionData.xScale,
+			tonumber(positionData.xOffset) or 0,
+			positionData.yScale,
+			tonumber(positionData.yOffset) or 0
+		)
+	end
+
+	applyWindowScale(windowScale)
+	applyContentTitleSize(contentTitleSize)
 
 	local function resolveToggleKeyName(keybindSetting)
 		if keybindSetting ~= nil then
@@ -2350,12 +2466,24 @@ function SempatLibrary:CreateWindow(settings)
 			if not isfolder(folderName) then
 				makefolder(folderName)
 			end
-			local payload = HttpService:JSONEncode({
+			local payload = {
 				transparency = math.floor(windowTransparency * 100 + 0.5),
 				toggleKey = toggleKeyName,
 				accentPreset = colorToPresetName(appliedAccentColor),
-			})
-			writefile(folderName .. "/ui_settings.json", payload)
+				windowScale = windowScale,
+				contentTitleSize = contentTitleSize,
+				rememberPosition = rememberPosition,
+				showMobileFab = showMobileFab,
+			}
+			if rememberPosition then
+				payload.position = {
+					xScale = root.Position.X.Scale,
+					xOffset = root.Position.X.Offset,
+					yScale = root.Position.Y.Scale,
+					yOffset = root.Position.Y.Offset,
+				}
+			end
+			writefile(folderName .. "/ui_settings.json", HttpService:JSONEncode(payload))
 		end)
 	end
 
@@ -2389,6 +2517,20 @@ function SempatLibrary:CreateWindow(settings)
 			toggleKeyName = string.upper(decoded.toggleKey)
 			toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
 		end
+		if type(decoded.windowScale) == "number" then
+			windowScale = math.clamp(math.floor(decoded.windowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
+			applyWindowScale(windowScale)
+		end
+		if type(decoded.contentTitleSize) == "number" then
+			applyContentTitleSize(decoded.contentTitleSize)
+		end
+		if decoded.rememberPosition == true then
+			rememberPosition = true
+			applySavedWindowPosition(decoded.position)
+		end
+		if type(decoded.showMobileFab) == "boolean" then
+			showMobileFab = decoded.showMobileFab
+		end
 	end
 
 	loadUiSettings()
@@ -2403,7 +2545,7 @@ function SempatLibrary:CreateWindow(settings)
 	local function setWindowVisible(isVisible)
 		windowVisible = isVisible == true
 		root.Visible = windowVisible
-		mobileFab.Visible = isMobile and not windowVisible
+		mobileFab.Visible = isMobile and showMobileFab and not windowVisible
 		screenGui.Enabled = true
 	end
 
@@ -2510,6 +2652,22 @@ function SempatLibrary:CreateWindow(settings)
 	window.selectTab = selectTab
 	window.selectSettings = selectSettings
 
+	local function resetUiSettingsToDefaults()
+		windowTransparency = defaultWindowTransparency
+		applyWindowTransparency(windowTransparency)
+		applyWindowAccent(defaultAccentColor)
+		toggleKeyName = defaultToggleKeyName
+		connectToggleKey(resolveToggleKeyCode(toggleKeyName))
+		windowScale = defaultWindowScale
+		applyWindowScale(windowScale)
+		applyContentTitleSize(defaultContentTitleSize)
+		rememberPosition = defaultRememberPosition
+		showMobileFab = defaultShowMobileFab
+		root.Position = CENTER_WINDOW_POSITION
+		setWindowVisible(windowVisible)
+		persistUiSettings()
+	end
+
 	local uiSettingsConfig = {
 		isMobile = isMobile,
 		accentScrollbars = accentScrollbars,
@@ -2549,13 +2707,56 @@ function SempatLibrary:CreateWindow(settings)
 			applyWindowAccent(color)
 			persistUiSettings()
 		end,
-		resetToDefaults = function()
-			windowTransparency = defaultWindowTransparency
-			applyWindowTransparency(windowTransparency)
-			applyWindowAccent(defaultAccentColor)
-			toggleKeyName = defaultToggleKeyName
-			connectToggleKey(resolveToggleKeyCode(toggleKeyName))
+		resetToDefaults = resetUiSettingsToDefaults,
+		clearSavedUiSettings = function()
+			if delfile and isfile then
+				local path = folderName .. "/ui_settings.json"
+				if isfile(path) then
+					pcall(delfile, path)
+				end
+			end
+			resetUiSettingsToDefaults()
+		end,
+		getWindowScale = function()
+			return windowScale
+		end,
+		setWindowScale = function(value)
+			windowScale = math.clamp(math.floor(tonumber(value) or defaultWindowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
+			applyWindowScale(windowScale)
 			persistUiSettings()
+		end,
+		getContentTitleSize = function()
+			return contentTitleSize
+		end,
+		setContentTitleSize = function(value)
+			applyContentTitleSize(value)
+			persistUiSettings()
+		end,
+		getRememberPosition = function()
+			return rememberPosition
+		end,
+		setRememberPosition = function(value)
+			rememberPosition = value == true
+			persistUiSettings()
+		end,
+		getShowMobileFab = function()
+			return showMobileFab
+		end,
+		setShowMobileFab = function(value)
+			showMobileFab = value == true
+			setWindowVisible(windowVisible)
+			persistUiSettings()
+		end,
+		resetWindowPosition = function()
+			root.Position = CENTER_WINDOW_POSITION
+			persistUiSettings()
+		end,
+		getAboutText = function()
+			return string.format(
+				"Sempat UI v%s\nConfig folder: %s",
+				tostring(SempatLibrary.Version),
+				tostring(folderName)
+			)
 		end,
 	}
 
@@ -2808,6 +3009,9 @@ function SempatLibrary:CreateWindow(settings)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
+			if rememberPosition then
+				persistUiSettings()
+			end
 		end
 	end
 
