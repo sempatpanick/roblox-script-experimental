@@ -182,6 +182,11 @@ local MAX_WINDOW_SCALE = 125
 local MIN_CONTENT_TITLE_SIZE = 14
 local MAX_CONTENT_TITLE_SIZE = 24
 local WINDOW_SIZE = Vector2.new(600, 440)
+local MIN_WINDOW_WIDTH = 480
+local MIN_WINDOW_HEIGHT = 320
+local MAX_WINDOW_WIDTH = 960
+local MAX_WINDOW_HEIGHT = 720
+local RESIZE_HANDLE_SIZE = 16
 local GEAR_BUTTON_TEXT = "⚙"
 local CHEVRON_MARK = ">"
 local CHEVRON_DOWN_ROTATION = 90
@@ -2357,21 +2362,32 @@ function SempatLibrary:CreateWindow(settings)
 
 	padding(sidebar, 16, 0, 0, 0)
 
-	local tabList = new("Frame", {
+	local tabScroll = new("ScrollingFrame", {
 		Name = "TabList",
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 0),
 		Size = UDim2.new(1, 0, 1, -PROFILE_CARD_HEIGHT),
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = appliedAccentColor,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(),
 		Parent = sidebar,
 	})
-	padding(tabList, 0, 10, 10, 10)
+	table.insert(accentScrollbars, tabScroll)
+	padding(tabScroll, 0, 10, 10, 10)
 
-	new("UIListLayout", {
+	local tabListLayout = new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Padding = UDim.new(0, 6),
-		Parent = tabList,
+		Parent = tabScroll,
 	})
+
+	tabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scheduleCanvasUpdate(tabScroll)
+	end)
+	scheduleCanvasUpdate(tabScroll)
 
 	local profileCard = new("Frame", {
 		Name = "Profile",
@@ -2536,9 +2552,32 @@ function SempatLibrary:CreateWindow(settings)
 	local initialFabPosition = nil
 	local CENTER_WINDOW_POSITION = UDim2.fromScale(0.5, 0.5)
 
-	local function applyWindowScale(scalePercent)
+	local function scaleFromWindowSize(size)
+		return math.clamp(
+			math.floor(((size.X / WINDOW_SIZE.X + size.Y / WINDOW_SIZE.Y) / 2) * 100 + 0.5),
+			MIN_WINDOW_SCALE,
+			MAX_WINDOW_SCALE
+		)
+	end
+
+	local function sizeFromWindowScale(scalePercent)
 		local scale = math.clamp(scalePercent or defaultWindowScale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE) / 100
-		root.Size = UDim2.new(0, math.floor(WINDOW_SIZE.X * scale + 0.5), 0, math.floor(WINDOW_SIZE.Y * scale + 0.5))
+		return Vector2.new(
+			math.floor(WINDOW_SIZE.X * scale + 0.5),
+			math.floor(WINDOW_SIZE.Y * scale + 0.5)
+		)
+	end
+
+	local function applyWindowSize(size)
+		local width = math.clamp(math.floor(size.X + 0.5), MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH)
+		local height = math.clamp(math.floor(size.Y + 0.5), MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT)
+		root.Size = UDim2.fromOffset(width, height)
+		windowScale = scaleFromWindowSize(Vector2.new(width, height))
+	end
+
+	local function applyWindowScale(scalePercent)
+		windowScale = math.clamp(math.floor(scalePercent or defaultWindowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
+		applyWindowSize(sizeFromWindowScale(windowScale))
 	end
 
 	local function applyContentTitleSize(size)
@@ -2604,6 +2643,8 @@ function SempatLibrary:CreateWindow(settings)
 				toggleKey = toggleKeyName,
 				accentPreset = colorToPresetName(appliedAccentColor),
 				windowScale = windowScale,
+				windowWidth = root.Size.X.Offset,
+				windowHeight = root.Size.Y.Offset,
 				contentTitleSize = contentTitleSize,
 				rememberPosition = rememberPosition,
 				showMobileFab = showMobileFab,
@@ -2656,7 +2697,9 @@ function SempatLibrary:CreateWindow(settings)
 			toggleKeyName = string.upper(decoded.toggleKey)
 			toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
 		end
-		if type(decoded.windowScale) == "number" then
+		if type(decoded.windowWidth) == "number" and type(decoded.windowHeight) == "number" then
+			applyWindowSize(Vector2.new(decoded.windowWidth, decoded.windowHeight))
+		elseif type(decoded.windowScale) == "number" then
 			windowScale = math.clamp(math.floor(decoded.windowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
 			applyWindowScale(windowScale)
 		end
@@ -2960,7 +3003,7 @@ function SempatLibrary:CreateWindow(settings)
 			scheduleCanvasUpdate(scroll)
 		end)
 
-		local setSelected = createSidebarButton(tabList, window, {
+		local setSelected = createSidebarButton(tabScroll, window, {
 			id = tabId,
 			title = tabTitle or "Tab",
 			order = self._tabOrder,
@@ -3142,8 +3185,14 @@ function SempatLibrary:CreateWindow(settings)
 	local dragging = false
 	local dragStart
 	local startPos
+	local resizing = false
+	local resizeDragStart
+	local resizeStartSize
 
 	local function beginWindowDrag(input)
+		if resizing then
+			return
+		end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
@@ -3156,6 +3205,10 @@ function SempatLibrary:CreateWindow(settings)
 	local function endWindowDrag(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
+			if resizing then
+				resizing = false
+				persistUiSettings()
+			end
 			dragging = false
 			if rememberPosition then
 				persistUiSettings()
@@ -3165,10 +3218,57 @@ function SempatLibrary:CreateWindow(settings)
 
 	headerDragHandle.InputBegan:Connect(beginWindowDrag)
 
+	if not isMobile then
+		local resizeHandle = new("TextButton", {
+			Name = "ResizeHandle",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, 0, 1, 0),
+			Size = UDim2.new(0, RESIZE_HANDLE_SIZE, 0, RESIZE_HANDLE_SIZE),
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 10,
+			Parent = root,
+		})
+
+		for index = 0, 2 do
+			new("Frame", {
+				BackgroundColor3 = THEME.muted,
+				BorderSizePixel = 0,
+				AnchorPoint = Vector2.new(1, 1),
+				Position = UDim2.new(1, -2 - (index * 3), 1, -2),
+				Size = UDim2.new(0, 8 - (index * 2), 0, 2),
+				Rotation = -45,
+				Parent = resizeHandle,
+			})
+		end
+
+		resizeHandle.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			resizing = true
+			dragging = false
+			resizeDragStart = input.Position
+			resizeStartSize = root.AbsoluteSize
+		end)
+	end
+
 	UserInputService.InputEnded:Connect(endWindowDrag)
 
 	UserInputService.InputChanged:Connect(function(input)
-		if not dragging or not windowVisible then
+		if not windowVisible then
+			return
+		end
+		if resizing then
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				return
+			end
+			local delta = input.Position - resizeDragStart
+			applyWindowSize(Vector2.new(resizeStartSize.X + delta.X, resizeStartSize.Y + delta.Y))
+			return
+		end
+		if not dragging then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseMovement
