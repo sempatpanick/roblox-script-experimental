@@ -172,6 +172,9 @@ local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local WINDOW_SIZE = Vector2.new(600, 440)
 local GEAR_BUTTON_TEXT = "⚙"
+local CHEVRON_MARK = ">"
+local CHEVRON_DOWN_ROTATION = 90
+local CHEVRON_RIGHT_ROTATION = 0
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 
@@ -903,13 +906,14 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	new("TextLabel", {
 		Name = "Chevron",
 		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(1, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(1, -10, 0.5, 0),
 		Size = UDim2.new(0, 12, 0, 12),
 		Font = Enum.Font.GothamBold,
 		TextSize = 12,
 		TextColor3 = THEME.muted,
-		Text = "⌄",
+		Text = CHEVRON_MARK,
+		Rotation = CHEVRON_DOWN_ROTATION,
 		Parent = button,
 	})
 
@@ -1548,13 +1552,14 @@ local function createSection(contentParent, title, scrollFrame)
 
 	local chevron = new("TextLabel", {
 		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
 		Size = UDim2.new(0, 16, 0, 16),
 		Font = Enum.Font.GothamBold,
 		TextSize = 14,
 		TextColor3 = THEME.muted,
-		Text = "›",
+		Text = CHEVRON_MARK,
+		Rotation = CHEVRON_DOWN_ROTATION,
 		Parent = header,
 	})
 
@@ -1568,6 +1573,12 @@ local function createSection(contentParent, title, scrollFrame)
 		Parent = section,
 	})
 
+	local function setSectionExpanded(isExpanded)
+		body.Visible = isExpanded
+		chevron.Rotation = isExpanded and CHEVRON_DOWN_ROTATION or CHEVRON_RIGHT_ROTATION
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
 	local bodyLayout = new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
 		SortOrder = Enum.SortOrder.LayoutOrder,
@@ -1578,11 +1589,9 @@ local function createSection(contentParent, title, scrollFrame)
 	local expanded = true
 	header.MouseButton1Click:Connect(function()
 		expanded = not expanded
-		body.Visible = expanded
-		chevron.Text = expanded and "⌄" or "›"
-		scheduleCanvasUpdate(scrollFrame)
+		setSectionExpanded(expanded)
 	end)
-	chevron.Text = "⌄"
+	setSectionExpanded(expanded)
 
 	local sectionApi = {
 		_body = body,
