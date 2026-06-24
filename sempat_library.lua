@@ -170,6 +170,8 @@ local CARD_CORNER = 8
 local SIDEBAR_WIDTH = 196
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
+local CONTENT_TOPBAR_HEIGHT = 40
+local CONTENT_TITLE_SIZE = 18
 local WINDOW_SIZE = Vector2.new(600, 440)
 local GEAR_BUTTON_TEXT = "⚙"
 local CHEVRON_MARK = ">"
@@ -2294,17 +2296,17 @@ function SempatLibrary:CreateWindow(settings)
 
 	local topBar = new("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 52),
+		Size = UDim2.new(1, 0, 0, CONTENT_TOPBAR_HEIGHT),
 		Parent = content,
 	})
 
 	local pageTitle = new("TextLabel", {
 		Name = "PageTitle",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 20, 0, 14),
-		Size = UDim2.new(1, -40, 0, 28),
+		Position = UDim2.new(0, 20, 0, 10),
+		Size = UDim2.new(1, -40, 0, 22),
 		Font = Enum.Font.GothamBold,
-		TextSize = 24,
+		TextSize = CONTENT_TITLE_SIZE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.text,
 		Text = title,
@@ -2450,8 +2452,8 @@ function SempatLibrary:CreateWindow(settings)
 	local pages = new("Frame", {
 		Name = "Pages",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 52),
-		Size = UDim2.new(1, 0, 1, -52),
+		Position = UDim2.new(0, 0, 0, CONTENT_TOPBAR_HEIGHT),
+		Size = UDim2.new(1, 0, 1, -CONTENT_TOPBAR_HEIGHT),
 		Parent = content,
 	})
 
