@@ -277,8 +277,12 @@ local function applyThemeRole(instance, role)
 		instance.TextColor3 = THEME.text
 	elseif role == "muted" and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
 		instance.TextColor3 = THEME.muted
+	elseif role == "muted" and instance:IsA("ImageLabel") then
+		instance.ImageColor3 = THEME.muted
 	elseif role == "chrome" and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
 		instance.TextColor3 = getChromeIconColor()
+	elseif role == "chrome" and instance:IsA("ImageLabel") then
+		instance.ImageColor3 = getChromeIconColor()
 	elseif role == "dropdownSearch" and instance:IsA("GuiObject") then
 		instance.BackgroundColor3 = THEME.dropdownSearch
 	elseif role == "inputBg" and instance:IsA("GuiObject") then
@@ -363,7 +367,10 @@ local SECTION_HEADER_HEIGHT = 36
 local CORNER = 10
 local CARD_CORNER = 8
 local DROPDOWN_MENU_CORNER = 8
-local SIDEBAR_WIDTH = 150
+local SIDEBAR_WIDTH = 170
+local TAB_ICON_SIZE = 16
+local TAB_TEXT_LEFT_NO_ICON = 12
+local TAB_TEXT_LEFT_WITH_ICON = 34
 local PROFILE_CARD_HEIGHT = 54
 local PROFILE_AVATAR_SIZE = 32
 local PROFILE_PAD_X = 8
@@ -382,11 +389,13 @@ local MIN_WINDOW_HEIGHT = 320
 local MAX_WINDOW_WIDTH = 960
 local MAX_WINDOW_HEIGHT = 720
 local RESIZE_HANDLE_SIZE = 16
-local GEAR_GLYPH_SIZE = 14
-local GEAR_TOOTH_COUNT = 8
-local CHEVRON_MARK = ">"
-local CHEVRON_DOWN_ROTATION = 90
-local CHEVRON_RIGHT_ROTATION = 0
+local CHROME_ICON_SIZE = 16
+local SMALL_CHEVRON_ICON_SIZE = 14
+local LUCIDE_ICON_SETTINGS = "settings"
+local LUCIDE_ICON_MINIMIZE = "minus"
+local LUCIDE_ICON_CLOSE = "x"
+local LUCIDE_ICON_CHEVRON_DOWN = "chevron-down"
+local LUCIDE_ICON_CHEVRON_RIGHT = "chevron-right"
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 local FAB_DRAG_THRESHOLD = 8
@@ -470,57 +479,6 @@ local function corner(parent, radius)
 	})
 end
 
-local function createChromeGearIcon(parent, color)
-	local root = new("Frame", {
-		Name = "GearIcon",
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(GEAR_GLYPH_SIZE, GEAR_GLYPH_SIZE),
-		Parent = parent,
-	})
-
-	local parts = {}
-
-	local function addPart(props)
-		local part = new("Frame", props)
-		part.BorderSizePixel = 0
-		part.BackgroundColor3 = color
-		table.insert(parts, part)
-		return part
-	end
-
-	local hub = addPart({
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(6, 6),
-		Parent = root,
-	})
-	corner(hub, 3)
-
-	local radius = GEAR_GLYPH_SIZE * 0.32
-	for i = 0, GEAR_TOOTH_COUNT - 1 do
-		local angle = (math.pi * 2 / GEAR_TOOTH_COUNT) * i
-		addPart({
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, math.cos(angle) * radius, 0.5, math.sin(angle) * radius),
-			Size = UDim2.fromOffset(2, 3),
-			Rotation = math.deg(angle) + 90,
-			Parent = root,
-		})
-	end
-
-	return {
-		setColor = function(tint)
-			for _, part in ipairs(parts) do
-				if part.Parent then
-					part.BackgroundColor3 = tint
-				end
-			end
-		end,
-	}
-end
-
 local function padding(parent, top, bottom, left, right)
 	return new("UIPadding", {
 		PaddingTop = UDim.new(0, top or 0),
@@ -566,18 +524,191 @@ local function getWindowInitial(title)
 	return string.sub(cleaned, 1, 1):upper()
 end
 
-local function resolveWindowIcon(settings, title)
-	local icon = settings and settings.Icon
-	if type(icon) == "number" and icon > 0 then
-		return "rbxassetid://" .. tostring(math.floor(icon)), "image"
+local ICONS_PACK_URL = "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"
+local iconsLibrary = nil
+local iconsLibraryFailed = false
+
+local function isCustomAssetUrl(value)
+	return type(value) == "string"
+		and (string.find(value, "rbxasset://", 1, true) == 1
+			or string.find(value, "rbxthumb://", 1, true) == 1)
+end
+
+local function loadIconsLibrary()
+	if iconsLibrary then
+		return iconsLibrary
 	end
+	if iconsLibraryFailed then
+		return nil
+	end
+
+	local compile = loadstring or load
+	if type(compile) ~= "function" then
+		iconsLibraryFailed = true
+		return nil
+	end
+
+	local source
+	local okFetch, fetched = pcall(function()
+		if type(game) == "table" and type(game.HttpGet) == "function" then
+			return game:HttpGet(ICONS_PACK_URL)
+		end
+		if game.HttpGetAsync then
+			return game:HttpGetAsync(ICONS_PACK_URL)
+		end
+		return HttpService:GetAsync(ICONS_PACK_URL)
+	end)
+	if okFetch and type(fetched) == "string" and #fetched > 8 then
+		source = fetched
+	else
+		iconsLibraryFailed = true
+		warn("[SempatUI] Failed to load icon pack for Lucide icons")
+		return nil
+	end
+
+	local chunk, compileErr = compile(source, "FootagesusIcons")
+	if type(chunk) ~= "function" then
+		iconsLibraryFailed = true
+		warn("[SempatUI] Icon pack compile failed:", compileErr)
+		return nil
+	end
+
+	local okRun, result = pcall(chunk)
+	if not okRun or type(result) ~= "table" then
+		iconsLibraryFailed = true
+		warn("[SempatUI] Icon pack run failed:", result)
+		return nil
+	end
+
+	if type(result.SetIconsType) == "function" then
+		result.SetIconsType("lucide")
+	end
+
+	iconsLibrary = result
+	return iconsLibrary
+end
+
+local function resolveLucideIcon(iconName)
+	local lib = loadIconsLibrary()
+	if not lib or type(lib.Icon) ~= "function" then
+		return nil
+	end
+
+	local ok, resolved = pcall(function()
+		if type(lib.Icon2) == "function" then
+			return lib.Icon2(iconName)
+		end
+		return lib.Icon(iconName, nil, true)
+	end)
+	if not ok or type(resolved) ~= "table" then
+		return nil
+	end
+
+	local sheet = resolved[1]
+	local data = resolved[2]
+	if type(sheet) ~= "string" or type(data) ~= "table" then
+		return nil
+	end
+
+	return {
+		image = sheet,
+		rectSize = data.ImageRectSize,
+		rectOffset = data.ImageRectPosition,
+	}
+end
+
+local function resolveUiIcon(icon)
+	if icon == nil or icon == 0 then
+		return nil
+	end
+
+	if type(icon) == "number" and icon > 0 then
+		return { image = "rbxassetid://" .. tostring(math.floor(icon)) }
+	end
+
 	if type(icon) == "string" and icon ~= "" then
 		if string.find(icon, "rbxassetid://", 1, true) then
-			return icon, "image"
+			return { image = icon }
 		end
 		if string.match(icon, "^%d+$") then
-			return "rbxassetid://" .. icon, "image"
+			return { image = "rbxassetid://" .. icon }
 		end
+		if isCustomAssetUrl(icon) then
+			return { image = icon }
+		end
+		return resolveLucideIcon(icon)
+	end
+
+	return nil
+end
+
+local function applyIconSpecToImage(imageLabel, spec)
+	if not imageLabel or not spec or type(spec.image) ~= "string" then
+		return false
+	end
+	imageLabel.Image = spec.image
+	if typeof(spec.rectSize) == "Vector2" and spec.rectSize.Magnitude > 0 then
+		imageLabel.ImageRectSize = spec.rectSize
+		imageLabel.ImageRectOffset = typeof(spec.rectOffset) == "Vector2" and spec.rectOffset or Vector2.new(0, 0)
+	else
+		imageLabel.ImageRectSize = Vector2.new(0, 0)
+		imageLabel.ImageRectOffset = Vector2.new(0, 0)
+	end
+	return true
+end
+
+local function createLucideImage(parent, iconName, options)
+	options = options or {}
+	local size = options.size or CHROME_ICON_SIZE
+	local label = new("ImageLabel", {
+		Name = options.name or "Icon",
+		BackgroundTransparency = 1,
+		AnchorPoint = options.anchorPoint or Vector2.new(0.5, 0.5),
+		Position = options.position or UDim2.fromScale(0.5, 0.5),
+		Size = typeof(size) == "number" and UDim2.fromOffset(size, size) or size,
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = options.color or THEME.muted,
+		ZIndex = options.zIndex or 1,
+		Parent = parent,
+	})
+	local currentName = iconName
+	local function setIconName(name)
+		local spec = resolveUiIcon(name)
+		if spec and applyIconSpecToImage(label, spec) then
+			currentName = name
+			label.Visible = true
+			return true
+		end
+		label.Visible = false
+		return false
+	end
+	setIconName(iconName)
+	if not label.Visible then
+		task.defer(function()
+			if label.Parent then
+				setIconName(iconName)
+			end
+		end)
+	end
+	return label, {
+		label = label,
+		setColor = function(color)
+			if label.Parent then
+				label.ImageColor3 = color
+			end
+		end,
+		setIconName = setIconName,
+		getIconName = function()
+			return currentName
+		end,
+	}
+end
+
+local function resolveWindowIcon(settings, title)
+	local icon = settings and settings.Icon
+	local resolved = resolveUiIcon(icon)
+	if resolved and resolved.image then
+		return resolved.image, "image"
 	end
 	return getWindowInitial(title), "text"
 end
@@ -1525,18 +1656,12 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	registerThemeTarget(button, "dropdownSearch")
 	registerThemeTarget(buttonStroke, "stroke")
 
-	local chevron = new("TextLabel", {
-		Name = "Chevron",
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
-		Size = UDim2.new(0, 12, 0, 12),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextColor3 = THEME.muted,
-		Text = CHEVRON_MARK,
-		Rotation = CHEVRON_DOWN_ROTATION,
-		Parent = button,
+	local chevron = createLucideImage(button, LUCIDE_ICON_CHEVRON_DOWN, {
+		name = "Chevron",
+		anchorPoint = Vector2.new(0.5, 0.5),
+		position = UDim2.new(1, -10, 0.5, 0),
+		size = 12,
+		color = THEME.muted,
 	})
 	registerThemeTarget(chevron, "muted")
 	registerThemeRefresher(function()
@@ -2155,6 +2280,191 @@ local function buildParagraph(contentParent, props, scrollFrame)
 	return element
 end
 
+local function normalizeImageAlign(value)
+	if type(value) == "string" then
+		local lower = string.lower(trimText(value))
+		if lower == "center" or lower == "centre" or lower == "middle" then
+			return "center"
+		end
+		if lower == "right" then
+			return "right"
+		end
+	end
+	return "left"
+end
+
+local function buildImage(contentParent, props, scrollFrame)
+	props = props or {}
+	local imageSize = tonumber(props.ImageSize) or 150
+	if imageSize < 1 then
+		imageSize = 150
+	end
+	local imageAlign = normalizeImageAlign(props.ImageAlign or props.Align)
+
+	local frame = new("Frame", {
+		Name = props.Name or "Image",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = contentParent,
+	})
+	corner(frame, CARD_CORNER)
+	padding(frame, 12, 12, 12, 12)
+	registerThemeTarget(frame, "card")
+
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = frame,
+	})
+
+	local titleText = props.Title or props.Name or "Image"
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		LayoutOrder = 1,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = titleText,
+		Visible = titleText ~= "",
+		Parent = frame,
+	})
+	registerThemeTarget(titleLabel, "text")
+
+	local initialImage = props.Image or ""
+	local imageHost = new("Frame", {
+		Name = "ImageHost",
+		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, initialImage ~= "" and imageSize or 0),
+		Visible = initialImage ~= "",
+		Parent = frame,
+	})
+
+	local imageLabel = new("ImageLabel", {
+		Name = "Preview",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(imageSize, imageSize),
+		ScaleType = Enum.ScaleType.Fit,
+		Image = initialImage,
+		Visible = initialImage ~= "",
+		Parent = imageHost,
+	})
+	corner(imageLabel, 8)
+
+	local descText = props.Description or props.Desc or props.Content or ""
+	local descLabel = new("TextLabel", {
+		Name = "Description",
+		LayoutOrder = 3,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = THEME.muted,
+		Text = descText,
+		Visible = descText ~= "",
+		Parent = frame,
+	})
+	registerThemeTarget(descLabel, "muted")
+
+	local function applyImageAlign(align)
+		imageAlign = normalizeImageAlign(align)
+		if imageAlign == "center" then
+			imageLabel.AnchorPoint = Vector2.new(0.5, 0)
+			imageLabel.Position = UDim2.new(0.5, 0, 0, 0)
+		elseif imageAlign == "right" then
+			imageLabel.AnchorPoint = Vector2.new(1, 0)
+			imageLabel.Position = UDim2.new(1, 0, 0, 0)
+		else
+			imageLabel.AnchorPoint = Vector2.new(0, 0)
+			imageLabel.Position = UDim2.new(0, 0, 0, 0)
+		end
+	end
+
+	local function syncImageVisibility()
+		local hasImage = type(imageLabel.Image) == "string" and imageLabel.Image ~= ""
+		imageLabel.Visible = hasImage
+		imageHost.Visible = hasImage
+		imageHost.Size = UDim2.new(1, 0, 0, hasImage and imageSize or 0)
+	end
+
+	local function setImageSize(size)
+		local nextSize = tonumber(size) or imageSize
+		if nextSize < 1 then
+			nextSize = 150
+		end
+		imageSize = nextSize
+		imageLabel.Size = UDim2.fromOffset(imageSize, imageSize)
+		if imageHost.Visible then
+			imageHost.Size = UDim2.new(1, 0, 0, imageSize)
+		end
+	end
+
+	applyImageAlign(imageAlign)
+
+	local element = {}
+
+	function element:Set(data)
+		if type(data) ~= "table" then
+			return
+		end
+		if data.Title ~= nil then
+			titleLabel.Text = data.Title
+			titleLabel.Visible = data.Title ~= ""
+		end
+		if data.Image ~= nil then
+			imageLabel.Image = data.Image
+			syncImageVisibility()
+		end
+		if data.ImageSize ~= nil then
+			setImageSize(data.ImageSize)
+		end
+		if data.ImageAlign ~= nil or data.Align ~= nil then
+			applyImageAlign(data.ImageAlign or data.Align)
+		end
+		local desc = data.Description
+		if desc == nil and data.Desc ~= nil then
+			desc = data.Desc
+		end
+		if desc == nil and data.Content ~= nil then
+			desc = data.Content
+		end
+		if desc ~= nil then
+			descLabel.Text = desc
+			descLabel.Visible = desc ~= ""
+		end
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetTitle(title)
+		titleLabel.Text = title or ""
+		titleLabel.Visible = titleLabel.Text ~= ""
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetDesc(desc)
+		descLabel.Text = desc or ""
+		descLabel.Visible = descLabel.Text ~= ""
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetValue(data)
+		element:Set(data)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
 local function createSection(contentParent, title, scrollFrame)
 	local section = new("Frame", {
 		Name = "Section_" .. (title or "Section"),
@@ -2202,17 +2512,12 @@ local function createSection(contentParent, title, scrollFrame)
 		end
 	end)
 
-	local chevron = new("TextLabel", {
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.new(0, 16, 0, 16),
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = THEME.muted,
-		Text = CHEVRON_MARK,
-		Rotation = CHEVRON_DOWN_ROTATION,
-		Parent = header,
+	local chevron, chevronApi = createLucideImage(header, LUCIDE_ICON_CHEVRON_DOWN, {
+		name = "Chevron",
+		anchorPoint = Vector2.new(0.5, 0.5),
+		position = UDim2.new(1, -8, 0.5, 0),
+		size = SMALL_CHEVRON_ICON_SIZE,
+		color = THEME.muted,
 	})
 	registerThemeTarget(chevron, "muted")
 
@@ -2228,7 +2533,7 @@ local function createSection(contentParent, title, scrollFrame)
 
 	local function setSectionExpanded(isExpanded)
 		body.Visible = isExpanded
-		chevron.Rotation = isExpanded and CHEVRON_DOWN_ROTATION or CHEVRON_RIGHT_ROTATION
+		chevronApi.setIconName(isExpanded and LUCIDE_ICON_CHEVRON_DOWN or LUCIDE_ICON_CHEVRON_RIGHT)
 		scheduleCanvasUpdate(scrollFrame)
 	end
 
@@ -2280,6 +2585,11 @@ local function createSection(contentParent, title, scrollFrame)
 		return buildParagraph(body, props, scrollFrame)
 	end
 	sectionApi.Paragraph = sectionApi.CreateParagraph
+
+	function sectionApi:CreateImage(props)
+		return buildImage(body, props, scrollFrame)
+	end
+	sectionApi.Image = sectionApi.CreateImage
 
 	bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		scheduleCanvasUpdate(scrollFrame)
@@ -2344,10 +2654,7 @@ local function createTabApi(tabFrame, scrollFrame, contentTitle)
 	tab.Paragraph = tab.CreateParagraph
 
 	function tab:CreateImage(props)
-		return buildParagraph(targetParent(), {
-			Title = props.Title or props.Name or "Image",
-			Content = props.Image or "",
-		}, scrollFrame)
+		return buildImage(targetParent(), props or {}, scrollFrame)
 	end
 	tab.Image = tab.CreateImage
 
@@ -2359,16 +2666,50 @@ local function createTabApi(tabFrame, scrollFrame, contentTitle)
 end
 
 local function createSidebarButton(sidebarList, windowState, tabData, accentIndicators)
+	local iconSpec = resolveUiIcon(tabData.icon)
+	local hasIcon = iconSpec ~= nil and type(iconSpec.image) == "string" and iconSpec.image ~= ""
+	local textLeft = hasIcon and TAB_TEXT_LEFT_WITH_ICON or TAB_TEXT_LEFT_NO_ICON
+
+	local function applyTabIconLayout(iconLabel, titleLabel)
+		local withIcon = iconLabel ~= nil and iconLabel.Parent ~= nil
+		local left = withIcon and TAB_TEXT_LEFT_WITH_ICON or TAB_TEXT_LEFT_NO_ICON
+		if titleLabel then
+			titleLabel.Position = UDim2.new(0, left, 0, 0)
+			titleLabel.Size = UDim2.new(1, -left - 4, 1, 0)
+		end
+	end
+
+	local function mountTabIcon(parent, spec)
+		if not spec or type(spec.image) ~= "string" or spec.image == "" then
+			return nil
+		end
+		local label = new("ImageLabel", {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 10, 0.5, 0),
+			Size = UDim2.fromOffset(TAB_ICON_SIZE, TAB_ICON_SIZE),
+			Image = spec.image,
+			ScaleType = Enum.ScaleType.Fit,
+			ImageColor3 = THEME.muted,
+			ZIndex = 2,
+			Parent = parent,
+		})
+		if typeof(spec.rectSize) == "Vector2" and spec.rectSize.Magnitude > 0 then
+			label.ImageRectSize = spec.rectSize
+		end
+		if typeof(spec.rectOffset) == "Vector2" then
+			label.ImageRectOffset = spec.rectOffset
+		end
+		return label
+	end
+
 	local button = new("TextButton", {
 		Name = "Tab_" .. tabData.id,
 		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 36),
-		Font = Enum.Font.GothamMedium,
-		TextSize = 14,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.muted,
-		Text = "   " .. tabData.title,
+		Text = "",
 		AutoButtonColor = false,
 		LayoutOrder = tabData.order,
 		Parent = sidebarList,
@@ -2390,10 +2731,53 @@ local function createSidebarButton(sidebarList, windowState, tabData, accentIndi
 		table.insert(accentIndicators, indicator)
 	end
 
+	local iconLabel
+	if hasIcon then
+		iconLabel = mountTabIcon(button, iconSpec)
+	end
+
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, textLeft, 0, 0),
+		Size = UDim2.new(1, -textLeft - 4, 1, 0),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextColor3 = THEME.muted,
+		Text = tabData.title,
+		ZIndex = 2,
+		Parent = button,
+	})
+	applyTabIconLayout(iconLabel, titleLabel)
+
 	local isTabSelected = false
 	local function applyTabTheme()
 		button.BackgroundColor3 = isTabSelected and THEME.card or THEME.content
-		button.TextColor3 = isTabSelected and THEME.text or THEME.muted
+		local labelColor = isTabSelected and THEME.text or THEME.muted
+		titleLabel.TextColor3 = labelColor
+		if iconLabel then
+			iconLabel.ImageColor3 = labelColor
+		end
+	end
+
+	if not hasIcon and tabData.icon ~= nil and tabData.icon ~= 0 then
+		task.defer(function()
+			if not button.Parent or iconLabel then
+				return
+			end
+			local deferredSpec = resolveUiIcon(tabData.icon)
+			if not deferredSpec then
+				return
+			end
+			iconLabel = mountTabIcon(button, deferredSpec)
+			if iconLabel then
+				applyTabIconLayout(iconLabel, titleLabel)
+				applyTabTheme()
+			end
+		end)
 	end
 	registerThemeRefresher(applyTabTheme)
 
@@ -2641,6 +3025,7 @@ end
 function SempatLibrary:CreateWindow(settings)
 	settings = settings or {}
 	clearThemeRegistry()
+	task.spawn(loadIconsLibrary)
 	local parent = settings.Parent or getGuiParent()
 	ensureOverlayGuis(parent)
 
@@ -2766,21 +3151,24 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = headerBar,
 	})
 
-	local function windowButton(buttonName, text, xOffset, onClick)
+	local function windowChromeButton(buttonName, iconName, xOffset, onClick)
 		local btn = new("TextButton", {
 			Name = buttonName,
 			BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, xOffset, 0.5, 0),
 			Size = UDim2.new(0, 32, 0, 32),
-			Font = Enum.Font.GothamBold,
-			TextSize = 18,
-			TextColor3 = getChromeIconColor(),
-			Text = text,
+			Text = "",
 			AutoButtonColor = false,
 			ZIndex = 5,
 			Parent = headerBar,
 		})
+		local iconLabel = createLucideImage(btn, iconName, {
+			size = CHROME_ICON_SIZE,
+			color = getChromeIconColor(),
+			zIndex = 2,
+		})
+		registerThemeTarget(iconLabel, "chrome")
 		btn.Activated:Connect(onClick)
 		return btn
 	end
@@ -2814,12 +3202,19 @@ function SempatLibrary:CreateWindow(settings)
 
 		local function getIdleChromeColor()
 			if chromeColorSource and chromeColorSource.Parent then
-				return chromeColorSource.TextColor3
+				local icon = chromeColorSource:FindFirstChild("Icon")
+				if icon and icon:IsA("ImageLabel") then
+					return icon.ImageColor3
+				end
 			end
 			return getChromeIconColor()
 		end
 
-		local gearIcon = createChromeGearIcon(btn, getIdleChromeColor())
+		local _, gearIcon = createLucideImage(btn, LUCIDE_ICON_SETTINGS, {
+			size = CHROME_ICON_SIZE,
+			color = getIdleChromeColor(),
+			zIndex = 2,
+		})
 
 		local active = false
 
@@ -3308,13 +3703,11 @@ function SempatLibrary:CreateWindow(settings)
 		table.insert(accentTargets, mobileFabInitial)
 	end
 
-	local minimizeButton = windowButton("MinimizeButton", "—", -44, toggleWindowVisible)
-	registerThemeTarget(minimizeButton, "chrome")
+	local minimizeButton = windowChromeButton("MinimizeButton", LUCIDE_ICON_MINIMIZE, -44, toggleWindowVisible)
 
-	local closeButton = windowButton("CloseButton", "×", -12, function()
+	local closeButton = windowChromeButton("CloseButton", LUCIDE_ICON_CLOSE, -12, function()
 		setWindowVisible(false)
 	end)
-	registerThemeTarget(closeButton, "chrome")
 
 	local pages = new("Frame", {
 		Name = "Pages",
@@ -3515,7 +3908,7 @@ function SempatLibrary:CreateWindow(settings)
 		end
 	end, minimizeButton)
 
-	function window:CreateTab(tabTitle, _iconId)
+	function window:CreateTab(tabTitle, iconId)
 		self._tabOrder += 1
 		local tabId = "tab_" .. self._tabOrder
 
@@ -3555,6 +3948,7 @@ function SempatLibrary:CreateWindow(settings)
 		local setSelected = createSidebarButton(tabScroll, window, {
 			id = tabId,
 			title = tabTitle or "Tab",
+			icon = iconId,
 			order = self._tabOrder,
 			frame = page,
 		}, accentIndicators)
