@@ -332,6 +332,7 @@ local Window = SempatLibrary:CreateWindow({
     LoadingTitle = "sempatpanick",
     LoadingSubtitle = "Sempat UI • Others",
     ToggleUIKeybind = "K",
+    WindowTransparency = 30,
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "sempatpanick",
