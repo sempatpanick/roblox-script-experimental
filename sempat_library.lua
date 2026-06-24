@@ -57,7 +57,48 @@ local THEME = {
 	dropdownMenu = Color3.fromRGB(24, 26, 34),
 	dropdownSearch = Color3.fromRGB(32, 34, 44),
 	dropdownItemHover = Color3.fromRGB(44, 46, 58),
+	buttonTextOnAccent = Color3.fromRGB(16, 18, 24),
 }
+
+local appliedAccentColor = THEME.accent
+
+local function getContrastTextColor(background)
+	local _, _, value = background:ToHSV()
+	if value >= 0.55 then
+		return THEME.buttonTextOnAccent
+	end
+	return THEME.text
+end
+
+local function darkenColor(color, amount)
+	local hue, saturation, value = color:ToHSV()
+	return Color3.fromHSV(hue, saturation, math.clamp(value * (amount or 0.88), 0, 1))
+end
+
+local function resolveElementColor(color)
+	if color == nil or color == false then
+		return nil
+	end
+	if typeof(color) == "Color3" then
+		return color
+	end
+	if type(color) == "string" then
+		local lowered = string.lower(color)
+		if lowered == "accent" then
+			return appliedAccentColor
+		end
+		if string.sub(color, 1, 1) == "#" then
+			local ok, parsed = pcall(Color3.fromHex, color)
+			if ok then
+				return parsed
+			end
+		end
+		if THEME[color] then
+			return THEME[color]
+		end
+	end
+	return nil
+end
 
 local DROPDOWN_MENU_CORNER = 12
 local DROPDOWN_ITEM_HEIGHT = 34
@@ -989,26 +1030,45 @@ local function buildDropdown(contentParent, props, scrollFrame)
 end
 
 local function buildButton(contentParent, props, scrollFrame)
-	local card, titleLabel, _, _ = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+	local title = props.Name or props.Title or "Button"
+	local bgColor = resolveElementColor(props.Color) or appliedAccentColor
+	local hoverColor = resolveElementColor(props.HoverColor) or darkenColor(bgColor, 0.88)
+	local textColor = getContrastTextColor(bgColor)
 
 	local button = new("TextButton", {
-		Name = "Action",
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
+		Name = "Button",
+		BackgroundColor3 = bgColor,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 40),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = textColor,
+		Text = title,
 		AutoButtonColor = false,
-		Parent = card,
+		Parent = contentParent,
 	})
+	corner(button, CARD_CORNER)
+
+	local element = {
+		_color = bgColor,
+		_hoverColor = hoverColor,
+	}
+
+	local function applyButtonColor(color)
+		element._color = color
+		element._hoverColor = resolveElementColor(props.HoverColor) or darkenColor(color, 0.88)
+		button.BackgroundColor3 = color
+		button.TextColor3 = getContrastTextColor(color)
+	end
 
 	button.MouseEnter:Connect(function()
-		card.BackgroundColor3 = THEME.cardHover
+		button.BackgroundColor3 = element._hoverColor
 	end)
 	button.MouseLeave:Connect(function()
-		card.BackgroundColor3 = THEME.card
+		button.BackgroundColor3 = element._color
 	end)
 
-	local element = {}
-	button.MouseButton1Click:Connect(function()
+	button.Activated:Connect(function()
 		safeCallback(props.Callback)
 	end)
 
@@ -1017,7 +1077,10 @@ local function buildButton(contentParent, props, scrollFrame)
 			return
 		end
 		if data.Name or data.Title then
-			titleLabel.Text = data.Name or data.Title
+			button.Text = data.Name or data.Title
+		end
+		if data.Color ~= nil then
+			applyButtonColor(resolveElementColor(data.Color) or appliedAccentColor)
 		end
 	end
 
@@ -1398,6 +1461,17 @@ function SempatLibrary:CreateWindow(settings)
 		or (settings.ConfigurationSaving and settings.ConfigurationSaving.FolderName)
 		or "SempatUI"
 	local isMobile = isMobileDevice()
+
+	if typeof(settings.AccentColor) == "Color3" then
+		appliedAccentColor = settings.AccentColor
+	elseif type(settings.Accent) == "string" then
+		local accentColor = resolveElementColor(settings.Accent)
+		if accentColor then
+			appliedAccentColor = accentColor
+		end
+	else
+		appliedAccentColor = THEME.accent
+	end
 
 	local screenGui = new("ScreenGui", {
 		Name = "SempatUI",
