@@ -741,26 +741,99 @@ local function createDropdownOptionButton()
 		item.BackgroundTransparency = 0
 	end)
 	item.MouseLeave:Connect(function()
-		item.BackgroundTransparency = 1
+		if item:GetAttribute("OptionSelected") ~= true then
+			item.BackgroundTransparency = 1
+		end
 	end)
 
 	return item
 end
 
+local function isDropdownMulti(props)
+	return props.Multi == true or props.MultipleOptions == true
+end
+
+local function copyOptionList(list)
+	local copy = {}
+	for _, value in ipairs(list or {}) do
+		table.insert(copy, value)
+	end
+	return copy
+end
+
+local function normalizeMultiSelection(raw, optionList)
+	local selected = {}
+	local seen = {}
+	local function addValue(value)
+		if value == nil or seen[value] then
+			return
+		end
+		seen[value] = true
+		table.insert(selected, value)
+	end
+
+	if type(raw) == "table" then
+		for _, value in ipairs(raw) do
+			addValue(value)
+		end
+	elseif raw ~= nil then
+		addValue(raw)
+	end
+
+	if type(optionList) == "table" and #optionList > 0 then
+		local filtered = {}
+		for _, value in ipairs(selected) do
+			if table.find(optionList, value) then
+				table.insert(filtered, value)
+			end
+		end
+		return filtered
+	end
+
+	return selected
+end
+
+local function formatMultiDropdownText(selectedList)
+	if #selectedList == 0 then
+		return "None"
+	end
+	if #selectedList == 1 then
+		return tostring(selectedList[1])
+	end
+	return "Various"
+end
+
 local function buildDropdown(contentParent, props, scrollFrame)
 	local options = props.Options or props.Values or {}
-	local selected = props.CurrentOption
-	if type(selected) == "table" then
-		selected = selected[1]
-	end
-	if selected == nil then
-		selected = props.Value
-	end
-	if type(selected) == "number" and options[selected] then
-		selected = options[selected]
-	end
-	if selected == nil and #options > 0 then
-		selected = options[1]
+	local isMulti = isDropdownMulti(props)
+	local selectedList = {}
+	local selected
+
+	if isMulti then
+		local rawCurrent = props.CurrentOption
+		if type(rawCurrent) == "string" then
+			rawCurrent = { rawCurrent }
+		end
+		if type(rawCurrent) == "table" then
+			selectedList = normalizeMultiSelection(rawCurrent, options)
+		elseif props.Value ~= nil then
+			selectedList = normalizeMultiSelection(props.Value, options)
+		end
+		selected = selectedList
+	else
+		selected = props.CurrentOption
+		if type(selected) == "table" then
+			selected = selected[1]
+		end
+		if selected == nil then
+			selected = props.Value
+		end
+		if type(selected) == "number" and options[selected] then
+			selected = options[selected]
+		end
+		if selected == nil and #options > 0 then
+			selected = options[1]
+		end
 	end
 
 	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
@@ -776,7 +849,8 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		TextSize = 13,
 		TextColor3 = THEME.text,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "  " .. tostring(selected or "Select"),
+		Text = "  "
+			.. (isMulti and formatMultiDropdownText(selectedList) or tostring(selected or "Select")),
 		AutoButtonColor = false,
 		Parent = right,
 	})
@@ -797,7 +871,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	})
 
 	local element = {
-		Value = selected,
+		Value = isMulti and copyOptionList(selectedList) or selected,
 		Values = options,
 	}
 
@@ -807,16 +881,80 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local menuSearchBox
 	local menuWidth = math.max(200, 220)
 
-	local function setSelected(value, fireCallback)
-		element.Value = value
-		button.Text = "  " .. tostring(value or "Select")
-		if fireCallback then
-			if props.Multi then
-				safeCallback(props.Callback, { value })
-			else
-				safeCallback(props.Callback, value)
-			end
+	local function updateButtonText()
+		if isMulti then
+			button.Text = "  " .. formatMultiDropdownText(selectedList)
+		else
+			button.Text = "  " .. tostring(element.Value or "Select")
 		end
+	end
+
+	local function syncElementValue()
+		if isMulti then
+			element.Value = copyOptionList(selectedList)
+		else
+			element.Value = selected
+		end
+	end
+
+	local function fireSelectionCallback()
+		if isMulti then
+			safeCallback(props.Callback, copyOptionList(selectedList))
+		else
+			safeCallback(props.Callback, element.Value)
+		end
+	end
+
+	local function applyOptionVisual(item, option)
+		if isMulti then
+			local picked = table.find(selectedList, option) ~= nil
+			item:SetAttribute("OptionSelected", picked)
+			item.BackgroundTransparency = picked and 0 or 1
+			item.TextColor3 = picked and appliedAccentColor or THEME.text
+			item.Text = (picked and "✓ " or "  ") .. tostring(option)
+			return
+		end
+		item:SetAttribute("OptionSelected", false)
+		item.BackgroundTransparency = 1
+		item.TextColor3 = THEME.text
+		item.Text = "  " .. tostring(option)
+	end
+
+	local function setSelected(value, fireCallback)
+		if isMulti then
+			if type(value) == "table" then
+				selectedList = normalizeMultiSelection(value, element.Values)
+			elseif value == nil then
+				table.clear(selectedList)
+			else
+				selectedList = { value }
+			end
+			syncElementValue()
+			updateButtonText()
+			if fireCallback then
+				fireSelectionCallback()
+			end
+			return
+		end
+
+		selected = value
+		syncElementValue()
+		updateButtonText()
+		if fireCallback then
+			fireSelectionCallback()
+		end
+	end
+
+	local function toggleMultiOption(option)
+		local index = table.find(selectedList, option)
+		if index then
+			table.remove(selectedList, index)
+		else
+			table.insert(selectedList, option)
+		end
+		syncElementValue()
+		updateButtonText()
+		fireSelectionCallback()
 	end
 
 	local function populateOptions(filterText)
@@ -837,7 +975,20 @@ local function buildDropdown(contentParent, props, scrollFrame)
 					item.Parent = menuList
 					item.Activated:Connect(function()
 						local value = item:GetAttribute("OptionValue")
-						if value ~= nil then
+						if value == nil then
+							return
+						end
+						if isMulti then
+							toggleMultiOption(value)
+							for _, pooled in ipairs(optionPool) do
+								if pooled.Visible then
+									local pooledValue = pooled:GetAttribute("OptionValue")
+									if pooledValue ~= nil then
+										applyOptionVisual(pooled, pooledValue)
+									end
+								end
+							end
+						else
 							setSelected(value, true)
 							closeActiveDropdown()
 						end
@@ -845,10 +996,9 @@ local function buildDropdown(contentParent, props, scrollFrame)
 					optionPool[order] = item
 				end
 				item:SetAttribute("OptionValue", option)
-				item.Text = "  " .. text
+				applyOptionVisual(item, option)
 				item.LayoutOrder = order
 				item.Visible = true
-				item.BackgroundTransparency = 1
 			end
 		end
 
@@ -1021,6 +1171,17 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	end)
 
 	function element:Set(value)
+		if isMulti then
+			if type(value) == "table" then
+				setSelected(value, false)
+			elseif value == nil then
+				setSelected({}, false)
+			else
+				setSelected({ value }, false)
+			end
+			return
+		end
+
 		local pick = value
 		if type(value) == "table" then
 			pick = value[1]
@@ -1033,12 +1194,37 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	end
 
 	function element:Select(value)
+		if isMulti then
+			if type(value) == "table" then
+				setSelected(value, true)
+			elseif value == nil then
+				setSelected({}, true)
+			else
+				local nextSelection = copyOptionList(selectedList)
+				if not table.find(nextSelection, value) then
+					table.insert(nextSelection, value)
+				end
+				setSelected(nextSelection, true)
+			end
+			return
+		end
 		setSelected(value, true)
 	end
 
 	function element:Refresh(values)
 		element.Values = values or {}
 		options = element.Values
+		if isMulti then
+			for index = #selectedList, 1, -1 do
+				if not table.find(element.Values, selectedList[index]) then
+					table.remove(selectedList, index)
+				end
+			end
+			syncElementValue()
+			updateButtonText()
+			return
+		end
+
 		if element.Value ~= nil then
 			local found = false
 			for _, option in ipairs(element.Values) do
