@@ -448,15 +448,31 @@ local function createMobileFab(screenGui, settings, title, onOpen, options)
 		end
 	end)
 
-	function fab:SetFabPosition(position)
-		setFabPosition(position)
-	end
+	local mobileFab = {
+		SetFabPosition = function(_, position)
+			setFabPosition(position)
+		end,
+		GetFabPosition = function()
+			return fab.Position
+		end,
+	}
 
-	function fab:GetFabPosition()
-		return fab.Position
-	end
+	setmetatable(mobileFab, {
+		__index = function(_, key)
+			local value = fab[key]
+			if type(value) == "function" then
+				return function(_, ...)
+					return value(fab, ...)
+				end
+			end
+			return value
+		end,
+		__newindex = function(_, key, value)
+			fab[key] = value
+		end,
+	})
 
-	return fab
+	return mobileFab
 end
 
 local function safeCallback(callback, ...)
