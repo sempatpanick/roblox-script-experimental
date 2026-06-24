@@ -57,17 +57,13 @@ local THEME = {
 	dropdownMenu = Color3.fromRGB(24, 26, 34),
 	dropdownSearch = Color3.fromRGB(32, 34, 44),
 	dropdownItemHover = Color3.fromRGB(44, 46, 58),
-	buttonTextOnAccent = Color3.fromRGB(16, 18, 24),
 }
 
 local appliedAccentColor = THEME.accent
 
-local function getContrastTextColor(background)
-	local _, _, value = background:ToHSV()
-	if value >= 0.55 then
-		return THEME.buttonTextOnAccent
-	end
-	return THEME.text
+local function getButtonTextColor()
+	-- Match the panel behind buttons so label reads like a cutout in the accent fill.
+	return THEME.content
 end
 
 local function darkenColor(color, amount)
@@ -1033,7 +1029,7 @@ local function buildButton(contentParent, props, scrollFrame)
 	local title = props.Name or props.Title or "Button"
 	local bgColor = resolveElementColor(props.Color) or appliedAccentColor
 	local hoverColor = resolveElementColor(props.HoverColor) or darkenColor(bgColor, 0.88)
-	local textColor = getContrastTextColor(bgColor)
+	local textColor = resolveElementColor(props.TextColor) or getButtonTextColor()
 
 	local button = new("TextButton", {
 		Name = "Button",
@@ -1058,7 +1054,7 @@ local function buildButton(contentParent, props, scrollFrame)
 		element._color = color
 		element._hoverColor = resolveElementColor(props.HoverColor) or darkenColor(color, 0.88)
 		button.BackgroundColor3 = color
-		button.TextColor3 = getContrastTextColor(color)
+		button.TextColor3 = resolveElementColor(props.TextColor) or getButtonTextColor()
 	end
 
 	button.MouseEnter:Connect(function()
