@@ -351,53 +351,101 @@ local function safeCallback(callback, ...)
 	end
 end
 
-local function createElementCard(parent, title, desc)
+local function createElementCard(parent, title, desc, rightWidth)
+	rightWidth = rightWidth or 140
+	local hasDesc = type(desc) == "string" and desc ~= ""
+	local cardPadY = 10
+	local textRightGap = 12
+	local textReserve = rightWidth + textRightGap
+	local innerMinHeight = ELEMENT_HEIGHT - (cardPadY * 2)
+
 	local card = new("Frame", {
 		Name = "ElementCard",
 		BackgroundColor3 = THEME.card,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = parent,
 	})
 	corner(card, CARD_CORNER)
+	new("UISizeConstraint", {
+		MinSize = Vector2.new(0, ELEMENT_HEIGHT),
+		Parent = card,
+	})
+
+	local body = new("Frame", {
+		Name = "Body",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = card,
+	})
+	padding(body, cardPadY, cardPadY, 14, 14)
+	new("UISizeConstraint", {
+		MinSize = Vector2.new(0, innerMinHeight),
+		Parent = body,
+	})
+
+	local left = new("Frame", {
+		Name = "Left",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -textReserve, hasDesc and 0 or 1, 0),
+		AutomaticSize = hasDesc and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
+		Parent = body,
+	})
 
 	local titleLabel = new("TextLabel", {
 		Name = "Title",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 14, 0, desc and 10 or 0),
-		Size = UDim2.new(1, -160, 0, desc and 18 or ELEMENT_HEIGHT),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		Font = Enum.Font.GothamMedium,
 		TextSize = 14,
+		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = desc and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Top,
 		TextColor3 = THEME.text,
 		Text = title or "",
-		Parent = card,
+		Parent = left,
 	})
 
 	local descLabel
-	if desc and desc ~= "" then
+	if hasDesc then
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 2),
+			Parent = left,
+		})
+		titleLabel.LayoutOrder = 1
+
 		descLabel = new("TextLabel", {
 			Name = "Desc",
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 14, 0, 30),
-			Size = UDim2.new(1, -160, 0, 16),
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			Font = Enum.Font.Gotham,
 			TextSize = 12,
+			TextWrapped = true,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
 			TextColor3 = THEME.muted,
 			Text = desc,
-			Parent = card,
+			LayoutOrder = 2,
+			Parent = left,
 		})
+	else
+		titleLabel.AnchorPoint = Vector2.new(0, 0.5)
+		titleLabel.Position = UDim2.new(0, 0, 0.5, 0)
 	end
 
 	local right = new("Frame", {
 		Name = "Right",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -12, 0.5, 0),
-		Size = UDim2.new(0, 140, 1, -12),
-		Parent = card,
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0, rightWidth, 0, innerMinHeight),
+		Parent = body,
 	})
 
 	return card, titleLabel, descLabel, right
@@ -613,8 +661,7 @@ local function buildSlider(contentParent, props, scrollFrame)
 	end
 	current = math.clamp(current, minValue, maxValue)
 
-	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
-	right.Size = UDim2.new(0, 180, 1, -12)
+	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc, 180)
 
 	local valueLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
