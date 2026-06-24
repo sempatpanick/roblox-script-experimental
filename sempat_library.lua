@@ -224,7 +224,7 @@ local function createMobileFab(screenGui, settings, title, onOpen)
 		})
 	end
 
-	fab.MouseButton1Click:Connect(onOpen)
+	fab.Activated:Connect(onOpen)
 	return fab
 end
 
@@ -1341,6 +1341,16 @@ function SempatLibrary:CreateWindow(settings)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.accent,
 		Text = subtitle,
+		Active = false,
+		Parent = brandRow,
+	})
+
+	local sidebarDragHandle = new("Frame", {
+		Name = "DragHandle",
+		BackgroundTransparency = 1,
+		Active = true,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 5,
 		Parent = brandRow,
 	})
 
@@ -1463,23 +1473,39 @@ function SempatLibrary:CreateWindow(settings)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.text,
 		Text = title,
+		Active = false,
+		ZIndex = 1,
+		Parent = topBar,
+	})
+
+	local topDragHandle = new("Frame", {
+		Name = "DragHandle",
+		BackgroundTransparency = 1,
+		Active = true,
+		Size = UDim2.new(1, -88, 1, 0),
+		ZIndex = 2,
 		Parent = topBar,
 	})
 
 	local function windowButton(text, xOffset, onClick)
 		local btn = new("TextButton", {
+			Name = text == "×" and "CloseButton" or "MinimizeButton",
 			BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(1, 0),
 			Position = UDim2.new(1, xOffset, 0, 12),
-			Size = UDim2.new(0, 28, 0, 28),
+			Size = UDim2.new(0, 32, 0, 32),
 			Font = Enum.Font.GothamBold,
 			TextSize = 18,
 			TextColor3 = THEME.muted,
 			Text = text,
 			AutoButtonColor = false,
+			ZIndex = 5,
 			Parent = topBar,
 		})
-		btn.MouseButton1Click:Connect(onClick)
+		local function fire()
+			onClick()
+		end
+		btn.Activated:Connect(fire)
 		return btn
 	end
 
@@ -1497,25 +1523,20 @@ function SempatLibrary:CreateWindow(settings)
 
 	local toggleKeyCode = resolveToggleKeyCode(settings.ToggleUIKeybind)
 	local windowVisible = true
+	local mobileFab
 
 	local function setWindowVisible(isVisible)
 		windowVisible = isVisible == true
-		if isMobile then
-			screenGui.Enabled = true
-			root.Visible = windowVisible
-			mobileFab.Visible = not windowVisible
-		else
-			mobileFab.Visible = false
-			root.Visible = true
-			screenGui.Enabled = windowVisible
-		end
+		root.Visible = windowVisible
+		mobileFab.Visible = isMobile and not windowVisible
+		screenGui.Enabled = true
 	end
 
 	local function toggleWindowVisible()
 		setWindowVisible(not windowVisible)
 	end
 
-	local mobileFab = createMobileFab(screenGui, settings, title, function()
+	mobileFab = createMobileFab(screenGui, settings, title, function()
 		setWindowVisible(true)
 	end)
 	mobileFab.Visible = false
@@ -1722,27 +1743,39 @@ function SempatLibrary:CreateWindow(settings)
 		end)
 	end
 
-	-- Drag support
+	-- Drag support (dedicated handles; min/close buttons stay clickable)
 	local dragging = false
 	local dragStart
 	local startPos
 
-	topBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = true
-			dragStart = input.Position
-			startPos = root.Position
+	local function beginWindowDrag(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
 		end
-	end)
+		dragging = true
+		dragStart = input.Position
+		startPos = root.Position
+	end
 
-	topBar.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	local function endWindowDrag(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
 		end
-	end)
+	end
+
+	topDragHandle.InputBegan:Connect(beginWindowDrag)
+	sidebarDragHandle.InputBegan:Connect(beginWindowDrag)
+
+	UserInputService.InputEnded:Connect(endWindowDrag)
 
 	UserInputService.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		if not dragging or not windowVisible then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch then
 			local delta = input.Position - dragStart
 			root.Position = UDim2.new(
 				startPos.X.Scale,
