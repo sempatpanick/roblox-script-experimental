@@ -105,6 +105,31 @@ local function normalizeWindowTransparency(value)
 	end
 	return math.clamp(value, 0, 0.95)
 end
+
+local ACCENT_PRESETS = {
+	{ name = "Mint", color = Color3.fromRGB(102, 224, 163) },
+	{ name = "Sky", color = Color3.fromRGB(91, 156, 245) },
+	{ name = "Violet", color = Color3.fromRGB(167, 139, 250) },
+	{ name = "Rose", color = Color3.fromRGB(244, 114, 182) },
+	{ name = "Amber", color = Color3.fromRGB(251, 146, 60) },
+	{ name = "Crimson", color = Color3.fromRGB(239, 68, 68) },
+}
+
+local function applyAccentTheme(color)
+	appliedAccentColor = color
+	THEME.accent = color
+	THEME.toggleOn = color
+	THEME.sliderFill = color
+end
+
+local function colorToPresetName(color)
+	for _, preset in ipairs(ACCENT_PRESETS) do
+		if preset.color == color then
+			return preset.name
+		end
+	end
+	return ACCENT_PRESETS[1].name
+end
 local DROPDOWN_ITEM_HEIGHT = 34
 local DROPDOWN_SEARCH_HEIGHT = 36
 local DROPDOWN_MAX_HEIGHT = 240
@@ -115,7 +140,9 @@ local CORNER = 10
 local CARD_CORNER = 8
 local SIDEBAR_WIDTH = 196
 local HEADER_HEIGHT = 56
+local HEADER_CONTROLS_WIDTH = 120
 local WINDOW_SIZE = Vector2.new(600, 440)
+local GEAR_ICON = "rbxassetid://6034503363"
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 
@@ -1413,7 +1440,7 @@ local function createTabApi(tabFrame, scrollFrame, contentTitle)
 	return tab
 end
 
-local function createSidebarButton(sidebarList, windowState, tabData)
+local function createSidebarButton(sidebarList, windowState, tabData, accentIndicators)
 	local button = new("TextButton", {
 		Name = "Tab_" .. tabData.id,
 		BackgroundColor3 = THEME.sidebar,
@@ -1441,6 +1468,10 @@ local function createSidebarButton(sidebarList, windowState, tabData)
 	})
 	corner(indicator, 2)
 
+	if type(accentIndicators) == "table" then
+		table.insert(accentIndicators, indicator)
+	end
+
 	local function setSelected(selected)
 		button.BackgroundColor3 = selected and THEME.card or THEME.sidebar
 		button.TextColor3 = selected and THEME.text or THEME.muted
@@ -1453,6 +1484,143 @@ local function createSidebarButton(sidebarList, windowState, tabData)
 	end)
 
 	return setSelected
+end
+
+local function createUiSettingsPage(pagesContainer, config)
+	local page = new("Frame", {
+		Name = "UiSettings",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Visible = false,
+		Parent = pagesContainer,
+	})
+
+	local scroll = new("ScrollingFrame", {
+		Name = "Scroll",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, -10, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = appliedAccentColor,
+		CanvasSize = UDim2.new(),
+		Parent = page,
+	})
+	if type(config.accentScrollbars) == "table" then
+		table.insert(config.accentScrollbars, scroll)
+	end
+	padding(scroll, 0, 16, 20, 16)
+
+	local list = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 10),
+		Parent = scroll,
+	})
+
+	list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scheduleCanvasUpdate(scroll)
+	end)
+
+	local presetNames = {}
+	for _, preset in ipairs(ACCENT_PRESETS) do
+		table.insert(presetNames, preset.name)
+	end
+
+	local transparencySlider = buildSlider(scroll, {
+		Name = "Window Transparency",
+		Content = "How see-through the window panels are",
+		Range = { 0, 95 },
+		Increment = 1,
+		Suffix = "%",
+		CurrentValue = config.getTransparencyPercent(),
+		Callback = function(value)
+			config.setTransparencyPercent(value)
+		end,
+	}, scroll)
+
+	local accentDropdown = buildDropdown(scroll, {
+		Name = "Accent Color",
+		Content = "Theme highlight color for buttons and accents",
+		Options = presetNames,
+		CurrentOption = { colorToPresetName(config.getAccentColor()) },
+		Callback = function(value)
+			local picked = type(value) == "table" and value[1] or value
+			for _, preset in ipairs(ACCENT_PRESETS) do
+				if preset.name == picked then
+					config.setAccentColor(preset.color)
+					break
+				end
+			end
+		end,
+	}, scroll)
+
+	local keybindInput
+	if not config.isMobile then
+		keybindInput = buildInput(scroll, {
+			Name = "Toggle UI Key",
+			Content = "Keyboard key to show or hide the menu",
+			PlaceholderText = "e.g. K",
+			CurrentValue = config.getToggleKeyName(),
+			Callback = function(value)
+				config.setToggleKeyName(value)
+			end,
+		}, scroll)
+	end
+
+	buildButton(scroll, {
+		Name = "Reset to Defaults",
+		Callback = function()
+			config.resetToDefaults()
+			transparencySlider:Set(config.getTransparencyPercent())
+			accentDropdown:Set(colorToPresetName(config.getAccentColor()))
+			if keybindInput then
+				keybindInput:Set(config.getToggleKeyName())
+			end
+			SempatLibrary:Notify({
+				Title = "UI Configuration",
+				Content = "Settings restored to defaults.",
+			})
+		end,
+	}, scroll)
+
+	scheduleCanvasUpdate(scroll)
+
+	local isOpen = false
+
+	local function refreshControls()
+		transparencySlider:Set(config.getTransparencyPercent())
+		accentDropdown:Set(colorToPresetName(config.getAccentColor()))
+		if keybindInput then
+			keybindInput:Set(config.getToggleKeyName())
+		end
+	end
+
+	local function closePage()
+		if not isOpen then
+			return
+		end
+		isOpen = false
+		page.Visible = false
+		closeActiveDropdown()
+	end
+
+	local function openPage()
+		closeActiveDropdown()
+		refreshControls()
+		isOpen = true
+		page.Visible = true
+	end
+
+	return {
+		Open = openPage,
+		Close = closePage,
+		IsOpen = function()
+			return isOpen
+		end,
+		Refresh = refreshControls,
+		page = page,
+	}
 end
 
 function SempatLibrary:CreateWindow(settings)
@@ -1477,6 +1645,9 @@ function SempatLibrary:CreateWindow(settings)
 	else
 		appliedAccentColor = THEME.accent
 	end
+	applyAccentTheme(appliedAccentColor)
+
+	local defaultAccentColor = appliedAccentColor
 
 	local screenGui = new("ScreenGui", {
 		Name = "SempatUI",
@@ -1511,19 +1682,24 @@ function SempatLibrary:CreateWindow(settings)
 	local headerBrand = new("Frame", {
 		Name = "Brand",
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -88, 1, 0),
+		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
 		Parent = headerBar,
 	})
+
+	local accentTargets = {}
+	local accentIndicators = {}
+	local accentScrollbars = {}
 
 	local logo = new("TextLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(0, 28, 0, 28),
 		Font = Enum.Font.GothamBlack,
 		TextSize = 22,
-		TextColor3 = THEME.accent,
+		TextColor3 = appliedAccentColor,
 		Text = "L",
 		Parent = headerBrand,
 	})
+	table.insert(accentTargets, logo)
 
 	local titleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -1537,31 +1713,32 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = headerBrand,
 	})
 
-	new("TextLabel", {
+	local subtitleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 34, 0, 22),
 		Size = UDim2.new(1, -34, 0, 14),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.accent,
+		TextColor3 = appliedAccentColor,
 		Text = subtitle,
 		Active = false,
 		Parent = headerBrand,
 	})
+	table.insert(accentTargets, subtitleLabel)
 
 	local headerDragHandle = new("Frame", {
 		Name = "DragHandle",
 		BackgroundTransparency = 1,
 		Active = true,
-		Size = UDim2.new(1, -88, 1, 0),
+		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
 		ZIndex = 2,
 		Parent = headerBar,
 	})
 
-	local function windowButton(text, xOffset, onClick)
+	local function windowButton(buttonName, text, xOffset, onClick)
 		local btn = new("TextButton", {
-			Name = text == "×" and "CloseButton" or "MinimizeButton",
+			Name = buttonName,
 			BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, xOffset, 0.5, 0),
@@ -1576,6 +1753,66 @@ function SempatLibrary:CreateWindow(settings)
 		})
 		btn.Activated:Connect(onClick)
 		return btn
+	end
+
+	local function windowIconButton(buttonName, icon, xOffset, onClick)
+		local highlight = new("Frame", {
+			Name = "Highlight",
+			BackgroundColor3 = THEME.card,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, xOffset, 0.5, 0),
+			Size = UDim2.new(0, 32, 0, 32),
+			Visible = false,
+			ZIndex = 4,
+			Parent = headerBar,
+		})
+		corner(highlight, 8)
+
+		local btn = new("ImageButton", {
+			Name = buttonName,
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, xOffset, 0.5, 0),
+			Size = UDim2.new(0, 32, 0, 32),
+			Image = icon,
+			ImageColor3 = THEME.muted,
+			ScaleType = Enum.ScaleType.Fit,
+			AutoButtonColor = false,
+			ZIndex = 5,
+			Parent = headerBar,
+		})
+
+		local active = false
+
+		local function refreshIconColor()
+			btn.ImageColor3 = active and appliedAccentColor or THEME.muted
+		end
+
+		local function setActive(isActive)
+			active = isActive == true
+			highlight.Visible = active
+			refreshIconColor()
+		end
+
+		btn.MouseEnter:Connect(function()
+			if not active then
+				btn.ImageColor3 = THEME.text
+			end
+		end)
+		btn.MouseLeave:Connect(function()
+			refreshIconColor()
+		end)
+		btn.Activated:Connect(onClick)
+
+		return {
+			button = btn,
+			SetActive = setActive,
+			IsActive = function()
+				return active
+			end,
+			RefreshAccent = refreshIconColor,
+		}
 	end
 
 	local sidebar = new("Frame", {
@@ -1695,6 +1932,7 @@ function SempatLibrary:CreateWindow(settings)
 	elseif settings.Transparency ~= nil then
 		windowTransparency = normalizeWindowTransparency(settings.Transparency)
 	end
+	local defaultWindowTransparency = windowTransparency
 
 	local windowPanels = { root, headerBar, sidebar, sidebarCover, content, contentCover }
 
@@ -1707,7 +1945,38 @@ function SempatLibrary:CreateWindow(settings)
 		end
 	end
 
+	local function applyWindowAccent(color)
+		applyAccentTheme(color)
+		for _, target in ipairs(accentTargets) do
+			if target:IsA("TextLabel") then
+				target.TextColor3 = color
+			elseif target:IsA("Frame") then
+				target.BackgroundColor3 = color
+			elseif target:IsA("ScrollingFrame") then
+				target.ScrollBarImageColor3 = color
+			elseif target:IsA("UIStroke") then
+				target.Color = color
+			elseif target:IsA("ImageLabel") then
+				target.ImageColor3 = color
+			end
+		end
+		for _, indicator in ipairs(accentIndicators) do
+			if indicator.Parent then
+				indicator.BackgroundColor3 = color
+			end
+		end
+		for _, scrollbar in ipairs(accentScrollbars) do
+			if scrollbar.Parent then
+				scrollbar.ScrollBarImageColor3 = color
+			end
+		end
+		if settingsGearButton and settingsGearButton.IsActive() then
+			settingsGearButton.RefreshAccent()
+		end
+	end
+
 	applyWindowTransparency(windowTransparency)
+	applyWindowAccent(appliedAccentColor)
 
 	local topBar = new("Frame", {
 		BackgroundTransparency = 1,
@@ -1729,21 +1998,91 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = topBar,
 	})
 
-	local function resolveToggleKeyCode(keybindSetting)
-		local keyName = "K"
+	local function resolveToggleKeyName(keybindSetting)
 		if keybindSetting ~= nil then
 			if type(keybindSetting) == "string" then
-				keyName = string.upper(keybindSetting)
+				return string.upper(keybindSetting)
 			elseif typeof(keybindSetting) == "EnumItem" and keybindSetting.EnumType == Enum.KeyCode then
-				keyName = keybindSetting.Name
+				return keybindSetting.Name
 			end
 		end
-		return Enum.KeyCode[keyName]
+		return "K"
 	end
 
-	local toggleKeyCode = resolveToggleKeyCode(settings.ToggleUIKeybind)
+	local function resolveToggleKeyCode(keyName)
+		if type(keyName) ~= "string" or keyName == "" then
+			return nil
+		end
+		return Enum.KeyCode[string.upper(keyName)]
+	end
+
+	local defaultToggleKeyName = resolveToggleKeyName(settings.ToggleUIKeybind)
+	local toggleKeyName = defaultToggleKeyName
+	local toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
+	local toggleKeyConnection
 	local windowVisible = true
 	local mobileFab
+	local uiSettingsPage
+	local settingsGearButton
+	local lastSelectedTabId
+
+	local function persistUiSettings()
+		if not (writefile and isfolder and makefolder) then
+			return
+		end
+		pcall(function()
+			if not isfolder(folderName) then
+				makefolder(folderName)
+			end
+			local payload = HttpService:JSONEncode({
+				transparency = math.floor(windowTransparency * 100 + 0.5),
+				toggleKey = toggleKeyName,
+				accentPreset = colorToPresetName(appliedAccentColor),
+			})
+			writefile(folderName .. "/ui_settings.json", payload)
+		end)
+	end
+
+	local function loadUiSettings()
+		if not (readfile and isfile) then
+			return
+		end
+		local ok, decoded = pcall(function()
+			local path = folderName .. "/ui_settings.json"
+			if not isfile(path) then
+				return nil
+			end
+			return HttpService:JSONDecode(readfile(path))
+		end)
+		if not ok or type(decoded) ~= "table" then
+			return
+		end
+		if type(decoded.transparency) == "number" then
+			windowTransparency = normalizeWindowTransparency(decoded.transparency)
+			applyWindowTransparency(windowTransparency)
+		end
+		if type(decoded.accentPreset) == "string" then
+			for _, preset in ipairs(ACCENT_PRESETS) do
+				if preset.name == decoded.accentPreset then
+					applyWindowAccent(preset.color)
+					break
+				end
+			end
+		end
+		if type(decoded.toggleKey) == "string" and decoded.toggleKey ~= "" then
+			toggleKeyName = string.upper(decoded.toggleKey)
+			toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
+		end
+	end
+
+	loadUiSettings()
+
+	local function disconnectToggleKey()
+		if toggleKeyConnection then
+			toggleKeyConnection:Disconnect()
+			toggleKeyConnection = nil
+		end
+	end
 
 	local function setWindowVisible(isVisible)
 		windowVisible = isVisible == true
@@ -1756,14 +2095,41 @@ function SempatLibrary:CreateWindow(settings)
 		setWindowVisible(not windowVisible)
 	end
 
+	local function connectToggleKey(keyCode)
+		disconnectToggleKey()
+		toggleKeyCode = keyCode
+		if keyCode and not isMobile then
+			toggleKeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
+				if processed then
+					return
+				end
+				if input.UserInputType ~= Enum.UserInputType.Keyboard then
+					return
+				end
+				if input.KeyCode == keyCode then
+					toggleWindowVisible()
+				end
+			end)
+		end
+	end
+
 	mobileFab = createMobileFab(screenGui, settings, title, function()
 		setWindowVisible(true)
 	end)
 	mobileFab.Visible = false
 
-	windowButton("—", -44, toggleWindowVisible)
+	local mobileFabStroke = mobileFab:FindFirstChildOfClass("UIStroke")
+	if mobileFabStroke then
+		table.insert(accentTargets, mobileFabStroke)
+	end
+	local mobileFabInitial = mobileFab:FindFirstChild("Initial")
+	if mobileFabInitial then
+		table.insert(accentTargets, mobileFabInitial)
+	end
 
-	windowButton("×", -12, function()
+	windowButton("MinimizeButton", "—", -44, toggleWindowVisible)
+
+	windowButton("CloseButton", "×", -12, function()
 		setWindowVisible(false)
 	end)
 
@@ -1787,7 +2153,19 @@ function SempatLibrary:CreateWindow(settings)
 		ConfigManager = nil,
 	}
 
+	local function closeUiSettings()
+		if not uiSettingsPage or not uiSettingsPage.IsOpen() then
+			return false
+		end
+		uiSettingsPage.Close()
+		if settingsGearButton then
+			settingsGearButton.SetActive(false)
+		end
+		return true
+	end
+
 	local function selectTab(tabId)
+		closeUiSettings()
 		for id, tabInfo in pairs(window._tabs) do
 			tabInfo.setSelected(id == tabId)
 			if id == tabId then
@@ -1795,8 +2173,90 @@ function SempatLibrary:CreateWindow(settings)
 			end
 		end
 		window._selected = tabId
+		lastSelectedTabId = tabId
 	end
+
+	local function selectSettings()
+		closeActiveDropdown()
+		for _, tabInfo in pairs(window._tabs) do
+			tabInfo.setSelected(false)
+		end
+		window._selected = nil
+		pageTitle.Text = "UI Configuration"
+		if uiSettingsPage then
+			uiSettingsPage.Open()
+		end
+		if settingsGearButton then
+			settingsGearButton.SetActive(true)
+		end
+	end
+
 	window.selectTab = selectTab
+	window.selectSettings = selectSettings
+
+	local uiSettingsConfig = {
+		isMobile = isMobile,
+		accentScrollbars = accentScrollbars,
+		getTransparencyPercent = function()
+			return math.floor(windowTransparency * 100 + 0.5)
+		end,
+		setTransparencyPercent = function(value)
+			windowTransparency = normalizeWindowTransparency(value)
+			applyWindowTransparency(windowTransparency)
+			persistUiSettings()
+		end,
+		getToggleKeyName = function()
+			return toggleKeyName
+		end,
+		setToggleKeyName = function(value)
+			local cleaned = trimText(tostring(value or ""))
+			if cleaned == "" then
+				return
+			end
+			cleaned = string.upper(cleaned)
+			local keyCode = resolveToggleKeyCode(cleaned)
+			if not keyCode then
+				SempatLibrary:Notify({
+					Title = "UI Configuration",
+					Content = "Invalid key: " .. cleaned,
+				})
+				return
+			end
+			toggleKeyName = cleaned
+			connectToggleKey(keyCode)
+			persistUiSettings()
+		end,
+		getAccentColor = function()
+			return appliedAccentColor
+		end,
+		setAccentColor = function(color)
+			applyWindowAccent(color)
+			persistUiSettings()
+		end,
+		resetToDefaults = function()
+			windowTransparency = defaultWindowTransparency
+			applyWindowTransparency(windowTransparency)
+			applyWindowAccent(defaultAccentColor)
+			toggleKeyName = defaultToggleKeyName
+			connectToggleKey(resolveToggleKeyCode(toggleKeyName))
+			persistUiSettings()
+		end,
+	}
+
+	uiSettingsPage = createUiSettingsPage(pages, uiSettingsConfig)
+
+	settingsGearButton = windowIconButton("SettingsButton", GEAR_ICON, -76, function()
+		if uiSettingsPage.IsOpen() then
+			uiSettingsPage.Close()
+			settingsGearButton.SetActive(false)
+			if lastSelectedTabId and window._tabs[lastSelectedTabId] then
+				selectTab(lastSelectedTabId)
+			end
+		else
+			lastSelectedTabId = window._selected
+			selectSettings()
+		end
+	end)
 
 	function window:CreateTab(tabTitle, _iconId)
 		self._tabOrder += 1
@@ -1817,10 +2277,11 @@ function SempatLibrary:CreateWindow(settings)
 			Size = UDim2.new(1, -10, 1, 0),
 			Position = UDim2.new(0, 0, 0, 0),
 			ScrollBarThickness = 3,
-			ScrollBarImageColor3 = THEME.accent,
+			ScrollBarImageColor3 = appliedAccentColor,
 			CanvasSize = UDim2.new(),
 			Parent = page,
 		})
+		table.insert(accentScrollbars, scroll)
 		padding(scroll, 0, 16, 20, 16)
 
 		local list = new("UIListLayout", {
@@ -1839,7 +2300,7 @@ function SempatLibrary:CreateWindow(settings)
 			title = tabTitle or "Tab",
 			order = self._tabOrder,
 			frame = page,
-		})
+		}, accentIndicators)
 
 		local tabApi = createTabApi(page, scroll, pageTitle)
 		tabApi._title = tabTitle
@@ -1894,7 +2355,54 @@ function SempatLibrary:CreateWindow(settings)
 		return math.floor(windowTransparency * 100 + 0.5)
 	end
 
+	function window:SetAccentColor(color)
+		if typeof(color) ~= "Color3" then
+			return appliedAccentColor
+		end
+		applyWindowAccent(color)
+		persistUiSettings()
+		return appliedAccentColor
+	end
+
+	function window:GetAccentColor()
+		return appliedAccentColor
+	end
+
+	function window:SetToggleKeybind(keyName)
+		if type(keyName) ~= "string" or trimText(keyName) == "" then
+			return toggleKeyName
+		end
+		local cleaned = string.upper(trimText(keyName))
+		local keyCode = resolveToggleKeyCode(cleaned)
+		if not keyCode then
+			return toggleKeyName
+		end
+		toggleKeyName = cleaned
+		connectToggleKey(keyCode)
+		persistUiSettings()
+		return toggleKeyName
+	end
+
+	function window:GetToggleKeybind()
+		return toggleKeyName
+	end
+
+	function window:OpenSettings()
+		lastSelectedTabId = window._selected
+		selectSettings()
+	end
+
+	function window:CloseSettings()
+		if not closeUiSettings() then
+			return
+		end
+		if lastSelectedTabId and window._tabs[lastSelectedTabId] then
+			selectTab(lastSelectedTabId)
+		end
+	end
+
 	function window:Destroy()
+		disconnectToggleKey()
 		screenGui:Destroy()
 	end
 
@@ -1962,19 +2470,7 @@ function SempatLibrary:CreateWindow(settings)
 		window.ConfigManager = configManager
 	end
 
-	if toggleKeyCode and not isMobile then
-		UserInputService.InputBegan:Connect(function(input, processed)
-			if processed then
-				return
-			end
-			if input.UserInputType ~= Enum.UserInputType.Keyboard then
-				return
-			end
-			if input.KeyCode == toggleKeyCode then
-				toggleWindowVisible()
-			end
-		end)
-	end
+	connectToggleKey(toggleKeyCode)
 
 	-- Drag support (dedicated handles; min/close buttons stay clickable)
 	local dragging = false
