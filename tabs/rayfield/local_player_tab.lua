@@ -1590,7 +1590,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         Name = "Animation list",
         Options = animationOptions,
         CurrentOption = { selectedAnimationName },
-        Search = false,
+        Search = true,
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
             if picked then selectedAnimationName = picked end

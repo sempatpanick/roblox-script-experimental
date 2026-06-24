@@ -351,6 +351,7 @@ local function createTeleportTab(windowRef, notifyFn, options)
         Name = "Player",
         Options = teleportPlayerDropdownOptions(),
         CurrentOption = options.playerNoneOption and { TELEPORT_PLAYER_NONE } or {},
+        Search = true,
         Callback = function(value)
             local picked = rayfieldDropdownFirst(value)
             selectedTeleportPlayer = nil
@@ -369,10 +370,6 @@ local function createTeleportTab(windowRef, notifyFn, options)
             end
         end,
     }, "playerPick"))
-
-    if options.playerSearch then
-        dropdownProps.Search = true
-    end
 
     PlayerTeleportDropdown = TeleportTab:CreateDropdown(dropdownProps)
 
