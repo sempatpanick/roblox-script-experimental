@@ -114,6 +114,7 @@ local SECTION_HEADER_HEIGHT = 36
 local CORNER = 10
 local CARD_CORNER = 8
 local SIDEBAR_WIDTH = 196
+local HEADER_HEIGHT = 56
 local WINDOW_SIZE = Vector2.new(600, 440)
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
@@ -1498,11 +1499,91 @@ function SempatLibrary:CreateWindow(settings)
 	corner(root, CORNER)
 	local rootStroke = stroke(root, THEME.stroke, 0.25)
 
+	local headerBar = new("Frame", {
+		Name = "Header",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, HEADER_HEIGHT),
+		Parent = root,
+	})
+	padding(headerBar, 12, 12, 16, 16)
+
+	local headerBrand = new("Frame", {
+		Name = "Brand",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -88, 1, 0),
+		Parent = headerBar,
+	})
+
+	local logo = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 28, 0, 28),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		TextColor3 = THEME.accent,
+		Text = "L",
+		Parent = headerBrand,
+	})
+
+	local titleLabel = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 34, 0, 2),
+		Size = UDim2.new(1, -34, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = title,
+		Parent = headerBrand,
+	})
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 34, 0, 22),
+		Size = UDim2.new(1, -34, 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.accent,
+		Text = subtitle,
+		Active = false,
+		Parent = headerBrand,
+	})
+
+	local headerDragHandle = new("Frame", {
+		Name = "DragHandle",
+		BackgroundTransparency = 1,
+		Active = true,
+		Size = UDim2.new(1, -88, 1, 0),
+		ZIndex = 2,
+		Parent = headerBar,
+	})
+
+	local function windowButton(text, xOffset, onClick)
+		local btn = new("TextButton", {
+			Name = text == "×" and "CloseButton" or "MinimizeButton",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, xOffset, 0.5, 0),
+			Size = UDim2.new(0, 32, 0, 32),
+			Font = Enum.Font.GothamBold,
+			TextSize = 18,
+			TextColor3 = THEME.muted,
+			Text = text,
+			AutoButtonColor = false,
+			ZIndex = 5,
+			Parent = headerBar,
+		})
+		btn.Activated:Connect(onClick)
+		return btn
+	end
+
 	local sidebar = new("Frame", {
 		Name = "Sidebar",
 		BackgroundColor3 = THEME.sidebar,
 		BorderSizePixel = 0,
-		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0),
+		Position = UDim2.new(0, 0, 0, HEADER_HEIGHT),
+		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
 	corner(sidebar, CORNER)
@@ -1517,72 +1598,10 @@ function SempatLibrary:CreateWindow(settings)
 
 	padding(sidebar, 16, 16, 14, 14)
 
-	local brandRow = new("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 48),
-		Parent = sidebar,
-	})
-
-	local logo = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 28, 0, 28),
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
-		TextColor3 = THEME.accent,
-		Text = "L",
-		Parent = brandRow,
-	})
-
-	local titleLabel = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 34, 0, 2),
-		Size = UDim2.new(1, -34, 0, 18),
-		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.text,
-		Text = title,
-		Parent = brandRow,
-	})
-
-	new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 34, 0, 22),
-		Size = UDim2.new(1, -34, 0, 14),
-		Font = Enum.Font.Gotham,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.accent,
-		Text = subtitle,
-		Active = false,
-		Parent = brandRow,
-	})
-
-	local sidebarDragHandle = new("Frame", {
-		Name = "DragHandle",
-		BackgroundTransparency = 1,
-		Active = true,
-		Size = UDim2.fromScale(1, 1),
-		ZIndex = 5,
-		Parent = brandRow,
-	})
-
-	new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 58),
-		Size = UDim2.new(1, 0, 0, 14),
-		Font = Enum.Font.GothamBold,
-		TextSize = 10,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.muted,
-		Text = "MENU",
-		Parent = sidebar,
-	})
-
 	local tabList = new("Frame", {
 		Name = "TabList",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 78),
+		Position = UDim2.new(0, 0, 0, 0),
 		Size = UDim2.new(1, 0, 1, -150),
 		Parent = sidebar,
 	})
@@ -1657,8 +1676,8 @@ function SempatLibrary:CreateWindow(settings)
 		Name = "Content",
 		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, SIDEBAR_WIDTH, 0, 0),
-		Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, 0),
+		Position = UDim2.new(0, SIDEBAR_WIDTH, 0, HEADER_HEIGHT),
+		Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
 	corner(content, CORNER)
@@ -1677,7 +1696,7 @@ function SempatLibrary:CreateWindow(settings)
 		windowTransparency = normalizeWindowTransparency(settings.Transparency)
 	end
 
-	local windowPanels = { root, sidebar, sidebarCover, content, contentCover }
+	local windowPanels = { root, headerBar, sidebar, sidebarCover, content, contentCover }
 
 	local function applyWindowTransparency(transparency)
 		for _, panel in ipairs(windowPanels) do
@@ -1700,47 +1719,15 @@ function SempatLibrary:CreateWindow(settings)
 		Name = "PageTitle",
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 20, 0, 14),
-		Size = UDim2.new(1, -100, 0, 28),
+		Size = UDim2.new(1, -40, 0, 28),
 		Font = Enum.Font.GothamBold,
 		TextSize = 24,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.text,
 		Text = title,
 		Active = false,
-		ZIndex = 1,
 		Parent = topBar,
 	})
-
-	local topDragHandle = new("Frame", {
-		Name = "DragHandle",
-		BackgroundTransparency = 1,
-		Active = true,
-		Size = UDim2.new(1, -88, 1, 0),
-		ZIndex = 2,
-		Parent = topBar,
-	})
-
-	local function windowButton(text, xOffset, onClick)
-		local btn = new("TextButton", {
-			Name = text == "×" and "CloseButton" or "MinimizeButton",
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, xOffset, 0, 12),
-			Size = UDim2.new(0, 32, 0, 32),
-			Font = Enum.Font.GothamBold,
-			TextSize = 18,
-			TextColor3 = THEME.muted,
-			Text = text,
-			AutoButtonColor = false,
-			ZIndex = 5,
-			Parent = topBar,
-		})
-		local function fire()
-			onClick()
-		end
-		btn.Activated:Connect(fire)
-		return btn
-	end
 
 	local function resolveToggleKeyCode(keybindSetting)
 		local keyName = "K"
@@ -2011,8 +1998,7 @@ function SempatLibrary:CreateWindow(settings)
 		end
 	end
 
-	topDragHandle.InputBegan:Connect(beginWindowDrag)
-	sidebarDragHandle.InputBegan:Connect(beginWindowDrag)
+	headerDragHandle.InputBegan:Connect(beginWindowDrag)
 
 	UserInputService.InputEnded:Connect(endWindowDrag)
 
