@@ -342,7 +342,7 @@ local Window = SempatLibrary:CreateWindow({
 
 
 -- */  Local Player Tab  /* --
-createLocalPlayerTab(Window, mountNotify)
+createLocalPlayerTab(Window, mountNotify, { flagsPrefix = "lp" })
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "others" })

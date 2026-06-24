@@ -9,8 +9,14 @@
     centerShiftLockCamera = true
     shiftLockRenderStepId = "MountYahayukCenterShiftLockCamera"
     persistNoClip = true
-    flagsPrefix = "lp"  -- Rayfield ConfigurationSaving flags (e.g. sawah_indo)
+    flagsPrefix = "lp"  -- Rayfield/Sempat ConfigurationSaving flags -> lp_<suffix>
     autoSellTripAssist = {}  -- mancing_indo: table receives .begin function
+
+  Flag suffixes (when flagsPrefix is set):
+    antiAfk, infiniteJump, noClip, fly, freeCamera, cameraPenetrate, centerShiftLock,
+    walkSpeed, jumpHeight, espMaxDistance, espPlayerNames, espPlayerDistance,
+    espPlayerCharacter, espPlayerLines, espAllObjects, playersInfoPlayer, carryPlayer,
+    carryNearby, rejoinMessage, animationSelection
 ]]
 
 local Players = game:GetService("Players")
@@ -53,10 +59,6 @@ local formatInstanceDisplay = formatMod.formatInstanceDisplay
 local function createLocalPlayerTab(windowRef, notifyFn, options)
     options = options or {}
     local mountNotify = notifyFn
-
-    local function uiFlag(suffix)
-        return teleportFlagsMod.resolveUiFlagPrefix(options, suffix)
-    end
 
     local function withUiFlag(props, suffix)
         local flag = teleportFlagsMod.resolveUiFlagPrefix(options, suffix)
@@ -236,7 +238,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
     startAntiAfk()
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Anti AFK",
         CurrentValue = true,
         Callback = function(enabled)
@@ -246,9 +248,9 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 stopAntiAfk()
             end
         end
-    })
+    }, "antiAfk"))
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Infinite Jump",
         Callback = function(enabled)
             if infiniteJumpConnection then
@@ -267,9 +269,9 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 end)
             end
         end
-    })
+    }, "infiniteJump"))
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "No Clip",
         Callback = function(enabled)
             if options.persistNoClip then
@@ -280,7 +282,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 applyNoClip(character, enabled)
             end
         end
-    })
+    }, "noClip"))
 
     do
         UserInputService.InputBegan:Connect(function(input)
@@ -295,7 +297,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end)
     end
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Fly",
         Callback = function(enabled)
             flyEnabled = enabled
@@ -305,7 +307,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 stopFly()
             end
         end
-    })
+    }, "fly"))
 
     local savedMouseBehavior = nil
     local savedMouseIconEnabled = nil
@@ -407,7 +409,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end)
     end
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Free Camera",
         Callback = function(enabled)
             freeCameraEnabled = enabled
@@ -417,9 +419,9 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 stopFreeCamera()
             end
         end
-    })
+    }, "freeCamera"))
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Camera Penetrate",
         Callback = function(enabled)
             cameraPenetrateEnabled = enabled
@@ -430,10 +432,10 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 lp.DevCameraOcclusionMode = defaultCameraOcclusionMode
             end
         end
-    })
+    }, "cameraPenetrate"))
 
     if options.centerShiftLockCamera then
-        LocalPlayerTab:CreateToggle({
+        LocalPlayerTab:CreateToggle(withUiFlag({
             Name = "Centering Shift Lock Camera",
             CurrentValue = false,
             Callback = function(enabled)
@@ -444,7 +446,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                     stopCenterShiftLockCamera()
                 end
             end
-        })
+        }, "centerShiftLock"))
     end
 
     do
@@ -481,14 +483,14 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
     local walkSpeedValue = tostring(getCurrentCharacterWalkSpeed())
 
-    local WalkSpeedInput = LocalPlayerTab:CreateInput({
+    local WalkSpeedInput = LocalPlayerTab:CreateInput(withUiFlag({
         Name = "Speed",
         PlaceholderText = "e.g. 16 or 100",
         CurrentValue = walkSpeedValue,
         Callback = function(value)
             walkSpeedValue = value
         end
-    })
+    }, "walkSpeed"))
 
     local function syncWalkSpeedInputFromCharacter(showNotify)
         local character = Players.LocalPlayer.Character
@@ -573,14 +575,14 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
 
     local jumpHeightValue = tostring(getCurrentCharacterJumpHeight())
 
-    local JumpHeightInput = LocalPlayerTab:CreateInput({
+    local JumpHeightInput = LocalPlayerTab:CreateInput(withUiFlag({
         Name = "Height",
         PlaceholderText = "e.g. 7.2 or 50",
         CurrentValue = jumpHeightValue,
         Callback = function(value)
             jumpHeightValue = value
         end
-    })
+    }, "jumpHeight"))
 
     local function syncJumpHeightInputFromCharacter(showNotify)
         local character = Players.LocalPlayer.Character
@@ -920,7 +922,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         return espNamesEnabled or espDistanceEnabled or espCharacterEnabled or espLinesEnabled or espAllObjectsEnabled
     end
 
-    LocalPlayerTab:CreateInput({
+    LocalPlayerTab:CreateInput(withUiFlag({
         Name = "ESP Max Distance",
         PlaceholderText = "0 = unlimited, e.g. 10000",
         CurrentValue = tostring(espMaxDistance),
@@ -930,7 +932,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             espMaxDistance = math.max(0, n)
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
+    }, "espMaxDistance"))
     local function espOnRenderStep()
         if not espAnyEnabled() then return end
         for _, p in ipairs(Players:GetPlayers()) do
@@ -977,7 +979,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         espClearAllObjects()
     end
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "ESP Player Names",
         CurrentValue = false,
         Callback = function(enabled)
@@ -985,8 +987,8 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
-    LocalPlayerTab:CreateToggle({
+    }, "espPlayerNames"))
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "ESP Player Distance",
         CurrentValue = false,
         Callback = function(enabled)
@@ -994,8 +996,8 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
-    LocalPlayerTab:CreateToggle({
+    }, "espPlayerDistance"))
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "ESP Player Character",
         CurrentValue = false,
         Callback = function(enabled)
@@ -1003,8 +1005,8 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
-    LocalPlayerTab:CreateToggle({
+    }, "espPlayerCharacter"))
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "ESP Player Lines",
         CurrentValue = false,
         Callback = function(enabled)
@@ -1012,8 +1014,8 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             espSetRuntimeEnabled(espAnyEnabled())
             if espAnyEnabled() then espApplyForAllPlayers() end
         end
-    })
-    LocalPlayerTab:CreateToggle({
+    }, "espPlayerLines"))
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "ESP All Object",
         CurrentValue = false,
         Callback = function(enabled)
@@ -1025,7 +1027,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 espClearAllObjects()
             end
         end
-    })
+    }, "espAllObjects"))
     LocalPlayerTab:CreateSection("Players Info")
     local infoPlayerList = {}
     local infoPlayerDisplayNames = {}
@@ -1067,7 +1069,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end
     end
 
-    PlayersInfoDropdown = LocalPlayerTab:CreateDropdown({
+    PlayersInfoDropdown = LocalPlayerTab:CreateDropdown(withUiFlag({
         Name = "Player",
         Options = infoPlayerDisplayNames,
         CurrentOption = {}, Search = true,
@@ -1082,7 +1084,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             end
             updatePlayersInfoParagraph()
         end,
-    })
+    }, "playersInfoPlayer"))
 
     PlayersInfoParagraph = LocalPlayerTab:CreateParagraph({
         Title = "Details",
@@ -1161,7 +1163,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end
     end
 
-    CarryPlayerDropdown = LocalPlayerTab:CreateDropdown({
+    CarryPlayerDropdown = LocalPlayerTab:CreateDropdown(withUiFlag({
         Name = "Player",
         Options = carryDropdownOptions(),
         CurrentOption = { CARRY_NONE },
@@ -1174,9 +1176,9 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 selectedCarryPlayerName = nil
             end
         end,
-    })
+    }, "carryPlayer"))
 
-    LocalPlayerTab:CreateToggle({
+    LocalPlayerTab:CreateToggle(withUiFlag({
         Name = "Carry nearby selected player",
         CurrentValue = false,
         Callback = function(enabled)
@@ -1219,7 +1221,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 end
             end)
         end,
-    })
+    }, "carryNearby"))
 
     task.defer(refreshCarryPlayers)
     Players.PlayerAdded:Connect(function()
@@ -1421,7 +1423,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end)
     end)
 
-    LocalPlayerTab:CreateInput({
+    LocalPlayerTab:CreateInput(withUiFlag({
         Name = "Rejoin disconnect message",
         PlaceholderText = "Rejoining server...",
         CurrentValue = rejoinDisconnectMessage,
@@ -1430,7 +1432,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
                 rejoinDisconnectMessage = value
             end
         end,
-    })
+    }, "rejoinMessage"))
 
     LocalPlayerTab:CreateButton({
         Name = "Rejoin server",
@@ -1586,7 +1588,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
         end)
     end
     LocalPlayerTab:CreateSection("Animation")
-    LocalPlayerTab:CreateDropdown({
+    LocalPlayerTab:CreateDropdown(withUiFlag({
         Name = "Animation list",
         Options = animationOptions,
         CurrentOption = { selectedAnimationName },
@@ -1595,7 +1597,7 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             local picked = rayfieldDropdownFirst(value)
             if picked then selectedAnimationName = picked end
         end,
-    })
+    }, "animationSelection"))
     LocalPlayerTab:CreateButton({
         Name = "Animate",
         Callback = function()
