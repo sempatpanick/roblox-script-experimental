@@ -1892,7 +1892,7 @@ end
 local function createSidebarButton(sidebarList, windowState, tabData, accentIndicators)
 	local button = new("TextButton", {
 		Name = "Tab_" .. tabData.id,
-		BackgroundColor3 = THEME.sidebar,
+		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 36),
 		Font = Enum.Font.GothamMedium,
@@ -1922,7 +1922,7 @@ local function createSidebarButton(sidebarList, windowState, tabData, accentIndi
 	end
 
 	local function setSelected(selected)
-		button.BackgroundColor3 = selected and THEME.card or THEME.sidebar
+		button.BackgroundColor3 = selected and THEME.card or THEME.content
 		button.TextColor3 = selected and THEME.text or THEME.muted
 		indicator.Visible = selected
 		tabData.frame.Visible = selected
@@ -2340,16 +2340,15 @@ function SempatLibrary:CreateWindow(settings)
 
 	local sidebar = new("Frame", {
 		Name = "Sidebar",
-		BackgroundColor3 = THEME.sidebar,
+		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, HEADER_HEIGHT),
 		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
-	corner(sidebar, CORNER)
 
 	local sidebarCover = new("Frame", {
-		BackgroundColor3 = THEME.sidebar,
+		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Position = UDim2.new(1, -CORNER, 0, 0),
 		Size = UDim2.new(0, CORNER, 1, 0),
@@ -2389,7 +2388,7 @@ function SempatLibrary:CreateWindow(settings)
 	local profileTextRight = PROFILE_PAD_X
 
 	local avatar = new("ImageLabel", {
-		BackgroundColor3 = THEME.sidebar,
+		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, PROFILE_PAD_X, 0.5, -PROFILE_AVATAR_SIZE / 2),
 		Size = UDim2.new(0, PROFILE_AVATAR_SIZE, 0, PROFILE_AVATAR_SIZE),
@@ -2440,11 +2439,10 @@ function SempatLibrary:CreateWindow(settings)
 		Name = "Content",
 		BackgroundColor3 = THEME.content,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, SIDEBAR_WIDTH, 0, HEADER_HEIGHT),
-		Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, -HEADER_HEIGHT),
+		Position = UDim2.new(0, SIDEBAR_WIDTH - 1, 0, HEADER_HEIGHT),
+		Size = UDim2.new(1, -(SIDEBAR_WIDTH - 1), 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
-	corner(content, CORNER)
 
 	local contentCover = new("Frame", {
 		BackgroundColor3 = THEME.content,
