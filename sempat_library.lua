@@ -593,10 +593,179 @@ local function createElementCard(parent, title, desc, rightWidth)
 	return card, titleLabel, descLabel, right
 end
 
+local CONFIG_EXTENSION = ".rfld"
+
+local configurationSaving = {
+	enabled = false,
+	folder = "SempatUI",
+	fileName = "config",
+	loaded = false,
+	saveScheduled = false,
+	autoNotify = false,
+}
+
+local function ensureConfigurationFolder(folder)
+	if not folder or not (writefile and makefolder and isfolder) then
+		return false
+	end
+	pcall(function()
+		if not isfolder(folder) then
+			makefolder(folder)
+		end
+	end)
+	return true
+end
+
+local function packConfigurationColor(color)
+	return { R = color.R * 255, G = color.G * 255, B = color.B * 255 }
+end
+
+local function unpackConfigurationColor(data)
+	if type(data) ~= "table" then
+		return nil
+	end
+	return Color3.fromRGB(data.R or 255, data.G or 255, data.B or 255)
+end
+
+local function getFlagPersistValue(flagObj)
+	if flagObj.Type == "ColorPicker" and flagObj.Color then
+		return packConfigurationColor(flagObj.Color)
+	end
+	local value = flagObj.CurrentValue
+	if value == nil then
+		value = flagObj.CurrentOption
+	end
+	if value == nil then
+		value = flagObj.CurrentKeybind
+	end
+	if value == nil then
+		value = flagObj.Color
+	end
+	if typeof(value) == "Color3" then
+		return packConfigurationColor(value)
+	end
+	return value
+end
+
+local function collectConfigurationData()
+	local data = {}
+	for flagName, flagObj in pairs(SempatLibrary.Flags) do
+		local value = getFlagPersistValue(flagObj)
+		if typeof(value) == "boolean" then
+			data[flagName] = value
+		elseif value ~= nil then
+			data[flagName] = value
+		end
+	end
+	return data
+end
+
+local function notifyConfigurationChanged()
+	if not configurationSaving.enabled or not configurationSaving.loaded then
+		return
+	end
+	if configurationSaving.saveScheduled then
+		return
+	end
+	configurationSaving.saveScheduled = true
+	task.defer(function()
+		configurationSaving.saveScheduled = false
+		SempatLibrary:SaveConfiguration()
+	end)
+end
+
+local function hookFlagAutoSave(element)
+	if element._configAutoSaveHooked then
+		return
+	end
+	element._configAutoSaveHooked = true
+	local originalSet = element.Set
+	if type(originalSet) ~= "function" then
+		return
+	end
+	function element:Set(...)
+		originalSet(self, ...)
+		notifyConfigurationChanged()
+	end
+end
+
 local function registerFlag(flagName, element)
 	if type(flagName) == "string" and flagName ~= "" then
 		SempatLibrary.Flags[flagName] = element
+		hookFlagAutoSave(element)
 	end
+end
+
+function SempatLibrary:SaveConfiguration()
+	if not configurationSaving.enabled or not configurationSaving.loaded then
+		return false
+	end
+	if not writefile then
+		return false
+	end
+	ensureConfigurationFolder(configurationSaving.folder)
+	local path = configurationSaving.folder .. "/" .. configurationSaving.fileName .. CONFIG_EXTENSION
+	local ok = pcall(function()
+		writefile(path, HttpService:JSONEncode(collectConfigurationData()))
+	end)
+	return ok
+end
+
+function SempatLibrary:LoadConfiguration()
+	if not configurationSaving.enabled then
+		return false
+	end
+	if not (readfile and isfile) then
+		return false
+	end
+
+	local path = configurationSaving.folder .. "/" .. configurationSaving.fileName .. CONFIG_EXTENSION
+	local ok, decoded = pcall(function()
+		if not isfile(path) then
+			return nil
+		end
+		return HttpService:JSONDecode(readfile(path))
+	end)
+	if not ok or type(decoded) ~= "table" then
+		if not ok then
+			warn("[SempatUI] configuration load error:", decoded)
+		end
+		return false
+	end
+
+	local applied = false
+	for flagName, flagObj in pairs(SempatLibrary.Flags) do
+		local flagValue = decoded[flagName]
+		if (typeof(flagValue) == "boolean" and flagValue == false) or flagValue ~= nil then
+			applied = true
+			task.spawn(function()
+				if type(flagObj.Set) ~= "function" then
+					return
+				end
+				if flagObj.Type == "ColorPicker" then
+					local color = unpackConfigurationColor(flagValue)
+					if color then
+						flagObj:Set(color)
+					end
+					return
+				end
+				flagObj:Set(flagValue)
+			end)
+		end
+	end
+
+	if applied and configurationSaving.autoNotify then
+		SempatLibrary:Notify({
+			Title = "Configuration",
+			Content = "Loaded saved settings from a previous session.",
+		})
+	end
+
+	return applied
+end
+
+function SempatLibrary:IsConfigurationSavingEnabled()
+	return configurationSaving.enabled == true
 end
 
 local NotificationGui
@@ -752,6 +921,7 @@ local function buildToggle(contentParent, props, scrollFrame)
 	local element = {
 		CurrentValue = value,
 		Value = value,
+		Type = "Toggle",
 	}
 
 	function element:Set(newValue, skipCallback)
@@ -849,6 +1019,7 @@ local function buildSlider(contentParent, props, scrollFrame)
 
 	local element = {
 		CurrentValue = current,
+		Type = "Slider",
 	}
 
 	local dragging = false
@@ -884,6 +1055,7 @@ local function buildSlider(contentParent, props, scrollFrame)
 		displayValue(value)
 		if fireCallback then
 			safeCallback(props.Callback, value)
+			notifyConfigurationChanged()
 		end
 	end
 
@@ -1108,7 +1280,9 @@ local function buildDropdown(contentParent, props, scrollFrame)
 
 	local element = {
 		Value = isMulti and copyOptionList(selectedList) or selected,
+		CurrentOption = isMulti and copyOptionList(selectedList) or selected,
 		Values = options,
+		Type = "Dropdown",
 	}
 
 	local optionPool = {}
@@ -1128,8 +1302,10 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local function syncElementValue()
 		if isMulti then
 			element.Value = copyOptionList(selectedList)
+			element.CurrentOption = copyOptionList(selectedList)
 		else
 			element.Value = selected
+			element.CurrentOption = selected
 		end
 	end
 
@@ -1139,6 +1315,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		else
 			safeCallback(props.Callback, element.Value)
 		end
+		notifyConfigurationChanged()
 	end
 
 	local function applyOptionVisual(item, option)
@@ -1588,12 +1765,14 @@ local function buildInput(contentParent, props, scrollFrame)
 	local element = {
 		CurrentValue = box.Text,
 		Value = box.Text,
+		Type = "Input",
 	}
 
 	box:GetPropertyChangedSignal("Text"):Connect(function()
 		element.CurrentValue = box.Text
 		element.Value = box.Text
 		safeCallback(props.Callback, box.Text)
+		notifyConfigurationChanged()
 	end)
 
 	function element:GetValue()
@@ -2160,6 +2339,16 @@ function SempatLibrary:CreateWindow(settings)
 	local folderName = settings.Folder
 		or (settings.ConfigurationSaving and settings.ConfigurationSaving.FolderName)
 		or "SempatUI"
+	local configSettings = settings.ConfigurationSaving or {}
+	configurationSaving.enabled = configSettings.Enabled == true
+	configurationSaving.folder = configSettings.FolderName or folderName
+	configurationSaving.fileName = configSettings.FileName or tostring(game.PlaceId)
+	configurationSaving.autoNotify = configSettings.AutoNotify == true
+	configurationSaving.loaded = false
+	if configurationSaving.enabled then
+		ensureConfigurationFolder(configurationSaving.folder)
+	end
+	local configAutoLoad = configSettings.AutoLoad ~= false
 	local isMobile = isMobileDevice()
 
 	if typeof(settings.AccentColor) == "Color3" then
@@ -3037,6 +3226,18 @@ function SempatLibrary:CreateWindow(settings)
 		return nil
 	end
 
+	function window:SaveConfiguration()
+		return SempatLibrary:SaveConfiguration()
+	end
+
+	function window:LoadConfiguration()
+		local wasLoaded = configurationSaving.loaded
+		configurationSaving.loaded = false
+		local result = SempatLibrary:LoadConfiguration()
+		configurationSaving.loaded = wasLoaded or true
+		return result
+	end
+
 	function window:Toggle(state)
 		if state == nil then
 			toggleWindowVisible()
@@ -3282,6 +3483,17 @@ function SempatLibrary:CreateWindow(settings)
 			)
 		end
 	end)
+
+	if configurationSaving.enabled and configAutoLoad then
+		task.defer(function()
+			SempatLibrary:LoadConfiguration()
+			configurationSaving.loaded = true
+		end)
+	else
+		task.defer(function()
+			configurationSaving.loaded = true
+		end)
+	end
 
 	return window
 end
