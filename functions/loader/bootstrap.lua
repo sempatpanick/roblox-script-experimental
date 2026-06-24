@@ -66,6 +66,12 @@ local OTHERS_UI_LIBRARIES = {
 		description = "Modern WindUI hub layout and config manager",
 		path = "/games/windui/others.lua",
 	},
+	{
+		id = "sempat",
+		label = "Sempat UI",
+		description = "SempatUI-style layout optimized for smooth updates",
+		path = "/games/sempat/others.lua",
+	},
 }
 
 local function start(baseURL, games, excludedGameIds)

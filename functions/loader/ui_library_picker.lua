@@ -1,5 +1,5 @@
 --[[
-  Native ScreenGui picker for UI library selection (Rayfield / WindUI).
+  Native ScreenGui picker for UI library selection (Rayfield / WindUI / Sempat UI).
   Used before loading multi-library games (e.g. others.lua).
 ]]
 
@@ -17,6 +17,7 @@ local COLORS = {
 	buttonText = Color3.fromRGB(240, 240, 245),
 	accentRayfield = Color3.fromRGB(66, 135, 245),
 	accentWindUI = Color3.fromRGB(88, 101, 242),
+	accentSempat = Color3.fromRGB(102, 224, 163),
 }
 
 local function getGuiParent()
@@ -215,6 +216,7 @@ local function showUiLibraryPicker(options)
 	local accentById = {
 		rayfield = COLORS.accentRayfield,
 		windui = COLORS.accentWindUI,
+		sempat = COLORS.accentSempat,
 	}
 
 	for index, library in ipairs(libraries) do

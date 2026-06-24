@@ -1,0 +1,1759 @@
+--[[
+	Sempat UI Library
+	SempatUI-inspired layout with Rayfield + WindUI-compatible APIs.
+	Built for smooth updates: no acrylic, no squircles, no per-element entrance tweens.
+	Programmatic Set/Refresh updates change properties in-place (no rebuild).
+]]
+
+local SempatLibrary = {
+	Version = "1.0.0",
+	Flags = {},
+}
+
+local function getService(name)
+	local service = game:GetService(name)
+	return if cloneref then cloneref(service) else service
+end
+
+local Players = getService("Players")
+local UserInputService = getService("UserInputService")
+local TweenService = getService("TweenService")
+local RunService = getService("RunService")
+local HttpService = getService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local function getGuiParent()
+	local ok, hui = pcall(function()
+		return gethui and gethui()
+	end)
+	if ok and typeof(hui) == "Instance" then
+		return hui
+	end
+	if LocalPlayer then
+		return LocalPlayer:WaitForChild("PlayerGui")
+	end
+	return nil
+end
+
+local protect = protectgui or (syn and syn.protect_gui) or function() end
+
+local THEME = {
+	window = Color3.fromRGB(18, 20, 26),
+	sidebar = Color3.fromRGB(22, 24, 31),
+	content = Color3.fromRGB(20, 22, 28),
+	card = Color3.fromRGB(28, 30, 38),
+	cardHover = Color3.fromRGB(34, 36, 46),
+	stroke = Color3.fromRGB(48, 50, 62),
+	accent = Color3.fromRGB(102, 224, 163),
+	accentDark = Color3.fromRGB(72, 180, 130),
+	text = Color3.fromRGB(245, 246, 250),
+	muted = Color3.fromRGB(140, 144, 156),
+	toggleOff = Color3.fromRGB(58, 60, 72),
+	toggleOn = Color3.fromRGB(102, 224, 163),
+	sliderTrack = Color3.fromRGB(40, 42, 52),
+	sliderFill = Color3.fromRGB(102, 224, 163),
+	danger = Color3.fromRGB(180, 70, 70),
+}
+
+local ELEMENT_HEIGHT = 52
+local SECTION_HEADER_HEIGHT = 36
+local CORNER = 10
+local CARD_CORNER = 8
+local SIDEBAR_WIDTH = 196
+local WINDOW_SIZE = Vector2.new(600, 440)
+local MOBILE_FAB_SIZE = 52
+local MOBILE_FAB_CORNER = 12
+
+local function trimText(text)
+	if type(text) ~= "string" then
+		return ""
+	end
+	return (string.gsub(string.gsub(text, "^%s+", ""), "%s+$", ""))
+end
+
+local function isMobileDevice()
+	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end
+
+local function getWindowInitial(title)
+	local cleaned = trimText(title)
+	if cleaned == "" then
+		return "S"
+	end
+	local pipe = string.find(cleaned, "|")
+	if pipe then
+		local after = trimText(string.sub(cleaned, pipe + 1))
+		if after ~= "" then
+			return string.sub(after, 1, 1):upper()
+		end
+	end
+	return string.sub(cleaned, 1, 1):upper()
+end
+
+local function resolveWindowIcon(settings, title)
+	local icon = settings and settings.Icon
+	if type(icon) == "number" and icon > 0 then
+		return "rbxassetid://" .. tostring(math.floor(icon)), "image"
+	end
+	if type(icon) == "string" and icon ~= "" then
+		if string.find(icon, "rbxassetid://", 1, true) then
+			return icon, "image"
+		end
+		if string.match(icon, "^%d+$") then
+			return "rbxassetid://" .. icon, "image"
+		end
+	end
+	return getWindowInitial(title), "text"
+end
+
+local function createMobileFab(screenGui, settings, title, onOpen)
+	local iconValue, iconKind = resolveWindowIcon(settings, title)
+
+	local fab = new("TextButton", {
+		Name = "MobileFab",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -18, 1, -18),
+		Size = UDim2.new(0, MOBILE_FAB_SIZE, 0, MOBILE_FAB_SIZE),
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 20,
+		Parent = screenGui,
+	})
+	corner(fab, MOBILE_FAB_CORNER)
+	stroke(fab, THEME.accent, 0.15, 1.5)
+
+	if iconKind == "image" then
+		new("ImageLabel", {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(0, 30, 0, 30),
+			Image = iconValue,
+			ScaleType = Enum.ScaleType.Fit,
+			Parent = fab,
+		})
+	else
+		new("TextLabel", {
+			Name = "Initial",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Font = Enum.Font.GothamBold,
+			TextSize = 22,
+			TextColor3 = THEME.accent,
+			Text = iconValue,
+			Parent = fab,
+		})
+	end
+
+	fab.MouseButton1Click:Connect(onOpen)
+	return fab
+end
+
+local layoutQueue = {}
+local layoutScheduled = false
+
+local function scheduleCanvasUpdate(scrollFrame)
+	if not scrollFrame or not scrollFrame.Parent then
+		return
+	end
+	layoutQueue[scrollFrame] = true
+	if layoutScheduled then
+		return
+	end
+	layoutScheduled = true
+	task.defer(function()
+		layoutScheduled = false
+		local queue = layoutQueue
+		layoutQueue = {}
+		for frame in pairs(queue) do
+			if frame.Parent then
+				local layout = frame:FindFirstChildOfClass("UIListLayout")
+				if layout then
+					local padding = frame:FindFirstChildOfClass("UIPadding")
+					local padY = 0
+					if padding then
+						padY = padding.PaddingTop.Offset + padding.PaddingBottom.Offset
+					end
+					frame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + padY)
+				end
+			end
+		end
+	end)
+end
+
+local function new(className, props, children)
+	local inst = Instance.new(className)
+	for key, value in pairs(props or {}) do
+		if key ~= "Parent" then
+			inst[key] = value
+		end
+	end
+	for _, child in ipairs(children or {}) do
+		child.Parent = inst
+	end
+	if props and props.Parent then
+		inst.Parent = props.Parent
+	end
+	return inst
+end
+
+local function corner(parent, radius)
+	return new("UICorner", {
+		CornerRadius = UDim.new(0, radius or CORNER),
+		Parent = parent,
+	})
+end
+
+local function padding(parent, top, bottom, left, right)
+	return new("UIPadding", {
+		PaddingTop = UDim.new(0, top or 0),
+		PaddingBottom = UDim.new(0, bottom or 0),
+		PaddingLeft = UDim.new(0, left or 0),
+		PaddingRight = UDim.new(0, right or 0),
+		Parent = parent,
+	})
+end
+
+local function stroke(parent, color, transparency, thickness)
+	return new("UIStroke", {
+		Color = color or THEME.stroke,
+		Transparency = transparency or 0.35,
+		Thickness = thickness or 1,
+		Parent = parent,
+	})
+end
+
+local function safeCallback(callback, ...)
+	if type(callback) ~= "function" then
+		return
+	end
+	local ok, err = pcall(callback, ...)
+	if not ok then
+		warn("[SempatUI] callback error:", err)
+	end
+end
+
+local function createElementCard(parent, title, desc)
+	local card = new("Frame", {
+		Name = "ElementCard",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, ELEMENT_HEIGHT),
+		Parent = parent,
+	})
+	corner(card, CARD_CORNER)
+
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, desc and 10 or 0),
+		Size = UDim2.new(1, -160, 0, desc and 18 or ELEMENT_HEIGHT),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = desc and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
+		TextColor3 = THEME.text,
+		Text = title or "",
+		Parent = card,
+	})
+
+	local descLabel
+	if desc and desc ~= "" then
+		descLabel = new("TextLabel", {
+			Name = "Desc",
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 14, 0, 30),
+			Size = UDim2.new(1, -160, 0, 16),
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextColor3 = THEME.muted,
+			Text = desc,
+			Parent = card,
+		})
+	end
+
+	local right = new("Frame", {
+		Name = "Right",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.new(0, 140, 1, -12),
+		Parent = card,
+	})
+
+	return card, titleLabel, descLabel, right
+end
+
+local function registerFlag(flagName, element)
+	if type(flagName) == "string" and flagName ~= "" then
+		SempatLibrary.Flags[flagName] = element
+	end
+end
+
+local NotificationGui
+local DropdownGui
+
+local function ensureOverlayGuis(parent)
+	if not NotificationGui then
+		NotificationGui = new("ScreenGui", {
+			Name = "SempatUI/Notifications",
+			ResetOnSpawn = false,
+			ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+			DisplayOrder = 10000,
+			Parent = parent,
+		})
+		protect(NotificationGui)
+	end
+	if not DropdownGui then
+		DropdownGui = new("ScreenGui", {
+			Name = "SempatUI/Dropdowns",
+			ResetOnSpawn = false,
+			ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+			DisplayOrder = 9999,
+			Parent = parent,
+		})
+		protect(DropdownGui)
+	end
+end
+
+function SempatLibrary:Notify(opts)
+	opts = opts or {}
+	ensureOverlayGuis(getGuiParent())
+
+	local holder = NotificationGui:FindFirstChild("Holder")
+	if not holder then
+		holder = new("Frame", {
+			Name = "Holder",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -18, 1, -18),
+			Size = UDim2.new(0, 320, 1, -36),
+			Parent = NotificationGui,
+		})
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Bottom,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+			Parent = holder,
+		})
+	end
+
+	local toast = new("Frame", {
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = tick(),
+		Parent = holder,
+	})
+	corner(toast, CARD_CORNER)
+	stroke(toast, THEME.stroke, 0.25)
+	padding(toast, 12, 12, 12, 12)
+
+	local accentBar = new("Frame", {
+		BackgroundColor3 = THEME.accent,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 3, 1, 0),
+		Parent = toast,
+	})
+	corner(accentBar, 2)
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 10, 0, 0),
+		Size = UDim2.new(1, -10, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = opts.Title or "Notification",
+		Parent = toast,
+	})
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 10, 0, 22),
+		Size = UDim2.new(1, -10, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = opts.Content or "",
+		Parent = toast,
+	})
+
+	task.delay(opts.Duration or 4, function()
+		if toast.Parent then
+			toast:Destroy()
+		end
+	end)
+
+	return toast
+end
+
+local function createToggleSwitch(parent, initial)
+	local track = new("TextButton", {
+		Name = "ToggleTrack",
+		BackgroundColor3 = THEME.toggleOff,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 44, 0, 24),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Text = "",
+		AutoButtonColor = false,
+		Parent = parent,
+	})
+	corner(track, 12)
+
+	local knob = new("Frame", {
+		Name = "Knob",
+		BackgroundColor3 = Color3.fromRGB(235, 235, 240),
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 18, 0, 18),
+		Position = initial and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9),
+		Parent = track,
+	})
+	corner(knob, 9)
+
+	local function applyState(enabled, animate)
+		track.BackgroundColor3 = enabled and THEME.toggleOn or THEME.toggleOff
+		local target = enabled and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+		if animate then
+			TweenService:Create(knob, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = target,
+			}):Play()
+		else
+			knob.Position = target
+		end
+	end
+
+	return track, applyState
+end
+
+local function buildToggle(contentParent, props, scrollFrame)
+	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+	local value = props.CurrentValue == true or props.Value == true
+	local track, applyState = createToggleSwitch(right, value)
+	applyState(value, false)
+
+	local element = {
+		CurrentValue = value,
+		Value = value,
+	}
+
+	function element:Set(newValue, skipCallback)
+		newValue = newValue == true
+		if element.CurrentValue == newValue then
+			return
+		end
+		element.CurrentValue = newValue
+		element.Value = newValue
+		applyState(newValue, false)
+		if not skipCallback then
+			safeCallback(props.Callback, newValue)
+		end
+	end
+
+	function element:SetValue(newValue, ...)
+		element:Set(newValue, ...)
+	end
+
+	track.MouseButton1Click:Connect(function()
+		element:Set(not element.CurrentValue)
+	end)
+
+	if props.Flag and not props.Ext then
+		registerFlag(props.Flag, element)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local function buildSlider(contentParent, props, scrollFrame)
+	local range = props.Range or {}
+	local minValue = range[1] or (props.Value and props.Value.Min) or 0
+	local maxValue = range[2] or (props.Value and props.Value.Max) or 100
+	local step = props.Increment or props.Step or 1
+	local current = props.CurrentValue
+	if current == nil and props.Value then
+		current = props.Value.Default
+	end
+	if current == nil then
+		current = minValue
+	end
+	current = math.clamp(current, minValue, maxValue)
+
+	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+	right.Size = UDim2.new(0, 180, 1, -12)
+
+	local valueLabel = new("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 2),
+		Size = UDim2.new(0, 48, 0, 16),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = THEME.accent,
+		Text = tostring(current) .. (props.Suffix and (" " .. props.Suffix) or ""),
+		Parent = right,
+	})
+
+	local track = new("Frame", {
+		Name = "Track",
+		BackgroundColor3 = THEME.sliderTrack,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 1, -16),
+		Size = UDim2.new(1, 0, 0, 6),
+		Parent = right,
+	})
+	corner(track, 3)
+
+	local fill = new("Frame", {
+		Name = "Fill",
+		BackgroundColor3 = THEME.sliderFill,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 0, 1, 0),
+		Parent = track,
+	})
+	corner(fill, 3)
+
+	local hit = new("TextButton", {
+		Name = "Hit",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 1, 12),
+		Position = UDim2.new(0, 0, 0, -6),
+		Text = "",
+		ZIndex = 2,
+		Parent = track,
+	})
+
+	local element = {
+		CurrentValue = current,
+	}
+
+	local dragging = false
+
+	local function ratioFor(value)
+		if maxValue == minValue then
+			return 0
+		end
+		return (value - minValue) / (maxValue - minValue)
+	end
+
+	local function displayValue(value)
+		local text = tostring(value)
+		if props.Suffix then
+			text = text .. " " .. props.Suffix
+		end
+		valueLabel.Text = text
+	end
+
+	local function applyVisual(value, fireCallback)
+		value = math.clamp(value, minValue, maxValue)
+		if step > 0 then
+			value = math.floor(value / step + 0.5) * step
+			value = math.clamp(value, minValue, maxValue)
+		end
+		if element.CurrentValue == value and not fireCallback then
+			fill.Size = UDim2.new(math.clamp(ratioFor(value), 0, 1), 0, 1, 0)
+			displayValue(value)
+			return
+		end
+		element.CurrentValue = value
+		fill.Size = UDim2.new(math.clamp(ratioFor(value), 0, 1), 0, 1, 0)
+		displayValue(value)
+		if fireCallback then
+			safeCallback(props.Callback, value)
+		end
+	end
+
+	local function valueFromX(x)
+		local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+		return minValue + rel * (maxValue - minValue)
+	end
+
+	hit.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			applyVisual(valueFromX(input.Position.X), true)
+		end
+	end)
+
+	hit.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			applyVisual(valueFromX(input.Position.X), true)
+		end
+	end)
+
+	applyVisual(current, false)
+
+	function element:Set(newValue)
+		applyVisual(tonumber(newValue) or minValue, true)
+	end
+
+	function element:SetValue(newValue)
+		element:Set(newValue)
+	end
+
+	function element:SetVisible(visible)
+		card.Visible = visible == true
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	if props.Flag and not props.Ext then
+		registerFlag(props.Flag, element)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local activeDropdown
+local dropdownOpening = false
+
+local function closeActiveDropdown()
+	if activeDropdown then
+		activeDropdown:Destroy()
+		activeDropdown = nil
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input)
+	if dropdownOpening then
+		return
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		closeActiveDropdown()
+	end
+end)
+
+local function buildDropdown(contentParent, props, scrollFrame)
+	local options = props.Options or props.Values or {}
+	local selected = props.CurrentOption
+	if type(selected) == "table" then
+		selected = selected[1]
+	end
+	if selected == nil then
+		selected = props.Value
+	end
+	if type(selected) == "number" and options[selected] then
+		selected = options[selected]
+	end
+	if selected == nil and #options > 0 then
+		selected = options[1]
+	end
+
+	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+
+	local button = new("TextButton", {
+		Name = "DropdownButton",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(1, 0, 0, 30),
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = THEME.text,
+		Text = tostring(selected or "Select"),
+		AutoButtonColor = false,
+		Parent = right,
+	})
+	corner(button, 6)
+	stroke(button, THEME.stroke, 0.4)
+
+	local element = {
+		Value = selected,
+		Values = options,
+	}
+
+	local optionPool = {}
+
+	local function setSelected(value, fireCallback)
+		element.Value = value
+		button.Text = tostring(value or "Select")
+		if fireCallback then
+			if props.Multi then
+				safeCallback(props.Callback, { value })
+			else
+				safeCallback(props.Callback, value)
+			end
+		end
+	end
+
+	local function renderMenu(filterText)
+		closeActiveDropdown()
+		ensureOverlayGuis(getGuiParent())
+
+		local menu = new("Frame", {
+			Name = "DropdownMenu",
+			BackgroundColor3 = THEME.card,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(button.AbsolutePosition.X, button.AbsolutePosition.Y + button.AbsoluteSize.Y + 4),
+			Size = UDim2.new(0, math.max(button.AbsoluteSize.X, 180), 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Parent = DropdownGui,
+		})
+		corner(menu, 8)
+		stroke(menu, THEME.stroke, 0.25)
+		padding(menu, 6, 6, 6, 6)
+		activeDropdown = menu
+
+		local list = new("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Parent = menu,
+		})
+
+		local layout = new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+			Parent = list,
+		})
+
+		local searchBox
+		if props.Search == true or props.SearchBarEnabled == true then
+			searchBox = new("TextBox", {
+				BackgroundColor3 = THEME.sidebar,
+				BorderSizePixel = 0,
+				Size = UDim2.new(1, 0, 0, 28),
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				PlaceholderText = "Search...",
+				PlaceholderColor3 = THEME.muted,
+				TextColor3 = THEME.text,
+				Text = filterText or "",
+				ClearTextOnFocus = false,
+				Parent = menu,
+			})
+			corner(searchBox, 6)
+			searchBox.Parent = menu
+			list.Parent = menu
+			list.Position = UDim2.new(0, 6, 0, 40)
+			list.Size = UDim2.new(1, -12, 0, 0)
+		else
+			list.Parent = menu
+		end
+
+		local filter = string.lower(filterText or "")
+		local order = 0
+		for _, option in ipairs(element.Values) do
+			local text = tostring(option)
+			if filter == "" or string.find(string.lower(text), filter, 1, true) then
+				order += 1
+				local item = optionPool[order]
+				if not item then
+					item = new("TextButton", {
+						BackgroundColor3 = THEME.sidebar,
+						BorderSizePixel = 0,
+						Size = UDim2.new(1, 0, 0, 28),
+						Font = Enum.Font.Gotham,
+						TextSize = 13,
+						TextColor3 = THEME.text,
+						AutoButtonColor = false,
+						Text = "",
+					})
+					corner(item, 6)
+					optionPool[order] = item
+				end
+				item.Text = text
+				item.LayoutOrder = order
+				item.Visible = true
+				item.Parent = list
+				item.MouseButton1Click:Connect(function()
+					setSelected(option, true)
+					closeActiveDropdown()
+				end)
+			end
+		end
+		for index = order + 1, #optionPool do
+			if optionPool[index] then
+				optionPool[index].Parent = nil
+			end
+		end
+
+		if searchBox then
+			searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+				renderMenu(searchBox.Text)
+			end)
+		end
+	end
+
+	button.MouseButton1Click:Connect(function()
+		dropdownOpening = true
+		task.defer(function()
+			renderMenu()
+			task.defer(function()
+				dropdownOpening = false
+			end)
+		end)
+	end)
+
+	function element:Set(value)
+		local pick = value
+		if type(value) == "table" then
+			pick = value[1]
+		end
+		setSelected(pick, false)
+	end
+
+	function element:SetValue(value)
+		element:Set(value)
+	end
+
+	function element:Select(value)
+		setSelected(value, true)
+	end
+
+	function element:Refresh(values)
+		element.Values = values or {}
+		options = element.Values
+		if element.Value ~= nil then
+			local found = false
+			for _, option in ipairs(element.Values) do
+				if option == element.Value then
+					found = true
+					break
+				end
+			end
+			if not found then
+				setSelected(element.Values[1], false)
+			end
+		end
+	end
+
+	if props.Flag and not props.Ext then
+		registerFlag(props.Flag, element)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local function buildButton(contentParent, props, scrollFrame)
+	local card, titleLabel, _, _ = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+
+	local button = new("TextButton", {
+		Name = "Action",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		Parent = card,
+	})
+
+	button.MouseEnter:Connect(function()
+		card.BackgroundColor3 = THEME.cardHover
+	end)
+	button.MouseLeave:Connect(function()
+		card.BackgroundColor3 = THEME.card
+	end)
+
+	local element = {}
+	button.MouseButton1Click:Connect(function()
+		safeCallback(props.Callback)
+	end)
+
+	function element:Set(data)
+		if type(data) ~= "table" then
+			return
+		end
+		if data.Name or data.Title then
+			titleLabel.Text = data.Name or data.Title
+		end
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local function buildInput(contentParent, props, scrollFrame)
+	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
+
+	local box = new("TextBox", {
+		Name = "Input",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(1, 0, 0, 30),
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = THEME.text,
+		PlaceholderColor3 = THEME.muted,
+		PlaceholderText = props.PlaceholderText or props.Placeholder or "",
+		Text = props.CurrentValue or props.Value or "",
+		ClearTextOnFocus = false,
+		Parent = right,
+	})
+	corner(box, 6)
+	stroke(box, THEME.stroke, 0.4)
+
+	local element = {
+		CurrentValue = box.Text,
+		Value = box.Text,
+	}
+
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		element.CurrentValue = box.Text
+		element.Value = box.Text
+		safeCallback(props.Callback, box.Text)
+	end)
+
+	function element:GetValue()
+		return box.Text
+	end
+
+	function element:Set(text)
+		box.Text = tostring(text or "")
+		element.CurrentValue = box.Text
+		element.Value = box.Text
+	end
+
+	function element:SetValue(text)
+		element:Set(text)
+	end
+
+	if props.Flag and not props.Ext then
+		registerFlag(props.Flag, element)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local function buildParagraph(contentParent, props, scrollFrame)
+	local frame = new("Frame", {
+		Name = "Paragraph",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = contentParent,
+	})
+	corner(frame, CARD_CORNER)
+	padding(frame, 12, 12, 12, 12)
+
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = props.Title or props.Name or "Paragraph",
+		Parent = frame,
+	})
+
+	local contentLabel = new("TextLabel", {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 22),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = THEME.muted,
+		Text = props.Content or props.Desc or "",
+		Parent = frame,
+	})
+
+	local element = {}
+
+	function element:Set(data)
+		if type(data) ~= "table" then
+			return
+		end
+		if data.Title ~= nil then
+			titleLabel.Text = data.Title
+		end
+		if data.Content ~= nil then
+			contentLabel.Text = data.Content
+		elseif data.Desc ~= nil then
+			contentLabel.Text = data.Desc
+		end
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetTitle(title)
+		titleLabel.Text = title or ""
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetDesc(desc)
+		contentLabel.Text = desc or ""
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	function element:SetValue(data)
+		element:Set(data)
+	end
+
+	scheduleCanvasUpdate(scrollFrame)
+	return element
+end
+
+local function createSection(contentParent, title, scrollFrame)
+	local section = new("Frame", {
+		Name = "Section_" .. (title or "Section"),
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = contentParent,
+	})
+
+	local layout = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = section,
+	})
+
+	local header = new("TextButton", {
+		Name = "Header",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, SECTION_HEADER_HEIGHT),
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = string.upper(title or "Section"),
+		AutoButtonColor = false,
+		LayoutOrder = 1,
+		Parent = section,
+	})
+
+	local accent = new("Frame", {
+		BackgroundColor3 = THEME.accent,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 3, 0, 14),
+		Position = UDim2.new(0, 0, 0.5, -7),
+		Parent = header,
+	})
+	corner(accent, 2)
+	header.Text = "   " .. string.upper(title or "Section")
+
+	local chevron = new("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0, 16, 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = THEME.muted,
+		Text = "›",
+		Parent = header,
+	})
+
+	local body = new("Frame", {
+		Name = "Body",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = true,
+		LayoutOrder = 2,
+		Parent = section,
+	})
+
+	local bodyLayout = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = body,
+	})
+
+	local expanded = true
+	header.MouseButton1Click:Connect(function()
+		expanded = not expanded
+		body.Visible = expanded
+		chevron.Text = expanded and "⌄" or "›"
+		scheduleCanvasUpdate(scrollFrame)
+	end)
+	chevron.Text = "⌄"
+
+	local sectionApi = {
+		_body = body,
+		_scroll = scrollFrame,
+	}
+
+	function sectionApi:CreateToggle(props)
+		return buildToggle(body, props, scrollFrame)
+	end
+	sectionApi.Toggle = sectionApi.CreateToggle
+
+	function sectionApi:CreateSlider(props)
+		return buildSlider(body, props, scrollFrame)
+	end
+	sectionApi.Slider = sectionApi.CreateSlider
+
+	function sectionApi:CreateDropdown(props)
+		return buildDropdown(body, props, scrollFrame)
+	end
+	sectionApi.Dropdown = sectionApi.CreateDropdown
+
+	function sectionApi:CreateButton(props)
+		return buildButton(body, props, scrollFrame)
+	end
+	sectionApi.Button = sectionApi.CreateButton
+
+	function sectionApi:CreateInput(props)
+		return buildInput(body, props, scrollFrame)
+	end
+	sectionApi.Input = sectionApi.CreateInput
+
+	function sectionApi:CreateParagraph(props)
+		return buildParagraph(body, props, scrollFrame)
+	end
+	sectionApi.Paragraph = sectionApi.CreateParagraph
+
+	bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scheduleCanvasUpdate(scrollFrame)
+	end)
+
+	scheduleCanvasUpdate(scrollFrame)
+	return sectionApi
+end
+
+local function createTabApi(tabFrame, scrollFrame, contentTitle)
+	local contentParent = scrollFrame
+	local currentSectionBody = scrollFrame
+
+	local function targetParent()
+		return currentSectionBody
+	end
+
+	local tab = {
+		_frame = tabFrame,
+		_scroll = scrollFrame,
+	}
+
+	function tab:CreateSection(title)
+		local section = createSection(scrollFrame, title, scrollFrame)
+		currentSectionBody = section._body
+		return section
+	end
+
+	function tab:Section(props)
+		props = props or {}
+		return tab:CreateSection(props.Title or props.Name or "Section")
+	end
+
+	function tab:CreateToggle(props)
+		return buildToggle(targetParent(), props, scrollFrame)
+	end
+	tab.Toggle = tab.CreateToggle
+
+	function tab:CreateSlider(props)
+		return buildSlider(targetParent(), props, scrollFrame)
+	end
+	tab.Slider = tab.CreateSlider
+
+	function tab:CreateDropdown(props)
+		return buildDropdown(targetParent(), props, scrollFrame)
+	end
+	tab.Dropdown = tab.CreateDropdown
+
+	function tab:CreateButton(props)
+		return buildButton(targetParent(), props, scrollFrame)
+	end
+	tab.Button = tab.CreateButton
+
+	function tab:CreateInput(props)
+		return buildInput(targetParent(), props, scrollFrame)
+	end
+	tab.Input = tab.CreateInput
+
+	function tab:CreateParagraph(props)
+		return buildParagraph(targetParent(), props, scrollFrame)
+	end
+	tab.Paragraph = tab.CreateParagraph
+
+	function tab:CreateImage(props)
+		return buildParagraph(targetParent(), {
+			Title = props.Title or props.Name or "Image",
+			Content = props.Image or "",
+		}, scrollFrame)
+	end
+	tab.Image = tab.CreateImage
+
+	if contentTitle then
+		tab._titleLabel = contentTitle
+	end
+
+	return tab
+end
+
+local function createSidebarButton(sidebarList, windowState, tabData)
+	local button = new("TextButton", {
+		Name = "Tab_" .. tabData.id,
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 36),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = "   " .. tabData.title,
+		AutoButtonColor = false,
+		LayoutOrder = tabData.order,
+		Parent = sidebarList,
+	})
+	corner(button, 8)
+
+	local indicator = new("Frame", {
+		Name = "Indicator",
+		BackgroundColor3 = THEME.accent,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 3, 0, 18),
+		Position = UDim2.new(0, 4, 0.5, -9),
+		Visible = false,
+		Parent = button,
+	})
+	corner(indicator, 2)
+
+	local function setSelected(selected)
+		button.BackgroundColor3 = selected and THEME.card or THEME.sidebar
+		button.TextColor3 = selected and THEME.text or THEME.muted
+		indicator.Visible = selected
+		tabData.frame.Visible = selected
+	end
+
+	button.MouseButton1Click:Connect(function()
+		windowState.selectTab(tabData.id)
+	end)
+
+	return setSelected
+end
+
+function SempatLibrary:CreateWindow(settings)
+	settings = settings or {}
+	local parent = settings.Parent or getGuiParent()
+	ensureOverlayGuis(parent)
+
+	local title = settings.Name or settings.Title or "Sempat UI"
+	local subtitle = settings.LoadingSubtitle or settings.SubTitle or "SempatUI • Dev Version"
+	local folderName = settings.Folder
+		or (settings.ConfigurationSaving and settings.ConfigurationSaving.FolderName)
+		or "SempatUI"
+	local isMobile = isMobileDevice()
+
+	local screenGui = new("ScreenGui", {
+		Name = "SempatUI",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = 500,
+		Parent = parent,
+	})
+	protect(screenGui)
+
+	local root = new("Frame", {
+		Name = "Window",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0, WINDOW_SIZE.X, 0, WINDOW_SIZE.Y),
+		BackgroundColor3 = THEME.window,
+		BorderSizePixel = 0,
+		Parent = screenGui,
+	})
+	corner(root, CORNER)
+	stroke(root, THEME.stroke, 0.25)
+
+	local sidebar = new("Frame", {
+		Name = "Sidebar",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0),
+		Parent = root,
+	})
+	corner(sidebar, CORNER)
+
+	local sidebarCover = new("Frame", {
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -CORNER, 0, 0),
+		Size = UDim2.new(0, CORNER, 1, 0),
+		Parent = sidebar,
+	})
+
+	padding(sidebar, 16, 16, 14, 14)
+
+	local brandRow = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 48),
+		Parent = sidebar,
+	})
+
+	local logo = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 28, 0, 28),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		TextColor3 = THEME.accent,
+		Text = "L",
+		Parent = brandRow,
+	})
+
+	local titleLabel = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 34, 0, 2),
+		Size = UDim2.new(1, -34, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = title,
+		Parent = brandRow,
+	})
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 34, 0, 22),
+		Size = UDim2.new(1, -34, 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.accent,
+		Text = subtitle,
+		Parent = brandRow,
+	})
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 58),
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = "MENU",
+		Parent = sidebar,
+	})
+
+	local tabList = new("Frame", {
+		Name = "TabList",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 78),
+		Size = UDim2.new(1, 0, 1, -150),
+		Parent = sidebar,
+	})
+
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Parent = tabList,
+	})
+
+	local profileCard = new("Frame", {
+		Name = "Profile",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, 54),
+		Parent = sidebar,
+	})
+	corner(profileCard, 10)
+
+	local avatar = new("ImageLabel", {
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 10, 0.5, -16),
+		Size = UDim2.new(0, 32, 0, 32),
+		Parent = profileCard,
+	})
+	corner(avatar, 16)
+
+	local displayName = "Anonymous"
+	local userName = "@anonymous"
+	if LocalPlayer then
+		displayName = LocalPlayer.DisplayName
+		userName = "@" .. LocalPlayer.Name
+		task.spawn(function()
+			local ok, content = pcall(function()
+				return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+			end)
+			if ok then
+				avatar.Image = content
+			end
+		end)
+	end
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 50, 0, 10),
+		Size = UDim2.new(1, -58, 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = displayName,
+		Parent = profileCard,
+	})
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 50, 0, 28),
+		Size = UDim2.new(1, -58, 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = userName,
+		Parent = profileCard,
+	})
+
+	local content = new("Frame", {
+		Name = "Content",
+		BackgroundColor3 = THEME.content,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, SIDEBAR_WIDTH, 0, 0),
+		Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, 0),
+		Parent = root,
+	})
+	corner(content, CORNER)
+
+	local contentCover = new("Frame", {
+		BackgroundColor3 = THEME.content,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, CORNER, 1, 0),
+		Parent = content,
+	})
+
+	local topBar = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 52),
+		Parent = content,
+	})
+
+	local pageTitle = new("TextLabel", {
+		Name = "PageTitle",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 20, 0, 14),
+		Size = UDim2.new(1, -100, 0, 28),
+		Font = Enum.Font.GothamBold,
+		TextSize = 24,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = title,
+		Parent = topBar,
+	})
+
+	local function windowButton(text, xOffset, onClick)
+		local btn = new("TextButton", {
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, xOffset, 0, 12),
+			Size = UDim2.new(0, 28, 0, 28),
+			Font = Enum.Font.GothamBold,
+			TextSize = 18,
+			TextColor3 = THEME.muted,
+			Text = text,
+			AutoButtonColor = false,
+			Parent = topBar,
+		})
+		btn.MouseButton1Click:Connect(onClick)
+		return btn
+	end
+
+	local function resolveToggleKeyCode(keybindSetting)
+		local keyName = "K"
+		if keybindSetting ~= nil then
+			if type(keybindSetting) == "string" then
+				keyName = string.upper(keybindSetting)
+			elseif typeof(keybindSetting) == "EnumItem" and keybindSetting.EnumType == Enum.KeyCode then
+				keyName = keybindSetting.Name
+			end
+		end
+		return Enum.KeyCode[keyName]
+	end
+
+	local toggleKeyCode = resolveToggleKeyCode(settings.ToggleUIKeybind)
+	local windowVisible = true
+
+	local function setWindowVisible(isVisible)
+		windowVisible = isVisible == true
+		if isMobile then
+			screenGui.Enabled = true
+			root.Visible = windowVisible
+			mobileFab.Visible = not windowVisible
+		else
+			mobileFab.Visible = false
+			root.Visible = true
+			screenGui.Enabled = windowVisible
+		end
+	end
+
+	local function toggleWindowVisible()
+		setWindowVisible(not windowVisible)
+	end
+
+	local mobileFab = createMobileFab(screenGui, settings, title, function()
+		setWindowVisible(true)
+	end)
+	mobileFab.Visible = false
+
+	windowButton("—", -44, toggleWindowVisible)
+
+	windowButton("×", -12, function()
+		setWindowVisible(false)
+	end)
+
+	local pages = new("Frame", {
+		Name = "Pages",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 52),
+		Size = UDim2.new(1, 0, 1, -52),
+		Parent = content,
+	})
+
+	local window = {
+		_screenGui = screenGui,
+		_root = root,
+		_pages = pages,
+		_tabs = {},
+		_tabOrder = 0,
+		_selected = nil,
+		_setSelected = nil,
+		Folder = folderName,
+		ConfigManager = nil,
+	}
+
+	local function selectTab(tabId)
+		for id, tabInfo in pairs(window._tabs) do
+			tabInfo.setSelected(id == tabId)
+			if id == tabId then
+				pageTitle.Text = tabInfo.title
+			end
+		end
+		window._selected = tabId
+	end
+	window.selectTab = selectTab
+
+	function window:CreateTab(tabTitle, _iconId)
+		self._tabOrder += 1
+		local tabId = "tab_" .. self._tabOrder
+
+		local page = new("Frame", {
+			Name = tabId,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Visible = false,
+			Parent = pages,
+		})
+
+		local scroll = new("ScrollingFrame", {
+			Name = "Scroll",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, -10, 1, 0),
+			Position = UDim2.new(0, 0, 0, 0),
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = THEME.accent,
+			CanvasSize = UDim2.new(),
+			Parent = page,
+		})
+		padding(scroll, 0, 16, 20, 16)
+
+		local list = new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 10),
+			Parent = scroll,
+		})
+
+		list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			scheduleCanvasUpdate(scroll)
+		end)
+
+		local setSelected = createSidebarButton(tabList, window, {
+			id = tabId,
+			title = tabTitle or "Tab",
+			order = self._tabOrder,
+			frame = page,
+		})
+
+		local tabApi = createTabApi(page, scroll, pageTitle)
+		tabApi._title = tabTitle
+
+		self._tabs[tabId] = {
+			id = tabId,
+			title = tabTitle or "Tab",
+			frame = page,
+			api = tabApi,
+			setSelected = setSelected,
+		}
+
+		if not self._selected then
+			selectTab(tabId)
+		end
+
+		return tabApi
+	end
+
+	function window:Tab(props)
+		props = props or {}
+		return self:CreateTab(props.Title or props.Name or "Tab", props.Icon)
+	end
+
+	function window:SetCurrentConfig(_cfg)
+		return nil
+	end
+
+	function window:Toggle(state)
+		if state == nil then
+			toggleWindowVisible()
+			return windowVisible
+		end
+		setWindowVisible(state ~= false)
+		return windowVisible
+	end
+
+	function window:IsOpen()
+		return windowVisible
+	end
+
+	function window:Destroy()
+		screenGui:Destroy()
+	end
+
+	-- Simple config manager stub for WindUI config tab compatibility.
+	if folderName and writefile and makefolder and isfolder then
+		local configManager = {
+			_folder = folderName,
+			_path = folderName,
+		}
+
+		function configManager:Save(name, data)
+			if type(name) ~= "string" or type(data) ~= "table" then
+				return false
+			end
+			pcall(function()
+				if not isfolder(folderName) then
+					makefolder(folderName)
+				end
+				local fileName = folderName .. "/" .. name .. ".json"
+				writefile(fileName, HttpService:JSONEncode(data))
+			end)
+			return true
+		end
+
+		function configManager:Load(name)
+			if type(name) ~= "string" then
+				return nil
+			end
+			local ok, data = pcall(function()
+				local fileName = folderName .. "/" .. name .. ".json"
+				if isfile and isfile(fileName) and readfile then
+					return HttpService:JSONDecode(readfile(fileName))
+				end
+				return nil
+			end)
+			if ok then
+				return data
+			end
+			return nil
+		end
+
+		function configManager:Delete(name)
+			if delfile and isfile then
+				local fileName = folderName .. "/" .. name .. ".json"
+				if isfile(fileName) then
+					pcall(delfile, fileName)
+				end
+			end
+		end
+
+		function configManager:AllConfigs()
+			if listfiles and isfolder and isfolder(folderName) then
+				local files = {}
+				for _, path in ipairs(listfiles(folderName)) do
+					local name = string.match(path, "([^/\\]+)%.json$")
+					if name then
+						table.insert(files, name)
+					end
+				end
+				return files
+			end
+			return {}
+		end
+
+		window.ConfigManager = configManager
+	end
+
+	if toggleKeyCode and not isMobile then
+		UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then
+				return
+			end
+			if input.UserInputType ~= Enum.UserInputType.Keyboard then
+				return
+			end
+			if input.KeyCode == toggleKeyCode then
+				toggleWindowVisible()
+			end
+		end)
+	end
+
+	-- Drag support
+	local dragging = false
+	local dragStart
+	local startPos
+
+	topBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			dragStart = input.Position
+			startPos = root.Position
+		end
+	end)
+
+	topBar.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+			root.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	return window
+end
+
+return SempatLibrary
