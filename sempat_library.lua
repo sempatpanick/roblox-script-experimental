@@ -184,6 +184,31 @@ local CHEVRON_DOWN_ROTATION = 90
 local CHEVRON_RIGHT_ROTATION = 0
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
+local FAB_DRAG_THRESHOLD = 8
+local FAB_EDGE_INSET = 18
+
+local function getDefaultFabPosition(parent)
+	local parentSize = parent and parent.AbsoluteSize or Vector2.new(800, 600)
+	return UDim2.fromOffset(
+		parentSize.X - FAB_EDGE_INSET - MOBILE_FAB_SIZE / 2,
+		parentSize.Y - FAB_EDGE_INSET - MOBILE_FAB_SIZE / 2
+	)
+end
+
+local function clampFabPosition(parent, position)
+	local parentSize = parent.AbsoluteSize
+	local half = MOBILE_FAB_SIZE / 2
+	local x = math.clamp(position.X.Offset, half, math.max(half, parentSize.X - half))
+	local y = math.clamp(position.Y.Offset, half, math.max(half, parentSize.Y - half))
+	return UDim2.fromOffset(x, y)
+end
+
+local function fabPositionFromData(data)
+	if type(data) ~= "table" or type(data.x) ~= "number" or type(data.y) ~= "number" then
+		return nil
+	end
+	return UDim2.fromOffset(data.x, data.y)
+end
 
 local layoutQueue = {}
 local layoutScheduled = false
@@ -301,13 +326,14 @@ local function resolveWindowIcon(settings, title)
 	return getWindowInitial(title), "text"
 end
 
-local function createMobileFab(screenGui, settings, title, onOpen)
+local function createMobileFab(screenGui, settings, title, onOpen, options)
+	options = options or {}
 	local iconValue, iconKind = resolveWindowIcon(settings, title)
 
 	local fab = new("TextButton", {
 		Name = "MobileFab",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -18, 1, -18),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = options.initialPosition or getDefaultFabPosition(screenGui),
 		Size = UDim2.new(0, MOBILE_FAB_SIZE, 0, MOBILE_FAB_SIZE),
 		BackgroundColor3 = THEME.card,
 		BorderSizePixel = 0,
@@ -344,7 +370,91 @@ local function createMobileFab(screenGui, settings, title, onOpen)
 		})
 	end
 
-	fab.Activated:Connect(onOpen)
+	local function setFabPosition(position)
+		if typeof(position) ~= "UDim2" then
+			return
+		end
+		fab.Position = clampFabPosition(screenGui, position)
+	end
+
+	task.defer(function()
+		if fab.Parent then
+			setFabPosition(options.initialPosition or getDefaultFabPosition(screenGui))
+		end
+	end)
+
+	local dragging = false
+	local dragStart
+	local startPos
+	local didDrag = false
+
+	fab.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		dragging = true
+		didDrag = false
+		dragStart = input.Position
+		startPos = fab.Position
+	end)
+
+	local function endFabDrag(input)
+		if not dragging then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		dragging = false
+		if didDrag then
+			if type(options.onPositionChanged) == "function" then
+				options.onPositionChanged(fab.Position)
+			end
+		else
+			onOpen()
+		end
+	end
+
+	UserInputService.InputEnded:Connect(endFabDrag)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		local delta = input.Position - dragStart
+		if not didDrag and delta.Magnitude > FAB_DRAG_THRESHOLD then
+			didDrag = true
+		end
+		if didDrag then
+			setFabPosition(UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			))
+		end
+	end)
+
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if fab.Parent and fab.Visible then
+			setFabPosition(fab.Position)
+		end
+	end)
+
+	function fab:SetFabPosition(position)
+		setFabPosition(position)
+	end
+
+	function fab:GetFabPosition()
+		return fab.Position
+	end
+
 	return fab
 end
 
@@ -2400,6 +2510,7 @@ function SempatLibrary:CreateWindow(settings)
 	local rememberPosition = defaultRememberPosition
 	local defaultShowMobileFab = true
 	local showMobileFab = defaultShowMobileFab
+	local initialFabPosition = nil
 	local CENTER_WINDOW_POSITION = UDim2.fromScale(0.5, 0.5)
 
 	local function applyWindowScale(scalePercent)
@@ -2483,6 +2594,12 @@ function SempatLibrary:CreateWindow(settings)
 					yOffset = root.Position.Y.Offset,
 				}
 			end
+			if mobileFab then
+				payload.fabPosition = {
+					x = mobileFab.Position.X.Offset,
+					y = mobileFab.Position.Y.Offset,
+				}
+			end
 			writefile(folderName .. "/ui_settings.json", HttpService:JSONEncode(payload))
 		end)
 	end
@@ -2531,6 +2648,7 @@ function SempatLibrary:CreateWindow(settings)
 		if type(decoded.showMobileFab) == "boolean" then
 			showMobileFab = decoded.showMobileFab
 		end
+		initialFabPosition = fabPositionFromData(decoded.fabPosition)
 	end
 
 	loadUiSettings()
@@ -2573,7 +2691,12 @@ function SempatLibrary:CreateWindow(settings)
 
 	mobileFab = createMobileFab(screenGui, settings, title, function()
 		setWindowVisible(true)
-	end)
+	end, {
+		initialPosition = initialFabPosition,
+		onPositionChanged = function()
+			persistUiSettings()
+		end,
+	})
 	mobileFab.Visible = false
 
 	local mobileFabStroke = mobileFab:FindFirstChildOfClass("UIStroke")
@@ -2664,6 +2787,9 @@ function SempatLibrary:CreateWindow(settings)
 		rememberPosition = defaultRememberPosition
 		showMobileFab = defaultShowMobileFab
 		root.Position = CENTER_WINDOW_POSITION
+		if mobileFab and mobileFab.SetFabPosition then
+			mobileFab:SetFabPosition(getDefaultFabPosition(screenGui))
+		end
 		setWindowVisible(windowVisible)
 		persistUiSettings()
 	end
