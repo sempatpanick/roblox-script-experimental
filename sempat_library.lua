@@ -54,7 +54,15 @@ local THEME = {
 	sliderTrack = Color3.fromRGB(40, 42, 52),
 	sliderFill = Color3.fromRGB(102, 224, 163),
 	danger = Color3.fromRGB(180, 70, 70),
+	dropdownMenu = Color3.fromRGB(24, 26, 34),
+	dropdownSearch = Color3.fromRGB(32, 34, 44),
+	dropdownItemHover = Color3.fromRGB(44, 46, 58),
 }
+
+local DROPDOWN_MENU_CORNER = 12
+local DROPDOWN_ITEM_HEIGHT = 34
+local DROPDOWN_SEARCH_HEIGHT = 36
+local DROPDOWN_MAX_HEIGHT = 240
 
 local ELEMENT_HEIGHT = 52
 local SECTION_HEADER_HEIGHT = 36
@@ -639,14 +647,32 @@ local function closeActiveDropdown()
 	end
 end
 
-UserInputService.InputBegan:Connect(function(input)
-	if dropdownOpening then
-		return
-	end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		closeActiveDropdown()
-	end
-end)
+local function createDropdownOptionButton()
+	local item = new("TextButton", {
+		Name = "Option",
+		BackgroundTransparency = 1,
+		BackgroundColor3 = THEME.dropdownItemHover,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, DROPDOWN_ITEM_HEIGHT),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextColor3 = THEME.text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		AutoButtonColor = false,
+		Text = "",
+	})
+	corner(item, 8)
+	padding(item, 0, 0, 12, 12)
+
+	item.MouseEnter:Connect(function()
+		item.BackgroundTransparency = 0
+	end)
+	item.MouseLeave:Connect(function()
+		item.BackgroundTransparency = 1
+	end)
+
+	return item
+end
 
 local function buildDropdown(contentParent, props, scrollFrame)
 	local options = props.Options or props.Values or {}
@@ -668,20 +694,34 @@ local function buildDropdown(contentParent, props, scrollFrame)
 
 	local button = new("TextButton", {
 		Name = "DropdownButton",
-		BackgroundColor3 = THEME.sidebar,
+		BackgroundColor3 = THEME.dropdownSearch,
 		BorderSizePixel = 0,
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.new(1, 0, 0, 30),
-		Font = Enum.Font.Gotham,
+		Size = UDim2.new(1, 0, 0, 32),
+		Font = Enum.Font.GothamMedium,
 		TextSize = 13,
 		TextColor3 = THEME.text,
-		Text = tostring(selected or "Select"),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "  " .. tostring(selected or "Select"),
 		AutoButtonColor = false,
 		Parent = right,
 	})
-	corner(button, 6)
-	stroke(button, THEME.stroke, 0.4)
+	corner(button, 8)
+	stroke(button, THEME.stroke, 0.45)
+
+	new("TextLabel", {
+		Name = "Chevron",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.new(0, 12, 0, 12),
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = THEME.muted,
+		Text = "⌄",
+		Parent = button,
+	})
 
 	local element = {
 		Value = selected,
@@ -689,10 +729,14 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	}
 
 	local optionPool = {}
+	local menuList
+	local menuScroll
+	local menuSearchBox
+	local menuWidth = math.max(200, 220)
 
 	local function setSelected(value, fireCallback)
 		element.Value = value
-		button.Text = tostring(value or "Select")
+		button.Text = "  " .. tostring(value or "Select")
 		if fireCallback then
 			if props.Multi then
 				safeCallback(props.Callback, { value })
@@ -702,107 +746,198 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		end
 	end
 
-	local function renderMenu(filterText)
-		closeActiveDropdown()
-		ensureOverlayGuis(getGuiParent())
-
-		local menu = new("Frame", {
-			Name = "DropdownMenu",
-			BackgroundColor3 = THEME.card,
-			BorderSizePixel = 0,
-			Position = UDim2.fromOffset(button.AbsolutePosition.X, button.AbsolutePosition.Y + button.AbsoluteSize.Y + 4),
-			Size = UDim2.new(0, math.max(button.AbsoluteSize.X, 180), 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Parent = DropdownGui,
-		})
-		corner(menu, 8)
-		stroke(menu, THEME.stroke, 0.25)
-		padding(menu, 6, 6, 6, 6)
-		activeDropdown = menu
-
-		local list = new("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Parent = menu,
-		})
-
-		local layout = new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 4),
-			Parent = list,
-		})
-
-		local searchBox
-		if props.Search == true or props.SearchBarEnabled == true then
-			searchBox = new("TextBox", {
-				BackgroundColor3 = THEME.sidebar,
-				BorderSizePixel = 0,
-				Size = UDim2.new(1, 0, 0, 28),
-				Font = Enum.Font.Gotham,
-				TextSize = 13,
-				PlaceholderText = "Search...",
-				PlaceholderColor3 = THEME.muted,
-				TextColor3 = THEME.text,
-				Text = filterText or "",
-				ClearTextOnFocus = false,
-				Parent = menu,
-			})
-			corner(searchBox, 6)
-			searchBox.Parent = menu
-			list.Parent = menu
-			list.Position = UDim2.new(0, 6, 0, 40)
-			list.Size = UDim2.new(1, -12, 0, 0)
-		else
-			list.Parent = menu
+	local function populateOptions(filterText)
+		if not menuList then
+			return
 		end
 
 		local filter = string.lower(filterText or "")
 		local order = 0
+
 		for _, option in ipairs(element.Values) do
 			local text = tostring(option)
 			if filter == "" or string.find(string.lower(text), filter, 1, true) then
 				order += 1
 				local item = optionPool[order]
 				if not item then
-					item = new("TextButton", {
-						BackgroundColor3 = THEME.sidebar,
-						BorderSizePixel = 0,
-						Size = UDim2.new(1, 0, 0, 28),
-						Font = Enum.Font.Gotham,
-						TextSize = 13,
-						TextColor3 = THEME.text,
-						AutoButtonColor = false,
-						Text = "",
-					})
-					corner(item, 6)
+					item = createDropdownOptionButton()
+					item.Parent = menuList
+					item.Activated:Connect(function()
+						local value = item:GetAttribute("OptionValue")
+						if value ~= nil then
+							setSelected(value, true)
+							closeActiveDropdown()
+						end
+					end)
 					optionPool[order] = item
 				end
-				item.Text = text
+				item:SetAttribute("OptionValue", option)
+				item.Text = "  " .. text
 				item.LayoutOrder = order
 				item.Visible = true
-				item.Parent = list
-				item.MouseButton1Click:Connect(function()
-					setSelected(option, true)
-					closeActiveDropdown()
-				end)
-			end
-		end
-		for index = order + 1, #optionPool do
-			if optionPool[index] then
-				optionPool[index].Parent = nil
+				item.BackgroundTransparency = 1
 			end
 		end
 
-		if searchBox then
-			searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-				renderMenu(searchBox.Text)
+		for index = order + 1, #optionPool do
+			local pooled = optionPool[index]
+			if pooled then
+				pooled.Visible = false
+			end
+		end
+
+		if menuScroll then
+			task.defer(function()
+				if menuList and menuList.Parent then
+					local layout = menuList:FindFirstChildOfClass("UIListLayout")
+					if layout then
+						local contentHeight = layout.AbsoluteContentSize.Y
+						menuScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
+						menuScroll.Size = UDim2.new(
+							1,
+							0,
+							0,
+							math.min(contentHeight, DROPDOWN_MAX_HEIGHT)
+						)
+					end
+				end
 			end)
 		end
 	end
 
-	button.MouseButton1Click:Connect(function()
+	local function renderMenu(filterText)
+		closeActiveDropdown()
+		table.clear(optionPool)
+		ensureOverlayGuis(getGuiParent())
+
+		menuWidth = math.max(button.AbsoluteSize.X, 220)
+		local menuHeight = DROPDOWN_SEARCH_HEIGHT + 8
+
+		local overlay = new("Frame", {
+			Name = "DropdownOverlay",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1,
+			Parent = DropdownGui,
+		})
+		activeDropdown = overlay
+
+		local backdrop = new("TextButton", {
+			Name = "Backdrop",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 1,
+			Parent = overlay,
+		})
+		backdrop.Activated:Connect(closeActiveDropdown)
+
+		local menu = new("Frame", {
+			Name = "DropdownMenu",
+			BackgroundColor3 = THEME.dropdownMenu,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(
+				button.AbsolutePosition.X,
+				button.AbsolutePosition.Y + button.AbsoluteSize.Y + 6
+			),
+			Size = UDim2.new(0, menuWidth, 0, menuHeight),
+			ClipsDescendants = true,
+			ZIndex = 2,
+			Parent = overlay,
+		})
+		corner(menu, DROPDOWN_MENU_CORNER)
+		stroke(menu, THEME.stroke, 0.3)
+		padding(menu, 8, 8, 8, 8)
+
+		local menuLayout = new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 6),
+			Parent = menu,
+		})
+
+		local searchEnabled = props.Search == true or props.SearchBarEnabled == true
+		if searchEnabled then
+			menuSearchBox = new("TextBox", {
+				Name = "SearchBox",
+				BackgroundColor3 = THEME.dropdownSearch,
+				BorderSizePixel = 0,
+				Size = UDim2.new(1, 0, 0, DROPDOWN_SEARCH_HEIGHT),
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				PlaceholderText = "Search...",
+				PlaceholderColor3 = THEME.muted,
+				TextColor3 = THEME.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = filterText or "",
+				ClearTextOnFocus = false,
+				LayoutOrder = 1,
+				Parent = menu,
+			})
+			corner(menuSearchBox, 8)
+			stroke(menuSearchBox, THEME.stroke, 0.55)
+			padding(menuSearchBox, 0, 0, 12, 12)
+		end
+
+		menuScroll = new("ScrollingFrame", {
+			Name = "OptionsScroll",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 0),
+			CanvasSize = UDim2.new(),
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = THEME.accent,
+			AutomaticCanvasSize = Enum.AutomaticSize.None,
+			LayoutOrder = 2,
+			Parent = menu,
+		})
+
+		menuList = new("Frame", {
+			Name = "OptionsList",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Parent = menuScroll,
+		})
+
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 2),
+			Parent = menuList,
+		})
+
+		populateOptions(filterText)
+
+		local function syncMenuSize()
+			local pad = menu:FindFirstChildOfClass("UIPadding")
+			local padY = 16
+			if pad then
+				padY = pad.PaddingTop.Offset + pad.PaddingBottom.Offset
+			end
+			local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 6) or 0
+			local listH = menuScroll.Size.Y.Offset
+			menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + listH)
+		end
+
+		menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncMenuSize)
+		menuScroll:GetPropertyChangedSignal("Size"):Connect(syncMenuSize)
+		syncMenuSize()
+
+		if menuSearchBox then
+			menuSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+				populateOptions(menuSearchBox.Text)
+			end)
+			task.defer(function()
+				if menuSearchBox and menuSearchBox.Parent then
+					menuSearchBox:CaptureFocus()
+				end
+			end)
+		end
+	end
+
+	button.Activated:Connect(function()
 		dropdownOpening = true
 		task.defer(function()
 			renderMenu()
