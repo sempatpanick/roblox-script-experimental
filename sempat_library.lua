@@ -400,6 +400,8 @@ local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 local WINDOW_LOGO_SIZE = 28
 local FAB_LOGO_SIZE = 30
+local HEADER_TEXT_LEFT = 34
+local HEADER_TEXT_STACK_HEIGHT = 34
 local FAB_DRAG_THRESHOLD = 8
 local FAB_EDGE_INSET = 18
 
@@ -536,6 +538,34 @@ local function isCustomAssetUrl(value)
 			or string.find(value, "rbxthumb://", 1, true) == 1)
 end
 
+local function fetchHttp(url)
+	if type(game) == "table" and type(game.HttpGet) == "function" then
+		return game:HttpGet(url)
+	end
+	if game.HttpGetAsync then
+		return game:HttpGetAsync(url)
+	end
+	if type(request) == "function" then
+		local response = request({
+			Url = url,
+			Method = "GET",
+		})
+		if type(response) == "table" then
+			return response.Body
+		end
+	end
+	if type(syn) == "table" and type(syn.request) == "function" then
+		local response = syn.request({
+			Url = url,
+			Method = "GET",
+		})
+		if type(response) == "table" then
+			return response.Body
+		end
+	end
+	return HttpService:GetAsync(url)
+end
+
 local function loadIconsLibrary()
 	if iconsLibrary then
 		return iconsLibrary
@@ -551,15 +581,7 @@ local function loadIconsLibrary()
 	end
 
 	local source
-	local okFetch, fetched = pcall(function()
-		if type(game) == "table" and type(game.HttpGet) == "function" then
-			return game:HttpGet(ICONS_PACK_URL)
-		end
-		if game.HttpGetAsync then
-			return game:HttpGetAsync(ICONS_PACK_URL)
-		end
-		return HttpService:GetAsync(ICONS_PACK_URL)
-	end)
+	local okFetch, fetched = pcall(fetchHttp, ICONS_PACK_URL)
 	if okFetch and type(fetched) == "string" and #fetched > 8 then
 		source = fetched
 	else
@@ -659,6 +681,28 @@ local function applyIconSpecToImage(imageLabel, spec)
 	return true
 end
 
+local function createIconImage(parent, spec, options)
+	options = options or {}
+	if not spec or type(spec.image) ~= "string" or spec.image == "" then
+		return nil
+	end
+	local size = options.size
+	local label = new("ImageLabel", {
+		Name = options.name or "Icon",
+		BackgroundTransparency = 1,
+		AnchorPoint = options.anchorPoint or Vector2.new(0.5, 0.5),
+		Position = options.position or UDim2.fromScale(0.5, 0.5),
+		Size = size and (typeof(size) == "number" and UDim2.fromOffset(size, size) or size)
+			or UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = options.color or THEME.muted,
+		ZIndex = options.zIndex or 1,
+		Parent = parent,
+	})
+	applyIconSpecToImage(label, spec)
+	return label
+end
+
 local function createLucideImage(parent, iconName, options)
 	options = options or {}
 	local size = options.size or CHROME_ICON_SIZE
@@ -707,6 +751,7 @@ local function createLucideImage(parent, iconName, options)
 end
 
 local logoDownloadCache = {}
+local logoDownloadInflight = {}
 
 local function isHttpUrl(value)
 	return type(value) == "string" and string.find(value, "^https?://") ~= nil
@@ -760,31 +805,7 @@ local function ensureLogoCacheFolder(folderName)
 end
 
 local function httpGetBody(url)
-	if type(game) == "table" and type(game.HttpGet) == "function" then
-		return game:HttpGet(url)
-	end
-	if game.HttpGetAsync then
-		return game:HttpGetAsync(url)
-	end
-	if type(request) == "function" then
-		local response = request({
-			Url = url,
-			Method = "GET",
-		})
-		if type(response) == "table" then
-			return response.Body
-		end
-	end
-	if type(syn) == "table" and type(syn.request) == "function" then
-		local response = syn.request({
-			Url = url,
-			Method = "GET",
-		})
-		if type(response) == "table" then
-			return response.Body
-		end
-	end
-	return HttpService:GetAsync(url)
+	return fetchHttp(url)
 end
 
 local function downloadLogoFromUrl(url, folderName)
@@ -795,35 +816,48 @@ local function downloadLogoFromUrl(url, folderName)
 	if logoDownloadCache[cacheKey] then
 		return logoDownloadCache[cacheKey]
 	end
+	if logoDownloadInflight[cacheKey] then
+		while logoDownloadInflight[cacheKey] and not logoDownloadCache[cacheKey] do
+			task.wait()
+		end
+		return logoDownloadCache[cacheKey]
+	end
+
+	logoDownloadInflight[cacheKey] = true
+	local assetResult
 
 	local filePath = getLogoCachePath(url, folderName)
 	if getcustomasset and isfile and isfile(filePath) then
 		local okAsset, cachedAsset = pcall(getcustomasset, filePath)
 		if okAsset and type(cachedAsset) == "string" and cachedAsset ~= "" then
-			logoDownloadCache[cacheKey] = cachedAsset
-			return cachedAsset
+			assetResult = cachedAsset
 		end
 	end
 
-	local okFetch, body = pcall(httpGetBody, url)
-	if not okFetch or type(body) ~= "string" or #body < 16 then
-		warn("[SempatUI] Failed to download logo from URL:", url)
-		return nil
-	end
-
-	if writefile and ensureLogoCacheFolder(folderName) then
-		local okWrite = pcall(writefile, filePath, body)
-		if okWrite and getcustomasset then
-			local okAsset, asset = pcall(getcustomasset, filePath)
-			if okAsset and type(asset) == "string" and asset ~= "" then
-				logoDownloadCache[cacheKey] = asset
-				return asset
+	if not assetResult then
+		local okFetch, body = pcall(httpGetBody, url)
+		if okFetch and type(body) == "string" and #body >= 16 then
+			if writefile and ensureLogoCacheFolder(folderName) then
+				local okWrite = pcall(writefile, filePath, body)
+				if okWrite and getcustomasset then
+					local okAsset, asset = pcall(getcustomasset, filePath)
+					if okAsset and type(asset) == "string" and asset ~= "" then
+						assetResult = asset
+					end
+				end
+			else
+				warn("[SempatUI] Logo URL requires writefile/getcustomasset support in this executor")
 			end
+		else
+			warn("[SempatUI] Failed to download logo from URL:", url)
 		end
 	end
 
-	warn("[SempatUI] Logo URL requires writefile/getcustomasset support in this executor")
-	return nil
+	if assetResult then
+		logoDownloadCache[cacheKey] = assetResult
+	end
+	logoDownloadInflight[cacheKey] = nil
+	return assetResult
 end
 
 local function resolveWindowLogo(settings, title)
@@ -1957,8 +1991,7 @@ local function formatMultiDropdownText(selectedList)
 	return "Various"
 end
 
-local function buildDropdown(contentParent, props, scrollFrame)
-	local options = props.Options or props.Values or {}
+local function parseDropdownSelection(props, options)
 	local isMulti = isDropdownMulti(props)
 	local selectedList = {}
 	local selected
@@ -1989,6 +2022,243 @@ local function buildDropdown(contentParent, props, scrollFrame)
 			selected = options[1]
 		end
 	end
+
+	return isMulti, selected, selectedList
+end
+
+local function bindDropdownElementMethods(element, ctx)
+	local isMulti = ctx.isMulti
+	local selectedList = ctx.selectedList
+	local selected = ctx.selected
+	local props = ctx.props
+	local button = ctx.button
+	local optionPool = ctx.optionPool
+	local setSelected = ctx.setSelected
+	local syncElementValue = ctx.syncElementValue
+	local updateButtonText = ctx.updateButtonText
+	local applyOptionVisual = ctx.applyOptionVisual
+
+	function element:Set(value)
+		if isMulti then
+			if type(value) == "table" then
+				setSelected(value, false)
+			elseif value == nil then
+				setSelected({}, false)
+			else
+				setSelected({ value }, false)
+			end
+			return
+		end
+
+		local pick = value
+		if type(value) == "table" then
+			pick = value[1]
+		end
+		setSelected(pick, false)
+	end
+
+	function element:SetValue(value)
+		element:Set(value)
+	end
+
+	function element:Select(value)
+		if isMulti then
+			if type(value) == "table" then
+				setSelected(value, true)
+			elseif value == nil then
+				setSelected({}, true)
+			else
+				local nextSelection = copyOptionList(selectedList)
+				if not table.find(nextSelection, value) then
+					table.insert(nextSelection, value)
+				end
+				setSelected(nextSelection, true)
+			end
+			return
+		end
+		setSelected(value, true)
+	end
+
+	function element:Refresh(values)
+		element.Values = values or {}
+		ctx.options = element.Values
+		if isMulti then
+			for index = #selectedList, 1, -1 do
+				if not table.find(element.Values, selectedList[index]) then
+					table.remove(selectedList, index)
+				end
+			end
+			syncElementValue()
+			updateButtonText()
+			return
+		end
+
+		if element.Value ~= nil then
+			local found = false
+			for _, option in ipairs(element.Values) do
+				if option == element.Value then
+					found = true
+					break
+				end
+			end
+			if not found then
+				setSelected(element.Values[1], false)
+			end
+		end
+	end
+
+	if props.Flag and not props.Ext then
+		registerFlag(props.Flag, element)
+	end
+
+	registerAccentRefresher(function(color)
+		for _, pooled in ipairs(optionPool) do
+			if pooled.Visible and pooled.Parent then
+				local pooledValue = pooled:GetAttribute("OptionValue")
+				if pooledValue ~= nil then
+					applyOptionVisual(pooled, pooledValue)
+				end
+			end
+		end
+	end)
+end
+
+local function createDropdownMenuHost(button, props, filterText, populateOptions, optionPool)
+	closeActiveDropdown()
+	table.clear(optionPool)
+	ensureOverlayGuis(getGuiParent())
+
+	local menuWidth = math.max(button.AbsoluteSize.X, 220)
+	local menuHeight = DROPDOWN_SEARCH_HEIGHT + 8
+
+	local overlay = new("Frame", {
+		Name = "DropdownOverlay",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 1,
+		Parent = DropdownGui,
+	})
+	activeDropdown = overlay
+
+	local backdrop = new("TextButton", {
+		Name = "Backdrop",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 1,
+		Parent = overlay,
+	})
+	backdrop.Activated:Connect(closeActiveDropdown)
+
+	local menu = new("Frame", {
+		Name = "DropdownMenu",
+		BackgroundColor3 = THEME.dropdownMenu,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(
+			button.AbsolutePosition.X,
+			button.AbsolutePosition.Y + button.AbsoluteSize.Y + 6
+		),
+		Size = UDim2.new(0, menuWidth, 0, menuHeight),
+		ClipsDescendants = true,
+		ZIndex = 2,
+		Parent = overlay,
+	})
+	corner(menu, DROPDOWN_MENU_CORNER)
+	stroke(menu, THEME.stroke, 0.3)
+	padding(menu, 8, 8, 8, 8)
+
+	local menuLayout = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Parent = menu,
+	})
+
+	local searchEnabled = props.Search == true or props.SearchBarEnabled == true
+	local menuSearchBox
+	if searchEnabled then
+		menuSearchBox = new("TextBox", {
+			Name = "SearchBox",
+			BackgroundColor3 = THEME.dropdownSearch,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, DROPDOWN_SEARCH_HEIGHT),
+			Font = Enum.Font.Gotham,
+			TextSize = 13,
+			PlaceholderText = "Search...",
+			PlaceholderColor3 = THEME.muted,
+			TextColor3 = THEME.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = filterText or "",
+			ClearTextOnFocus = false,
+			LayoutOrder = 1,
+			Parent = menu,
+		})
+		corner(menuSearchBox, 8)
+		stroke(menuSearchBox, THEME.stroke, 0.55)
+		padding(menuSearchBox, 0, 0, 12, 12)
+	end
+
+	local menuScroll = new("ScrollingFrame", {
+		Name = "OptionsScroll",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = THEME.accent,
+		AutomaticCanvasSize = Enum.AutomaticSize.None,
+		LayoutOrder = 2,
+		Parent = menu,
+	})
+
+	local menuList = new("Frame", {
+		Name = "OptionsList",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = menuScroll,
+	})
+
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 2),
+		Parent = menuList,
+	})
+
+	local function syncMenuSize()
+		local pad = menu:FindFirstChildOfClass("UIPadding")
+		local padY = 16
+		if pad then
+			padY = pad.PaddingTop.Offset + pad.PaddingBottom.Offset
+		end
+		local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 6) or 0
+		local listH = menuScroll.Size.Y.Offset
+		menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + listH)
+	end
+
+	menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncMenuSize)
+	menuScroll:GetPropertyChangedSignal("Size"):Connect(syncMenuSize)
+	syncMenuSize()
+
+	if menuSearchBox then
+		menuSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			populateOptions(menuSearchBox.Text)
+		end)
+		task.defer(function()
+			if menuSearchBox and menuSearchBox.Parent then
+				menuSearchBox:CaptureFocus()
+			end
+		end)
+	end
+
+	return menuList, menuScroll, menuSearchBox, menuWidth
+end
+
+local function buildDropdown(contentParent, props, scrollFrame)
+	local options = props.Options or props.Values or {}
+	local isMulti, selected, selectedList = parseDropdownSelection(props, options)
 
 	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc)
 
@@ -2191,135 +2461,14 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	end
 
 	local function renderMenu(filterText)
-		closeActiveDropdown()
-		table.clear(optionPool)
-		ensureOverlayGuis(getGuiParent())
-
-		menuWidth = math.max(button.AbsoluteSize.X, 220)
-		local menuHeight = DROPDOWN_SEARCH_HEIGHT + 8
-
-		local overlay = new("Frame", {
-			Name = "DropdownOverlay",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			ZIndex = 1,
-			Parent = DropdownGui,
-		})
-		activeDropdown = overlay
-
-		local backdrop = new("TextButton", {
-			Name = "Backdrop",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Text = "",
-			AutoButtonColor = false,
-			ZIndex = 1,
-			Parent = overlay,
-		})
-		backdrop.Activated:Connect(closeActiveDropdown)
-
-		local menu = new("Frame", {
-			Name = "DropdownMenu",
-			BackgroundColor3 = THEME.dropdownMenu,
-			BorderSizePixel = 0,
-			Position = UDim2.fromOffset(
-				button.AbsolutePosition.X,
-				button.AbsolutePosition.Y + button.AbsoluteSize.Y + 6
-			),
-			Size = UDim2.new(0, menuWidth, 0, menuHeight),
-			ClipsDescendants = true,
-			ZIndex = 2,
-			Parent = overlay,
-		})
-		corner(menu, DROPDOWN_MENU_CORNER)
-		stroke(menu, THEME.stroke, 0.3)
-		padding(menu, 8, 8, 8, 8)
-
-		local menuLayout = new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 6),
-			Parent = menu,
-		})
-
-		local searchEnabled = props.Search == true or props.SearchBarEnabled == true
-		if searchEnabled then
-			menuSearchBox = new("TextBox", {
-				Name = "SearchBox",
-				BackgroundColor3 = THEME.dropdownSearch,
-				BorderSizePixel = 0,
-				Size = UDim2.new(1, 0, 0, DROPDOWN_SEARCH_HEIGHT),
-				Font = Enum.Font.Gotham,
-				TextSize = 13,
-				PlaceholderText = "Search...",
-				PlaceholderColor3 = THEME.muted,
-				TextColor3 = THEME.text,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Text = filterText or "",
-				ClearTextOnFocus = false,
-				LayoutOrder = 1,
-				Parent = menu,
-			})
-			corner(menuSearchBox, 8)
-			stroke(menuSearchBox, THEME.stroke, 0.55)
-			padding(menuSearchBox, 0, 0, 12, 12)
-		end
-
-		menuScroll = new("ScrollingFrame", {
-			Name = "OptionsScroll",
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			Size = UDim2.new(1, 0, 0, 0),
-			CanvasSize = UDim2.new(),
-			ScrollBarThickness = 3,
-			ScrollBarImageColor3 = THEME.accent,
-			AutomaticCanvasSize = Enum.AutomaticSize.None,
-			LayoutOrder = 2,
-			Parent = menu,
-		})
-
-		menuList = new("Frame", {
-			Name = "OptionsList",
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Parent = menuScroll,
-		})
-
-		new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 2),
-			Parent = menuList,
-		})
-
+		menuList, menuScroll, menuSearchBox, menuWidth = createDropdownMenuHost(
+			button,
+			props,
+			filterText,
+			populateOptions,
+			optionPool
+		)
 		populateOptions(filterText)
-
-		local function syncMenuSize()
-			local pad = menu:FindFirstChildOfClass("UIPadding")
-			local padY = 16
-			if pad then
-				padY = pad.PaddingTop.Offset + pad.PaddingBottom.Offset
-			end
-			local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 6) or 0
-			local listH = menuScroll.Size.Y.Offset
-			menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + listH)
-		end
-
-		menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncMenuSize)
-		menuScroll:GetPropertyChangedSignal("Size"):Connect(syncMenuSize)
-		syncMenuSize()
-
-		if menuSearchBox then
-			menuSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-				populateOptions(menuSearchBox.Text)
-			end)
-			task.defer(function()
-				if menuSearchBox and menuSearchBox.Parent then
-					menuSearchBox:CaptureFocus()
-				end
-			end)
-		end
 	end
 
 	button.Activated:Connect(function()
@@ -2332,89 +2481,19 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		end)
 	end)
 
-	function element:Set(value)
-		if isMulti then
-			if type(value) == "table" then
-				setSelected(value, false)
-			elseif value == nil then
-				setSelected({}, false)
-			else
-				setSelected({ value }, false)
-			end
-			return
-		end
-
-		local pick = value
-		if type(value) == "table" then
-			pick = value[1]
-		end
-		setSelected(pick, false)
-	end
-
-	function element:SetValue(value)
-		element:Set(value)
-	end
-
-	function element:Select(value)
-		if isMulti then
-			if type(value) == "table" then
-				setSelected(value, true)
-			elseif value == nil then
-				setSelected({}, true)
-			else
-				local nextSelection = copyOptionList(selectedList)
-				if not table.find(nextSelection, value) then
-					table.insert(nextSelection, value)
-				end
-				setSelected(nextSelection, true)
-			end
-			return
-		end
-		setSelected(value, true)
-	end
-
-	function element:Refresh(values)
-		element.Values = values or {}
-		options = element.Values
-		if isMulti then
-			for index = #selectedList, 1, -1 do
-				if not table.find(element.Values, selectedList[index]) then
-					table.remove(selectedList, index)
-				end
-			end
-			syncElementValue()
-			updateButtonText()
-			return
-		end
-
-		if element.Value ~= nil then
-			local found = false
-			for _, option in ipairs(element.Values) do
-				if option == element.Value then
-					found = true
-					break
-				end
-			end
-			if not found then
-				setSelected(element.Values[1], false)
-			end
-		end
-	end
-
-	if props.Flag and not props.Ext then
-		registerFlag(props.Flag, element)
-	end
-
-	registerAccentRefresher(function(color)
-		for _, pooled in ipairs(optionPool) do
-			if pooled.Visible and pooled.Parent then
-				local pooledValue = pooled:GetAttribute("OptionValue")
-				if pooledValue ~= nil then
-					applyOptionVisual(pooled, pooledValue)
-				end
-			end
-		end
-	end)
+	bindDropdownElementMethods(element, {
+		isMulti = isMulti,
+		selectedList = selectedList,
+		selected = selected,
+		props = props,
+		button = button,
+		optionPool = optionPool,
+		options = options,
+		setSelected = setSelected,
+		syncElementValue = syncElementValue,
+		updateButtonText = updateButtonText,
+		applyOptionVisual = applyOptionVisual,
+	})
 
 	scheduleCanvasUpdate(scrollFrame)
 	return element
@@ -2822,6 +2901,43 @@ local function buildImage(contentParent, props, scrollFrame)
 	return element
 end
 
+local function bindElementCreators(api, getParent, scrollFrame)
+	function api:CreateToggle(props)
+		return buildToggle(getParent(), props, scrollFrame)
+	end
+	api.Toggle = api.CreateToggle
+
+	function api:CreateSlider(props)
+		return buildSlider(getParent(), props, scrollFrame)
+	end
+	api.Slider = api.CreateSlider
+
+	function api:CreateDropdown(props)
+		return buildDropdown(getParent(), props, scrollFrame)
+	end
+	api.Dropdown = api.CreateDropdown
+
+	function api:CreateButton(props)
+		return buildButton(getParent(), props, scrollFrame)
+	end
+	api.Button = api.CreateButton
+
+	function api:CreateInput(props)
+		return buildInput(getParent(), props, scrollFrame)
+	end
+	api.Input = api.CreateInput
+
+	function api:CreateParagraph(props)
+		return buildParagraph(getParent(), props, scrollFrame)
+	end
+	api.Paragraph = api.CreateParagraph
+
+	function api:CreateImage(props)
+		return buildImage(getParent(), props or {}, scrollFrame)
+	end
+	api.Image = api.CreateImage
+end
+
 local function createSection(contentParent, title, scrollFrame)
 	local section = new("Frame", {
 		Name = "Section_" .. (title or "Section"),
@@ -2913,40 +3029,9 @@ local function createSection(contentParent, title, scrollFrame)
 		_scroll = scrollFrame,
 	}
 
-	function sectionApi:CreateToggle(props)
-		return buildToggle(body, props, scrollFrame)
-	end
-	sectionApi.Toggle = sectionApi.CreateToggle
-
-	function sectionApi:CreateSlider(props)
-		return buildSlider(body, props, scrollFrame)
-	end
-	sectionApi.Slider = sectionApi.CreateSlider
-
-	function sectionApi:CreateDropdown(props)
-		return buildDropdown(body, props, scrollFrame)
-	end
-	sectionApi.Dropdown = sectionApi.CreateDropdown
-
-	function sectionApi:CreateButton(props)
-		return buildButton(body, props, scrollFrame)
-	end
-	sectionApi.Button = sectionApi.CreateButton
-
-	function sectionApi:CreateInput(props)
-		return buildInput(body, props, scrollFrame)
-	end
-	sectionApi.Input = sectionApi.CreateInput
-
-	function sectionApi:CreateParagraph(props)
-		return buildParagraph(body, props, scrollFrame)
-	end
-	sectionApi.Paragraph = sectionApi.CreateParagraph
-
-	function sectionApi:CreateImage(props)
-		return buildImage(body, props, scrollFrame)
-	end
-	sectionApi.Image = sectionApi.CreateImage
+	bindElementCreators(sectionApi, function()
+		return body
+	end, scrollFrame)
 
 	bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		scheduleCanvasUpdate(scrollFrame)
@@ -2980,40 +3065,7 @@ local function createTabApi(tabFrame, scrollFrame, contentTitle)
 		return tab:CreateSection(props.Title or props.Name or "Section")
 	end
 
-	function tab:CreateToggle(props)
-		return buildToggle(targetParent(), props, scrollFrame)
-	end
-	tab.Toggle = tab.CreateToggle
-
-	function tab:CreateSlider(props)
-		return buildSlider(targetParent(), props, scrollFrame)
-	end
-	tab.Slider = tab.CreateSlider
-
-	function tab:CreateDropdown(props)
-		return buildDropdown(targetParent(), props, scrollFrame)
-	end
-	tab.Dropdown = tab.CreateDropdown
-
-	function tab:CreateButton(props)
-		return buildButton(targetParent(), props, scrollFrame)
-	end
-	tab.Button = tab.CreateButton
-
-	function tab:CreateInput(props)
-		return buildInput(targetParent(), props, scrollFrame)
-	end
-	tab.Input = tab.CreateInput
-
-	function tab:CreateParagraph(props)
-		return buildParagraph(targetParent(), props, scrollFrame)
-	end
-	tab.Paragraph = tab.CreateParagraph
-
-	function tab:CreateImage(props)
-		return buildImage(targetParent(), props or {}, scrollFrame)
-	end
-	tab.Image = tab.CreateImage
+	bindElementCreators(tab, targetParent, scrollFrame)
 
 	if contentTitle then
 		tab._titleLabel = contentTitle
@@ -3037,28 +3089,14 @@ local function createSidebarButton(sidebarList, windowState, tabData, accentIndi
 	end
 
 	local function mountTabIcon(parent, spec)
-		if not spec or type(spec.image) ~= "string" or spec.image == "" then
-			return nil
-		end
-		local label = new("ImageLabel", {
-			Name = "Icon",
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 10, 0.5, 0),
-			Size = UDim2.fromOffset(TAB_ICON_SIZE, TAB_ICON_SIZE),
-			Image = spec.image,
-			ScaleType = Enum.ScaleType.Fit,
-			ImageColor3 = THEME.muted,
-			ZIndex = 2,
-			Parent = parent,
+		return createIconImage(parent, spec, {
+			name = "Icon",
+			anchorPoint = Vector2.new(0, 0.5),
+			position = UDim2.new(0, 10, 0.5, 0),
+			size = TAB_ICON_SIZE,
+			color = THEME.muted,
+			zIndex = 2,
 		})
-		if typeof(spec.rectSize) == "Vector2" and spec.rectSize.Magnitude > 0 then
-			label.ImageRectSize = spec.rectSize
-		end
-		if typeof(spec.rectOffset) == "Vector2" then
-			label.ImageRectOffset = spec.rectOffset
-		end
-		return label
 	end
 
 	local button = new("TextButton", {
@@ -3379,6 +3417,856 @@ local function createUiSettingsPage(pagesContainer, config)
 	}
 end
 
+local function windowChromeButton(headerBar, buttonName, iconName, xOffset, onClick)
+	local btn = new("TextButton", {
+		Name = buttonName,
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, xOffset, 0.5, 0),
+		Size = UDim2.new(0, 32, 0, 32),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 5,
+		Parent = headerBar,
+	})
+	local iconLabel = createLucideImage(btn, iconName, {
+		size = CHROME_ICON_SIZE,
+		color = getChromeIconColor(),
+		zIndex = 2,
+	})
+	registerThemeTarget(iconLabel, "chrome")
+	btn.Activated:Connect(onClick)
+	return btn
+end
+
+local function windowIconButton(headerBar, buttonName, xOffset, onClick, chromeColorSource, accentColor)
+	local highlight = new("Frame", {
+		Name = "Highlight",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, xOffset, 0.5, 0),
+		Size = UDim2.new(0, 32, 0, 32),
+		Visible = false,
+		ZIndex = 4,
+		Parent = headerBar,
+	})
+	corner(highlight, 8)
+	registerThemeTarget(highlight, "card")
+
+	local btn = new("TextButton", {
+		Name = buttonName,
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, xOffset, 0.5, 0),
+		Size = UDim2.new(0, 32, 0, 32),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 5,
+		Parent = headerBar,
+	})
+
+	local function getIdleChromeColor()
+		if chromeColorSource and chromeColorSource.Parent then
+			local icon = chromeColorSource:FindFirstChild("Icon")
+			if icon and icon:IsA("ImageLabel") then
+				return icon.ImageColor3
+			end
+		end
+		return getChromeIconColor()
+	end
+
+	local _, gearIcon = createLucideImage(btn, LUCIDE_ICON_SETTINGS, {
+		size = CHROME_ICON_SIZE,
+		color = getIdleChromeColor(),
+		zIndex = 2,
+	})
+
+	local active = false
+
+	local function refreshIconColor()
+		gearIcon.setColor(active and accentColor or getIdleChromeColor())
+	end
+
+	local function setActive(isActive)
+		active = isActive == true
+		highlight.Visible = active
+		refreshIconColor()
+	end
+
+	btn.Activated:Connect(onClick)
+	registerThemeRefresher(refreshIconColor)
+
+	return {
+		button = btn,
+		SetActive = setActive,
+		IsActive = function()
+			return active
+		end,
+		RefreshAccent = refreshIconColor,
+	}
+end
+
+local function createWindowHeader(root, settings, title, subtitle, folderName, appliedAccentColor)
+	local headerBar = new("Frame", {
+		Name = "Header",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, HEADER_HEIGHT),
+		Parent = root,
+	})
+	padding(headerBar, 12, 12, 16, 16)
+
+	local headerBrand = new("Frame", {
+		Name = "Brand",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
+		Parent = headerBar,
+	})
+
+	local windowLogo = createWindowLogoController(settings, title, appliedAccentColor, folderName)
+	windowLogo.mount(headerBrand, {
+		size = WINDOW_LOGO_SIZE,
+		anchorPoint = Vector2.new(0, 0.5),
+		position = UDim2.new(0, 0, 0.5, 0),
+	})
+	registerAccentRefresher(windowLogo.refreshAccent)
+
+	local textStack = new("Frame", {
+		Name = "TitleStack",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, HEADER_TEXT_LEFT, 0.5, 0),
+		Size = UDim2.new(1, -HEADER_TEXT_LEFT, 0, HEADER_TEXT_STACK_HEIGHT),
+		Parent = headerBrand,
+	})
+
+	local titleLabel = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(1, 0, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = title,
+		Parent = textStack,
+	})
+	registerThemeTarget(titleLabel, "text")
+
+	local subtitleLabel = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = getHeaderSubtitleColor(),
+		Text = subtitle,
+		Active = false,
+		Parent = textStack,
+	})
+
+	local headerDragHandle = new("Frame", {
+		Name = "DragHandle",
+		BackgroundTransparency = 1,
+		Active = true,
+		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
+		ZIndex = 2,
+		Parent = headerBar,
+	})
+
+	return {
+		headerBar = headerBar,
+		headerDragHandle = headerDragHandle,
+		subtitleLabel = subtitleLabel,
+		windowLogo = windowLogo,
+	}
+end
+
+local function createWindowSidebar(body, accentScrollbars)
+	local sidebar = new("Frame", {
+		Name = "Sidebar",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0),
+		Parent = body,
+	})
+	padding(sidebar, 16, 0, 0, 0)
+
+	local tabScroll = new("ScrollingFrame", {
+		Name = "TabList",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(1, 0, 1, -PROFILE_CARD_HEIGHT),
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = appliedAccentColor,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(),
+		Parent = sidebar,
+	})
+	table.insert(accentScrollbars, tabScroll)
+	padding(tabScroll, 0, 10, 10, 10)
+
+	local tabListLayout = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Parent = tabScroll,
+	})
+	tabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scheduleCanvasUpdate(tabScroll)
+	end)
+	scheduleCanvasUpdate(tabScroll)
+
+	local profileCard = new("Frame", {
+		Name = "Profile",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, PROFILE_CARD_HEIGHT),
+		Parent = sidebar,
+	})
+	corner(profileCard, 10)
+	registerThemeTarget(profileCard, "card")
+
+	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + 8
+	local profileTextRight = PROFILE_PAD_X
+
+	local avatar = new("ImageLabel", {
+		BackgroundColor3 = THEME.content,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, PROFILE_PAD_X, 0.5, -PROFILE_AVATAR_SIZE / 2),
+		Size = UDim2.new(0, PROFILE_AVATAR_SIZE, 0, PROFILE_AVATAR_SIZE),
+		Parent = profileCard,
+	})
+	corner(avatar, PROFILE_AVATAR_SIZE / 2)
+
+	local displayName = "Anonymous"
+	local userName = "@anonymous"
+	if LocalPlayer then
+		displayName = LocalPlayer.DisplayName
+		userName = "@" .. LocalPlayer.Name
+		task.spawn(function()
+			local ok, content = pcall(function()
+				return Players:GetUserThumbnailAsync(
+					LocalPlayer.UserId,
+					Enum.ThumbnailType.HeadShot,
+					Enum.ThumbnailSize.Size48x48
+				)
+			end)
+			if ok then
+				avatar.Image = content
+			end
+		end)
+	end
+
+	local profileDisplayName = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, profileTextLeft, 0, 10),
+		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.text,
+		Text = displayName,
+		Parent = profileCard,
+	})
+	registerThemeTarget(profileDisplayName, "text")
+
+	local profileUserName = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, profileTextLeft, 0, 28),
+		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = userName,
+		Parent = profileCard,
+	})
+	registerThemeTarget(profileUserName, "muted")
+
+	return {
+		sidebar = sidebar,
+		tabScroll = tabScroll,
+		profileCard = profileCard,
+	}
+end
+
+local function createWindowThemeApi(refs)
+	local function applyWindowTransparency(transparency)
+		for _, panel in ipairs(refs.windowPanels) do
+			panel.BackgroundTransparency = transparency
+		end
+		if refs.rootStroke then
+			refs.rootStroke.Transparency = 0.25 + (transparency * 0.5)
+		end
+	end
+
+	local function applyWindowAccent(color)
+		applyAccentTheme(color)
+		for _, target in ipairs(refs.accentTargets) do
+			if target:IsA("TextLabel") then
+				target.TextColor3 = color
+			elseif target:IsA("Frame") then
+				target.BackgroundColor3 = color
+			elseif target:IsA("ScrollingFrame") then
+				target.ScrollBarImageColor3 = color
+			elseif target:IsA("UIStroke") then
+				target.Color = color
+			elseif target:IsA("ImageLabel") then
+				target.ImageColor3 = color
+			end
+		end
+		for _, indicator in ipairs(refs.accentIndicators) do
+			if indicator.Parent then
+				indicator.BackgroundColor3 = color
+			end
+		end
+		for _, scrollbar in ipairs(refs.accentScrollbars) do
+			if scrollbar.Parent then
+				scrollbar.ScrollBarImageColor3 = color
+			end
+		end
+		local gear = refs.getSettingsGearButton()
+		if gear then
+			gear.RefreshAccent()
+		end
+		if refs.subtitleLabel and refs.subtitleLabel.Parent then
+			refs.subtitleLabel.TextColor3 = getHeaderSubtitleColor()
+		end
+		runAccentRefreshers(color)
+	end
+
+	local function applyWindowTheme(name)
+		local preset = getThemePresetByName(name or refs.defaultThemeName)
+		refs.setThemeName(preset.name)
+		appliedThemeName = preset.name
+		applyThemeColors(preset.colors)
+		refs.root.BackgroundColor3 = THEME.window
+		refs.headerBar.BackgroundColor3 = THEME.sidebar
+		refs.body.BackgroundColor3 = THEME.content
+		refs.profileCard.BackgroundColor3 = THEME.card
+		if refs.rootStroke then
+			refs.rootStroke.Color = THEME.stroke
+		end
+		local pageTitle = refs.getPageTitle()
+		if pageTitle and pageTitle.Parent then
+			pageTitle.TextColor3 = THEME.text
+		end
+		applyThemeTargets()
+		runThemeRefreshers()
+		if refs.subtitleLabel and refs.subtitleLabel.Parent then
+			refs.subtitleLabel.TextColor3 = getHeaderSubtitleColor()
+		end
+		applyWindowAccent(appliedAccentColor)
+	end
+
+	local function scaleFromWindowSize(size)
+		return math.clamp(
+			math.floor(((size.X / WINDOW_SIZE.X + size.Y / WINDOW_SIZE.Y) / 2) * 100 + 0.5),
+			MIN_WINDOW_SCALE,
+			MAX_WINDOW_SCALE
+		)
+	end
+
+	local function sizeFromWindowScale(scalePercent)
+		local scale = math.clamp(scalePercent or refs.defaultWindowScale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE) / 100
+		return Vector2.new(
+			math.floor(WINDOW_SIZE.X * scale + 0.5),
+			math.floor(WINDOW_SIZE.Y * scale + 0.5)
+		)
+	end
+
+	local function applyWindowSize(size)
+		local width = math.clamp(math.floor(size.X + 0.5), MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH)
+		local height = math.clamp(math.floor(size.Y + 0.5), MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT)
+		refs.root.Size = UDim2.fromOffset(width, height)
+		refs.setWindowScale(scaleFromWindowSize(Vector2.new(width, height)))
+	end
+
+	local function applyWindowScale(scalePercent)
+		local scale = math.clamp(math.floor(scalePercent or refs.defaultWindowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
+		refs.setWindowScale(scale)
+		applyWindowSize(sizeFromWindowScale(scale))
+	end
+
+	local function applyContentTitleSize(size)
+		local nextSize = math.clamp(
+			math.floor(size or refs.defaultContentTitleSize),
+			MIN_CONTENT_TITLE_SIZE,
+			MAX_CONTENT_TITLE_SIZE
+		)
+		refs.setContentTitleSize(nextSize)
+		local pageTitle = refs.getPageTitle()
+		if pageTitle then
+			pageTitle.TextSize = nextSize
+		end
+	end
+
+	local function applySavedWindowPosition(positionData)
+		if type(positionData) ~= "table" then
+			return
+		end
+		if type(positionData.xScale) ~= "number" or type(positionData.yScale) ~= "number" then
+			return
+		end
+		refs.root.Position = UDim2.new(
+			positionData.xScale,
+			tonumber(positionData.xOffset) or 0,
+			positionData.yScale,
+			tonumber(positionData.yOffset) or 0
+		)
+	end
+
+	return {
+		applyWindowTransparency = applyWindowTransparency,
+		applyWindowAccent = applyWindowAccent,
+		applyWindowTheme = applyWindowTheme,
+		applyWindowSize = applyWindowSize,
+		applyWindowScale = applyWindowScale,
+		applyContentTitleSize = applyContentTitleSize,
+		applySavedWindowPosition = applySavedWindowPosition,
+	}
+end
+
+local function createWindowState(refs)
+	local windowVisible = true
+	local toggleKeyConnection
+
+	local function disconnectToggleKey()
+		if toggleKeyConnection then
+			toggleKeyConnection:Disconnect()
+			toggleKeyConnection = nil
+		end
+	end
+
+	local function setWindowVisible(isVisible)
+		windowVisible = isVisible == true
+		refs.root.Visible = windowVisible
+		local fab = refs.getMobileFab()
+		if fab then
+			fab.Visible = refs.isMobile and refs.getShowMobileFab() and not windowVisible
+		end
+		refs.screenGui.Enabled = true
+	end
+
+	local function toggleWindowVisible()
+		setWindowVisible(not windowVisible)
+	end
+
+	local function connectToggleKey(keyCode)
+		disconnectToggleKey()
+		refs.setToggleKeyCode(keyCode)
+		if keyCode and not refs.isMobile then
+			toggleKeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
+				if processed then
+					return
+				end
+				if input.UserInputType ~= Enum.UserInputType.Keyboard then
+					return
+				end
+				if input.KeyCode == keyCode then
+					toggleWindowVisible()
+				end
+			end)
+		end
+	end
+
+	local function wireDragResize()
+		local dragging = false
+		local dragStart
+		local startPos
+		local resizing = false
+		local resizeDragStart
+		local resizeStartSize
+
+		local function beginWindowDrag(input)
+			if resizing then
+				return
+			end
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			dragging = true
+			dragStart = input.Position
+			startPos = refs.root.Position
+		end
+
+		local function endWindowDrag(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch then
+				if resizing then
+					resizing = false
+					refs.persistUiSettings()
+				end
+				dragging = false
+				if refs.getRememberPosition() then
+					refs.persistUiSettings()
+				end
+			end
+		end
+
+		refs.headerDragHandle.InputBegan:Connect(beginWindowDrag)
+
+		if not refs.isMobile then
+			local resizeHandle = new("TextButton", {
+				Name = "ResizeHandle",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(1, 1),
+				Position = UDim2.new(1, 0, 1, 0),
+				Size = UDim2.new(0, RESIZE_HANDLE_SIZE, 0, RESIZE_HANDLE_SIZE),
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 10,
+				Parent = refs.root,
+			})
+
+			for index = 0, 2 do
+				new("Frame", {
+					BackgroundColor3 = THEME.muted,
+					BorderSizePixel = 0,
+					AnchorPoint = Vector2.new(1, 1),
+					Position = UDim2.new(1, -2 - (index * 3), 1, -2),
+					Size = UDim2.new(0, 8 - (index * 2), 0, 2),
+					Rotation = -45,
+					Parent = resizeHandle,
+				})
+			end
+
+			resizeHandle.InputBegan:Connect(function(input)
+				if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+					return
+				end
+				resizing = true
+				dragging = false
+				resizeDragStart = input.Position
+				resizeStartSize = refs.root.AbsoluteSize
+			end)
+		end
+
+		UserInputService.InputEnded:Connect(endWindowDrag)
+
+		UserInputService.InputChanged:Connect(function(input)
+			if not windowVisible then
+				return
+			end
+			if resizing then
+				if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+					return
+				end
+				local delta = input.Position - resizeDragStart
+				refs.applyWindowSize(Vector2.new(resizeStartSize.X + delta.X, resizeStartSize.Y + delta.Y))
+				return
+			end
+			if not dragging then
+				return
+			end
+			if input.UserInputType == Enum.UserInputType.MouseMovement
+				or input.UserInputType == Enum.UserInputType.Touch then
+				local delta = input.Position - dragStart
+				refs.root.Position = UDim2.new(
+					startPos.X.Scale,
+					startPos.X.Offset + delta.X,
+					startPos.Y.Scale,
+					startPos.Y.Offset + delta.Y
+				)
+			end
+		end)
+	end
+
+	return {
+		setWindowVisible = setWindowVisible,
+		toggleWindowVisible = toggleWindowVisible,
+		connectToggleKey = connectToggleKey,
+		disconnectToggleKey = disconnectToggleKey,
+		getWindowVisible = function()
+			return windowVisible
+		end,
+		wireDragResize = wireDragResize,
+	}
+end
+
+local function createWindowUiPersistence(w)
+	local folderName = w.folderName
+
+	local function persistUiSettings()
+		if not (writefile and isfolder and makefolder) then
+			return
+		end
+		pcall(function()
+			if not isfolder(folderName) then
+				makefolder(folderName)
+			end
+			local payload = {
+				transparency = math.floor(w.getWindowTransparency() * 100 + 0.5),
+				toggleKey = w.getToggleKeyName(),
+				accentPreset = colorToPresetName(w.getAppliedAccentColor()),
+				themePreset = w.getThemeName(),
+				windowScale = w.getWindowScale(),
+				windowWidth = w.root.Size.X.Offset,
+				windowHeight = w.root.Size.Y.Offset,
+				contentTitleSize = w.getContentTitleSize(),
+				rememberPosition = w.getRememberPosition(),
+				showMobileFab = w.getShowMobileFab(),
+			}
+			if w.getRememberPosition() then
+				payload.position = {
+					xScale = w.root.Position.X.Scale,
+					xOffset = w.root.Position.X.Offset,
+					yScale = w.root.Position.Y.Scale,
+					yOffset = w.root.Position.Y.Offset,
+				}
+			end
+			local fab = w.getMobileFab()
+			if fab then
+				payload.fabPosition = {
+					x = fab.Position.X.Offset,
+					y = fab.Position.Y.Offset,
+				}
+			end
+			writefile(folderName .. "/ui_settings.json", HttpService:JSONEncode(payload))
+		end)
+	end
+
+	local function loadUiSettings()
+		if not (readfile and isfile) then
+			return
+		end
+		local ok, decoded = pcall(function()
+			local path = folderName .. "/ui_settings.json"
+			if not isfile(path) then
+				return nil
+			end
+			return HttpService:JSONDecode(readfile(path))
+		end)
+		if not ok or type(decoded) ~= "table" then
+			return
+		end
+		if type(decoded.transparency) == "number" then
+			local normalized = normalizeWindowTransparency(decoded.transparency)
+			w.setWindowTransparency(normalized)
+			w.applyWindowTransparency(normalized)
+		end
+		if type(decoded.accentPreset) == "string" then
+			for _, preset in ipairs(ACCENT_PRESETS) do
+				if preset.name == decoded.accentPreset then
+					w.applyWindowAccent(preset.color)
+					break
+				end
+			end
+		end
+		if type(decoded.themePreset) == "string" then
+			w.applyWindowTheme(decoded.themePreset)
+		end
+		if type(decoded.toggleKey) == "string" and decoded.toggleKey ~= "" then
+			local keyName = string.upper(decoded.toggleKey)
+			w.setToggleKeyName(keyName)
+			w.setToggleKeyCode(w.resolveToggleKeyCode(keyName))
+		end
+		if type(decoded.windowWidth) == "number" and type(decoded.windowHeight) == "number" then
+			w.applyWindowSize(Vector2.new(decoded.windowWidth, decoded.windowHeight))
+		elseif type(decoded.windowScale) == "number" then
+			local scale = math.clamp(math.floor(decoded.windowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
+			w.setWindowScale(scale)
+			w.applyWindowScale(scale)
+		end
+		if type(decoded.contentTitleSize) == "number" then
+			w.applyContentTitleSize(decoded.contentTitleSize)
+		end
+		if decoded.rememberPosition == true then
+			w.setRememberPosition(true)
+			w.applySavedWindowPosition(decoded.position)
+		end
+		if type(decoded.showMobileFab) == "boolean" then
+			w.setShowMobileFab(decoded.showMobileFab)
+		end
+		w.setInitialFabPosition(fabPositionFromData(decoded.fabPosition))
+	end
+
+	return persistUiSettings, loadUiSettings
+end
+
+local function bindWindowPublicApi(window, w)
+	function window:CreateTab(tabTitle, iconId)
+		self._tabOrder += 1
+		local tabId = "tab_" .. self._tabOrder
+
+		local page = new("Frame", {
+			Name = tabId,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Visible = false,
+			Parent = w.pages,
+		})
+
+		local scroll = new("ScrollingFrame", {
+			Name = "Scroll",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, -10, 1, 0),
+			Position = UDim2.new(0, 0, 0, 0),
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = appliedAccentColor,
+			CanvasSize = UDim2.new(),
+			Parent = page,
+		})
+		table.insert(w.accentScrollbars, scroll)
+		padding(scroll, 0, 16, 20, 16)
+
+		local list = new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 10),
+			Parent = scroll,
+		})
+		list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			scheduleCanvasUpdate(scroll)
+		end)
+
+		local setSelected = createSidebarButton(w.tabScroll, window, {
+			id = tabId,
+			title = tabTitle or "Tab",
+			icon = iconId,
+			order = self._tabOrder,
+			frame = page,
+		}, w.accentIndicators)
+
+		local tabApi = createTabApi(page, scroll, w.pageTitle)
+		tabApi._title = tabTitle
+
+		self._tabs[tabId] = {
+			id = tabId,
+			title = tabTitle or "Tab",
+			frame = page,
+			api = tabApi,
+			setSelected = setSelected,
+		}
+
+		if not self._selected then
+			w.selectTab(tabId)
+		end
+
+		return tabApi
+	end
+
+	function window:Tab(props)
+		props = props or {}
+		return self:CreateTab(props.Title or props.Name or "Tab", props.Icon)
+	end
+
+	function window:SetCurrentConfig(_cfg)
+		return nil
+	end
+
+	function window:SaveConfiguration()
+		return SempatLibrary:SaveConfiguration()
+	end
+
+	function window:LoadConfiguration()
+		local wasLoaded = configurationSaving.loaded
+		configurationSaving.loaded = false
+		local result = SempatLibrary:LoadConfiguration()
+		configurationSaving.loaded = wasLoaded or true
+		return result
+	end
+
+	function window:Toggle(state)
+		if state == nil then
+			w.toggleWindowVisible()
+			return w.getWindowVisible()
+		end
+		w.setWindowVisible(state ~= false)
+		return w.getWindowVisible()
+	end
+
+	function window:IsOpen()
+		return w.getWindowVisible()
+	end
+
+	function window:SetTransparency(value)
+		if type(value) ~= "number" then
+			return w.getWindowTransparency()
+		end
+		return w.setWindowTransparency(value)
+	end
+
+	function window:GetTransparency()
+		return w.getWindowTransparency()
+	end
+
+	function window:SetAccentColor(color)
+		if typeof(color) ~= "Color3" then
+			return appliedAccentColor
+		end
+		w.applyWindowAccent(color)
+		w.persistUiSettings()
+		return appliedAccentColor
+	end
+
+	function window:GetAccentColor()
+		return appliedAccentColor
+	end
+
+	function window:GetThemePreset()
+		return w.getThemeName()
+	end
+
+	function window:SetThemePreset(name)
+		if type(name) ~= "string" or trimText(name) == "" then
+			return w.getThemeName()
+		end
+		w.applyWindowTheme(name)
+		w.persistUiSettings()
+		return w.getThemeName()
+	end
+
+	function window:SetToggleKeybind(keyName)
+		if type(keyName) ~= "string" or trimText(keyName) == "" then
+			return w.getToggleKeyName()
+		end
+		local cleaned = string.upper(trimText(keyName))
+		local keyCode = w.resolveToggleKeyCode(cleaned)
+		if not keyCode then
+			return w.getToggleKeyName()
+		end
+		w.setToggleKeyName(cleaned)
+		w.connectToggleKey(keyCode)
+		w.persistUiSettings()
+		return w.getToggleKeyName()
+	end
+
+	function window:GetToggleKeybind()
+		return w.getToggleKeyName()
+	end
+
+	function window:OpenSettings()
+		w.lastSelectedTabId = window._selected
+		w.selectSettings()
+	end
+
+	function window:CloseSettings()
+		if not w.closeUiSettings() then
+			return
+		end
+		if w.lastSelectedTabId and window._tabs[w.lastSelectedTabId] then
+			w.selectTab(w.lastSelectedTabId)
+		end
+	end
+
+	function window:Destroy()
+		w.disconnectToggleKey()
+		clearAccentRefreshers()
+		clearThemeRegistry()
+		w.screenGui:Destroy()
+	end
+end
+
 function SempatLibrary:CreateWindow(settings)
 	settings = settings or {}
 	clearThemeRegistry()
@@ -3442,168 +4330,15 @@ function SempatLibrary:CreateWindow(settings)
 	corner(root, CORNER)
 	local rootStroke = stroke(root, THEME.stroke, 0.25)
 
-	local headerBar = new("Frame", {
-		Name = "Header",
-		BackgroundColor3 = THEME.sidebar,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, HEADER_HEIGHT),
-		Parent = root,
-	})
-	padding(headerBar, 12, 12, 16, 16)
-
-	local headerBrand = new("Frame", {
-		Name = "Brand",
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
-		Parent = headerBar,
-	})
-
 	local accentTargets = {}
 	local accentIndicators = {}
 	local accentScrollbars = {}
 
-	local windowLogo = createWindowLogoController(settings, title, appliedAccentColor, folderName)
-	windowLogo.mount(headerBrand, {
-		size = WINDOW_LOGO_SIZE,
-		anchorPoint = Vector2.new(0, 0.5),
-		position = UDim2.new(0, 0, 0.5, 0),
-	})
-
-	local textStack = new("Frame", {
-		Name = "TitleStack",
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 34, 0.5, 0),
-		Size = UDim2.new(1, -34, 0, 34),
-		Parent = headerBrand,
-	})
-
-	registerAccentRefresher(windowLogo.refreshAccent)
-
-	local titleLabel = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(1, 0, 0, 18),
-		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.text,
-		Text = title,
-		Parent = textStack,
-	})
-	registerThemeTarget(titleLabel, "text")
-
-	local subtitleLabel = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 20),
-		Size = UDim2.new(1, 0, 0, 14),
-		Font = Enum.Font.Gotham,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = getHeaderSubtitleColor(),
-		Text = subtitle,
-		Active = false,
-		Parent = textStack,
-	})
-
-	local headerDragHandle = new("Frame", {
-		Name = "DragHandle",
-		BackgroundTransparency = 1,
-		Active = true,
-		Size = UDim2.new(1, -HEADER_CONTROLS_WIDTH, 1, 0),
-		ZIndex = 2,
-		Parent = headerBar,
-	})
-
-	local function windowChromeButton(buttonName, iconName, xOffset, onClick)
-		local btn = new("TextButton", {
-			Name = buttonName,
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, xOffset, 0.5, 0),
-			Size = UDim2.new(0, 32, 0, 32),
-			Text = "",
-			AutoButtonColor = false,
-			ZIndex = 5,
-			Parent = headerBar,
-		})
-		local iconLabel = createLucideImage(btn, iconName, {
-			size = CHROME_ICON_SIZE,
-			color = getChromeIconColor(),
-			zIndex = 2,
-		})
-		registerThemeTarget(iconLabel, "chrome")
-		btn.Activated:Connect(onClick)
-		return btn
-	end
-
-	local function windowIconButton(buttonName, xOffset, onClick, chromeColorSource)
-		local highlight = new("Frame", {
-			Name = "Highlight",
-			BackgroundColor3 = THEME.card,
-			BorderSizePixel = 0,
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, xOffset, 0.5, 0),
-			Size = UDim2.new(0, 32, 0, 32),
-			Visible = false,
-			ZIndex = 4,
-			Parent = headerBar,
-		})
-		corner(highlight, 8)
-		registerThemeTarget(highlight, "card")
-
-		local btn = new("TextButton", {
-			Name = buttonName,
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, xOffset, 0.5, 0),
-			Size = UDim2.new(0, 32, 0, 32),
-			Text = "",
-			AutoButtonColor = false,
-			ZIndex = 5,
-			Parent = headerBar,
-		})
-
-		local function getIdleChromeColor()
-			if chromeColorSource and chromeColorSource.Parent then
-				local icon = chromeColorSource:FindFirstChild("Icon")
-				if icon and icon:IsA("ImageLabel") then
-					return icon.ImageColor3
-				end
-			end
-			return getChromeIconColor()
-		end
-
-		local _, gearIcon = createLucideImage(btn, LUCIDE_ICON_SETTINGS, {
-			size = CHROME_ICON_SIZE,
-			color = getIdleChromeColor(),
-			zIndex = 2,
-		})
-
-		local active = false
-
-		local function refreshIconColor()
-			gearIcon.setColor(active and appliedAccentColor or getIdleChromeColor())
-		end
-
-		local function setActive(isActive)
-			active = isActive == true
-			highlight.Visible = active
-			refreshIconColor()
-		end
-
-		btn.Activated:Connect(onClick)
-		registerThemeRefresher(refreshIconColor)
-
-		return {
-			button = btn,
-			SetActive = setActive,
-			IsActive = function()
-				return active
-			end,
-			RefreshAccent = refreshIconColor,
-		}
-	end
+	local headerParts = createWindowHeader(root, settings, title, subtitle, folderName, appliedAccentColor)
+	local headerBar = headerParts.headerBar
+	local headerDragHandle = headerParts.headerDragHandle
+	local subtitleLabel = headerParts.subtitleLabel
+	local windowLogo = headerParts.windowLogo
 
 	local body = new("Frame", {
 		Name = "Body",
@@ -3614,108 +4349,9 @@ function SempatLibrary:CreateWindow(settings)
 		Parent = root,
 	})
 
-	local sidebar = new("Frame", {
-		Name = "Sidebar",
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0),
-		Parent = body,
-	})
-
-	padding(sidebar, 16, 0, 0, 0)
-
-	local tabScroll = new("ScrollingFrame", {
-		Name = "TabList",
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(1, 0, 1, -PROFILE_CARD_HEIGHT),
-		ScrollBarThickness = 2,
-		ScrollBarImageColor3 = appliedAccentColor,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-		CanvasSize = UDim2.new(),
-		Parent = sidebar,
-	})
-	table.insert(accentScrollbars, tabScroll)
-	padding(tabScroll, 0, 10, 10, 10)
-
-	local tabListLayout = new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Vertical,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, 6),
-		Parent = tabScroll,
-	})
-
-	tabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		scheduleCanvasUpdate(tabScroll)
-	end)
-	scheduleCanvasUpdate(tabScroll)
-
-	local profileCard = new("Frame", {
-		Name = "Profile",
-		BackgroundColor3 = THEME.card,
-		BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, PROFILE_CARD_HEIGHT),
-		Parent = sidebar,
-	})
-	corner(profileCard, 10)
-	registerThemeTarget(profileCard, "card")
-
-	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + 8
-	local profileTextRight = PROFILE_PAD_X
-
-	local avatar = new("ImageLabel", {
-		BackgroundColor3 = THEME.content,
-		BorderSizePixel = 0,
-		Position = UDim2.new(0, PROFILE_PAD_X, 0.5, -PROFILE_AVATAR_SIZE / 2),
-		Size = UDim2.new(0, PROFILE_AVATAR_SIZE, 0, PROFILE_AVATAR_SIZE),
-		Parent = profileCard,
-	})
-	corner(avatar, PROFILE_AVATAR_SIZE / 2)
-
-	local displayName = "Anonymous"
-	local userName = "@anonymous"
-	if LocalPlayer then
-		displayName = LocalPlayer.DisplayName
-		userName = "@" .. LocalPlayer.Name
-		task.spawn(function()
-			local ok, content = pcall(function()
-				return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-			end)
-			if ok then
-				avatar.Image = content
-			end
-		end)
-	end
-
-	local profileDisplayName = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, profileTextLeft, 0, 10),
-		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 16),
-		Font = Enum.Font.GothamBold,
-		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.text,
-		Text = displayName,
-		Parent = profileCard,
-	})
-	registerThemeTarget(profileDisplayName, "text")
-
-	local profileUserName = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, profileTextLeft, 0, 28),
-		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
-		Font = Enum.Font.Gotham,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.muted,
-		Text = userName,
-		Parent = profileCard,
-	})
-	registerThemeTarget(profileUserName, "muted")
+	local sidebarParts = createWindowSidebar(body, accentScrollbars)
+	local tabScroll = sidebarParts.tabScroll
+	local profileCard = sidebarParts.profileCard
 
 	local content = new("Frame", {
 		Name = "Content",
@@ -3738,74 +4374,7 @@ function SempatLibrary:CreateWindow(settings)
 	local settingsGearButton
 	local defaultThemeName = DEFAULT_THEME_NAME
 	local themeName = defaultThemeName
-
-	local function applyWindowTransparency(transparency)
-		for _, panel in ipairs(windowPanels) do
-			panel.BackgroundTransparency = transparency
-		end
-		if rootStroke then
-			rootStroke.Transparency = 0.25 + (transparency * 0.5)
-		end
-	end
-
-	local function applyWindowAccent(color)
-		applyAccentTheme(color)
-		for _, target in ipairs(accentTargets) do
-			if target:IsA("TextLabel") then
-				target.TextColor3 = color
-			elseif target:IsA("Frame") then
-				target.BackgroundColor3 = color
-			elseif target:IsA("ScrollingFrame") then
-				target.ScrollBarImageColor3 = color
-			elseif target:IsA("UIStroke") then
-				target.Color = color
-			elseif target:IsA("ImageLabel") then
-				target.ImageColor3 = color
-			end
-		end
-		for _, indicator in ipairs(accentIndicators) do
-			if indicator.Parent then
-				indicator.BackgroundColor3 = color
-			end
-		end
-		for _, scrollbar in ipairs(accentScrollbars) do
-			if scrollbar.Parent then
-				scrollbar.ScrollBarImageColor3 = color
-			end
-		end
-		if settingsGearButton then
-			settingsGearButton.RefreshAccent()
-		end
-		if subtitleLabel and subtitleLabel.Parent then
-			subtitleLabel.TextColor3 = getHeaderSubtitleColor()
-		end
-		runAccentRefreshers(color)
-	end
-
 	local pageTitle
-
-	local function applyWindowTheme(name)
-		local preset = getThemePresetByName(name or defaultThemeName)
-		themeName = preset.name
-		appliedThemeName = preset.name
-		applyThemeColors(preset.colors)
-		root.BackgroundColor3 = THEME.window
-		headerBar.BackgroundColor3 = THEME.sidebar
-		body.BackgroundColor3 = THEME.content
-		profileCard.BackgroundColor3 = THEME.card
-		if rootStroke then
-			rootStroke.Color = THEME.stroke
-		end
-		if pageTitle and pageTitle.Parent then
-			pageTitle.TextColor3 = THEME.text
-		end
-		applyThemeTargets()
-		runThemeRefreshers()
-		if subtitleLabel and subtitleLabel.Parent then
-			subtitleLabel.TextColor3 = getHeaderSubtitleColor()
-		end
-		applyWindowAccent(appliedAccentColor)
-	end
 
 	local topBar = new("Frame", {
 		BackgroundTransparency = 1,
@@ -3828,9 +4397,6 @@ function SempatLibrary:CreateWindow(settings)
 	})
 	registerThemeTarget(pageTitle, "text")
 
-	applyWindowTheme(themeName)
-	applyWindowTransparency(windowTransparency)
-
 	local defaultContentTitleSize = DEFAULT_CONTENT_TITLE_SIZE
 	local contentTitleSize = defaultContentTitleSize
 	local defaultWindowScale = DEFAULT_WINDOW_SCALE
@@ -3842,54 +4408,47 @@ function SempatLibrary:CreateWindow(settings)
 	local initialFabPosition = nil
 	local CENTER_WINDOW_POSITION = UDim2.fromScale(0.5, 0.5)
 
-	local function scaleFromWindowSize(size)
-		return math.clamp(
-			math.floor(((size.X / WINDOW_SIZE.X + size.Y / WINDOW_SIZE.Y) / 2) * 100 + 0.5),
-			MIN_WINDOW_SCALE,
-			MAX_WINDOW_SCALE
-		)
-	end
+	local themeRefs = {
+		root = root,
+		rootStroke = rootStroke,
+		windowPanels = windowPanels,
+		accentTargets = accentTargets,
+		accentIndicators = accentIndicators,
+		accentScrollbars = accentScrollbars,
+		headerBar = headerBar,
+		body = body,
+		profileCard = profileCard,
+		subtitleLabel = subtitleLabel,
+		defaultThemeName = defaultThemeName,
+		defaultWindowScale = defaultWindowScale,
+		defaultContentTitleSize = defaultContentTitleSize,
+		getSettingsGearButton = function()
+			return settingsGearButton
+		end,
+		getPageTitle = function()
+			return pageTitle
+		end,
+		setThemeName = function(value)
+			themeName = value
+		end,
+		setWindowScale = function(value)
+			windowScale = value
+		end,
+		setContentTitleSize = function(value)
+			contentTitleSize = value
+		end,
+	}
+	local themeApi = createWindowThemeApi(themeRefs)
+	local applyWindowTransparency = themeApi.applyWindowTransparency
+	local applyWindowAccent = themeApi.applyWindowAccent
+	local applyWindowTheme = themeApi.applyWindowTheme
+	local applyWindowSize = themeApi.applyWindowSize
+	local applyWindowScale = themeApi.applyWindowScale
+	local applyContentTitleSize = themeApi.applyContentTitleSize
+	local applySavedWindowPosition = themeApi.applySavedWindowPosition
 
-	local function sizeFromWindowScale(scalePercent)
-		local scale = math.clamp(scalePercent or defaultWindowScale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE) / 100
-		return Vector2.new(
-			math.floor(WINDOW_SIZE.X * scale + 0.5),
-			math.floor(WINDOW_SIZE.Y * scale + 0.5)
-		)
-	end
-
-	local function applyWindowSize(size)
-		local width = math.clamp(math.floor(size.X + 0.5), MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH)
-		local height = math.clamp(math.floor(size.Y + 0.5), MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT)
-		root.Size = UDim2.fromOffset(width, height)
-		windowScale = scaleFromWindowSize(Vector2.new(width, height))
-	end
-
-	local function applyWindowScale(scalePercent)
-		windowScale = math.clamp(math.floor(scalePercent or defaultWindowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
-		applyWindowSize(sizeFromWindowScale(windowScale))
-	end
-
-	local function applyContentTitleSize(size)
-		contentTitleSize = math.clamp(math.floor(size or defaultContentTitleSize), MIN_CONTENT_TITLE_SIZE, MAX_CONTENT_TITLE_SIZE)
-		pageTitle.TextSize = contentTitleSize
-	end
-
-	local function applySavedWindowPosition(positionData)
-		if type(positionData) ~= "table" then
-			return
-		end
-		if type(positionData.xScale) ~= "number" or type(positionData.yScale) ~= "number" then
-			return
-		end
-		root.Position = UDim2.new(
-			positionData.xScale,
-			tonumber(positionData.xOffset) or 0,
-			positionData.yScale,
-			tonumber(positionData.yOffset) or 0
-		)
-	end
-
+	applyWindowTheme(themeName)
+	applyWindowTransparency(windowTransparency)
 	applyWindowScale(windowScale)
 	applyContentTitleSize(contentTitleSize)
 
@@ -3914,139 +4473,98 @@ function SempatLibrary:CreateWindow(settings)
 	local defaultToggleKeyName = resolveToggleKeyName(settings.ToggleUIKeybind)
 	local toggleKeyName = defaultToggleKeyName
 	local toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
-	local toggleKeyConnection
-	local windowVisible = true
 	local mobileFab
 	local uiSettingsPage
 	local lastSelectedTabId
 
-	local function persistUiSettings()
-		if not (writefile and isfolder and makefolder) then
-			return
-		end
-		pcall(function()
-			if not isfolder(folderName) then
-				makefolder(folderName)
-			end
-			local payload = {
-				transparency = math.floor(windowTransparency * 100 + 0.5),
-				toggleKey = toggleKeyName,
-				accentPreset = colorToPresetName(appliedAccentColor),
-				themePreset = themeName,
-				windowScale = windowScale,
-				windowWidth = root.Size.X.Offset,
-				windowHeight = root.Size.Y.Offset,
-				contentTitleSize = contentTitleSize,
-				rememberPosition = rememberPosition,
-				showMobileFab = showMobileFab,
-			}
-			if rememberPosition then
-				payload.position = {
-					xScale = root.Position.X.Scale,
-					xOffset = root.Position.X.Offset,
-					yScale = root.Position.Y.Scale,
-					yOffset = root.Position.Y.Offset,
-				}
-			end
-			if mobileFab then
-				payload.fabPosition = {
-					x = mobileFab.Position.X.Offset,
-					y = mobileFab.Position.Y.Offset,
-				}
-			end
-			writefile(folderName .. "/ui_settings.json", HttpService:JSONEncode(payload))
-		end)
-	end
-
-	local function loadUiSettings()
-		if not (readfile and isfile) then
-			return
-		end
-		local ok, decoded = pcall(function()
-			local path = folderName .. "/ui_settings.json"
-			if not isfile(path) then
-				return nil
-			end
-			return HttpService:JSONDecode(readfile(path))
-		end)
-		if not ok or type(decoded) ~= "table" then
-			return
-		end
-		if type(decoded.transparency) == "number" then
-			windowTransparency = normalizeWindowTransparency(decoded.transparency)
-			applyWindowTransparency(windowTransparency)
-		end
-		if type(decoded.accentPreset) == "string" then
-			for _, preset in ipairs(ACCENT_PRESETS) do
-				if preset.name == decoded.accentPreset then
-					applyWindowAccent(preset.color)
-					break
-				end
-			end
-		end
-		if type(decoded.themePreset) == "string" then
-			applyWindowTheme(decoded.themePreset)
-		end
-		if type(decoded.toggleKey) == "string" and decoded.toggleKey ~= "" then
-			toggleKeyName = string.upper(decoded.toggleKey)
-			toggleKeyCode = resolveToggleKeyCode(toggleKeyName)
-		end
-		if type(decoded.windowWidth) == "number" and type(decoded.windowHeight) == "number" then
-			applyWindowSize(Vector2.new(decoded.windowWidth, decoded.windowHeight))
-		elseif type(decoded.windowScale) == "number" then
-			windowScale = math.clamp(math.floor(decoded.windowScale), MIN_WINDOW_SCALE, MAX_WINDOW_SCALE)
-			applyWindowScale(windowScale)
-		end
-		if type(decoded.contentTitleSize) == "number" then
-			applyContentTitleSize(decoded.contentTitleSize)
-		end
-		if decoded.rememberPosition == true then
-			rememberPosition = true
-			applySavedWindowPosition(decoded.position)
-		end
-		if type(decoded.showMobileFab) == "boolean" then
-			showMobileFab = decoded.showMobileFab
-		end
-		initialFabPosition = fabPositionFromData(decoded.fabPosition)
-	end
-
+	local uiCtx = {
+		folderName = folderName,
+		root = root,
+		applyWindowTransparency = applyWindowTransparency,
+		applyWindowAccent = applyWindowAccent,
+		applyWindowTheme = applyWindowTheme,
+		resolveToggleKeyCode = resolveToggleKeyCode,
+		applyWindowSize = applyWindowSize,
+		applyWindowScale = applyWindowScale,
+		applyContentTitleSize = applyContentTitleSize,
+		applySavedWindowPosition = applySavedWindowPosition,
+		getWindowTransparency = function()
+			return windowTransparency
+		end,
+		setWindowTransparency = function(value)
+			windowTransparency = value
+		end,
+		getToggleKeyName = function()
+			return toggleKeyName
+		end,
+		setToggleKeyName = function(value)
+			toggleKeyName = value
+		end,
+		setToggleKeyCode = function(value)
+			toggleKeyCode = value
+		end,
+		getAppliedAccentColor = function()
+			return appliedAccentColor
+		end,
+		getThemeName = function()
+			return themeName
+		end,
+		getWindowScale = function()
+			return windowScale
+		end,
+		setWindowScale = function(value)
+			windowScale = value
+		end,
+		getContentTitleSize = function()
+			return contentTitleSize
+		end,
+		getRememberPosition = function()
+			return rememberPosition
+		end,
+		setRememberPosition = function(value)
+			rememberPosition = value
+		end,
+		getShowMobileFab = function()
+			return showMobileFab
+		end,
+		setShowMobileFab = function(value)
+			showMobileFab = value
+		end,
+		getMobileFab = function()
+			return mobileFab
+		end,
+		setInitialFabPosition = function(value)
+			initialFabPosition = value
+		end,
+	}
+	local persistUiSettings, loadUiSettings = createWindowUiPersistence(uiCtx)
 	loadUiSettings()
 
-	local function disconnectToggleKey()
-		if toggleKeyConnection then
-			toggleKeyConnection:Disconnect()
-			toggleKeyConnection = nil
-		end
-	end
-
-	local function setWindowVisible(isVisible)
-		windowVisible = isVisible == true
-		root.Visible = windowVisible
-		mobileFab.Visible = isMobile and showMobileFab and not windowVisible
-		screenGui.Enabled = true
-	end
-
-	local function toggleWindowVisible()
-		setWindowVisible(not windowVisible)
-	end
-
-	local function connectToggleKey(keyCode)
-		disconnectToggleKey()
-		toggleKeyCode = keyCode
-		if keyCode and not isMobile then
-			toggleKeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
-				if processed then
-					return
-				end
-				if input.UserInputType ~= Enum.UserInputType.Keyboard then
-					return
-				end
-				if input.KeyCode == keyCode then
-					toggleWindowVisible()
-				end
-			end)
-		end
-	end
+	local stateRefs = {
+		root = root,
+		screenGui = screenGui,
+		headerDragHandle = headerDragHandle,
+		isMobile = isMobile,
+		getShowMobileFab = function()
+			return showMobileFab
+		end,
+		getMobileFab = function()
+			return mobileFab
+		end,
+		getRememberPosition = function()
+			return rememberPosition
+		end,
+		persistUiSettings = persistUiSettings,
+		applyWindowSize = applyWindowSize,
+		setToggleKeyCode = function(value)
+			toggleKeyCode = value
+		end,
+	}
+	local windowState = createWindowState(stateRefs)
+	local setWindowVisible = windowState.setWindowVisible
+	local toggleWindowVisible = windowState.toggleWindowVisible
+	local connectToggleKey = windowState.connectToggleKey
+	local disconnectToggleKey = windowState.disconnectToggleKey
 
 	mobileFab = createMobileFab(screenGui, settings, title, function()
 		setWindowVisible(true)
@@ -4064,9 +4582,9 @@ function SempatLibrary:CreateWindow(settings)
 		table.insert(accentTargets, mobileFabStroke)
 	end
 
-	local minimizeButton = windowChromeButton("MinimizeButton", LUCIDE_ICON_MINIMIZE, -44, toggleWindowVisible)
+	local minimizeButton = windowChromeButton(headerBar, "MinimizeButton", LUCIDE_ICON_MINIMIZE, -44, toggleWindowVisible)
 
-	local closeButton = windowChromeButton("CloseButton", LUCIDE_ICON_CLOSE, -12, function()
+	local closeButton = windowChromeButton(headerBar, "CloseButton", LUCIDE_ICON_CLOSE, -12, function()
 		setWindowVisible(false)
 	end)
 
@@ -4147,7 +4665,7 @@ function SempatLibrary:CreateWindow(settings)
 		if mobileFab and mobileFab.SetFabPosition then
 			mobileFab:SetFabPosition(getDefaultFabPosition(screenGui))
 		end
-		setWindowVisible(windowVisible)
+		setWindowVisible(windowState.getWindowVisible())
 		persistUiSettings()
 	end
 
@@ -4238,7 +4756,7 @@ function SempatLibrary:CreateWindow(settings)
 		end,
 		setShowMobileFab = function(value)
 			showMobileFab = value == true
-			setWindowVisible(windowVisible)
+			setWindowVisible(windowState.getWindowVisible())
 			persistUiSettings()
 		end,
 		resetWindowPosition = function()
@@ -4256,7 +4774,7 @@ function SempatLibrary:CreateWindow(settings)
 
 	uiSettingsPage = createUiSettingsPage(pages, uiSettingsConfig)
 
-	settingsGearButton = windowIconButton("SettingsButton", -76, function()
+	settingsGearButton = windowIconButton(headerBar, "SettingsButton", -76, function()
 		if uiSettingsPage.IsOpen() then
 			uiSettingsPage.Close()
 			settingsGearButton.SetActive(false)
@@ -4267,183 +4785,47 @@ function SempatLibrary:CreateWindow(settings)
 			lastSelectedTabId = window._selected
 			selectSettings()
 		end
-	end, minimizeButton)
+	end, minimizeButton, appliedAccentColor)
 
-	function window:CreateTab(tabTitle, iconId)
-		self._tabOrder += 1
-		local tabId = "tab_" .. self._tabOrder
-
-		local page = new("Frame", {
-			Name = tabId,
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Visible = false,
-			Parent = pages,
-		})
-
-		local scroll = new("ScrollingFrame", {
-			Name = "Scroll",
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			Size = UDim2.new(1, -10, 1, 0),
-			Position = UDim2.new(0, 0, 0, 0),
-			ScrollBarThickness = 3,
-			ScrollBarImageColor3 = appliedAccentColor,
-			CanvasSize = UDim2.new(),
-			Parent = page,
-		})
-		table.insert(accentScrollbars, scroll)
-		padding(scroll, 0, 16, 20, 16)
-
-		local list = new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 10),
-			Parent = scroll,
-		})
-
-		list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-			scheduleCanvasUpdate(scroll)
-		end)
-
-		local setSelected = createSidebarButton(tabScroll, window, {
-			id = tabId,
-			title = tabTitle or "Tab",
-			icon = iconId,
-			order = self._tabOrder,
-			frame = page,
-		}, accentIndicators)
-
-		local tabApi = createTabApi(page, scroll, pageTitle)
-		tabApi._title = tabTitle
-
-		self._tabs[tabId] = {
-			id = tabId,
-			title = tabTitle or "Tab",
-			frame = page,
-			api = tabApi,
-			setSelected = setSelected,
-		}
-
-		if not self._selected then
-			selectTab(tabId)
-		end
-
-		return tabApi
-	end
-
-	function window:Tab(props)
-		props = props or {}
-		return self:CreateTab(props.Title or props.Name or "Tab", props.Icon)
-	end
-
-	function window:SetCurrentConfig(_cfg)
-		return nil
-	end
-
-	function window:SaveConfiguration()
-		return SempatLibrary:SaveConfiguration()
-	end
-
-	function window:LoadConfiguration()
-		local wasLoaded = configurationSaving.loaded
-		configurationSaving.loaded = false
-		local result = SempatLibrary:LoadConfiguration()
-		configurationSaving.loaded = wasLoaded or true
-		return result
-	end
-
-	function window:Toggle(state)
-		if state == nil then
-			toggleWindowVisible()
-			return windowVisible
-		end
-		setWindowVisible(state ~= false)
-		return windowVisible
-	end
-
-	function window:IsOpen()
-		return windowVisible
-	end
-
-	function window:SetTransparency(value)
-		if type(value) ~= "number" then
+	local w = {
+		pages = pages,
+		tabScroll = tabScroll,
+		accentScrollbars = accentScrollbars,
+		accentIndicators = accentIndicators,
+		pageTitle = pageTitle,
+		selectTab = selectTab,
+		selectSettings = selectSettings,
+		closeUiSettings = closeUiSettings,
+		lastSelectedTabId = lastSelectedTabId,
+		screenGui = screenGui,
+		toggleWindowVisible = toggleWindowVisible,
+		setWindowVisible = setWindowVisible,
+		getWindowVisible = windowState.getWindowVisible,
+		getWindowTransparency = function()
+			return math.floor(windowTransparency * 100 + 0.5)
+		end,
+		setWindowTransparency = function(value)
+			windowTransparency = normalizeWindowTransparency(value)
+			applyWindowTransparency(windowTransparency)
 			return windowTransparency
-		end
-		windowTransparency = normalizeWindowTransparency(value)
-		applyWindowTransparency(windowTransparency)
-		return windowTransparency
-	end
-
-	function window:GetTransparency()
-		return math.floor(windowTransparency * 100 + 0.5)
-	end
-
-	function window:SetAccentColor(color)
-		if typeof(color) ~= "Color3" then
-			return appliedAccentColor
-		end
-		applyWindowAccent(color)
-		persistUiSettings()
-		return appliedAccentColor
-	end
-
-	function window:GetAccentColor()
-		return appliedAccentColor
-	end
-
-	function window:GetThemePreset()
-		return themeName
-	end
-
-	function window:SetThemePreset(name)
-		if type(name) ~= "string" or trimText(name) == "" then
+		end,
+		applyWindowAccent = applyWindowAccent,
+		applyWindowTheme = applyWindowTheme,
+		persistUiSettings = persistUiSettings,
+		getThemeName = function()
 			return themeName
-		end
-		applyWindowTheme(name)
-		persistUiSettings()
-		return themeName
-	end
-
-	function window:SetToggleKeybind(keyName)
-		if type(keyName) ~= "string" or trimText(keyName) == "" then
+		end,
+		getToggleKeyName = function()
 			return toggleKeyName
-		end
-		local cleaned = string.upper(trimText(keyName))
-		local keyCode = resolveToggleKeyCode(cleaned)
-		if not keyCode then
-			return toggleKeyName
-		end
-		toggleKeyName = cleaned
-		connectToggleKey(keyCode)
-		persistUiSettings()
-		return toggleKeyName
-	end
-
-	function window:GetToggleKeybind()
-		return toggleKeyName
-	end
-
-	function window:OpenSettings()
-		lastSelectedTabId = window._selected
-		selectSettings()
-	end
-
-	function window:CloseSettings()
-		if not closeUiSettings() then
-			return
-		end
-		if lastSelectedTabId and window._tabs[lastSelectedTabId] then
-			selectTab(lastSelectedTabId)
-		end
-	end
-
-	function window:Destroy()
-		disconnectToggleKey()
-		clearAccentRefreshers()
-		clearThemeRegistry()
-		screenGui:Destroy()
-	end
+		end,
+		setToggleKeyName = function(value)
+			toggleKeyName = value
+		end,
+		connectToggleKey = connectToggleKey,
+		resolveToggleKeyCode = resolveToggleKeyCode,
+		disconnectToggleKey = disconnectToggleKey,
+	}
+	bindWindowPublicApi(window, w)
 
 	-- Simple config manager stub for WindUI config tab compatibility.
 	if folderName and writefile and makefolder and isfolder then
@@ -4510,108 +4892,7 @@ function SempatLibrary:CreateWindow(settings)
 	end
 
 	connectToggleKey(toggleKeyCode)
-
-	-- Drag support (dedicated handles; min/close buttons stay clickable)
-	local dragging = false
-	local dragStart
-	local startPos
-	local resizing = false
-	local resizeDragStart
-	local resizeStartSize
-
-	local function beginWindowDrag(input)
-		if resizing then
-			return
-		end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-		dragging = true
-		dragStart = input.Position
-		startPos = root.Position
-	end
-
-	local function endWindowDrag(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			if resizing then
-				resizing = false
-				persistUiSettings()
-			end
-			dragging = false
-			if rememberPosition then
-				persistUiSettings()
-			end
-		end
-	end
-
-	headerDragHandle.InputBegan:Connect(beginWindowDrag)
-
-	if not isMobile then
-		local resizeHandle = new("TextButton", {
-			Name = "ResizeHandle",
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.new(1, 0, 1, 0),
-			Size = UDim2.new(0, RESIZE_HANDLE_SIZE, 0, RESIZE_HANDLE_SIZE),
-			Text = "",
-			AutoButtonColor = false,
-			ZIndex = 10,
-			Parent = root,
-		})
-
-		for index = 0, 2 do
-			new("Frame", {
-				BackgroundColor3 = THEME.muted,
-				BorderSizePixel = 0,
-				AnchorPoint = Vector2.new(1, 1),
-				Position = UDim2.new(1, -2 - (index * 3), 1, -2),
-				Size = UDim2.new(0, 8 - (index * 2), 0, 2),
-				Rotation = -45,
-				Parent = resizeHandle,
-			})
-		end
-
-		resizeHandle.InputBegan:Connect(function(input)
-			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-				return
-			end
-			resizing = true
-			dragging = false
-			resizeDragStart = input.Position
-			resizeStartSize = root.AbsoluteSize
-		end)
-	end
-
-	UserInputService.InputEnded:Connect(endWindowDrag)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if not windowVisible then
-			return
-		end
-		if resizing then
-			if input.UserInputType ~= Enum.UserInputType.MouseMovement then
-				return
-			end
-			local delta = input.Position - resizeDragStart
-			applyWindowSize(Vector2.new(resizeStartSize.X + delta.X, resizeStartSize.Y + delta.Y))
-			return
-		end
-		if not dragging then
-			return
-		end
-		if input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch then
-			local delta = input.Position - dragStart
-			root.Position = UDim2.new(
-				startPos.X.Scale,
-				startPos.X.Offset + delta.X,
-				startPos.Y.Scale,
-				startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
+	windowState.wireDragResize()
 
 	if configurationSaving.enabled and configAutoLoad then
 		task.defer(function()
