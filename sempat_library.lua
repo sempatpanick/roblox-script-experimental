@@ -360,7 +360,8 @@ local function colorToPresetName(color)
 end
 local DROPDOWN_ITEM_HEIGHT = 34
 local DROPDOWN_SEARCH_HEIGHT = 36
-local DROPDOWN_COUNT_HEIGHT = 16
+local DROPDOWN_COUNT_HEIGHT = 13
+local DROPDOWN_COUNT_GAP = 2
 local DROPDOWN_MAX_HEIGHT = 240
 
 local ELEMENT_HEIGHT = 52
@@ -2182,7 +2183,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 	local menuLayout = new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, 6),
+		Padding = UDim.new(0, 4),
 		Parent = menu,
 	})
 
@@ -2217,6 +2218,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Right,
+		TextYAlignment = Enum.TextYAlignment.Center,
 		TextColor3 = THEME.muted,
 		Text = "",
 		LayoutOrder = searchEnabled and 2 or 1,
@@ -2259,8 +2261,8 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		if pad then
 			padY = pad.PaddingTop.Offset + pad.PaddingBottom.Offset
 		end
-		local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 6) or 0
-		local countH = menuItemCount and (DROPDOWN_COUNT_HEIGHT + 4) or 0
+		local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 4) or 0
+		local countH = menuItemCount and (DROPDOWN_COUNT_HEIGHT + DROPDOWN_COUNT_GAP) or 0
 		local listH = menuScroll.Size.Y.Offset
 		menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + countH + listH)
 	end
