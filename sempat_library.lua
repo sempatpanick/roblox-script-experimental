@@ -323,6 +323,7 @@ end
 
 local accentRefreshers = {}
 local activeDropdown
+local activeDropdownOnClose
 
 local function registerAccentRefresher(refresher)
 	if type(refresher) ~= "function" then
@@ -363,6 +364,8 @@ local DROPDOWN_SEARCH_HEIGHT = 36
 local DROPDOWN_COUNT_HEIGHT = 13
 local DROPDOWN_COUNT_GAP = 2
 local DROPDOWN_MAX_HEIGHT = 240
+local DROPDOWN_VISIBLE_BUFFER = 2
+local DROPDOWN_VISIBLE_SLOTS = math.ceil(DROPDOWN_MAX_HEIGHT / DROPDOWN_ITEM_HEIGHT) + DROPDOWN_VISIBLE_BUFFER
 
 local ELEMENT_HEIGHT = 52
 local SECTION_HEADER_HEIGHT = 36
@@ -1904,6 +1907,11 @@ end
 local dropdownOpening = false
 
 local function closeActiveDropdown()
+	if activeDropdownOnClose then
+		local onClose = activeDropdownOnClose
+		activeDropdownOnClose = nil
+		pcall(onClose)
+	end
 	if activeDropdown then
 		activeDropdown:Destroy()
 		activeDropdown = nil
@@ -2114,11 +2122,18 @@ local function bindDropdownElementMethods(element, ctx)
 	end
 
 	registerAccentRefresher(function(color)
+		if type(ctx.refreshOptionVisuals) == "function" then
+			ctx.refreshOptionVisuals()
+			return
+		end
 		for _, pooled in ipairs(optionPool) do
 			if pooled.Visible and pooled.Parent then
-				local pooledValue = pooled:GetAttribute("OptionValue")
-				if pooledValue ~= nil then
-					applyOptionVisual(pooled, pooledValue)
+				local dataIndex = pooled:GetAttribute("OptionIndex")
+				if type(dataIndex) == "number" and type(ctx.getFilteredOption) == "function" then
+					local option = ctx.getFilteredOption(dataIndex)
+					if option ~= nil then
+						applyOptionVisual(pooled, option)
+					end
 				end
 			end
 		end
@@ -2135,9 +2150,31 @@ local function formatDropdownItemCountLabel(visibleCount, totalCount, isFiltered
 	return string.format("%d %s", totalCount, itemsWord(totalCount))
 end
 
-local function createDropdownMenuHost(button, props, filterText, populateOptions, optionPool)
+local function getDropdownOptionDisplayText(option)
+	if type(option) == "table" and type(option.Title) == "string" then
+		return option.Title
+	end
+	return tostring(option)
+end
+
+local function buildDropdownFilteredOptions(values, filterText)
+	local filtered = {}
+	local filter = string.lower(filterText or "")
+	for _, option in ipairs(values or {}) do
+		local text = string.lower(getDropdownOptionDisplayText(option))
+		if filter == "" or string.find(text, filter, 1, true) then
+			table.insert(filtered, option)
+		end
+	end
+	return filtered
+end
+
+local function getDropdownFirstVisibleIndex(canvasY)
+	return math.max(1, math.floor((canvasY or 0) / DROPDOWN_ITEM_HEIGHT) + 1)
+end
+
+local function createDropdownMenuHost(button, props, filterText, populateOptions)
 	closeActiveDropdown()
-	table.clear(optionPool)
 	ensureOverlayGuis(getGuiParent())
 
 	local menuWidth = math.max(button.AbsoluteSize.X, 220)
@@ -2244,15 +2281,8 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		Name = "OptionsList",
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+		ClipsDescendants = false,
 		Parent = menuScroll,
-	})
-
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Vertical,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, 2),
-		Parent = menuList,
 	})
 
 	local function syncMenuSize()
@@ -2282,7 +2312,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		end)
 	end
 
-	return menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount
+	return menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize
 end
 
 local function buildDropdown(contentParent, props, scrollFrame)
@@ -2339,6 +2369,11 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local menuSearchBox
 	local menuItemCount
 	local menuWidth = math.max(200, 220)
+	local syncMenuSize
+	local filteredOptions = {}
+	local scrollConnection
+	local virtualSyncScheduled = false
+	local lastPopulateFilter
 
 	local function updateButtonText()
 		if isMulti then
@@ -2368,18 +2403,101 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	end
 
 	local function applyOptionVisual(item, option)
+		local displayText = getDropdownOptionDisplayText(option)
 		if isMulti then
 			local picked = table.find(selectedList, option) ~= nil
 			item:SetAttribute("OptionSelected", picked)
 			item.BackgroundTransparency = picked and 0 or 1
 			item.TextColor3 = picked and appliedAccentColor or THEME.text
-			item.Text = (picked and "✓ " or "  ") .. tostring(option)
+			item.Text = (picked and "✓ " or "  ") .. displayText
 			return
 		end
 		item:SetAttribute("OptionSelected", false)
 		item.BackgroundTransparency = 1
 		item.TextColor3 = THEME.text
-		item.Text = "  " .. tostring(option)
+		item.Text = "  " .. displayText
+	end
+
+	local function refreshVisibleSlots(firstIndex)
+		if not menuList then
+			return
+		end
+		firstIndex = firstIndex or getDropdownFirstVisibleIndex(menuScroll and menuScroll.CanvasPosition.Y or 0)
+		for slot = 1, DROPDOWN_VISIBLE_SLOTS do
+			local item = optionPool[slot]
+			if not item then
+				continue
+			end
+			local dataIndex = firstIndex + slot - 1
+			local option = filteredOptions[dataIndex]
+			if option ~= nil then
+				item.Position = UDim2.new(0, 0, 0, (dataIndex - 1) * DROPDOWN_ITEM_HEIGHT)
+				item:SetAttribute("OptionIndex", dataIndex)
+				applyOptionVisual(item, option)
+				item.Visible = true
+			else
+				item.Visible = false
+			end
+		end
+	end
+
+	local function updateDropdownScrollLayout()
+		if not menuScroll or not menuList then
+			return
+		end
+		local contentHeight = #filteredOptions * DROPDOWN_ITEM_HEIGHT
+		local viewportHeight = math.min(contentHeight, DROPDOWN_MAX_HEIGHT)
+		menuList.Size = UDim2.new(1, 0, 0, math.max(0, contentHeight))
+		menuScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(0, contentHeight))
+		menuScroll.Size = UDim2.new(1, 0, 0, viewportHeight)
+		if syncMenuSize then
+			syncMenuSize()
+		end
+	end
+
+	local function scheduleVirtualSync()
+		if virtualSyncScheduled then
+			return
+		end
+		virtualSyncScheduled = true
+		task.defer(function()
+			virtualSyncScheduled = false
+			if menuScroll and menuScroll.Parent then
+				refreshVisibleSlots()
+			end
+		end)
+	end
+
+	local function scrollToSelectedOption()
+		if not menuScroll or isMulti or #filteredOptions == 0 then
+			return
+		end
+		local target = element.Value
+		for index, option in ipairs(filteredOptions) do
+			if option == target then
+				local y = math.max(0, (index - 1) * DROPDOWN_ITEM_HEIGHT)
+				local viewport = menuScroll.AbsoluteSize.Y
+				local maxY = math.max(0, #filteredOptions * DROPDOWN_ITEM_HEIGHT - viewport)
+				menuScroll.CanvasPosition = Vector2.new(0, math.min(y, maxY))
+				break
+			end
+		end
+	end
+
+	local function detachVirtualPool()
+		for slot = 1, DROPDOWN_VISIBLE_SLOTS do
+			local item = optionPool[slot]
+			if item then
+				item.Parent = nil
+			end
+		end
+	end
+
+	local function disconnectDropdownScroll()
+		if scrollConnection then
+			scrollConnection:Disconnect()
+			scrollConnection = nil
+		end
 	end
 
 	local function setSelected(value, fireCallback)
@@ -2419,91 +2537,81 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		fireSelectionCallback()
 	end
 
+	local function ensureVirtualPool()
+		for slot = 1, DROPDOWN_VISIBLE_SLOTS do
+			if not optionPool[slot] then
+				local item = createDropdownOptionButton()
+				item.Name = "OptionSlot" .. tostring(slot)
+				item.Activated:Connect(function()
+					local dataIndex = item:GetAttribute("OptionIndex")
+					if type(dataIndex) ~= "number" then
+						return
+					end
+					local value = filteredOptions[dataIndex]
+					if value == nil then
+						return
+					end
+					if isMulti then
+						toggleMultiOption(value)
+						refreshVisibleSlots(getDropdownFirstVisibleIndex(menuScroll.CanvasPosition.Y))
+					else
+						setSelected(value, true)
+						closeActiveDropdown()
+					end
+				end)
+				optionPool[slot] = item
+			end
+			optionPool[slot].Parent = menuList
+		end
+	end
+
 	local function populateOptions(filterText)
 		if not menuList then
 			return
 		end
 
-		local filter = string.lower(filterText or "")
-		local order = 0
-
-		for _, option in ipairs(element.Values) do
-			local text = tostring(option)
-			if filter == "" or string.find(string.lower(text), filter, 1, true) then
-				order += 1
-				local item = optionPool[order]
-				if not item then
-					item = createDropdownOptionButton()
-					item.Parent = menuList
-					item.Activated:Connect(function()
-						local value = item:GetAttribute("OptionValue")
-						if value == nil then
-							return
-						end
-						if isMulti then
-							toggleMultiOption(value)
-							for _, pooled in ipairs(optionPool) do
-								if pooled.Visible then
-									local pooledValue = pooled:GetAttribute("OptionValue")
-									if pooledValue ~= nil then
-										applyOptionVisual(pooled, pooledValue)
-									end
-								end
-							end
-						else
-							setSelected(value, true)
-							closeActiveDropdown()
-						end
-					end)
-					optionPool[order] = item
-				end
-				item:SetAttribute("OptionValue", option)
-				applyOptionVisual(item, option)
-				item.LayoutOrder = order
-				item.Visible = true
+		local filter = filterText or ""
+		if filter ~= lastPopulateFilter then
+			lastPopulateFilter = filter
+			if menuScroll then
+				menuScroll.CanvasPosition = Vector2.new(0, 0)
 			end
 		end
 
-		for index = order + 1, #optionPool do
-			local pooled = optionPool[index]
-			if pooled then
-				pooled.Visible = false
-			end
-		end
+		filteredOptions = buildDropdownFilteredOptions(element.Values, filter)
+		local matchCount = #filteredOptions
 
 		if menuItemCount then
 			local total = #element.Values
-			menuItemCount.Text = formatDropdownItemCountLabel(order, total, filter ~= "")
+			menuItemCount.Text = formatDropdownItemCountLabel(matchCount, total, filter ~= "")
 		end
 
-		if menuScroll then
-			task.defer(function()
-				if menuList and menuList.Parent then
-					local layout = menuList:FindFirstChildOfClass("UIListLayout")
-					if layout then
-						local contentHeight = layout.AbsoluteContentSize.Y
-						menuScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
-						menuScroll.Size = UDim2.new(
-							1,
-							0,
-							0,
-							math.min(contentHeight, DROPDOWN_MAX_HEIGHT)
-						)
-					end
-				end
-			end)
-		end
+		ensureVirtualPool()
+		updateDropdownScrollLayout()
+		refreshVisibleSlots()
 	end
 
 	local function renderMenu(filterText)
-		menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount = createDropdownMenuHost(
+		disconnectDropdownScroll()
+
+		menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize = createDropdownMenuHost(
 			button,
 			props,
 			filterText,
-			populateOptions,
-			optionPool
+			populateOptions
 		)
+
+		lastPopulateFilter = nil
 		populateOptions(filterText)
+		scrollToSelectedOption()
+		refreshVisibleSlots(getDropdownFirstVisibleIndex(menuScroll.CanvasPosition.Y))
+
+		scrollConnection = menuScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(scheduleVirtualSync)
+
+		activeDropdownOnClose = function()
+			disconnectDropdownScroll()
+			detachVirtualPool()
+		end
 	end
 
 	button.Activated:Connect(function()
@@ -2528,6 +2636,12 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		syncElementValue = syncElementValue,
 		updateButtonText = updateButtonText,
 		applyOptionVisual = applyOptionVisual,
+		refreshOptionVisuals = function()
+			refreshVisibleSlots(getDropdownFirstVisibleIndex(menuScroll and menuScroll.CanvasPosition.Y or 0))
+		end,
+		getFilteredOption = function(dataIndex)
+			return filteredOptions[dataIndex]
+		end,
 	})
 
 	scheduleCanvasUpdate(scrollFrame)
