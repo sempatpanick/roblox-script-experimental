@@ -360,6 +360,7 @@ local function colorToPresetName(color)
 end
 local DROPDOWN_ITEM_HEIGHT = 34
 local DROPDOWN_SEARCH_HEIGHT = 36
+local DROPDOWN_COUNT_HEIGHT = 16
 local DROPDOWN_MAX_HEIGHT = 240
 
 local ELEMENT_HEIGHT = 52
@@ -2123,6 +2124,16 @@ local function bindDropdownElementMethods(element, ctx)
 	end)
 end
 
+local function formatDropdownItemCountLabel(visibleCount, totalCount, isFiltered)
+	local function itemsWord(count)
+		return count == 1 and "item" or "items"
+	end
+	if isFiltered then
+		return string.format("%d of %d %s", visibleCount, totalCount, itemsWord(totalCount))
+	end
+	return string.format("%d %s", totalCount, itemsWord(totalCount))
+end
+
 local function createDropdownMenuHost(button, props, filterText, populateOptions, optionPool)
 	closeActiveDropdown()
 	table.clear(optionPool)
@@ -2199,6 +2210,21 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		padding(menuSearchBox, 0, 0, 12, 12)
 	end
 
+	local menuItemCount = new("TextLabel", {
+		Name = "ItemCount",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, DROPDOWN_COUNT_HEIGHT),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = THEME.muted,
+		Text = "",
+		LayoutOrder = searchEnabled and 2 or 1,
+		Parent = menu,
+	})
+	padding(menuItemCount, 0, 0, 2, 12)
+	registerThemeTarget(menuItemCount, "muted")
+
 	local menuScroll = new("ScrollingFrame", {
 		Name = "OptionsScroll",
 		BackgroundTransparency = 1,
@@ -2208,7 +2234,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		ScrollBarThickness = 3,
 		ScrollBarImageColor3 = THEME.accent,
 		AutomaticCanvasSize = Enum.AutomaticSize.None,
-		LayoutOrder = 2,
+		LayoutOrder = searchEnabled and 3 or 2,
 		Parent = menu,
 	})
 
@@ -2234,8 +2260,9 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 			padY = pad.PaddingTop.Offset + pad.PaddingBottom.Offset
 		end
 		local searchH = searchEnabled and (DROPDOWN_SEARCH_HEIGHT + 6) or 0
+		local countH = menuItemCount and (DROPDOWN_COUNT_HEIGHT + 4) or 0
 		local listH = menuScroll.Size.Y.Offset
-		menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + listH)
+		menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + countH + listH)
 	end
 
 	menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncMenuSize)
@@ -2253,7 +2280,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		end)
 	end
 
-	return menuList, menuScroll, menuSearchBox, menuWidth
+	return menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount
 end
 
 local function buildDropdown(contentParent, props, scrollFrame)
@@ -2308,6 +2335,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local menuList
 	local menuScroll
 	local menuSearchBox
+	local menuItemCount
 	local menuWidth = math.max(200, 220)
 
 	local function updateButtonText()
@@ -2441,6 +2469,11 @@ local function buildDropdown(contentParent, props, scrollFrame)
 			end
 		end
 
+		if menuItemCount then
+			local total = #element.Values
+			menuItemCount.Text = formatDropdownItemCountLabel(order, total, filter ~= "")
+		end
+
 		if menuScroll then
 			task.defer(function()
 				if menuList and menuList.Parent then
@@ -2461,7 +2494,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	end
 
 	local function renderMenu(filterText)
-		menuList, menuScroll, menuSearchBox, menuWidth = createDropdownMenuHost(
+		menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount = createDropdownMenuHost(
 			button,
 			props,
 			filterText,
