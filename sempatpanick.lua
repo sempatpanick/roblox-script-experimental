@@ -10,7 +10,7 @@ local games = {
 	[76964310785698] = baseURL .. "/games/rayfield/mount_yahayuk.lua",
 	[118098747383977] = baseURL .. "/games/rayfield/mancing_indo.lua",
 	[78404864377525] = baseURL .. "/games/rayfield/mancing_indo_galatama.lua",
-	[79268393072444] = baseURL .. "/games/rayfield/sell_lemons.lua",
+	[79268393072444] = baseURL .. "/games/sempat/sell_lemons.lua",
 	[92416421522960] = baseURL .. "/games/rayfield/slime_rng.lua",
 	[93978595733734] = baseURL .. "/games/rayfield/violence_district.lua",
 }
