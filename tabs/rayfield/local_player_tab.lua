@@ -17,7 +17,7 @@
     antiAfk, infiniteJump, noClip, fly, freeCamera, cameraPenetrate, centerShiftLock,
     walkSpeed, jumpHeight, espMaxDistance, espPlayerNames, espPlayerDistance,
     espPlayerCharacter, espPlayerLines, espAllObjects, playersInfoPlayer, carryPlayer,
-    carryNearby, rejoinMessage, animationSelection
+    carryNearby, rejoinMessage, animationSelection, screenOrientation
 ]]
 
 local Players = game:GetService("Players")
@@ -94,6 +94,53 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
     local freeCameraCf = nil
     local centerShiftLockCameraEnabled = false
     local CENTER_SHIFTLOCK_RENDERSTEP_ID = options.shiftLockRenderStepId or "SempatPanickCenterShiftLockCamera"
+
+    local SCREEN_ORIENTATION_OPTIONS = {
+        "Sensor",
+        "Portrait",
+        "Landscape Left",
+        "Landscape Right",
+        "Landscape Sensor",
+    }
+    local SCREEN_ORIENTATION_BY_NAME = {
+        ["Sensor"] = Enum.ScreenOrientation.Sensor,
+        ["Portrait"] = Enum.ScreenOrientation.Portrait,
+        ["Landscape Left"] = Enum.ScreenOrientation.LandscapeLeft,
+        ["Landscape Right"] = Enum.ScreenOrientation.LandscapeRight,
+        ["Landscape Sensor"] = Enum.ScreenOrientation.LandscapeSensor,
+    }
+    local SCREEN_ORIENTATION_NAME_BY_VALUE = {
+        [Enum.ScreenOrientation.Sensor] = "Sensor",
+        [Enum.ScreenOrientation.Portrait] = "Portrait",
+        [Enum.ScreenOrientation.LandscapeLeft] = "Landscape Left",
+        [Enum.ScreenOrientation.LandscapeRight] = "Landscape Right",
+        [Enum.ScreenOrientation.LandscapeSensor] = "Landscape Sensor",
+    }
+
+    local function getCurrentScreenOrientationName()
+        local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            return SCREEN_ORIENTATION_NAME_BY_VALUE[playerGui.ScreenOrientation] or "Sensor"
+        end
+        return "Sensor"
+    end
+
+    local function applyScreenOrientation(optionName)
+        local orientation = SCREEN_ORIENTATION_BY_NAME[optionName]
+        if not orientation then
+            return false
+        end
+
+        local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then
+            return false
+        end
+
+        local ok = pcall(function()
+            playerGui.ScreenOrientation = orientation
+        end)
+        return ok
+    end
 
     local function stopCenterShiftLockCamera()
         RunService:UnbindFromRenderStep(CENTER_SHIFTLOCK_RENDERSTEP_ID)
@@ -476,6 +523,26 @@ local function createLocalPlayerTab(windowRef, notifyFn, options)
             applyNoClip(Players.LocalPlayer.Character, true)
         end
     end
+
+    LocalPlayerTab:CreateDropdown(withUiFlag({
+        Name = "Screen orientation",
+        Options = SCREEN_ORIENTATION_OPTIONS,
+        CurrentOption = { getCurrentScreenOrientationName() },
+        Callback = function(value)
+            local picked = rayfieldDropdownFirst(value)
+            if not picked then
+                return
+            end
+            if not applyScreenOrientation(picked) then
+                mountNotify({
+                    Title = "Screen orientation",
+                    Content = "Could not change orientation (mobile only)",
+                    Icon = "x",
+                })
+            end
+        end,
+    }, "screenOrientation"))
+
     LocalPlayerTab:CreateSection("Walk Speed")
     local defaultWalkSpeed = 16
 
