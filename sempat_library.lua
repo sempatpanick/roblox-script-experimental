@@ -2049,14 +2049,15 @@ local function bindDropdownElementMethods(element, ctx)
 	local updateButtonText = ctx.updateButtonText
 	local applyOptionVisual = ctx.applyOptionVisual
 
-	function element:Set(value)
+	function element:Set(value, skipCallback)
+		local fireCallback = skipCallback ~= true
 		if isMulti then
 			if type(value) == "table" then
-				setSelected(value, false)
+				setSelected(value, fireCallback)
 			elseif value == nil then
-				setSelected({}, false)
+				setSelected({}, fireCallback)
 			else
-				setSelected({ value }, false)
+				setSelected({ value }, fireCallback)
 			end
 			return
 		end
@@ -2065,11 +2066,14 @@ local function bindDropdownElementMethods(element, ctx)
 		if type(value) == "table" then
 			pick = value[1]
 		end
-		setSelected(pick, false)
+		if pick == selected then
+			return
+		end
+		setSelected(pick, fireCallback)
 	end
 
-	function element:SetValue(value)
-		element:Set(value)
+	function element:SetValue(value, skipCallback)
+		element:Set(value, skipCallback)
 	end
 
 	function element:Select(value)
@@ -2770,14 +2774,18 @@ local function buildInput(contentParent, props, scrollFrame)
 		return box.Text
 	end
 
-	function element:Set(text)
+	function element:Set(text, skipCallback)
 		box.Text = tostring(text or "")
 		element.CurrentValue = box.Text
 		element.Value = box.Text
+		if skipCallback ~= true then
+			safeCallback(props.Callback, box.Text)
+			notifyConfigurationChanged()
+		end
 	end
 
-	function element:SetValue(text)
-		element:Set(text)
+	function element:SetValue(text, skipCallback)
+		element:Set(text, skipCallback)
 	end
 
 	if props.Flag and not props.Ext then
