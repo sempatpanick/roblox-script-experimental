@@ -333,6 +333,7 @@ local Window = SempatLibrary:CreateWindow({
     LoadingSubtitle = "Sempat UI • Others",
     ToggleUIKeybind = "K",
     WindowTransparency = 30,
+    Icon = "https://dadang.id/sempatpanick-icon.png",
     ConfigurationSaving = {
         Enabled = true,
         AutoSave = false,
