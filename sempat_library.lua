@@ -4072,41 +4072,41 @@ local function createWindowState(refs)
 
 		refs.headerDragHandle.InputBegan:Connect(beginWindowDrag)
 
-		if not refs.isMobile then
-			local resizeHandle = new("TextButton", {
-				Name = "ResizeHandle",
-				BackgroundTransparency = 1,
+		local resizeHandleSize = refs.isMobile and 32 or RESIZE_HANDLE_SIZE
+		local resizeHandle = new("TextButton", {
+			Name = "ResizeHandle",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, 0, 1, 0),
+			Size = UDim2.new(0, resizeHandleSize, 0, resizeHandleSize),
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 10,
+			Parent = refs.root,
+		})
+
+		for index = 0, 2 do
+			new("Frame", {
+				BackgroundColor3 = THEME.muted,
+				BorderSizePixel = 0,
 				AnchorPoint = Vector2.new(1, 1),
-				Position = UDim2.new(1, 0, 1, 0),
-				Size = UDim2.new(0, RESIZE_HANDLE_SIZE, 0, RESIZE_HANDLE_SIZE),
-				Text = "",
-				AutoButtonColor = false,
-				ZIndex = 10,
-				Parent = refs.root,
+				Position = UDim2.new(1, -2 - (index * 3), 1, -2),
+				Size = UDim2.new(0, 8 - (index * 2), 0, 2),
+				Rotation = -45,
+				Parent = resizeHandle,
 			})
-
-			for index = 0, 2 do
-				new("Frame", {
-					BackgroundColor3 = THEME.muted,
-					BorderSizePixel = 0,
-					AnchorPoint = Vector2.new(1, 1),
-					Position = UDim2.new(1, -2 - (index * 3), 1, -2),
-					Size = UDim2.new(0, 8 - (index * 2), 0, 2),
-					Rotation = -45,
-					Parent = resizeHandle,
-				})
-			end
-
-			resizeHandle.InputBegan:Connect(function(input)
-				if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-					return
-				end
-				resizing = true
-				dragging = false
-				resizeDragStart = input.Position
-				resizeStartSize = refs.root.AbsoluteSize
-			end)
 		end
+
+		resizeHandle.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1
+				and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			resizing = true
+			dragging = false
+			resizeDragStart = input.Position
+			resizeStartSize = refs.root.AbsoluteSize
+		end)
 
 		UserInputService.InputEnded:Connect(endWindowDrag)
 
@@ -4115,7 +4115,8 @@ local function createWindowState(refs)
 				return
 			end
 			if resizing then
-				if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				if input.UserInputType ~= Enum.UserInputType.MouseMovement
+					and input.UserInputType ~= Enum.UserInputType.Touch then
 					return
 				end
 				local delta = input.Position - resizeDragStart
