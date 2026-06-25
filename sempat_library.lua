@@ -401,6 +401,7 @@ local LUCIDE_ICON_MINIMIZE = "minus"
 local LUCIDE_ICON_CLOSE = "x"
 local LUCIDE_ICON_CHEVRON_DOWN = "chevron-down"
 local LUCIDE_ICON_CHEVRON_RIGHT = "chevron-right"
+local LUCIDE_ICON_RESIZE = "move-diagonal-2"
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 local WINDOW_LOGO_SIZE = 28
@@ -4085,17 +4086,48 @@ local function createWindowState(refs)
 			Parent = refs.root,
 		})
 
-		for index = 0, 2 do
-			new("Frame", {
-				BackgroundColor3 = THEME.muted,
-				BorderSizePixel = 0,
-				AnchorPoint = Vector2.new(1, 1),
-				Position = UDim2.new(1, -2 - (index * 3), 1, -2),
-				Size = UDim2.new(0, 8 - (index * 2), 0, 2),
-				Rotation = -45,
-				Parent = resizeHandle,
-			})
+		local function createResizeGripLines()
+			for index = 0, 2 do
+				new("Frame", {
+					Name = "GripLine" .. tostring(index + 1),
+					BackgroundColor3 = THEME.muted,
+					BorderSizePixel = 0,
+					AnchorPoint = Vector2.new(1, 1),
+					Position = UDim2.new(1, -2 - (index * 3), 1, -2),
+					Size = UDim2.new(0, 8 - (index * 2), 0, 2),
+					Rotation = -45,
+					Parent = resizeHandle,
+				})
+			end
 		end
+
+		local resizeIconSize = refs.isMobile and 16 or SMALL_CHEVRON_ICON_SIZE
+		local resizeIcon = createLucideImage(resizeHandle, LUCIDE_ICON_RESIZE, {
+			name = "ResizeIcon",
+			anchorPoint = Vector2.new(1, 1),
+			position = UDim2.new(1, -4, 1, -4),
+			size = resizeIconSize,
+			color = THEME.muted,
+			zIndex = 2,
+		})
+		if resizeIcon then
+			registerThemeTarget(resizeIcon, "muted")
+		end
+
+		task.defer(function()
+			task.defer(function()
+				if not resizeHandle.Parent then
+					return
+				end
+				if resizeIcon and resizeIcon.Visible then
+					return
+				end
+				if resizeHandle:FindFirstChild("GripLine1") then
+					return
+				end
+				createResizeGripLines()
+			end)
+		end)
 
 		resizeHandle.InputBegan:Connect(function(input)
 			if input.UserInputType ~= Enum.UserInputType.MouseButton1
