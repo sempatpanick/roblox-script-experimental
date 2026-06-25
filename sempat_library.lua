@@ -400,7 +400,6 @@ local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
 local WINDOW_LOGO_SIZE = 28
 local FAB_LOGO_SIZE = 30
-local LOGO_CACHE_FOLDER = "SempatUI/logos"
 local FAB_DRAG_THRESHOLD = 8
 local FAB_EDGE_INSET = 18
 
@@ -726,19 +725,36 @@ local function hashString(value)
 	return tostring(hash)
 end
 
-local function getLogoCachePath(url)
-	return LOGO_CACHE_FOLDER .. "/logo_" .. hashString(url) .. ".png"
+local function getLogoCacheFolder(folderName)
+	local root = trimText(folderName or "")
+	if root == "" then
+		root = "SempatUI"
+	end
+	return root .. "/logos"
 end
 
-local function ensureLogoCacheFolder()
+local function getLogoCachePath(url, folderName)
+	return getLogoCacheFolder(folderName) .. "/logo_" .. hashString(url) .. ".png"
+end
+
+local function getLogoCacheKey(url, folderName)
+	return getLogoCacheFolder(folderName) .. "|" .. url
+end
+
+local function ensureLogoCacheFolder(folderName)
 	if not (makefolder and isfolder) then
 		return false
 	end
-	if not isfolder("SempatUI") then
-		makefolder("SempatUI")
+	local root = trimText(folderName or "")
+	if root == "" then
+		root = "SempatUI"
 	end
-	if not isfolder(LOGO_CACHE_FOLDER) then
-		makefolder(LOGO_CACHE_FOLDER)
+	if not isfolder(root) then
+		makefolder(root)
+	end
+	local cacheFolder = getLogoCacheFolder(folderName)
+	if not isfolder(cacheFolder) then
+		makefolder(cacheFolder)
 	end
 	return true
 end
@@ -771,19 +787,20 @@ local function httpGetBody(url)
 	return HttpService:GetAsync(url)
 end
 
-local function downloadLogoFromUrl(url)
+local function downloadLogoFromUrl(url, folderName)
 	if type(url) ~= "string" or url == "" then
 		return nil
 	end
-	if logoDownloadCache[url] then
-		return logoDownloadCache[url]
+	local cacheKey = getLogoCacheKey(url, folderName)
+	if logoDownloadCache[cacheKey] then
+		return logoDownloadCache[cacheKey]
 	end
 
-	local filePath = getLogoCachePath(url)
+	local filePath = getLogoCachePath(url, folderName)
 	if getcustomasset and isfile and isfile(filePath) then
 		local okAsset, cachedAsset = pcall(getcustomasset, filePath)
 		if okAsset and type(cachedAsset) == "string" and cachedAsset ~= "" then
-			logoDownloadCache[url] = cachedAsset
+			logoDownloadCache[cacheKey] = cachedAsset
 			return cachedAsset
 		end
 	end
@@ -794,12 +811,12 @@ local function downloadLogoFromUrl(url)
 		return nil
 	end
 
-	if writefile and ensureLogoCacheFolder() then
+	if writefile and ensureLogoCacheFolder(folderName) then
 		local okWrite = pcall(writefile, filePath, body)
 		if okWrite and getcustomasset then
 			local okAsset, asset = pcall(getcustomasset, filePath)
 			if okAsset and type(asset) == "string" and asset ~= "" then
-				logoDownloadCache[url] = asset
+				logoDownloadCache[cacheKey] = asset
 				return asset
 			end
 		end
@@ -963,12 +980,13 @@ local function buildLogoMount(parent, options, getAccentColor)
 	}
 end
 
-local function createWindowLogoController(settings, title, initialAccent)
+local function createWindowLogoController(settings, title, initialAccent, folderName)
 	local mounts = {}
 	local accentColor = initialAccent or THEME.accent
 	local activeSpec = nil
 	local urlLoadStarted = false
 	local iconRetryStarted = false
+	local logoFolder = folderName
 
 	local function refreshMounts()
 		if not activeSpec then
@@ -1000,7 +1018,7 @@ local function createWindowLogoController(settings, title, initialAccent)
 			fallbackText = fallbackText,
 		})
 		task.spawn(function()
-			local asset = downloadLogoFromUrl(url)
+			local asset = downloadLogoFromUrl(url, logoFolder)
 			if asset then
 				setSpec({
 					kind = "image",
@@ -3444,36 +3462,48 @@ function SempatLibrary:CreateWindow(settings)
 	local accentIndicators = {}
 	local accentScrollbars = {}
 
-	local windowLogo = createWindowLogoController(settings, title, appliedAccentColor)
+	local windowLogo = createWindowLogoController(settings, title, appliedAccentColor, folderName)
 	windowLogo.mount(headerBrand, {
 		size = WINDOW_LOGO_SIZE,
+		anchorPoint = Vector2.new(0, 0.5),
+		position = UDim2.new(0, 0, 0.5, 0),
 	})
+
+	local textStack = new("Frame", {
+		Name = "TitleStack",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 34, 0.5, 0),
+		Size = UDim2.new(1, -34, 0, 34),
+		Parent = headerBrand,
+	})
+
 	registerAccentRefresher(windowLogo.refreshAccent)
 
 	local titleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 34, 0, 2),
-		Size = UDim2.new(1, -34, 0, 18),
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(1, 0, 0, 18),
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.text,
 		Text = title,
-		Parent = headerBrand,
+		Parent = textStack,
 	})
 	registerThemeTarget(titleLabel, "text")
 
 	local subtitleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 34, 0, 22),
-		Size = UDim2.new(1, -34, 0, 14),
+		Position = UDim2.new(0, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 14),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = getHeaderSubtitleColor(),
 		Text = subtitle,
 		Active = false,
-		Parent = headerBrand,
+		Parent = textStack,
 	})
 
 	local headerDragHandle = new("Frame", {
