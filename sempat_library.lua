@@ -2712,6 +2712,15 @@ local function buildParagraph(contentParent, props, scrollFrame)
 		element:Set(data)
 	end
 
+	function element:Destroy()
+		if frame.Parent then
+			frame:Destroy()
+		end
+		scheduleCanvasUpdate(scrollFrame)
+	end
+
+	element.Frame = frame
+
 	scheduleCanvasUpdate(scrollFrame)
 	return element
 end
