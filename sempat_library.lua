@@ -398,6 +398,9 @@ local LUCIDE_ICON_CHEVRON_DOWN = "chevron-down"
 local LUCIDE_ICON_CHEVRON_RIGHT = "chevron-right"
 local MOBILE_FAB_SIZE = 52
 local MOBILE_FAB_CORNER = 12
+local WINDOW_LOGO_SIZE = 28
+local FAB_LOGO_SIZE = 30
+local LOGO_CACHE_FOLDER = "SempatUI/logos"
 local FAB_DRAG_THRESHOLD = 8
 local FAB_EDGE_INSET = 18
 
@@ -704,18 +707,362 @@ local function createLucideImage(parent, iconName, options)
 	}
 end
 
-local function resolveWindowIcon(settings, title)
+local logoDownloadCache = {}
+
+local function isHttpUrl(value)
+	return type(value) == "string" and string.find(value, "^https?://") ~= nil
+end
+
+local function getWindowLogoFallbackText(settings, title)
+	local sourceTitle = settings and (settings.LoadingTitle or settings.Name) or title
+	return getWindowInitial(sourceTitle)
+end
+
+local function hashString(value)
+	local hash = 0
+	for i = 1, #value do
+		hash = (hash * 31 + string.byte(value, i)) % 2147483647
+	end
+	return tostring(hash)
+end
+
+local function getLogoCachePath(url)
+	return LOGO_CACHE_FOLDER .. "/logo_" .. hashString(url) .. ".png"
+end
+
+local function ensureLogoCacheFolder()
+	if not (makefolder and isfolder) then
+		return false
+	end
+	if not isfolder("SempatUI") then
+		makefolder("SempatUI")
+	end
+	if not isfolder(LOGO_CACHE_FOLDER) then
+		makefolder(LOGO_CACHE_FOLDER)
+	end
+	return true
+end
+
+local function httpGetBody(url)
+	if type(game) == "table" and type(game.HttpGet) == "function" then
+		return game:HttpGet(url)
+	end
+	if game.HttpGetAsync then
+		return game:HttpGetAsync(url)
+	end
+	if type(request) == "function" then
+		local response = request({
+			Url = url,
+			Method = "GET",
+		})
+		if type(response) == "table" then
+			return response.Body
+		end
+	end
+	if type(syn) == "table" and type(syn.request) == "function" then
+		local response = syn.request({
+			Url = url,
+			Method = "GET",
+		})
+		if type(response) == "table" then
+			return response.Body
+		end
+	end
+	return HttpService:GetAsync(url)
+end
+
+local function downloadLogoFromUrl(url)
+	if type(url) ~= "string" or url == "" then
+		return nil
+	end
+	if logoDownloadCache[url] then
+		return logoDownloadCache[url]
+	end
+
+	local filePath = getLogoCachePath(url)
+	if getcustomasset and isfile and isfile(filePath) then
+		local okAsset, cachedAsset = pcall(getcustomasset, filePath)
+		if okAsset and type(cachedAsset) == "string" and cachedAsset ~= "" then
+			logoDownloadCache[url] = cachedAsset
+			return cachedAsset
+		end
+	end
+
+	local okFetch, body = pcall(httpGetBody, url)
+	if not okFetch or type(body) ~= "string" or #body < 16 then
+		warn("[SempatUI] Failed to download logo from URL:", url)
+		return nil
+	end
+
+	if writefile and ensureLogoCacheFolder() then
+		local okWrite = pcall(writefile, filePath, body)
+		if okWrite and getcustomasset then
+			local okAsset, asset = pcall(getcustomasset, filePath)
+			if okAsset and type(asset) == "string" and asset ~= "" then
+				logoDownloadCache[url] = asset
+				return asset
+			end
+		end
+	end
+
+	warn("[SempatUI] Logo URL requires writefile/getcustomasset support in this executor")
+	return nil
+end
+
+local function resolveWindowLogo(settings, title)
 	local icon = settings and settings.Icon
+	local fallbackText = getWindowLogoFallbackText(settings, title)
+
+	if icon == nil or icon == "" or icon == 0 then
+		return {
+			kind = "text",
+			value = fallbackText,
+			fallbackText = fallbackText,
+		}
+	end
+
+	if type(icon) == "string" and isHttpUrl(icon) then
+		return {
+			kind = "url",
+			value = icon,
+			fallbackText = fallbackText,
+			iconSource = icon,
+		}
+	end
+
 	local resolved = resolveUiIcon(icon)
 	if resolved and resolved.image then
-		return resolved.image, "image"
+		local isLucide = typeof(resolved.rectSize) == "Vector2" and resolved.rectSize.Magnitude > 0
+		if isLucide then
+			return {
+				kind = "lucide",
+				image = resolved.image,
+				rectSize = resolved.rectSize,
+				rectOffset = resolved.rectOffset,
+				fallbackText = fallbackText,
+				iconSource = icon,
+			}
+		end
+		return {
+			kind = "image",
+			image = resolved.image,
+			fallbackText = fallbackText,
+			iconSource = icon,
+		}
 	end
-	return getWindowInitial(title), "text"
+
+	return {
+		kind = "text",
+		value = fallbackText,
+		fallbackText = fallbackText,
+		iconSource = icon,
+	}
+end
+
+local function buildLogoMount(parent, options, getAccentColor)
+	options = options or {}
+	local size = options.size or WINDOW_LOGO_SIZE
+
+	local host = new("Frame", {
+		Name = "Logo",
+		BackgroundTransparency = 1,
+		AnchorPoint = options.anchorPoint or Vector2.new(0, 0),
+		Position = options.position or UDim2.fromScale(0, 0),
+		Size = UDim2.fromOffset(size, size),
+		ClipsDescendants = options.circular == true,
+		ZIndex = options.zIndex or 2,
+		Parent = parent,
+	})
+	if options.circular then
+		corner(host, size / 2)
+	end
+
+	local textLabel
+	local imageLabel
+	local lucideTinted = false
+
+	local function applyAccent(color)
+		if textLabel and textLabel.Visible then
+			textLabel.TextColor3 = color
+		end
+		if imageLabel and imageLabel.Visible and lucideTinted then
+			imageLabel.ImageColor3 = color
+		end
+	end
+
+	local function showText(text)
+		if imageLabel then
+			imageLabel.Visible = false
+		end
+		local accentColor = getAccentColor()
+		if not textLabel then
+			textLabel = new("TextLabel", {
+				Name = "Initial",
+				BackgroundTransparency = 1,
+				Size = UDim2.fromScale(1, 1),
+				Font = Enum.Font.GothamBlack,
+				TextSize = options.textSize or math.max(14, math.floor(size * 0.78)),
+				TextColor3 = accentColor,
+				Text = text,
+				ZIndex = options.zIndex or 2,
+				Parent = host,
+			})
+		else
+			textLabel.Text = text
+			textLabel.TextColor3 = accentColor
+			textLabel.Visible = true
+		end
+	end
+
+	local function showImage(spec, tint)
+		if textLabel then
+			textLabel.Visible = false
+		end
+		local accentColor = getAccentColor()
+		if not imageLabel then
+			imageLabel = new("ImageLabel", {
+				Name = "Icon",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromScale(1, 1),
+				ScaleType = Enum.ScaleType.Fit,
+				ZIndex = options.zIndex or 2,
+				Parent = host,
+			})
+		end
+		applyIconSpecToImage(imageLabel, spec)
+		imageLabel.Visible = true
+		lucideTinted = tint == true
+		if lucideTinted then
+			imageLabel.ImageColor3 = accentColor
+		else
+			imageLabel.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	end
+
+	return {
+		host = host,
+		apply = function(spec)
+			if not host.Parent or type(spec) ~= "table" then
+				return
+			end
+			if spec.kind == "text" then
+				showText(spec.value or spec.fallbackText or "S")
+			elseif spec.kind == "lucide" then
+				showImage({
+					image = spec.image,
+					rectSize = spec.rectSize,
+					rectOffset = spec.rectOffset,
+				}, true)
+			elseif spec.kind == "image" then
+				showImage({ image = spec.image }, false)
+			end
+		end,
+		setAccent = applyAccent,
+	}
+end
+
+local function createWindowLogoController(settings, title, initialAccent)
+	local mounts = {}
+	local accentColor = initialAccent or THEME.accent
+	local activeSpec = nil
+	local urlLoadStarted = false
+	local iconRetryStarted = false
+
+	local function refreshMounts()
+		if not activeSpec then
+			return
+		end
+		for _, mountEntry in ipairs(mounts) do
+			if mountEntry.host.Parent then
+				mountEntry.apply(activeSpec)
+			end
+		end
+	end
+
+	local function setSpec(spec)
+		if type(spec) ~= "table" then
+			return
+		end
+		activeSpec = spec
+		refreshMounts()
+	end
+
+	local function beginUrlLoad(url, fallbackText)
+		if urlLoadStarted then
+			return
+		end
+		urlLoadStarted = true
+		setSpec({
+			kind = "text",
+			value = fallbackText,
+			fallbackText = fallbackText,
+		})
+		task.spawn(function()
+			local asset = downloadLogoFromUrl(url)
+			if asset then
+				setSpec({
+					kind = "image",
+					image = asset,
+					fallbackText = fallbackText,
+				})
+			end
+		end)
+	end
+
+	local function beginIconRetry(iconSource)
+		if iconRetryStarted then
+			return
+		end
+		iconRetryStarted = true
+		task.defer(function()
+			local retrySpec = resolveWindowLogo({ Icon = iconSource }, title)
+			if retrySpec.kind == "text" then
+				return
+			end
+			if retrySpec.kind == "url" then
+				beginUrlLoad(retrySpec.value, retrySpec.fallbackText)
+			else
+				setSpec(retrySpec)
+			end
+		end)
+	end
+
+	local initialSpec = resolveWindowLogo(settings, title)
+	if initialSpec.kind == "url" then
+		beginUrlLoad(initialSpec.value, initialSpec.fallbackText)
+	elseif initialSpec.iconSource and initialSpec.kind == "text" then
+		setSpec(initialSpec)
+		beginIconRetry(initialSpec.iconSource)
+	else
+		setSpec(initialSpec)
+	end
+
+	local function mount(parent, mountOptions)
+		local mountEntry = buildLogoMount(parent, mountOptions, function()
+			return accentColor
+		end)
+		table.insert(mounts, mountEntry)
+		if activeSpec then
+			mountEntry.apply(activeSpec)
+		end
+		return mountEntry.host
+	end
+
+	return {
+		mount = mount,
+		refreshAccent = function(color)
+			accentColor = color
+			for _, mountEntry in ipairs(mounts) do
+				mountEntry.setAccent(color)
+			end
+		end,
+	}
 end
 
 local function createMobileFab(screenGui, settings, title, onOpen, options)
 	options = options or {}
-	local iconValue, iconKind = resolveWindowIcon(settings, title)
 
 	local fab = new("TextButton", {
 		Name = "MobileFab",
@@ -734,27 +1081,15 @@ local function createMobileFab(screenGui, settings, title, onOpen, options)
 	registerThemeTarget(fab, "card")
 	stroke(fab, THEME.accent, 0.15, 1.5)
 
-	if iconKind == "image" then
-		new("ImageLabel", {
-			Name = "Icon",
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.new(0, 30, 0, 30),
-			Image = iconValue,
-			ScaleType = Enum.ScaleType.Fit,
-			Parent = fab,
-		})
-	else
-		new("TextLabel", {
-			Name = "Initial",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Font = Enum.Font.GothamBold,
-			TextSize = 22,
-			TextColor3 = THEME.accent,
-			Text = iconValue,
-			Parent = fab,
+	local logoController = options.logoController
+	if logoController then
+		logoController.mount(fab, {
+			size = FAB_LOGO_SIZE,
+			anchorPoint = Vector2.new(0.5, 0.5),
+			position = UDim2.fromScale(0.5, 0.5),
+			zIndex = 2,
+			textSize = 22,
+			circular = true,
 		})
 	end
 
@@ -845,7 +1180,11 @@ local function createMobileFab(screenGui, settings, title, onOpen, options)
 	}
 
 	setmetatable(mobileFab, {
-		__index = function(_, key)
+		__index = function(self, key)
+			local owned = rawget(self, key)
+			if owned ~= nil then
+				return owned
+			end
 			local value = fab[key]
 			if type(value) == "function" then
 				return function(_, ...)
@@ -3105,16 +3444,11 @@ function SempatLibrary:CreateWindow(settings)
 	local accentIndicators = {}
 	local accentScrollbars = {}
 
-	local logo = new("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 28, 0, 28),
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
-		TextColor3 = appliedAccentColor,
-		Text = "L",
-		Parent = headerBrand,
+	local windowLogo = createWindowLogoController(settings, title, appliedAccentColor)
+	windowLogo.mount(headerBrand, {
+		size = WINDOW_LOGO_SIZE,
 	})
-	table.insert(accentTargets, logo)
+	registerAccentRefresher(windowLogo.refreshAccent)
 
 	local titleLabel = new("TextLabel", {
 		BackgroundTransparency = 1,
@@ -3688,6 +4022,7 @@ function SempatLibrary:CreateWindow(settings)
 		setWindowVisible(true)
 	end, {
 		initialPosition = initialFabPosition,
+		logoController = windowLogo,
 		onPositionChanged = function()
 			persistUiSettings()
 		end,
@@ -3697,10 +4032,6 @@ function SempatLibrary:CreateWindow(settings)
 	local mobileFabStroke = mobileFab:FindFirstChildOfClass("UIStroke")
 	if mobileFabStroke then
 		table.insert(accentTargets, mobileFabStroke)
-	end
-	local mobileFabInitial = mobileFab:FindFirstChild("Initial")
-	if mobileFabInitial then
-		table.insert(accentTargets, mobileFabInitial)
 	end
 
 	local minimizeButton = windowChromeButton("MinimizeButton", LUCIDE_ICON_MINIMIZE, -44, toggleWindowVisible)
