@@ -402,10 +402,10 @@ local LUCIDE_ICON_CLOSE = "x"
 local LUCIDE_ICON_CHEVRON_DOWN = "chevron-down"
 local LUCIDE_ICON_CHEVRON_RIGHT = "chevron-right"
 local LUCIDE_ICON_RESIZE = "move-diagonal-2"
-local MOBILE_FAB_SIZE = 52
+local MOBILE_FAB_SIZE = 50
 local MOBILE_FAB_CORNER = 12
 local WINDOW_LOGO_SIZE = 28
-local FAB_LOGO_SIZE = 30
+local FAB_LOGO_SIZE = 40
 local HEADER_TEXT_LEFT = 34
 local HEADER_TEXT_STACK_HEIGHT = 34
 local FAB_DRAG_THRESHOLD = 8
@@ -414,8 +414,8 @@ local FAB_EDGE_INSET = 18
 local function getDefaultFabPosition(parent)
 	local parentSize = parent and parent.AbsoluteSize or Vector2.new(800, 600)
 	return UDim2.fromOffset(
-		parentSize.X - FAB_EDGE_INSET - MOBILE_FAB_SIZE / 2,
-		parentSize.Y - FAB_EDGE_INSET - MOBILE_FAB_SIZE / 2
+		parentSize.X / 2,
+		FAB_EDGE_INSET + MOBILE_FAB_SIZE / 2
 	)
 end
 
