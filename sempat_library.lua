@@ -3606,7 +3606,7 @@ local function windowChromeButton(headerBar, buttonName, iconName, xOffset, onCl
 	return btn
 end
 
-local function windowIconButton(headerBar, buttonName, xOffset, onClick, chromeColorSource, accentColor)
+local function windowIconButton(headerBar, buttonName, xOffset, onClick, chromeColorSource)
 	local highlight = new("Frame", {
 		Name = "Highlight",
 		BackgroundColor3 = THEME.card,
@@ -3652,7 +3652,7 @@ local function windowIconButton(headerBar, buttonName, xOffset, onClick, chromeC
 	local active = false
 
 	local function refreshIconColor()
-		gearIcon.setColor(active and accentColor or getIdleChromeColor())
+		gearIcon.setColor(active and appliedAccentColor or getIdleChromeColor())
 	end
 
 	local function setActive(isActive)
@@ -4984,7 +4984,7 @@ function SempatLibrary:CreateWindow(settings)
 			lastSelectedTabId = window._selected
 			selectSettings()
 		end
-	end, minimizeButton, appliedAccentColor)
+	end, minimizeButton)
 
 	local w = {
 		pages = pages,
