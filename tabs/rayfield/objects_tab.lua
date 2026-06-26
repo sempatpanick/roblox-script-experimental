@@ -122,17 +122,6 @@ local function createObjectsTab(windowRef, notifyFn, options)
         return dropdownMod.prependNoneOption(items, OBJECTS_NONE)
     end
 
-    local function rerunObjectsDropdownSelection(dropdown)
-        if not dropdown then
-            return
-        end
-        local cb = dropdown.Callback
-        local sel = dropdown.CurrentOption
-        if type(cb) == "function" and sel ~= nil then
-            cb(sel)
-        end
-    end
-
     local function clearObjectsTabOverflowParagraphs(refs: { any })
         for i = #refs, 1, -1 do
             local p = refs[i]
@@ -187,6 +176,111 @@ local function createObjectsTab(windowRef, notifyFn, options)
     -- would collide on a string-keyed map and break selection; use { Title, Instance }.
     local function buildObjectsServiceDropdownValues(children: { Instance }): { any }
         return treeMod.buildObjectsServiceDropdownValues(children, formatInstanceDisplay)
+    end
+
+    local function findObjectsDropdownTitleForInstance(titleToInstance: { [string]: Instance }, inst: Instance?): string?
+        if not inst then
+            return nil
+        end
+        for title, rowInst in pairs(titleToInstance) do
+            if rowInst == inst then
+                return title
+            end
+        end
+        return nil
+    end
+
+    local function applyObjectsSectionChildrenParagraph(
+        selectedInstance: Instance?,
+        sectionParagraph: any,
+        overflowParagraphRefs: { any },
+        emptyPlaceholder: string
+    )
+        if not selectedInstance or not selectedInstance.Parent then
+            setNestedChildrenParagraphsWithOverflow(
+                ObjectsTab,
+                sectionParagraph,
+                overflowParagraphRefs,
+                nil,
+                NESTED_CHILDREN_TITLE,
+                emptyPlaceholder
+            )
+            return
+        end
+        local text = buildNestedObjectChildrenListText(selectedInstance)
+        setNestedChildrenParagraphsWithOverflow(
+            ObjectsTab,
+            sectionParagraph,
+            overflowParagraphRefs,
+            text,
+            NESTED_CHILDREN_TITLE,
+            emptyPlaceholder
+        )
+    end
+
+    local function handleObjectsSectionDropdownSelect(
+        opts: any,
+        titleToInstance: { [string]: Instance },
+        selectionStore: { instance: Instance? },
+        sectionParagraph: any,
+        overflowParagraphRefs: { any },
+        emptyPlaceholder: string
+    )
+        local selectedDisplay = type(opts) == "table" and opts[1] or opts
+        if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
+            selectionStore.instance = nil
+            applyObjectsSectionChildrenParagraph(nil, sectionParagraph, overflowParagraphRefs, emptyPlaceholder)
+            return
+        end
+        local inst = titleToInstance[selectedDisplay]
+        if not inst then
+            if selectionStore.instance and selectionStore.instance.Parent then
+                applyObjectsSectionChildrenParagraph(
+                    selectionStore.instance,
+                    sectionParagraph,
+                    overflowParagraphRefs,
+                    emptyPlaceholder
+                )
+            end
+            return
+        end
+        selectionStore.instance = inst
+        applyObjectsSectionChildrenParagraph(inst, sectionParagraph, overflowParagraphRefs, emptyPlaceholder)
+    end
+
+    local function refreshObjectsSectionChildrenParagraph(
+        dropdown: any,
+        titleToInstance: { [string]: Instance },
+        selectionStore: { instance: Instance? },
+        sectionParagraph: any,
+        overflowParagraphRefs: { any },
+        emptyPlaceholder: string
+    )
+        local selectedInstance = selectionStore.instance
+        if selectedInstance and selectedInstance.Parent then
+            local newTitle = findObjectsDropdownTitleForInstance(titleToInstance, selectedInstance)
+            if newTitle and dropdown and dropdown.Set then
+                dropdown:Set({ newTitle })
+                return
+            end
+            applyObjectsSectionChildrenParagraph(
+                selectedInstance,
+                sectionParagraph,
+                overflowParagraphRefs,
+                emptyPlaceholder
+            )
+            return
+        end
+        if dropdown and dropdown.CurrentOption then
+            handleObjectsSectionDropdownSelect(
+                dropdown.CurrentOption,
+                titleToInstance,
+                selectionStore,
+                sectionParagraph,
+                overflowParagraphRefs,
+                emptyPlaceholder
+            )
+        end
     end
 
     local function runObjectsTabFindInstanceByName(
@@ -290,6 +384,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
 
     local rsTitleList = {}
     local rsTitleToInstance = {}
+    local rsSelection = { instance = nil :: Instance? }
 
     local function refreshReplicatedStorageList()
         local rows = buildObjectsServiceDropdownValues(ReplicatedStorage:GetChildren())
@@ -302,7 +397,14 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
             ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsTitleList))
         end
-        rerunObjectsDropdownSelection(ReplicatedStorageDropdown)
+        refreshObjectsSectionChildrenParagraph(
+            ReplicatedStorageDropdown,
+            rsTitleToInstance,
+            rsSelection,
+            ReplicatedStorageChildrenParagraph,
+            rsChildrenOverflowParagraphs,
+            "Select an object above to list its children"
+        )
         mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsTitleList .. " objects", Icon = "check" })
     end
 
@@ -313,29 +415,12 @@ local function createObjectsTab(windowRef, notifyFn, options)
         Search = true,
         Ext = true,
         Callback = function(opts)
-            local selectedDisplay = type(opts) == "table" and opts[1] or opts
-            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
-                setNestedChildrenParagraphsWithOverflow(
-                    ObjectsTab,
-                    ReplicatedStorageChildrenParagraph,
-                    rsChildrenOverflowParagraphs,
-                    nil,
-                    NESTED_CHILDREN_TITLE,
-                    "Select an object above to list its children"
-                )
-                return
-            end
-            local inst = rsTitleToInstance[selectedDisplay]
-            if not inst then
-                return
-            end
-            local text = buildNestedObjectChildrenListText(inst)
-            setNestedChildrenParagraphsWithOverflow(
-                ObjectsTab,
+            handleObjectsSectionDropdownSelect(
+                opts,
+                rsTitleToInstance,
+                rsSelection,
                 ReplicatedStorageChildrenParagraph,
                 rsChildrenOverflowParagraphs,
-                text,
-                NESTED_CHILDREN_TITLE,
                 "Select an object above to list its children"
             )
         end,
@@ -387,6 +472,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
 
     local plrsTitleList = {}
     local plrsTitleToInstance = {}
+    local plrsSelection = { instance = nil :: Instance? }
 
     local function refreshPlayersServiceList()
         local rows = buildObjectsServiceDropdownValues(Players:GetChildren())
@@ -399,7 +485,14 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
             PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsTitleList))
         end
-        rerunObjectsDropdownSelection(PlayersServiceDropdown)
+        refreshObjectsSectionChildrenParagraph(
+            PlayersServiceDropdown,
+            plrsTitleToInstance,
+            plrsSelection,
+            PlayersServiceChildrenParagraph,
+            plrsChildrenOverflowParagraphs,
+            "Select a player above to list their children"
+        )
         mountNotify({ Title = "Players", Content = "Listed " .. #plrsTitleList .. " players", Icon = "check" })
     end
 
@@ -410,29 +503,12 @@ local function createObjectsTab(windowRef, notifyFn, options)
         Search = true,
         Ext = true,
         Callback = function(opts)
-            local selectedDisplay = type(opts) == "table" and opts[1] or opts
-            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
-                setNestedChildrenParagraphsWithOverflow(
-                    ObjectsTab,
-                    PlayersServiceChildrenParagraph,
-                    plrsChildrenOverflowParagraphs,
-                    nil,
-                    NESTED_CHILDREN_TITLE,
-                    "Select a player above to list their children"
-                )
-                return
-            end
-            local inst = plrsTitleToInstance[selectedDisplay]
-            if not inst then
-                return
-            end
-            local text = buildNestedObjectChildrenListText(inst)
-            setNestedChildrenParagraphsWithOverflow(
-                ObjectsTab,
+            handleObjectsSectionDropdownSelect(
+                opts,
+                plrsTitleToInstance,
+                plrsSelection,
                 PlayersServiceChildrenParagraph,
                 plrsChildrenOverflowParagraphs,
-                text,
-                NESTED_CHILDREN_TITLE,
                 "Select a player above to list their children"
             )
         end,
@@ -484,6 +560,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
 
     local lpTitleList = {}
     local lpTitleToInstance = {}
+    local lpSelection = { instance = nil :: Instance? }
 
     local function refreshLocalPlayerList()
         local localPlayer = Players.LocalPlayer
@@ -497,7 +574,14 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
             LocalPlayerDropdown:Refresh(objectDropdownOptions(lpTitleList))
         end
-        rerunObjectsDropdownSelection(LocalPlayerDropdown)
+        refreshObjectsSectionChildrenParagraph(
+            LocalPlayerDropdown,
+            lpTitleToInstance,
+            lpSelection,
+            LocalPlayerChildrenParagraph,
+            lpChildrenOverflowParagraphs,
+            "Select an object above to list its children"
+        )
         mountNotify({ Title = "Local Player", Content = "Listed " .. #lpTitleList .. " objects", Icon = "check" })
     end
 
@@ -508,29 +592,12 @@ local function createObjectsTab(windowRef, notifyFn, options)
         Search = true,
         Ext = true,
         Callback = function(opts)
-            local selectedDisplay = type(opts) == "table" and opts[1] or opts
-            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
-                setNestedChildrenParagraphsWithOverflow(
-                    ObjectsTab,
-                    LocalPlayerChildrenParagraph,
-                    lpChildrenOverflowParagraphs,
-                    nil,
-                    NESTED_CHILDREN_TITLE,
-                    "Select an object above to list its children"
-                )
-                return
-            end
-            local inst = lpTitleToInstance[selectedDisplay]
-            if not inst then
-                return
-            end
-            local text = buildNestedObjectChildrenListText(inst)
-            setNestedChildrenParagraphsWithOverflow(
-                ObjectsTab,
+            handleObjectsSectionDropdownSelect(
+                opts,
+                lpTitleToInstance,
+                lpSelection,
                 LocalPlayerChildrenParagraph,
                 lpChildrenOverflowParagraphs,
-                text,
-                NESTED_CHILDREN_TITLE,
                 "Select an object above to list its children"
             )
         end,
@@ -582,6 +649,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
 
     local wsTitleList = {}
     local wsTitleToInstance = {}
+    local wsSelection = { instance = nil :: Instance? }
 
     local function refreshWorkspaceList()
         local rows = buildObjectsServiceDropdownValues(Workspace:GetChildren())
@@ -594,7 +662,14 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
             WorkspaceDropdown:Refresh(objectDropdownOptions(wsTitleList))
         end
-        rerunObjectsDropdownSelection(WorkspaceDropdown)
+        refreshObjectsSectionChildrenParagraph(
+            WorkspaceDropdown,
+            wsTitleToInstance,
+            wsSelection,
+            WorkspaceChildrenParagraph,
+            wsChildrenOverflowParagraphs,
+            "Select an object above to list its children"
+        )
         mountNotify({ Title = "Workspace", Content = "Listed " .. #wsTitleList .. " objects", Icon = "check" })
     end
 
@@ -605,29 +680,12 @@ local function createObjectsTab(windowRef, notifyFn, options)
         Search = true,
         Ext = true,
         Callback = function(opts)
-            local selectedDisplay = type(opts) == "table" and opts[1] or opts
-            if not selectedDisplay or selectedDisplay == OBJECTS_NONE then
-                setNestedChildrenParagraphsWithOverflow(
-                    ObjectsTab,
-                    WorkspaceChildrenParagraph,
-                    wsChildrenOverflowParagraphs,
-                    nil,
-                    NESTED_CHILDREN_TITLE,
-                    "Select an object above to list its children"
-                )
-                return
-            end
-            local inst = wsTitleToInstance[selectedDisplay]
-            if not inst then
-                return
-            end
-            local text = buildNestedObjectChildrenListText(inst)
-            setNestedChildrenParagraphsWithOverflow(
-                ObjectsTab,
+            handleObjectsSectionDropdownSelect(
+                opts,
+                wsTitleToInstance,
+                wsSelection,
                 WorkspaceChildrenParagraph,
                 wsChildrenOverflowParagraphs,
-                text,
-                NESTED_CHILDREN_TITLE,
                 "Select an object above to list its children"
             )
         end,
