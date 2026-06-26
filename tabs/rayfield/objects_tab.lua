@@ -122,6 +122,17 @@ local function createObjectsTab(windowRef, notifyFn, options)
         return dropdownMod.prependNoneOption(items, OBJECTS_NONE)
     end
 
+    local function rerunObjectsDropdownSelection(dropdown)
+        if not dropdown then
+            return
+        end
+        local cb = dropdown.Callback
+        local sel = dropdown.CurrentOption
+        if type(cb) == "function" and sel ~= nil then
+            cb(sel)
+        end
+    end
+
     local function clearObjectsTabOverflowParagraphs(refs: { any })
         for i = #refs, 1, -1 do
             local p = refs[i]
@@ -291,6 +302,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if ReplicatedStorageDropdown and ReplicatedStorageDropdown.Refresh then
             ReplicatedStorageDropdown:Refresh(objectDropdownOptions(rsTitleList))
         end
+        rerunObjectsDropdownSelection(ReplicatedStorageDropdown)
         mountNotify({ Title = "ReplicatedStorage", Content = "Listed " .. #rsTitleList .. " objects", Icon = "check" })
     end
 
@@ -387,6 +399,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if PlayersServiceDropdown and PlayersServiceDropdown.Refresh then
             PlayersServiceDropdown:Refresh(objectDropdownOptions(plrsTitleList))
         end
+        rerunObjectsDropdownSelection(PlayersServiceDropdown)
         mountNotify({ Title = "Players", Content = "Listed " .. #plrsTitleList .. " players", Icon = "check" })
     end
 
@@ -484,6 +497,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if LocalPlayerDropdown and LocalPlayerDropdown.Refresh then
             LocalPlayerDropdown:Refresh(objectDropdownOptions(lpTitleList))
         end
+        rerunObjectsDropdownSelection(LocalPlayerDropdown)
         mountNotify({ Title = "Local Player", Content = "Listed " .. #lpTitleList .. " objects", Icon = "check" })
     end
 
@@ -580,6 +594,7 @@ local function createObjectsTab(windowRef, notifyFn, options)
         if WorkspaceDropdown and WorkspaceDropdown.Refresh then
             WorkspaceDropdown:Refresh(objectDropdownOptions(wsTitleList))
         end
+        rerunObjectsDropdownSelection(WorkspaceDropdown)
         mountNotify({ Title = "Workspace", Content = "Listed " .. #wsTitleList .. " objects", Icon = "check" })
     end
 
