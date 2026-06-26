@@ -376,9 +376,11 @@ local SIDEBAR_WIDTH = 170
 local TAB_ICON_SIZE = 16
 local TAB_TEXT_LEFT_NO_ICON = 12
 local TAB_TEXT_LEFT_WITH_ICON = 34
-local PROFILE_CARD_HEIGHT = 54
+local PROFILE_CARD_HEIGHT = 46
 local PROFILE_AVATAR_SIZE = 32
-local PROFILE_PAD_X = 8
+local PROFILE_PAD_X = 5
+local PROFILE_PAD_Y = 6
+local PROFILE_TEXT_GAP = 5
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local CONTENT_TOPBAR_HEIGHT = 40
@@ -3810,7 +3812,7 @@ local function createWindowSidebar(body, accentScrollbars)
 	corner(profileCard, 10)
 	registerThemeTarget(profileCard, "card")
 
-	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + 8
+	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + PROFILE_TEXT_GAP
 	local profileTextRight = PROFILE_PAD_X
 
 	local avatar = new("ImageLabel", {
@@ -3843,7 +3845,7 @@ local function createWindowSidebar(body, accentScrollbars)
 
 	local profileDisplayName = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, profileTextLeft, 0, 10),
+		Position = UDim2.new(0, profileTextLeft, 0, PROFILE_PAD_Y),
 		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 16),
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
@@ -3856,7 +3858,7 @@ local function createWindowSidebar(body, accentScrollbars)
 
 	local profileUserName = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, profileTextLeft, 0, 28),
+		Position = UDim2.new(0, profileTextLeft, 0, PROFILE_PAD_Y + 18),
 		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
