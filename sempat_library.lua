@@ -2162,6 +2162,18 @@ local function getDropdownOptionDisplayText(option)
 	return tostring(option)
 end
 
+local function dropdownOptionsEqual(a, b)
+	if a == b then
+		return true
+	end
+	if type(a) == "table" and type(b) == "table" then
+		if type(a.Title) == "string" and type(b.Title) == "string" then
+			return a.Title == b.Title
+		end
+	end
+	return false
+end
+
 local function buildDropdownFilteredOptions(values, filterText)
 	local filtered = {}
 	local filter = string.lower(filterText or "")
@@ -2409,18 +2421,16 @@ local function buildDropdown(contentParent, props, scrollFrame)
 
 	local function applyOptionVisual(item, option)
 		local displayText = getDropdownOptionDisplayText(option)
+		local picked
 		if isMulti then
-			local picked = table.find(selectedList, option) ~= nil
-			item:SetAttribute("OptionSelected", picked)
-			item.BackgroundTransparency = picked and 0 or 1
-			item.TextColor3 = picked and appliedAccentColor or THEME.text
-			item.Text = (picked and "✓ " or "  ") .. displayText
-			return
+			picked = table.find(selectedList, option) ~= nil
+		else
+			picked = dropdownOptionsEqual(option, selected) or dropdownOptionsEqual(option, element.Value)
 		end
-		item:SetAttribute("OptionSelected", false)
-		item.BackgroundTransparency = 1
-		item.TextColor3 = THEME.text
-		item.Text = "  " .. displayText
+		item:SetAttribute("OptionSelected", picked)
+		item.BackgroundTransparency = picked and 0 or 1
+		item.TextColor3 = picked and appliedAccentColor or THEME.text
+		item.Text = (picked and "✓ " or "  ") .. displayText
 	end
 
 	local function refreshVisibleSlots(firstIndex)
@@ -2479,7 +2489,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 		end
 		local target = element.Value
 		for index, option in ipairs(filteredOptions) do
-			if option == target then
+			if dropdownOptionsEqual(option, target) then
 				local y = math.max(0, (index - 1) * DROPDOWN_ITEM_HEIGHT)
 				local viewport = menuScroll.AbsoluteSize.Y
 				local maxY = math.max(0, #filteredOptions * DROPDOWN_ITEM_HEIGHT - viewport)
