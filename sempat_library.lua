@@ -376,11 +376,12 @@ local SIDEBAR_WIDTH = 170
 local TAB_ICON_SIZE = 16
 local TAB_TEXT_LEFT_NO_ICON = 12
 local TAB_TEXT_LEFT_WITH_ICON = 34
-local PROFILE_CARD_HEIGHT = 46
+local PROFILE_CARD_HEIGHT = 42
 local PROFILE_AVATAR_SIZE = 32
 local PROFILE_PAD_X = 5
-local PROFILE_PAD_Y = 6
+local PROFILE_PAD_Y = 4
 local PROFILE_TEXT_GAP = 5
+local PROFILE_NAME_LINE_GAP = 1
 local HEADER_HEIGHT = 56
 local HEADER_CONTROLS_WIDTH = 120
 local CONTENT_TOPBAR_HEIGHT = 40
@@ -3858,7 +3859,7 @@ local function createWindowSidebar(body, accentScrollbars)
 
 	local profileUserName = new("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, profileTextLeft, 0, PROFILE_PAD_Y + 18),
+		Position = UDim2.new(0, profileTextLeft, 0, PROFILE_PAD_Y + 16 + PROFILE_NAME_LINE_GAP),
 		Size = UDim2.new(1, -(profileTextLeft + profileTextRight), 0, 14),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
