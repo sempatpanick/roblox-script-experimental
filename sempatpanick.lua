@@ -13,6 +13,7 @@ local games = {
 	[79268393072444] = baseURL .. "/games/sempat/sell_lemons.lua",
 	[92416421522960] = baseURL .. "/games/rayfield/slime_rng.lua",
 	[93978595733734] = baseURL .. "/games/rayfield/violence_district.lua",
+	[135285569232987] = baseURL .. "/games/sempat/mount_velora.lua",
 }
 
 local excludedGameIds = {
