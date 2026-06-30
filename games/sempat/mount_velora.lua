@@ -5,6 +5,7 @@ local cloneref = (cloneref or clonereference or function(instance) return instan
 -- ====================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 
 local SempatLibrary
@@ -362,8 +363,12 @@ do
     local SUMMIT_ARRIVAL_RADIUS = 80
     local DEFAULT_MIN_DELAY_SEC = 30
     local DEFAULT_MAX_DELAY_SEC = 60
-    local CHECKPOINT_REGISTER_TIMEOUT_SEC = 30
+    local CHECKPOINT_TELEPORT_RETRY_SEC = 5
+    local PRE_RESET_DELAY_SEC = 5
     local POST_TELEPORT_POLL_SEC = 0.15
+    local WALK_ARRIVAL_RADIUS = 6
+    local WALK_TIMEOUT_SEC = 120
+    local TWEEN_STUDS_PER_SEC = 80
 
     local function parsePositionStr(posStr)
         local s = posStr:gsub(",", " "):gsub("%s+", " ")
@@ -377,62 +382,85 @@ do
         return Vector3.new(parts[1], parts[2], parts[3])
     end
 
+    local function getRoutePosList(entry)
+        if type(entry.pos) == "table" then
+            return entry.pos
+        end
+        if type(entry.pos) == "string" then
+            return { entry.pos }
+        end
+        return {}
+    end
+
+    local function getRouteFinalPosStr(entry)
+        local posList = getRoutePosList(entry)
+        return posList[#posList]
+    end
+
+    local function normalizeRouteEntryPos(entry)
+        if type(entry.pos) == "string" then
+            entry.pos = { entry.pos }
+        end
+        entry.modePos = entry.modePos or "teleport"
+    end
+
     local summitRoute = {
-        { name = "CP1", pos = "14.77, 681.08, -2094.88", minDelay = 34, maxDelay = 60 },
-        { name = "CP2", pos = "217.10, 681.19, -2790.15", minDelay = 34, maxDelay = 60 },
-        { name = "CP3", pos = "1799.51, 870.22, -2530.90", minDelay = 34, maxDelay = 60 },
-        { name = "CP4", pos = "575.10, 953.22, -2385.76", minDelay = 34, maxDelay = 60 },
-        { name = "CP5", pos = "-495.08, 1041.22, -2548.59", minDelay = 34, maxDelay = 60 },
-        { name = "CP6", pos = "-358.81, 861.22, -3472.24", minDelay = 34, maxDelay = 60 },
-        { name = "CP7", pos = "981.50, 708.38, -3904.00", minDelay = 34, maxDelay = 60 },
-        { name = "CP8", pos = "2418.64, 692.38, -4037.31", minDelay = 34, maxDelay = 60 },
-        { name = "CP9", pos = "1532.31, 940.38, -5087.82", minDelay = 34, maxDelay = 60 },
-        { name = "CP10", pos = "605.53, 1244.38, -5802.47", minDelay = 34, maxDelay = 60 },
-        { name = "CP11", pos = "442.30, 1572.37, -6576.43", minDelay = 34, maxDelay = 60 },
-        { name = "CP12", pos = "2562.72, 1451.43, -6272.23", minDelay = 34, maxDelay = 60 },
-        { name = "CP13", pos = "1174.00, 988.31, -7085.65", minDelay = 34, maxDelay = 60 },
-        { name = "CP14", pos = "324.35, 1321.49, -7993.00", minDelay = 34, maxDelay = 60 },
-        { name = "CP15", pos = "-661.10, 1653.49, -7641.02", minDelay = 34, maxDelay = 60 },
-        { name = "CP16", pos = "-1090.38, 1817.49, -8879.72", minDelay = 34, maxDelay = 60 },
-        { name = "CP17", pos = "-1391.11, 2580.38, -9757.35", minDelay = 34, maxDelay = 60 },
-        { name = "CP18", pos = "-1195.93, 2536.38, -10381.83", minDelay = 34, maxDelay = 60 },
-        { name = "CP19", pos = "-446.99, 2377.45, -9727.15", minDelay = 34, maxDelay = 60 },
-        { name = "CP20", pos = "599.00, 2276.37, -9483.09", minDelay = 34, maxDelay = 60 },
-        { name = "CP21", pos = "1842.77, 2753.49, -9768.78", minDelay = 34, maxDelay = 60 },
-        { name = "CP22", pos = "1064.08, 1924.58, -11086.57", minDelay = 34, maxDelay = 60 },
-        { name = "CP23", pos = "241.29, 2265.49, -12126.01", minDelay = 34, maxDelay = 60 },
-        { name = "CP24", pos = "-56.82, 2605.44, -11045.96", minDelay = 34, maxDelay = 60 },
-        { name = "CP25", pos = "1709.36, 2713.53, -12269.61", minDelay = 34, maxDelay = 60 },
-        { name = "CP26", pos = "1056.82, 2729.49, -13021.20", minDelay = 34, maxDelay = 60 },
-        { name = "CP27", pos = "708.86, 2921.49, -14055.06", minDelay = 34, maxDelay = 60 },
-        { name = "CP28", pos = "552.74, 3017.49, -14759.24", minDelay = 34, maxDelay = 60 },
-        { name = "CP29", pos = "279.23, 3497.18, -14311.25", minDelay = 34, maxDelay = 60 },
-        { name = "CP30", pos = "1240.11, 3489.18, -14460.85", minDelay = 34, maxDelay = 60 },
-        { name = "CP31", pos = "-583.09, 3513.49, -15158.50", minDelay = 34, maxDelay = 60 },
-        { name = "CP32", pos = "-1815.31, 3729.49, -15519.32", minDelay = 34, maxDelay = 60 },
-        { name = "CP33", pos = "-2210.07, 3513.49, -16548.21", minDelay = 34, maxDelay = 60 },
-        { name = "CP34", pos = "-958.65, 3749.66, -16879.93", minDelay = 35, maxDelay = 60 },
-        { name = "CP35", pos = "234.19, 3249.49, -17321.96", minDelay = 35, maxDelay = 60 },
-        { name = "CP36", pos = "1128.89, 3513.65, -16504.36", minDelay = 35, maxDelay = 60 },
-        { name = "CP37", pos = "1212.00, 3754.30, -18149.90", minDelay = 35, maxDelay = 60 },
-        { name = "CP38", pos = "470.32, 3685.49, -19430.16", minDelay = 35, maxDelay = 60 },
-        { name = "CP39", pos = "-1581.70, 3576.87, -19348.67", minDelay = 35, maxDelay = 60 },
-        { name = "CP40", pos = "-1510.98, 3889.49, -18116.72", minDelay = 35, maxDelay = 60 },
-        { name = "CP41", pos = "-446.02, 2820.32, -18724.53", minDelay = 35, maxDelay = 60 },
-        { name = "CP42", pos = "1189.07, 3485.65, -20704.41", minDelay = 35, maxDelay = 60 },
-        { name = "CP43", pos = "602.39, 3737.38, -21430.04", minDelay = 35, maxDelay = 60 },
-        { name = "CP44", pos = "-452.24, 4015.40, -20523.57", minDelay = 35, maxDelay = 60 },
-        { name = "CP45", pos = "-1127.65, 4121.47, -21513.53", minDelay = 35, maxDelay = 60 },
-        { name = "CP46", pos = "72.67, 3945.49, -22653.11", minDelay = 35, maxDelay = 60 },
-        { name = "CP47", pos = "647.02, 4172.38, -23170.12", minDelay = 35, maxDelay = 60 },
-        { name = "CP48", pos = "-1101.14, 4141.05, -23377.83", minDelay = 35, maxDelay = 60 },
-        { name = "CP49", pos = "79.99, 3945.49, -24442.58", minDelay = 35, maxDelay = 60 },
-        { name = "CP50", pos = "1240.25, 4309.83, -24353.39", minDelay = 35, maxDelay = 60 },
-        { name = "CP51", pos = "-236.28, 4139.49, -26187.95", minDelay = 35, maxDelay = 60 },
-        { name = "Summit", pos = "-164.90, 4208.38, -27312.80", minDelay = 35, maxDelay = 60 },
+        { name = "CP1", pos = { "14.77, 681.08, -2094.88" }, modePos = "teleport", minDelay = 5, maxDelay = 10 },
+        { name = "CP2", pos = { "217.10, 681.19, -2790.15" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP3", pos = { "1799.51, 870.22, -2530.90" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP4", pos = { "575.10, 953.22, -2385.76" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP5", pos = { "-495.08, 1041.22, -2548.59" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP6", pos = { "-358.81, 861.22, -3472.24" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP7", pos = { "981.50, 708.38, -3904.00" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP8", pos = { "2418.64, 692.38, -4037.31" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP9", pos = { "1532.31, 940.38, -5087.82" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP10", pos = { "605.53, 1244.38, -5802.47" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP11", pos = { "442.30, 1572.37, -6576.43" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP12", pos = { "2562.72, 1451.43, -6272.23" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP13", pos = { "1174.00, 988.31, -7085.65" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP14", pos = { "324.35, 1321.49, -7993.00" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP15", pos = { "-661.10, 1653.49, -7641.02" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP16", pos = { "-1090.38, 1817.49, -8879.72" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP17", pos = { "-1391.11, 2580.38, -9757.35" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP18", pos = { "-1195.93, 2536.38, -10381.83" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP19", pos = { "-446.99, 2377.45, -9727.15" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP20", pos = { "599.00, 2276.37, -9483.09" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP21", pos = { "1842.77, 2753.49, -9768.78" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP22", pos = { "1064.08, 1924.58, -11086.57" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP23", pos = { "241.29, 2265.49, -12126.01" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP24", pos = { "-56.82, 2605.44, -11045.96" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP25", pos = { "1709.36, 2713.53, -12269.61" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP26", pos = { "1056.82, 2729.49, -13021.20" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP27", pos = { "708.86, 2921.49, -14055.06" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP28", pos = { "552.74, 3017.49, -14759.24" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP29", pos = { "279.23, 3497.18, -14311.25" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP30", pos = { "1240.11, 3489.18, -14460.85" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP31", pos = { "-583.09, 3513.49, -15158.50" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP32", pos = { "-1815.31, 3729.49, -15519.32" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP33", pos = { "-2210.07, 3513.49, -16548.21" }, modePos = "teleport", minDelay = 34, maxDelay = 60 },
+        { name = "CP34", pos = { "-958.65, 3749.66, -16879.93" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP35", pos = { "234.19, 3249.49, -17321.96" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP36", pos = { "1128.89, 3513.65, -16504.36" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP37", pos = { "1212.00, 3754.30, -18149.90" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP38", pos = { "470.32, 3685.49, -19430.16" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP39", pos = { "-1581.70, 3576.87, -19348.67" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP40", pos = { "-1510.98, 3889.49, -18116.72" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP41", pos = { "-446.02, 2820.32, -18724.53" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP42", pos = { "1189.07, 3485.65, -20704.41" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP43", pos = { "602.39, 3737.38, -21430.04" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP44", pos = { "-452.24, 4015.40, -20523.57" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP45", pos = { "-1127.65, 4121.47, -21513.53" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP46", pos = { "72.67, 3945.49, -22653.11" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP47", pos = { "647.02, 4172.38, -23170.12" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP48", pos = { "-1101.14, 4141.05, -23377.83" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP49", pos = { "79.99, 3945.49, -24442.58" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP50", pos = { "1240.25, 4309.83, -24353.39" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "CP51", pos = { "-236.28, 4139.49, -26187.95" }, modePos = "teleport", minDelay = 35, maxDelay = 60 },
+        { name = "Summit", pos = { "-157.16, 4202.91, -27249.49", "-164.90, 4208.38, -27312.80" }, modePos = "walk", minDelay = 35, maxDelay = 60 },
     }
 
     for i, entry in ipairs(summitRoute) do
+        normalizeRouteEntryPos(entry)
         if not entry.label then
             if entry.name == "Summit" then
                 entry.label = "Summit"
@@ -507,9 +535,17 @@ do
         return minD
     end
 
-    local function getLocalRootPart()
+    local function getLocalCharacterParts()
         local character = Players.LocalPlayer.Character
-        return character and character:FindFirstChild("HumanoidRootPart")
+        if not character then
+            return nil, nil, nil
+        end
+        return character, character:FindFirstChild("HumanoidRootPart"), character:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function getLocalRootPart()
+        local _, rootPart = getLocalCharacterParts()
+        return rootPart
     end
 
     local function isNearPosition(posStr, radius)
@@ -521,16 +557,99 @@ do
         return (rootPart.Position - targetPos).Magnitude <= radius
     end
 
-    local function teleportToPos(posStr)
+    local function isNearRouteEntry(entry, radius)
+        local finalPos = getRouteFinalPosStr(entry)
+        if not finalPos then
+            return false
+        end
+        return isNearPosition(finalPos, radius)
+    end
+
+    local function shouldStopRoute(token)
+        if token == nil then
+            return false
+        end
+        return not autoSummitEnabled or token ~= autoSummitLoopToken
+    end
+
+    local function moveToPositionStr(posStr, mode)
+        local moveMode = string.lower(mode or "teleport")
         local targetPos = parsePositionStr(posStr)
-        local rootPart = getLocalRootPart()
+        local _, rootPart, humanoid = getLocalCharacterParts()
         if not targetPos or not rootPart then
             return false
         end
+
+        if moveMode == "teleport" then
+            rootPart.AssemblyLinearVelocity = Vector3.zero
+            rootPart.AssemblyAngularVelocity = Vector3.zero
+            rootPart.CFrame = CFrame.new(targetPos)
+            return true
+        end
+
+        if moveMode == "tween" then
+            rootPart.AssemblyLinearVelocity = Vector3.zero
+            rootPart.AssemblyAngularVelocity = Vector3.zero
+            local dist = (rootPart.Position - targetPos).Magnitude
+            local dur = math.clamp(dist / TWEEN_STUDS_PER_SEC, 0.35, 12)
+            local tween = TweenService:Create(rootPart, TweenInfo.new(dur, Enum.EasingStyle.Linear), {
+                CFrame = CFrame.new(targetPos),
+            })
+            tween:Play()
+            tween.Completed:Wait()
+            return true
+        end
+
+        if moveMode == "walk" then
+            if not humanoid then
+                return false
+            end
+            humanoid:MoveTo(targetPos)
+            local deadline = os.clock() + WALK_TIMEOUT_SEC
+            while os.clock() < deadline do
+                if (rootPart.Position - targetPos).Magnitude <= WALK_ARRIVAL_RADIUS then
+                    return true
+                end
+                task.wait(0.1)
+            end
+            return (rootPart.Position - targetPos).Magnitude <= WALK_ARRIVAL_RADIUS * 2
+        end
+
         rootPart.AssemblyLinearVelocity = Vector3.zero
         rootPart.AssemblyAngularVelocity = Vector3.zero
         rootPart.CFrame = CFrame.new(targetPos)
         return true
+    end
+
+    local function traverseRoutePositions(token, entry)
+        local posList = getRoutePosList(entry)
+        if #posList == 0 then
+            return false
+        end
+
+        local betweenMode = string.lower(entry.modePos or "teleport")
+
+        if not moveToPositionStr(posList[1], "teleport") then
+            return false
+        end
+        if shouldStopRoute(token) then
+            return false
+        end
+
+        for i = 2, #posList do
+            if shouldStopRoute(token) then
+                return false
+            end
+            if not moveToPositionStr(posList[i], betweenMode) then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    local function teleportToPos(posStr)
+        return moveToPositionStr(posStr, "teleport")
     end
 
     local function fireResetCheckpoint()
@@ -547,6 +666,22 @@ do
         if statusParagraph and statusParagraph.Set then
             statusParagraph:Set({ Content = content })
         end
+    end
+
+    local function waitBeforeResetCheckpoint(token)
+        local deadline = os.clock() + PRE_RESET_DELAY_SEC
+        while autoSummitEnabled and token == autoSummitLoopToken do
+            local remaining = deadline - os.clock()
+            if remaining <= 0 then
+                return true
+            end
+            setStatusContent(string.format(
+                "Summit reached — resetting in %ds…",
+                math.ceil(math.max(remaining, 0))
+            ))
+            task.wait(math.min(remaining, 0.25))
+        end
+        return false
     end
 
     local function refreshLogParagraph()
@@ -617,28 +752,39 @@ do
         end
     end
 
-    local function waitForCheckpointRegistered(token, expectedCp, routeEntry, isSummitStep)
-        local deadline = os.clock() + CHECKPOINT_REGISTER_TIMEOUT_SEC
+    local function moveUntilCheckpointRegistered(token, expectedCp, routeEntry, isSummitStep)
         while autoSummitEnabled and token == autoSummitLoopToken do
-            local cpNow = getCheckpointValue()
-            if isSummitStep then
-                if isNearPosition(routeEntry.pos, SUMMIT_ARRIVAL_RADIUS) then
-                    return true
-                end
-            elseif cpNow >= expectedCp then
-                return true
+            if not traverseRoutePositions(token, routeEntry) then
+                setStatusContent("Character not loaded — retrying…")
+                task.wait(1)
+                continue
             end
 
-            if os.clock() >= deadline then
-                setStatusContent(string.format(
-                    "Still waiting for %s to register…\nCurrent stat: %s (%d)\nExpected: %d",
-                    routeEntry.name,
-                    checkpointDisplayLabel(cpNow),
-                    cpNow,
-                    expectedCp
-                ))
-                deadline = os.clock() + CHECKPOINT_REGISTER_TIMEOUT_SEC
-            else
+            local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
+            local registered = false
+            while autoSummitEnabled and token == autoSummitLoopToken do
+                local cpNow = getCheckpointValue()
+                if isSummitStep then
+                    if isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS) then
+                        registered = true
+                        break
+                    end
+                elseif cpNow >= expectedCp then
+                    registered = true
+                    break
+                end
+
+                if os.clock() >= retryDeadline then
+                    setStatusContent(string.format(
+                        "Retrying route to %s…\nCurrent stat: %s (%d)\nExpected: %d",
+                        routeEntry.name,
+                        checkpointDisplayLabel(cpNow),
+                        cpNow,
+                        expectedCp
+                    ))
+                    break
+                end
+
                 setStatusContent(string.format(
                     "Confirming %s…\nCurrent stat: %s (%d)\nExpected: %d",
                     routeEntry.name,
@@ -646,9 +792,12 @@ do
                     cpNow,
                     expectedCp
                 ))
+                task.wait(POST_TELEPORT_POLL_SEC)
             end
 
-            task.wait(POST_TELEPORT_POLL_SEC)
+            if registered then
+                return true
+            end
         end
         return false
     end
@@ -677,7 +826,7 @@ do
             local cp = getCheckpointValue()
             local nextIndex = cp + 1
             if nextIndex > #summitRoute then
-                if fireResetCheckpoint() then
+                if waitBeforeResetCheckpoint(token) and fireResetCheckpoint() then
                     task.wait(0.5)
                 end
                 refreshIdleStatus()
@@ -694,20 +843,16 @@ do
                 break
             end
 
-            if not teleportToPos(routeEntry.pos) then
-                setStatusContent("Character not loaded — retrying…")
-                task.wait(1)
-                continue
-            end
-
-            if not waitForCheckpointRegistered(token, nextIndex, routeEntry, isSummitStep) then
+            if not moveUntilCheckpointRegistered(token, nextIndex, routeEntry, isSummitStep) then
                 break
             end
 
             if isSummitStep then
-                fireResetCheckpoint()
-                recordSummitCompletion()
-                task.wait(0.5)
+                if waitBeforeResetCheckpoint(token) then
+                    fireResetCheckpoint()
+                    recordSummitCompletion()
+                    task.wait(0.5)
+                end
             end
 
             refreshIdleStatus()
@@ -790,8 +935,8 @@ do
                 mountNotify({ Title = "Checkpoint", Content = "Select a checkpoint first" })
                 return
             end
-            if teleportToPos(entry.pos) then
-                mountNotify({ Title = "Checkpoint", Content = "Teleported to " .. entry.label })
+            if traverseRoutePositions(nil, entry) then
+                mountNotify({ Title = "Checkpoint", Content = "Moved to " .. entry.label })
             else
                 mountNotify({ Title = "Checkpoint", Content = "Character not loaded" })
             end
