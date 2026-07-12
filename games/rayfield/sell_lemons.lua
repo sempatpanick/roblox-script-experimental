@@ -429,6 +429,7 @@ do
         ClientTycoonBalances = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonBalances" },
         ClientTycoonRebirth = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonRebirth" },
         ClientTycoonEvolution = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonEvolution" },
+        ClientTycoonAscension = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonAscension" },
         ClientTycoonPowers = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonPowers" },
         Config = { "Config" },
         Orchard = { "Modules", "Tycoon", "Orchard", "Orchard" },
@@ -509,6 +510,7 @@ do
             ClientTycoonBalances = tryRequirePath(MODULE_PATHS.ClientTycoonBalances),
             ClientTycoonRebirth = tryRequirePath(MODULE_PATHS.ClientTycoonRebirth),
             ClientTycoonEvolution = tryRequirePath(MODULE_PATHS.ClientTycoonEvolution),
+            ClientTycoonAscension = tryRequirePath(MODULE_PATHS.ClientTycoonAscension),
             ClientTycoonPowers = tryRequirePath(MODULE_PATHS.ClientTycoonPowers),
             Config = tryRequirePath(MODULE_PATHS.Config),
             Orchard = tryRequirePath(MODULE_PATHS.ClientOrchard) or tryRequirePath(MODULE_PATHS.Orchard),
@@ -543,6 +545,7 @@ do
             ctx.ClientTycoonBalances = optional.ClientTycoonBalances
             ctx.ClientTycoonRebirth = optional.ClientTycoonRebirth
             ctx.ClientTycoonEvolution = optional.ClientTycoonEvolution
+            ctx.ClientTycoonAscension = optional.ClientTycoonAscension
             ctx.ClientTycoonPowers = optional.ClientTycoonPowers
             ctx.Config = optional.Config
             ctx.Orchard = optional.Orchard
@@ -4048,6 +4051,311 @@ do
             requestEvolutionInfoRefresh()
         end
     end)
+
+    local function installAutoAscend()
+        local ascensionInfoParagraph
+        local ascensionInfoAutoRefreshSec = 1
+        local autoAscendRunning = false
+        local autoAscendLoopId = 0
+        local autoAscendDelaySec = 1
+        local ascendProgressTargetPercent = 100
+
+        local function getTycoonAscensionComponent(ctx, tycoon)
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonAscension then
+                local ok, component = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonAscension)
+                end)
+                if ok and component then
+                    return component
+                end
+            end
+            return nil
+        end
+
+        local function formatAscensionProgressPercent(progress)
+            if type(progress) ~= "number" then
+                return "?"
+            end
+            local shown = progress
+            if shown < 1 then
+                shown = math.min(shown, 0.9945)
+            end
+            local decimals = if shown > 0.0995 then 0 else 1
+            local text = string.format("%." .. tostring(decimals) .. "f", shown * 100)
+            return text:gsub("%.?0+$", "") .. "%"
+        end
+
+        local function getAscensionProgressInfo(ctx, tycoon)
+            local ascension = getTycoonAscensionComponent(ctx, tycoon)
+            if not ascension or type(ascension.GetAscensionProgress) ~= "function" then
+                return nil
+            end
+
+            local ok, progress = pcall(function()
+                return ascension:GetAscensionProgress()
+            end)
+            if not ok or type(progress) ~= "number" then
+                return nil
+            end
+
+            local cashBonus = nil
+            if type(ascension.GetAscensionCashBonus) == "function" then
+                local okBonus, bonus = pcall(function()
+                    return ascension:GetAscensionCashBonus()
+                end)
+                if okBonus then
+                    cashBonus = bonus
+                end
+            end
+            if cashBonus == nil and ctx.Config then
+                cashBonus = ctx.Config.AscensionMultiplier
+            end
+
+            local pricePenalty = nil
+            if type(ascension.GetAscensionPricePenalty) == "function" then
+                local okPenalty, penalty = pcall(function()
+                    return ascension:GetAscensionPricePenalty()
+                end)
+                if okPenalty then
+                    pricePenalty = penalty
+                end
+            end
+            if pricePenalty == nil and ctx.Config then
+                pricePenalty = ctx.Config.AscensionPenalty
+            end
+
+            local permanentRemaining = nil
+            if type(ascension.GetAscensionPermanentPurchasesRemaining) == "function" then
+                local okRemaining, remaining = pcall(function()
+                    return ascension:GetAscensionPermanentPurchasesRemaining()
+                end)
+                if okRemaining then
+                    permanentRemaining = remaining
+                end
+            end
+
+            local currentLevel = 0
+            if type(ascension.GetAscension) == "function" then
+                local okLevel, level = pcall(function()
+                    return ascension:GetAscension()
+                end)
+                if okLevel and level ~= nil then
+                    currentLevel = level
+                end
+            end
+
+            local targetPercent = math.max(0, tonumber(ascendProgressTargetPercent) or 100)
+            local ready = progress * 100 >= targetPercent and progress >= 1
+
+            return {
+                progress = progress,
+                currentLevel = currentLevel,
+                cashBonus = cashBonus,
+                pricePenalty = pricePenalty,
+                permanentRemaining = permanentRemaining,
+                ready = ready,
+            }
+        end
+
+        local function shouldAutoAscend(progressInfo)
+            return progressInfo ~= nil and progressInfo.ready == true
+        end
+
+        local function findAscendRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local ascendRemote = remotes and remotes:FindFirstChild("Ascend")
+            if ascendRemote and ascendRemote:IsA("RemoteFunction") then
+                return ascendRemote
+            end
+            return nil
+        end
+
+        local function getAscensionInfoContent()
+            local ctx, ctxErr = getSellLemonsGameContext(true)
+            if not ctx then
+                return ctxErr or "Could not load game data."
+            end
+
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return "Waiting for tycoon..."
+            end
+
+            local progressInfo = getAscensionProgressInfo(ctx, tycoon)
+            if not progressInfo then
+                return "Could not read ascension data."
+            end
+
+            local lines = {
+                string.format("Current Ascension: %s", tostring(progressInfo.currentLevel)),
+                string.format("Progress: %s", formatAscensionProgressPercent(progressInfo.progress)),
+                string.format(
+                    "Target Progress: %s%%",
+                    tostring(math.max(0, tonumber(ascendProgressTargetPercent) or 100))
+                ),
+            }
+
+            if progressInfo.cashBonus ~= nil then
+                table.insert(lines, string.format(
+                    "Cash Bonus: x%s income",
+                    tostring(progressInfo.cashBonus)
+                ))
+            end
+            if progressInfo.pricePenalty ~= nil then
+                table.insert(lines, string.format(
+                    "Price Penalty: x%s button prices",
+                    tostring(progressInfo.pricePenalty)
+                ))
+            end
+            if progressInfo.permanentRemaining ~= nil then
+                table.insert(lines, string.format(
+                    "Permanent Purchases Left: %s",
+                    tostring(progressInfo.permanentRemaining)
+                ))
+            end
+
+            table.insert(lines, string.format(
+                "Ready to Ascend: %s",
+                if shouldAutoAscend(progressInfo) then "Yes" else "No"
+            ))
+
+            return table.concat(lines, "\n")
+        end
+
+        local function applyAscensionInfoParagraph(content)
+            if not ascensionInfoParagraph then
+                return
+            end
+            task.defer(function()
+                if not ascensionInfoParagraph then
+                    return
+                end
+                ascensionInfoParagraph:Set({
+                    Title = "Ascension",
+                    Content = content,
+                })
+            end)
+        end
+
+        local function requestAscensionInfoRefresh()
+            task.spawn(function()
+                local ok, contentOrErr = pcall(getAscensionInfoContent)
+                applyAscensionInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+            end)
+        end
+
+        local function tryAutoAscendOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+
+            local progressInfo = getAscensionProgressInfo(ctx, tycoon)
+            if not shouldAutoAscend(progressInfo) then
+                return false
+            end
+
+            local ascension = getTycoonAscensionComponent(ctx, tycoon)
+            local ok = false
+            if ascension and type(ascension.AscendAsync) == "function" then
+                local callOk, callResult = pcall(function()
+                    return ascension:AscendAsync()
+                end)
+                ok = callOk == true and callResult ~= false
+            else
+                local remote = findAscendRemote(tycoon.Instance)
+                if not remote then
+                    return false
+                end
+                local callOk, callResult = pcall(function()
+                    return remote:InvokeServer()
+                end)
+                ok = callOk == true and callResult ~= false
+            end
+
+            if ok then
+                mountNotify({
+                    Title = "Auto Ascend",
+                    Content = string.format(
+                        "Ascended at %s progress (now %s).",
+                        formatAscensionProgressPercent(progressInfo.progress),
+                        tostring((tonumber(progressInfo.currentLevel) or 0) + 1)
+                    ),
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        MainTab:CreateSection("Auto Ascend")
+
+        ascensionInfoParagraph = MainTab:CreateParagraph({
+            Title = "Ascension",
+            Content = "Loading...",
+        })
+
+        MainTab:CreateInput({
+            Name = "Target Progress (%)",
+            PlaceholderText = "Progress percent required before ascend (100 = all buttons)",
+            Flag = "main_ascend_target_percent",
+            CurrentValue = tostring(ascendProgressTargetPercent),
+            Callback = function(value)
+                ascendProgressTargetPercent = math.max(0, tonumber(value) or ascendProgressTargetPercent)
+                requestAscensionInfoRefresh()
+            end,
+        })
+
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between auto ascend checks",
+            Flag = "main_auto_ascend_delay",
+            CurrentValue = tostring(autoAscendDelaySec),
+            Callback = function(value)
+                autoAscendDelaySec = math.max(0.1, tonumber(value) or 1)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Ascend",
+            Flag = "main_auto_ascend",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoAscendRunning = enabled == true
+                if not autoAscendRunning then
+                    return
+                end
+
+                autoAscendLoopId += 1
+                local loopId = autoAscendLoopId
+                task.spawn(function()
+                    while autoAscendRunning and loopId == autoAscendLoopId do
+                        local ok = pcall(function()
+                            tryAutoAscendOnce()
+                            requestAscensionInfoRefresh()
+                            applyPlayerInfoParagraph()
+                        end)
+                        local delay = math.max(0.1, tonumber(autoAscendDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        task.spawn(function()
+            requestAscensionInfoRefresh()
+            while ascensionInfoParagraph do
+                task.wait(ascensionInfoAutoRefreshSec)
+                requestAscensionInfoRefresh()
+            end
+        end)
+    end
+
+    installAutoAscend()
 
     local fireClickDetectorFn = (typeof(fireclickdetector) == "function" and fireclickdetector)
         or (typeof(clickdetector) == "function" and clickdetector)
