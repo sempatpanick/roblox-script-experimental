@@ -4187,6 +4187,529 @@ do
 
     installOrchardAutomation(MainTab)
 
+    local function installMinigamesAutomation()
+        local MinigamesTab = Window:CreateTab("Minigames", 4483362458)
+
+        local tradeInfoParagraph
+        local raceInfoParagraph
+        local minigameInfoAutoRefreshSec = 1
+        local tradeDelaySec = 1
+        local raceDelaySec = 1
+        local autoTradeRunning = false
+        local autoTradeLoopId = 0
+        local autoRaceRunning = false
+        local autoRaceLoopId = 0
+        local tradeBusy = false
+        local raceBusy = false
+        local lastTradeResult = "-"
+        local lastRaceResult = "-"
+
+        local cachedMinigameRemotes = {}
+        local cachedPlayerValuesComponent = false
+
+        local function findMinigameRemote(remoteName, allowDeepSearch)
+            local cached = cachedMinigameRemotes[remoteName]
+            if cached and cached.Parent then
+                return cached
+            end
+
+            -- Prefer shallow lookups; full RS recurse is last resort.
+            local direct = ReplicatedStorage:FindFirstChild(remoteName)
+            if direct and direct:IsA("RemoteFunction") then
+                cachedMinigameRemotes[remoteName] = direct
+                return direct
+            end
+
+            for _, folderName in ipairs({ "Remotes", "RemoteFunctions", "Networking" }) do
+                local folder = ReplicatedStorage:FindFirstChild(folderName)
+                local remote = folder and folder:FindFirstChild(remoteName)
+                if remote and remote:IsA("RemoteFunction") then
+                    cachedMinigameRemotes[remoteName] = remote
+                    return remote
+                end
+            end
+
+            if allowDeepSearch == false then
+                return nil
+            end
+
+            local remote = ReplicatedStorage:FindFirstChild(remoteName, true)
+            if remote and remote:IsA("RemoteFunction") then
+                cachedMinigameRemotes[remoteName] = remote
+                return remote
+            end
+            return nil
+        end
+
+        local function readValueFromInstance(container, key)
+            if not container then
+                return nil
+            end
+            local attr = container:GetAttribute(key)
+            if attr ~= nil then
+                return attr
+            end
+            local child = container:FindFirstChild(key)
+            if child and child:IsA("ValueBase") then
+                return child.Value
+            end
+            return nil
+        end
+
+        -- PlayerValues is an InstanceTable("Values") on the player instance.
+        local function getPlayerValue(key)
+            local player = Players.LocalPlayer
+            if not player then
+                return nil
+            end
+
+            local direct = readValueFromInstance(player, key)
+            if direct ~= nil then
+                return direct
+            end
+
+            local valuesFolder = player:FindFirstChild("Values")
+            local fromFolder = readValueFromInstance(valuesFolder, key)
+            if fromFolder ~= nil then
+                return fromFolder
+            end
+
+            if cachedPlayerValuesComponent ~= false then
+                local component = cachedPlayerValuesComponent
+                if component and type(component.Get) == "function" then
+                    local ok, value = pcall(function()
+                        return component:Get(key)
+                    end)
+                    if ok and value ~= nil then
+                        return value
+                    end
+                end
+                return nil
+            end
+
+            -- Resolve component once; never block status UI on a hanging require.
+            cachedPlayerValuesComponent = nil
+            task.spawn(function()
+                local playerValuesMod = tryRequirePath({ "Core", "PlayerValues" })
+                local playerMod = tryRequirePath({ "Core", "Player" })
+                local entity = nil
+                if playerMod and type(playerMod.getLocal) == "function" then
+                    local okEntity, result = pcall(function()
+                        return playerMod.getLocal()
+                    end)
+                    if okEntity then
+                        entity = result
+                    end
+                end
+                if not entity then
+                    local ctx = getSellLemonsGameContext(true)
+                    if ctx and ctx.LocalPlayer and type(ctx.LocalPlayer.get) == "function" then
+                        local okEntity, result = pcall(function()
+                            return ctx.LocalPlayer.get()
+                        end)
+                        if okEntity then
+                            entity = result
+                        end
+                    end
+                end
+                if playerValuesMod and entity and type(entity.GetComponent) == "function" then
+                    local okComp, component = pcall(function()
+                        return entity:GetComponent(playerValuesMod)
+                    end)
+                    if okComp and component then
+                        cachedPlayerValuesComponent = component
+                    end
+                end
+            end)
+
+            return nil
+        end
+
+        local function formatDurationSeconds(seconds)
+            local rem = math.max(0, math.floor(tonumber(seconds) or 0))
+            local hours = math.floor(rem / 3600)
+            local mins = math.floor((rem % 3600) / 60)
+            local secs = rem % 60
+            if hours > 0 then
+                return string.format("%dh %dm %ds", hours, mins, secs)
+            end
+            if mins > 0 then
+                return string.format("%dm %ds", mins, secs)
+            end
+            return string.format("%ds", secs)
+        end
+
+        local function getAvailabilityStatus(availableAt)
+            local readyAt = tonumber(availableAt) or 0
+            local now = Workspace:GetServerTimeNow()
+            if readyAt <= 0 or readyAt <= now then
+                return true, "Ready", 0
+            end
+            return false, formatDurationSeconds(readyAt - now), readyAt - now
+        end
+
+        local function formatRewardAmount(value)
+            local ctx = getSellLemonsGameContext(false)
+            if ctx then
+                return formatHugeAmount(ctx, value, "$")
+            end
+            ensureHugeLoaded()
+            if cachedHuge and type(cachedHuge.formatAbbreviated) == "function" then
+                local ok, text = pcall(function()
+                    return cachedHuge.formatAbbreviated(value, "$")
+                end)
+                if ok and type(text) == "string" and #text > 0 then
+                    return text
+                end
+            end
+            return tostring(value)
+        end
+
+        local function isPositiveHuge(value)
+            if value == nil or value == false then
+                return false
+            end
+            if type(value) == "number" then
+                return value > 0
+            end
+            ensureHugeLoaded()
+            if cachedHuge and cachedHuge.zero ~= nil then
+                local ok, greater = pcall(function()
+                    return value > cachedHuge.zero
+                end)
+                if ok then
+                    return greater == true
+                end
+            end
+            local ok, greater = pcall(function()
+                return value > 0
+            end)
+            return ok and greater == true
+        end
+
+        local function getTradeInfoContent()
+            local availableAt = getPlayerValue("MinigameTradeAvailable") or 0
+            local played = getPlayerValue("MinigameTradePlayed") or 0
+            local ready, readyText = getAvailabilityStatus(availableAt)
+            -- Avoid deep RS scans on the status refresh path (can stall the UI).
+            local startRemote = findMinigameRemote("MinigameTradeService.Start", false)
+            local endRemote = findMinigameRemote("MinigameTradeService.End", false)
+            return table.concat({
+                string.format("Status: %s", if ready then "Ready" else ("Cooldown " .. readyText)),
+                string.format("Times Played: %s", tostring(played)),
+                string.format("Last Result: %s", lastTradeResult),
+                string.format("Remotes: Start=%s End=%s", startRemote and "OK" or "?", endRemote and "OK" or "?"),
+                string.format("Auto: %s", autoTradeRunning and "On" or "Off"),
+            }, "\n")
+        end
+
+        local function getRaceInfoContent()
+            local availableAt = getPlayerValue("MinigameRaceAvailable") or 0
+            local played = getPlayerValue("MinigameRacePlayed") or 0
+            local ready, readyText = getAvailabilityStatus(availableAt)
+            local startRemote = findMinigameRemote("MinigameRaceService.Start", false)
+            local endRemote = findMinigameRemote("MinigameRaceService.End", false)
+            return table.concat({
+                string.format("Status: %s", if ready then "Ready" else ("Cooldown " .. readyText)),
+                string.format("Times Played: %s", tostring(played)),
+                string.format("Last Result: %s", lastRaceResult),
+                string.format("Remotes: Start=%s End=%s", startRemote and "OK" or "?", endRemote and "OK" or "?"),
+                string.format("Auto: %s", autoRaceRunning and "On" or "Off"),
+            }, "\n")
+        end
+
+        local function applyTradeInfo(content)
+            if not tradeInfoParagraph then
+                return
+            end
+            task.defer(function()
+                if not tradeInfoParagraph then
+                    return
+                end
+                tradeInfoParagraph:Set({
+                    Title = "Lemon Trading",
+                    Content = content,
+                })
+            end)
+        end
+
+        local function applyRaceInfo(content)
+            if not raceInfoParagraph then
+                return
+            end
+            task.defer(function()
+                if not raceInfoParagraph then
+                    return
+                end
+                raceInfoParagraph:Set({
+                    Title = "LemonDash Race",
+                    Content = content,
+                })
+            end)
+        end
+
+        local function refreshMinigameInfo()
+            task.spawn(function()
+                local okTrade, tradeContent = pcall(getTradeInfoContent)
+                applyTradeInfo(if okTrade then tradeContent else ("Refresh error: " .. tostring(tradeContent)))
+                local okRace, raceContent = pcall(getRaceInfoContent)
+                applyRaceInfo(if okRace then raceContent else ("Refresh error: " .. tostring(raceContent)))
+            end)
+        end
+
+        -- Skip the long client UI: Start then End with max reward / 1st place.
+        local function playTradeOnce()
+            if tradeBusy then
+                return false, "busy"
+            end
+            tradeBusy = true
+            local ok, result, detail = pcall(function()
+                local availableAt = getPlayerValue("MinigameTradeAvailable") or 0
+                local ready = select(1, getAvailabilityStatus(availableAt))
+                if not ready then
+                    return false, "not ready"
+                end
+
+                local startRemote = findMinigameRemote("MinigameTradeService.Start")
+                local endRemote = findMinigameRemote("MinigameTradeService.End")
+                if not startRemote or not endRemote then
+                    return false, "remotes missing"
+                end
+
+                local session, startErr = startRemote:InvokeServer()
+                if not session then
+                    return false, tostring(startErr or "start failed")
+                end
+
+                local claimValue = session.MaxEarnings
+                if claimValue == nil then
+                    claimValue = session.StartingCash
+                end
+
+                local reward, endErr = endRemote:InvokeServer(claimValue)
+                if isPositiveHuge(reward) then
+                    return true, formatRewardAmount(reward)
+                end
+                return false, tostring(endErr or "no earnings")
+            end)
+            tradeBusy = false
+            if not ok then
+                lastTradeResult = "Error: " .. tostring(result)
+                return false
+            end
+            if result then
+                lastTradeResult = "Won " .. tostring(detail)
+            else
+                lastTradeResult = tostring(detail or "failed")
+            end
+            return result == true
+        end
+
+        local function playRaceOnce()
+            if raceBusy then
+                return false, "busy"
+            end
+            raceBusy = true
+            local ok, result, detail = pcall(function()
+                local availableAt = getPlayerValue("MinigameRaceAvailable") or 0
+                local ready = select(1, getAvailabilityStatus(availableAt))
+                if not ready then
+                    return false, "not ready"
+                end
+
+                local startRemote = findMinigameRemote("MinigameRaceService.Start")
+                local endRemote = findMinigameRemote("MinigameRaceService.End")
+                if not startRemote or not endRemote then
+                    return false, "remotes missing"
+                end
+
+                local baseCash, startErr = startRemote:InvokeServer()
+                if not baseCash then
+                    return false, tostring(startErr or "start failed")
+                end
+
+                -- Placement 1 = full MinigameRacePlacementCash reward.
+                local reward, endErr = endRemote:InvokeServer(1)
+                if isPositiveHuge(reward) then
+                    return true, formatRewardAmount(reward)
+                end
+                return false, tostring(endErr or "no earnings")
+            end)
+            raceBusy = false
+            if not ok then
+                lastRaceResult = "Error: " .. tostring(result)
+                return false
+            end
+            if result then
+                lastRaceResult = "1st - " .. tostring(detail)
+            else
+                lastRaceResult = tostring(detail or "failed")
+            end
+            return result == true
+        end
+
+        MinigamesTab:CreateSection("Lemon Trading")
+
+        tradeInfoParagraph = MinigamesTab:CreateParagraph({
+            Title = "Lemon Trading",
+            Content = "Loading...",
+        })
+
+        MinigamesTab:CreateButton({
+            Name = "Refresh Status",
+            Callback = function()
+                refreshMinigameInfo()
+            end,
+        })
+
+        MinigamesTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between trade attempts",
+            Flag = "minigame_trade_delay",
+            CurrentValue = tostring(tradeDelaySec),
+            Callback = function(value)
+                tradeDelaySec = math.max(0.5, tonumber(value) or tradeDelaySec)
+            end,
+        })
+
+        MinigamesTab:CreateButton({
+            Name = "Play Trade Once",
+            Callback = function()
+                local ok = playTradeOnce()
+                refreshMinigameInfo()
+                mountNotify({
+                    Title = "Lemon Trading",
+                    Content = if ok then lastTradeResult else ("Failed: " .. lastTradeResult),
+                    Icon = if ok then "check" else "x",
+                })
+            end,
+        })
+
+        MinigamesTab:CreateToggle({
+            Name = "Auto Play Trade",
+            Flag = "minigame_auto_trade",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoTradeRunning = enabled == true
+                if not autoTradeRunning then
+                    return
+                end
+
+                autoTradeLoopId += 1
+                local loopId = autoTradeLoopId
+                task.spawn(function()
+                    while autoTradeRunning and loopId == autoTradeLoopId do
+                        local played = false
+                        pcall(function()
+                            played = playTradeOnce() == true
+                        end)
+                        refreshMinigameInfo()
+                        local delay = math.max(0.5, tonumber(tradeDelaySec) or 1)
+                        if not played then
+                            local availableAt = getPlayerValue("MinigameTradeAvailable") or 0
+                            local ready, _, remaining = getAvailabilityStatus(availableAt)
+                            if not ready and remaining and remaining > 0 then
+                                delay = math.min(math.max(delay, remaining), math.max(delay, 30))
+                            else
+                                delay = math.max(delay, 2)
+                            end
+                        end
+                        task.wait(delay)
+                    end
+                end)
+            end,
+        })
+
+        MinigamesTab:CreateSection("LemonDash Race")
+
+        raceInfoParagraph = MinigamesTab:CreateParagraph({
+            Title = "LemonDash Race",
+            Content = "Loading...",
+        })
+
+        MinigamesTab:CreateButton({
+            Name = "Refresh Status",
+            Callback = function()
+                refreshMinigameInfo()
+            end,
+        })
+
+        MinigamesTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between race attempts",
+            Flag = "minigame_race_delay",
+            CurrentValue = tostring(raceDelaySec),
+            Callback = function(value)
+                raceDelaySec = math.max(0.5, tonumber(value) or raceDelaySec)
+            end,
+        })
+
+        MinigamesTab:CreateButton({
+            Name = "Play Race Once",
+            Callback = function()
+                local ok = playRaceOnce()
+                refreshMinigameInfo()
+                mountNotify({
+                    Title = "LemonDash Race",
+                    Content = if ok then lastRaceResult else ("Failed: " .. lastRaceResult),
+                    Icon = if ok then "check" else "x",
+                })
+            end,
+        })
+
+        MinigamesTab:CreateToggle({
+            Name = "Auto Play Race",
+            Flag = "minigame_auto_race",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoRaceRunning = enabled == true
+                if not autoRaceRunning then
+                    return
+                end
+
+                autoRaceLoopId += 1
+                local loopId = autoRaceLoopId
+                task.spawn(function()
+                    while autoRaceRunning and loopId == autoRaceLoopId do
+                        local played = false
+                        pcall(function()
+                            played = playRaceOnce() == true
+                        end)
+                        refreshMinigameInfo()
+                        local delay = math.max(0.5, tonumber(raceDelaySec) or 1)
+                        if not played then
+                            local availableAt = getPlayerValue("MinigameRaceAvailable") or 0
+                            local ready, _, remaining = getAvailabilityStatus(availableAt)
+                            if not ready and remaining and remaining > 0 then
+                                delay = math.min(math.max(delay, remaining), math.max(delay, 30))
+                            else
+                                delay = math.max(delay, 2)
+                            end
+                        end
+                        task.wait(delay)
+                    end
+                end)
+            end,
+        })
+
+        task.spawn(function()
+            refreshMinigameInfo()
+            -- Warm remotes off the status path so deep search can't stall the paragraph.
+            task.spawn(function()
+                findMinigameRemote("MinigameTradeService.Start", true)
+                findMinigameRemote("MinigameTradeService.End", true)
+                findMinigameRemote("MinigameRaceService.Start", true)
+                findMinigameRemote("MinigameRaceService.End", true)
+                refreshMinigameInfo()
+            end)
+            while tradeInfoParagraph or raceInfoParagraph do
+                task.wait(minigameInfoAutoRefreshSec)
+                refreshMinigameInfo()
+            end
+        end)
+    end
+    installMinigamesAutomation()
+
     installAutoRebirthEvolve()
 
     local function installAutoAscend()
