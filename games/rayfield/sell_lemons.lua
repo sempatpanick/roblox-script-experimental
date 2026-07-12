@@ -431,6 +431,9 @@ do
         ClientTycoonEvolution = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonEvolution" },
         ClientTycoonAscension = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonAscension" },
         ClientTycoonPowers = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonPowers" },
+        ClientTycoonOfflineIncome = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonOfflineIncome" },
+        LocalPlayer = { "Core", "LocalPlayer" },
+        PremiumPurchases = { "Modules", "Player", "PremiumPurchases" },
         Config = { "Config" },
         Orchard = { "Modules", "Tycoon", "Orchard", "Orchard" },
         OrchardPlot = { "Modules", "Tycoon", "Orchard", "OrchardPlot" },
@@ -512,6 +515,9 @@ do
             ClientTycoonEvolution = tryRequirePath(MODULE_PATHS.ClientTycoonEvolution),
             ClientTycoonAscension = tryRequirePath(MODULE_PATHS.ClientTycoonAscension),
             ClientTycoonPowers = tryRequirePath(MODULE_PATHS.ClientTycoonPowers),
+            ClientTycoonOfflineIncome = tryRequirePath(MODULE_PATHS.ClientTycoonOfflineIncome),
+            LocalPlayer = tryRequirePath(MODULE_PATHS.LocalPlayer),
+            PremiumPurchases = tryRequirePath(MODULE_PATHS.PremiumPurchases),
             Config = tryRequirePath(MODULE_PATHS.Config),
             Orchard = tryRequirePath(MODULE_PATHS.ClientOrchard) or tryRequirePath(MODULE_PATHS.Orchard),
             OrchardPlot = tryRequirePath(MODULE_PATHS.ClientOrchardPlot) or tryRequirePath(MODULE_PATHS.OrchardPlot),
@@ -547,6 +553,9 @@ do
             ctx.ClientTycoonEvolution = optional.ClientTycoonEvolution
             ctx.ClientTycoonAscension = optional.ClientTycoonAscension
             ctx.ClientTycoonPowers = optional.ClientTycoonPowers
+            ctx.ClientTycoonOfflineIncome = optional.ClientTycoonOfflineIncome
+            ctx.LocalPlayer = optional.LocalPlayer
+            ctx.PremiumPurchases = optional.PremiumPurchases
             ctx.Config = optional.Config
             ctx.Orchard = optional.Orchard
             ctx.OrchardPlot = optional.OrchardPlot
@@ -3913,6 +3922,294 @@ do
             end)
         end,
     })
+
+    local function installAutoClaimOfflineCash()
+        local autoClaimOfflineRunning = false
+        local autoClaimOfflineLoopId = 0
+        local autoClaimOfflineDelaySec = 1
+        local autoClaimOfflineUseFreeDouble = true
+        local offlineClaimedThisSession = false
+
+        local function isPositiveAmount(value)
+            if value == nil then
+                return false
+            end
+            if type(value) == "number" then
+                return value > 0
+            end
+            local ok, greater = pcall(function()
+                return value > 0
+            end)
+            return ok and greater == true
+        end
+
+        local function getOfflineIncomeComponent(ctx, tycoon)
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonOfflineIncome then
+                local ok, component = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonOfflineIncome)
+                end)
+                if ok and component then
+                    return component
+                end
+            end
+            return nil
+        end
+
+        local function getPremiumPurchasesComponent(ctx)
+            if not ctx.LocalPlayer or type(ctx.LocalPlayer.get) ~= "function" or not ctx.PremiumPurchases then
+                return nil
+            end
+            local okPlayer, playerEntity = pcall(function()
+                return ctx.LocalPlayer.get()
+            end)
+            if not okPlayer or not playerEntity or type(playerEntity.GetComponent) ~= "function" then
+                return nil
+            end
+            local ok, component = pcall(function()
+                return playerEntity:GetComponent(ctx.PremiumPurchases)
+            end)
+            if ok and component then
+                return component
+            end
+            return nil
+        end
+
+        local function getUnclaimedOfflineCash(offline, tycoon)
+            if offline and type(offline.GetUnclaimedOfflineCash) == "function" then
+                local ok, cash = pcall(function()
+                    return offline:GetUnclaimedOfflineCash()
+                end)
+                if ok and cash ~= nil then
+                    return cash
+                end
+            end
+            if offline and type(offline.GetOfflineCash) == "function" then
+                local ok, cash = pcall(function()
+                    return offline:GetOfflineCash()
+                end)
+                if ok and cash ~= nil then
+                    return cash
+                end
+            end
+            local values = tycoon and tycoon.Instance and tycoon.Instance:FindFirstChild("Values")
+            if values then
+                local attr = values:GetAttribute("OfflineCash")
+                if attr ~= nil then
+                    return attr
+                end
+            end
+            return nil
+        end
+
+        local function hasUnclaimedOfflineCash(ctx, tycoon, offline)
+            local cash = getUnclaimedOfflineCash(offline, tycoon)
+            if isPositiveAmount(cash) then
+                return true, cash
+            end
+            if offline and type(offline.GetUnclaimedOfflineTime) == "function" then
+                local ok, offlineTime = pcall(function()
+                    return offline:GetUnclaimedOfflineTime()
+                end)
+                if ok and type(offlineTime) == "number" and offlineTime > 0 then
+                    return true, cash
+                end
+            end
+            for _, gui in CollectionService:GetTagged("UI.OfflineCash") do
+                if gui:IsA("GuiObject") and gui.Visible then
+                    return true, cash
+                end
+                local visible = gui:GetAttribute("Visible")
+                if visible == true then
+                    return true, cash
+                end
+            end
+            return false, cash
+        end
+
+        local function hasFreeDoubleOfflineCharge(ctx)
+            local premium = getPremiumPurchasesComponent(ctx)
+            if not premium then
+                return false
+            end
+            if type(premium.GetAvailable) == "function" then
+                local ok, available = pcall(function()
+                    return premium:GetAvailable("DoubleOfflineCash")
+                end)
+                if ok and (tonumber(available) or 0) > 0 then
+                    return true
+                end
+            end
+            if type(premium.GetCount) == "function" and type(premium.GetUses) == "function" then
+                local okCount, count = pcall(function()
+                    return premium:GetCount("DoubleOfflineCash")
+                end)
+                local okUses, uses = pcall(function()
+                    return premium:GetUses("DoubleOfflineCash")
+                end)
+                if okCount and okUses and (tonumber(count) or 0) > (tonumber(uses) or 0) then
+                    return true
+                end
+            end
+            return false
+        end
+
+        local function hideOfflineCashUi()
+            for _, gui in CollectionService:GetTagged("UI.OfflineCash") do
+                pcall(function()
+                    if gui:IsA("GuiObject") then
+                        gui.Visible = false
+                    end
+                    if type(gui.SetAttribute) == "function" then
+                        gui:SetAttribute("Visible", false)
+                    end
+                end)
+            end
+        end
+
+        local function findOfflineClaimRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local remote = remotes and remotes:FindFirstChild("PlayerClaimed")
+            if remote and remote:IsA("RemoteFunction") then
+                return remote
+            end
+            return nil
+        end
+
+        local function findDoubleOfflineRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local remote = remotes and remotes:FindFirstChild("DoubleOfflineCash")
+            if remote and remote:IsA("RemoteFunction") then
+                return remote
+            end
+            return nil
+        end
+
+        local function tryAutoClaimOfflineCashOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+
+            local offline = getOfflineIncomeComponent(ctx, tycoon)
+            local hasUnclaimed = hasUnclaimedOfflineCash(ctx, tycoon, offline)
+            if not hasUnclaimed then
+                return false
+            end
+
+            local usedDouble = false
+            if autoClaimOfflineUseFreeDouble and hasFreeDoubleOfflineCharge(ctx) then
+                if offline and type(offline.DoubleOfflineCashAsync) == "function" then
+                    local okDouble = pcall(function()
+                        return offline:DoubleOfflineCashAsync()
+                    end)
+                    usedDouble = okDouble == true
+                else
+                    local doubleRemote = findDoubleOfflineRemote(tycoon.Instance)
+                    if doubleRemote then
+                        usedDouble = pcall(function()
+                            doubleRemote:InvokeServer()
+                        end) == true
+                    end
+                end
+            end
+
+            local ok = false
+            if offline and type(offline.FlagOfflineAsClaimedAsync) == "function" then
+                local callOk, result = pcall(function()
+                    return offline:FlagOfflineAsClaimedAsync()
+                end)
+                ok = callOk == true and result ~= false
+            else
+                local remote = findOfflineClaimRemote(tycoon.Instance)
+                if remote then
+                    local callOk, result = pcall(function()
+                        return remote:InvokeServer()
+                    end)
+                    ok = callOk == true and result ~= false
+                end
+            end
+
+            if ok then
+                offlineClaimedThisSession = true
+                hideOfflineCashUi()
+                mountNotify({
+                    Title = "Offline Cash",
+                    Content = if usedDouble
+                        then "Claimed offline cash (free double applied)."
+                        else "Claimed offline cash.",
+                    Icon = "check",
+                })
+                applyPlayerInfoParagraph()
+            end
+            return ok
+        end
+
+        MainTab:CreateSection("Auto Claim Offline Cash")
+
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between offline cash claim checks",
+            Flag = "main_auto_claim_offline_delay",
+            CurrentValue = tostring(autoClaimOfflineDelaySec),
+            Callback = function(value)
+                autoClaimOfflineDelaySec = math.max(0.1, tonumber(value) or 1)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Use Free Double",
+            Flag = "main_auto_claim_offline_free_double",
+            CurrentValue = autoClaimOfflineUseFreeDouble,
+            Callback = function(enabled)
+                autoClaimOfflineUseFreeDouble = enabled == true
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Claim Offline Cash",
+            Flag = "main_auto_claim_offline",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoClaimOfflineRunning = enabled == true
+                if not autoClaimOfflineRunning then
+                    return
+                end
+
+                autoClaimOfflineLoopId += 1
+                local loopId = autoClaimOfflineLoopId
+                offlineClaimedThisSession = false
+                task.spawn(function()
+                    for _ = 1, 12 do
+                        if not (autoClaimOfflineRunning and loopId == autoClaimOfflineLoopId) then
+                            return
+                        end
+                        local claimed = false
+                        pcall(function()
+                            claimed = tryAutoClaimOfflineCashOnce() == true
+                        end)
+                        if claimed or offlineClaimedThisSession then
+                            break
+                        end
+                        task.wait(0.5)
+                    end
+
+                    while autoClaimOfflineRunning and loopId == autoClaimOfflineLoopId do
+                        local ok = pcall(function()
+                            tryAutoClaimOfflineCashOnce()
+                        end)
+                        local delay = math.max(0.1, tonumber(autoClaimOfflineDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+    end
+
+    installAutoClaimOfflineCash()
 
     task.spawn(function()
         requestUpgradeListRefresh(false)
