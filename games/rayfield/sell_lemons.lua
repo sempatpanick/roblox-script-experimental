@@ -3180,33 +3180,6 @@ do
         return plainNumber
     end
 
-    local function getAutoEvolveStartingBonusTarget()
-        local parsed = parseHugeInput(autoEvolveStartingBonusTarget)
-        if parsed == nil then
-            return 0
-        end
-        return parsed
-    end
-
-    local function shouldAutoEvolve(progressInfo, startingBonusTarget)
-        if not progressInfo or not progressInfo.ready then
-            return false
-        end
-        if progressInfo.startingBonus == nil then
-            return false
-        end
-        if startingBonusTarget == nil then
-            return true
-        end
-        local ok, isZeroOrLess = pcall(function()
-            return startingBonusTarget <= 0
-        end)
-        if ok and isZeroOrLess then
-            return true
-        end
-        return hugeGreaterOrEqual(progressInfo.startingBonus, startingBonusTarget)
-    end
-
     local function getTycoonRebirthComponent(ctx, tycoon)
         if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonRebirth then
             local ok, component = pcall(function()
@@ -3244,517 +3217,510 @@ do
         return nil
     end
 
-    local function getPotentialInvestorsFromRebirth(ctx, tycoon)
-        local rebirth = getTycoonRebirthComponent(ctx, tycoon)
-        if rebirth and type(rebirth.GetPotentialInvestors) == "function" then
-            local ok, investors = pcall(function()
-                return rebirth:GetPotentialInvestors()
-            end)
-            if ok and investors ~= nil then
-                return investors
+    local function installAutoRebirthEvolve()
+        local function getAutoEvolveStartingBonusTarget()
+            local parsed = parseHugeInput(autoEvolveStartingBonusTarget)
+            if parsed == nil then
+                return 0
             end
+            return parsed
         end
-        return nil
-    end
 
-    local function getRequiredRebirthGain(currentInvestors, targetPercent)
-        local percent = tonumber(targetPercent)
-        if not currentInvestors or not percent or percent <= 0 then
+        local function shouldAutoEvolve(progressInfo, startingBonusTarget)
+            if not progressInfo or not progressInfo.ready then
+                return false
+            end
+            if progressInfo.startingBonus == nil then
+                return false
+            end
+            if startingBonusTarget == nil then
+                return true
+            end
+            local ok, isZeroOrLess = pcall(function()
+                return startingBonusTarget <= 0
+            end)
+            if ok and isZeroOrLess then
+                return true
+            end
+            return hugeGreaterOrEqual(progressInfo.startingBonus, startingBonusTarget)
+        end
+
+        local function getPotentialInvestorsFromRebirth(ctx, tycoon)
+            local rebirth = getTycoonRebirthComponent(ctx, tycoon)
+            if rebirth and type(rebirth.GetPotentialInvestors) == "function" then
+                local ok, investors = pcall(function()
+                    return rebirth:GetPotentialInvestors()
+                end)
+                if ok and investors ~= nil then
+                    return investors
+                end
+            end
             return nil
         end
-        return hugeMultiply(currentInvestors, percent / 100)
-    end
 
-    local function shouldAutoRebirth(currentInvestors, potentialInvestors, targetPercent)
-        local requiredGain = getRequiredRebirthGain(currentInvestors, targetPercent)
-        if not requiredGain or not potentialInvestors then
-            return false
-        end
-        return hugeGreaterOrEqual(potentialInvestors, requiredGain)
-    end
-
-    local function findRebirthRemote(tycoonInstance)
-        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
-        local rebirthRemote = remotes and remotes:FindFirstChild("Rebirth")
-        if rebirthRemote and rebirthRemote:IsA("RemoteFunction") then
-            return rebirthRemote
-        end
-        return nil
-    end
-
-    local function getRebirthInfoContent()
-        local ctx, ctxErr = getSellLemonsGameContext(true)
-        if not ctx then
-            return ctxErr or "Could not load game data."
+        local function getRequiredRebirthGain(currentInvestors, targetPercent)
+            local percent = tonumber(targetPercent)
+            if not currentInvestors or not percent or percent <= 0 then
+                return nil
+            end
+            return hugeMultiply(currentInvestors, percent / 100)
         end
 
-        local tycoon = getLocalTycoon(ctx)
-        if not tycoon then
-            return "Waiting for tycoon..."
+        local function shouldAutoRebirth(currentInvestors, potentialInvestors, targetPercent)
+            local requiredGain = getRequiredRebirthGain(currentInvestors, targetPercent)
+            if not requiredGain or not potentialInvestors then
+                return false
+            end
+            return hugeGreaterOrEqual(potentialInvestors, requiredGain)
         end
 
-        local currentInvestors = getCurrentInvestors(ctx, tycoon)
-        local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
-        if currentInvestors == nil or potentialInvestors == nil then
-            return "Could not read investor data."
+        local function findRebirthRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local rebirthRemote = remotes and remotes:FindFirstChild("Rebirth")
+            if rebirthRemote and rebirthRemote:IsA("RemoteFunction") then
+                return rebirthRemote
+            end
+            return nil
         end
 
-        local afterRebirth = hugeAdd(currentInvestors, potentialInvestors)
-        local requiredGain = getRequiredRebirthGain(currentInvestors, rebirthTargetPercent)
-        local ready = shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent)
+        local function getRebirthInfoContent()
+            local ctx, ctxErr = getSellLemonsGameContext(true)
+            if not ctx then
+                return ctxErr or "Could not load game data."
+            end
 
-        local lines = {
-            string.format("Own Investors: %s", formatHugeAmount(ctx, currentInvestors)),
-            string.format("Gain from Rebirth: %s", formatHugeAmount(ctx, potentialInvestors)),
-            string.format("After Rebirth: %s", formatHugeAmount(ctx, afterRebirth)),
-            string.format(
-                "Target Gain (%s%%): %s",
-                tostring(rebirthTargetPercent),
-                formatHugeAmount(ctx, requiredGain)
-            ),
-            string.format("Ready to Rebirth: %s", if ready then "Yes" else "No"),
-        }
-        return table.concat(lines, "\n")
-    end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return "Waiting for tycoon..."
+            end
 
-    local function applyRebirthInfoParagraph(content)
-        if not rebirthInfoParagraph then
-            return
+            local currentInvestors = getCurrentInvestors(ctx, tycoon)
+            local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
+            if currentInvestors == nil or potentialInvestors == nil then
+                return "Could not read investor data."
+            end
+
+            local afterRebirth = hugeAdd(currentInvestors, potentialInvestors)
+            local requiredGain = getRequiredRebirthGain(currentInvestors, rebirthTargetPercent)
+            local ready = shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent)
+
+            local lines = {
+                string.format("Own Investors: %s", formatHugeAmount(ctx, currentInvestors)),
+                string.format("Gain from Rebirth: %s", formatHugeAmount(ctx, potentialInvestors)),
+                string.format("After Rebirth: %s", formatHugeAmount(ctx, afterRebirth)),
+                string.format(
+                    "Target Gain (%s%%): %s",
+                    tostring(rebirthTargetPercent),
+                    formatHugeAmount(ctx, requiredGain)
+                ),
+                string.format("Ready to Rebirth: %s", if ready then "Yes" else "No"),
+            }
+            return table.concat(lines, "\n")
         end
-        task.defer(function()
+
+        local function applyRebirthInfoParagraph(content)
             if not rebirthInfoParagraph then
                 return
             end
-            rebirthInfoParagraph:Set({
-                Title = "Investors",
-                Content = content,
-            })
-        end)
-    end
-
-    local function requestRebirthInfoRefresh()
-        task.spawn(function()
-            local ok, contentOrErr = pcall(getRebirthInfoContent)
-            applyRebirthInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
-        end)
-    end
-
-    local function tryAutoRebirthOnce()
-        local ctx = getSellLemonsGameContext(true)
-        if not ctx then
-            return false
-        end
-
-        local tycoon = getLocalTycoon(ctx)
-        if not tycoon then
-            return false
-        end
-
-        local currentInvestors = getCurrentInvestors(ctx, tycoon)
-        local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
-        if not shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent) then
-            return false
-        end
-
-        local remote = findRebirthRemote(tycoon.Instance)
-        if not remote then
-            return false
-        end
-
-        local ok = pcall(function()
-            remote:InvokeServer(nil)
-        end)
-        if ok then
-            mountNotify({
-                Title = "Auto Rebirth",
-                Content = string.format(
-                    "Rebirthed with %s investors gained.",
-                    formatHugeAmount(ctx, potentialInvestors)
-                ),
-                Icon = "check",
-            })
-        end
-        return ok
-    end
-
-    local function getTycoonEvolutionComponent(ctx, tycoon)
-        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonEvolution then
-            local ok, component = pcall(function()
-                return tycoon:GetComponent(ctx.ClientTycoonEvolution)
+            task.defer(function()
+                if not rebirthInfoParagraph then
+                    return
+                end
+                rebirthInfoParagraph:Set({
+                    Title = "Investors",
+                    Content = content,
+                })
             end)
-            if ok and component then
-                return component
+        end
+
+        local function requestRebirthInfoRefresh()
+            task.spawn(function()
+                local ok, contentOrErr = pcall(getRebirthInfoContent)
+                applyRebirthInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+            end)
+        end
+
+        local function tryAutoRebirthOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
             end
-        end
-        return nil
-    end
 
-    local function getEvolutionDisplayName(evolution, displayInfo)
-        if type(displayInfo) == "table" and type(displayInfo.Name) == "string" and displayInfo.Name ~= "" then
-            return displayInfo.Name
-        end
-        return tostring(evolution)
-    end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
 
-    local function formatEvolutionProgressPercent(progress)
-        if type(progress) ~= "number" then
-            return "?"
-        end
-        local shown = progress
-        if shown < 1 then
-            shown = math.min(shown, 0.9945)
-        end
-        local decimals = if shown > 0.0995 then 0 else 1
-        local text = string.format("%." .. tostring(decimals) .. "f", shown * 100)
-        return text:gsub("%.?0+$", "") .. "%"
-    end
+            local currentInvestors = getCurrentInvestors(ctx, tycoon)
+            local potentialInvestors = getPotentialInvestorsFromRebirth(ctx, tycoon)
+            if not shouldAutoRebirth(currentInvestors, potentialInvestors, rebirthTargetPercent) then
+                return false
+            end
 
-    local function getEvolutionProgressInfo(ctx, tycoon)
-        local evolution = getTycoonEvolutionComponent(ctx, tycoon)
-        if not evolution or type(evolution.GetEvolutionProgress) ~= "function" then
+            local remote = findRebirthRemote(tycoon.Instance)
+            if not remote then
+                return false
+            end
+
+            local ok = pcall(function()
+                remote:InvokeServer(nil)
+            end)
+            if ok then
+                mountNotify({
+                    Title = "Auto Rebirth",
+                    Content = string.format(
+                        "Rebirthed with %s investors gained.",
+                        formatHugeAmount(ctx, potentialInvestors)
+                    ),
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function getTycoonEvolutionComponent(ctx, tycoon)
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonEvolution then
+                local ok, component = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonEvolution)
+                end)
+                if ok and component then
+                    return component
+                end
+            end
             return nil
         end
 
-        local ok, progress, startingBonus = pcall(function()
-            return evolution:GetEvolutionProgress()
-        end)
-        if not ok then
-            return nil
+        local function getEvolutionDisplayName(evolution, displayInfo)
+            if type(displayInfo) == "table" and type(displayInfo.Name) == "string" and displayInfo.Name ~= "" then
+                return displayInfo.Name
+            end
+            return tostring(evolution)
         end
 
-        return {
-            progress = progress,
-            startingBonus = startingBonus,
-            ready = type(progress) == "number" and progress >= 1,
-        }
-    end
-
-    local function getEvolutionInfoContent()
-        local ctx, ctxErr = getSellLemonsGameContext(true)
-        if not ctx then
-            return ctxErr or "Could not load game data."
+        local function formatEvolutionProgressPercent(progress)
+            if type(progress) ~= "number" then
+                return "?"
+            end
+            local shown = progress
+            if shown < 1 then
+                shown = math.min(shown, 0.9945)
+            end
+            local decimals = if shown > 0.0995 then 0 else 1
+            local text = string.format("%." .. tostring(decimals) .. "f", shown * 100)
+            return text:gsub("%.?0+$", "") .. "%"
         end
 
-        local tycoon = getLocalTycoon(ctx)
-        if not tycoon then
-            return "Waiting for tycoon..."
+        local function getEvolutionProgressInfo(ctx, tycoon)
+            local evolution = getTycoonEvolutionComponent(ctx, tycoon)
+            if not evolution or type(evolution.GetEvolutionProgress) ~= "function" then
+                return nil
+            end
+
+            local ok, progress, startingBonus = pcall(function()
+                return evolution:GetEvolutionProgress()
+            end)
+            if not ok then
+                return nil
+            end
+
+            return {
+                progress = progress,
+                startingBonus = startingBonus,
+                ready = type(progress) == "number" and progress >= 1,
+            }
         end
 
-        local evolution = getTycoonEvolutionComponent(ctx, tycoon)
-        if not evolution then
-            return "Could not read evolution data."
-        end
+        local function getEvolutionInfoContent()
+            local ctx, ctxErr = getSellLemonsGameContext(true)
+            if not ctx then
+                return ctxErr or "Could not load game data."
+            end
 
-        local currentLevel
-        local currentDisplay
-        local nextDisplay
-        local incomeBonus
-        local okLevel, levelOrErr = pcall(function()
-            return evolution:GetEvolution()
-        end)
-        if not okLevel then
-            return "Could not read evolution level."
-        end
-        currentLevel = levelOrErr
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return "Waiting for tycoon..."
+            end
 
-        local okCurrent, currentInfo = pcall(function()
-            return evolution:GetEvolutionDisplayInfo()
-        end)
-        if okCurrent then
-            currentDisplay = currentInfo
-        end
+            local evolution = getTycoonEvolutionComponent(ctx, tycoon)
+            if not evolution then
+                return "Could not read evolution data."
+            end
 
-        local okNext, nextInfo = pcall(function()
-            return evolution:GetEvolutionDisplayInfo(currentLevel + 1)
-        end)
-        if okNext then
-            nextDisplay = nextInfo
-        end
+            local currentLevel
+            local currentDisplay
+            local nextDisplay
+            local incomeBonus
+            local okLevel, levelOrErr = pcall(function()
+                return evolution:GetEvolution()
+            end)
+            if not okLevel then
+                return "Could not read evolution level."
+            end
+            currentLevel = levelOrErr
 
-        local okBonus, bonusOrErr = pcall(function()
-            return evolution:GetEvolutionBonus()
-        end)
-        if okBonus and type(bonusOrErr) == "number" then
-            incomeBonus = bonusOrErr
-        end
+            local okCurrent, currentInfo = pcall(function()
+                return evolution:GetEvolutionDisplayInfo()
+            end)
+            if okCurrent then
+                currentDisplay = currentInfo
+            end
 
-        local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
-        if not progressInfo then
-            return "Could not read evolution progress."
-        end
+            local okNext, nextInfo = pcall(function()
+                return evolution:GetEvolutionDisplayInfo(currentLevel + 1)
+            end)
+            if okNext then
+                nextDisplay = nextInfo
+            end
 
-        local lines = {
-            string.format("Current Fruit: %s", getEvolutionDisplayName(currentLevel, currentDisplay)),
-            string.format("Current Evolution: %s", tostring(currentLevel)),
-            string.format(
-                "Next Fruit: %s",
-                getEvolutionDisplayName(currentLevel + 1, nextDisplay)
-            ),
-            string.format("Progress: %s", formatEvolutionProgressPercent(progressInfo.progress)),
-        }
+            local okBonus, bonusOrErr = pcall(function()
+                return evolution:GetEvolutionBonus()
+            end)
+            if okBonus and type(bonusOrErr) == "number" then
+                incomeBonus = bonusOrErr
+            end
 
-        if progressInfo.ready and progressInfo.startingBonus ~= nil then
+            local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
+            if not progressInfo then
+                return "Could not read evolution progress."
+            end
+
+            local lines = {
+                string.format("Current Fruit: %s", getEvolutionDisplayName(currentLevel, currentDisplay)),
+                string.format("Current Evolution: %s", tostring(currentLevel)),
+                string.format(
+                    "Next Fruit: %s",
+                    getEvolutionDisplayName(currentLevel + 1, nextDisplay)
+                ),
+                string.format("Progress: %s", formatEvolutionProgressPercent(progressInfo.progress)),
+            }
+
+            if progressInfo.ready and progressInfo.startingBonus ~= nil then
+                table.insert(lines, string.format(
+                    "Starting Bonus: %s",
+                    formatHugeAmount(ctx, progressInfo.startingBonus)
+                ))
+            end
+
+            if incomeBonus then
+                table.insert(lines, string.format(
+                    "Income Bonus: x%s income speed",
+                    tostring(math.round(incomeBonus))
+                ))
+            end
+
+            local startingBonusTarget = getAutoEvolveStartingBonusTarget()
+            local ready = shouldAutoEvolve(progressInfo, startingBonusTarget)
             table.insert(lines, string.format(
-                "Starting Bonus: %s",
-                formatHugeAmount(ctx, progressInfo.startingBonus)
+                "Target Starting Bonus: %s",
+                formatHugeAmount(ctx, startingBonusTarget)
             ))
-        end
 
-        if incomeBonus then
             table.insert(lines, string.format(
-                "Income Bonus: x%s income speed",
-                tostring(math.round(incomeBonus))
+                "Ready to Evolve: %s",
+                if ready then "Yes" else "No"
             ))
+
+            return table.concat(lines, "\n")
         end
 
-        local startingBonusTarget = getAutoEvolveStartingBonusTarget()
-        local ready = shouldAutoEvolve(progressInfo, startingBonusTarget)
-        table.insert(lines, string.format(
-            "Target Starting Bonus: %s",
-            formatHugeAmount(ctx, startingBonusTarget)
-        ))
-
-        table.insert(lines, string.format(
-            "Ready to Evolve: %s",
-            if ready then "Yes" else "No"
-        ))
-
-        return table.concat(lines, "\n")
-    end
-
-    local function applyEvolutionInfoParagraph(content)
-        if not evolutionInfoParagraph then
-            return
-        end
-        task.defer(function()
+        local function applyEvolutionInfoParagraph(content)
             if not evolutionInfoParagraph then
                 return
             end
-            evolutionInfoParagraph:Set({
-                Title = "Evolution",
-                Content = content,
-            })
-        end)
-    end
-
-    local function requestEvolutionInfoRefresh()
-        task.spawn(function()
-            local ok, contentOrErr = pcall(getEvolutionInfoContent)
-            applyEvolutionInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
-        end)
-    end
-
-    local function findEvolveRemote(tycoonInstance)
-        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
-        local evolveRemote = remotes and remotes:FindFirstChild("Evolve")
-        if evolveRemote and evolveRemote:IsA("RemoteFunction") then
-            return evolveRemote
-        end
-        return nil
-    end
-
-    local function tryAutoEvolveOnce()
-        local ctx = getSellLemonsGameContext(true)
-        if not ctx then
-            return false
-        end
-
-        local tycoon = getLocalTycoon(ctx)
-        if not tycoon then
-            return false
-        end
-
-        local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
-        if not progressInfo or not shouldAutoEvolve(progressInfo, getAutoEvolveStartingBonusTarget()) then
-            return false
-        end
-
-        local remote = findEvolveRemote(tycoon.Instance)
-        if not remote then
-            return false
-        end
-
-        local ok = pcall(function()
-            remote:InvokeServer(nil)
-        end)
-        if ok then
-            mountNotify({
-                Title = "Auto Evolve",
-                Content = string.format(
-                    "Evolved at %s progress with %s starting bonus.",
-                    formatEvolutionProgressPercent(progressInfo.progress),
-                    formatHugeAmount(ctx, progressInfo.startingBonus)
-                ),
-                Icon = "check",
-            })
-        end
-        return ok
-    end
-
-    local function getTycoonPowersComponent(ctx, tycoon)
-        if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonPowers then
-            local ok, component = pcall(function()
-                return tycoon:GetComponent(ctx.ClientTycoonPowers)
-            end)
-            if ok and component then
-                return component
-            end
-        end
-        return nil
-    end
-
-    local function isInvestorsDiscovered(ctx, tycoon)
-        local rebirth = getTycoonRebirthComponent(ctx, tycoon)
-        if not rebirth or type(rebirth.IsDiscovered) ~= "function" then
-            return false
-        end
-        local ok, discovered = pcall(function()
-            return rebirth:IsDiscovered() == true
-        end)
-        return ok and discovered == true
-    end
-
-    local function getPowerDisplayTitle(ctx, powerName)
-        local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
-        if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Title) == "string" then
-            return powerConfig.Display.Title
-        end
-        return prettifyPurchaseName(powerName)
-    end
-
-    local function getPowerDisplayOrder(ctx, powerName)
-        local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
-        if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Order) == "number" then
-            return powerConfig.Display.Order
-        end
-        return 0
-    end
-
-    local function compareHugeDescending(a, b)
-        if a == nil or b == nil then
-            return false
-        end
-        local ok, greaterOrEqual = pcall(function()
-            return a >= b
-        end)
-        return ok and greaterOrEqual == true
-    end
-
-    local function collectAffordablePowerUpgrades(ctx, tycoon)
-        local powers = getTycoonPowersComponent(ctx, tycoon)
-        if not powers or not ctx.Config or type(ctx.Config.Powers) ~= "table" then
-            return nil
-        end
-        if not isInvestorsDiscovered(ctx, tycoon) then
-            return {}
-        end
-
-        local investors = getCurrentInvestors(ctx, tycoon)
-        if investors == nil then
-            return nil
-        end
-
-        local entries = {}
-        for powerName in pairs(ctx.Config.Powers) do
-            if ctx.ClientTycoonPowers and type(ctx.ClientTycoonPowers.isPower) == "function" then
-                local okPower, isPower = pcall(function()
-                    return ctx.ClientTycoonPowers.isPower(powerName) == true
-                end)
-                if not okPower or not isPower then
-                    continue
+            task.defer(function()
+                if not evolutionInfoParagraph then
+                    return
                 end
-            end
-
-            local okMax, maxLevel = pcall(function()
-                return powers:GetMaxLevel(powerName)
-            end)
-            if not okMax or not maxLevel then
-                continue
-            end
-
-            local okLevel, currentLevel = pcall(function()
-                return powers:GetLevel(powerName)
-            end)
-            if not okLevel or currentLevel == nil or currentLevel >= maxLevel then
-                continue
-            end
-
-            local okPrice, price = pcall(function()
-                return powers:GetUpgradePrice(powerName)
-            end)
-            if not okPrice or price == nil then
-                continue
-            end
-
-            if canAffordPurchasePrice(investors, price) then
-                table.insert(entries, {
-                    name = powerName,
-                    price = price,
-                    displayOrder = getPowerDisplayOrder(ctx, powerName),
-                    displayTitle = getPowerDisplayTitle(ctx, powerName),
+                evolutionInfoParagraph:Set({
+                    Title = "Evolution",
+                    Content = content,
                 })
-            end
+            end)
         end
 
-        table.sort(entries, function(a, b)
-            if compareHugeDescending(a.price, b.price) then
-                return true
+        local function requestEvolutionInfoRefresh()
+            task.spawn(function()
+                local ok, contentOrErr = pcall(getEvolutionInfoContent)
+                applyEvolutionInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+            end)
+        end
+
+        local function findEvolveRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local evolveRemote = remotes and remotes:FindFirstChild("Evolve")
+            if evolveRemote and evolveRemote:IsA("RemoteFunction") then
+                return evolveRemote
             end
-            if compareHugeDescending(b.price, a.price) then
+            return nil
+        end
+
+        local function tryAutoEvolveOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
                 return false
             end
-            return a.displayOrder > b.displayOrder
+
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+
+            local progressInfo = getEvolutionProgressInfo(ctx, tycoon)
+            if not progressInfo or not shouldAutoEvolve(progressInfo, getAutoEvolveStartingBonusTarget()) then
+                return false
+            end
+
+            local remote = findEvolveRemote(tycoon.Instance)
+            if not remote then
+                return false
+            end
+
+            local ok = pcall(function()
+                remote:InvokeServer(nil)
+            end)
+            if ok then
+                mountNotify({
+                    Title = "Auto Evolve",
+                    Content = string.format(
+                        "Evolved at %s progress with %s starting bonus.",
+                        formatEvolutionProgressPercent(progressInfo.progress),
+                        formatHugeAmount(ctx, progressInfo.startingBonus)
+                    ),
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+
+        MainTab:CreateSection("Auto Rebirth")
+
+        rebirthInfoParagraph = MainTab:CreateParagraph({
+            Title = "Investors",
+            Content = "Loading...",
+        })
+
+        MainTab:CreateInput({
+            Name = "Target Gain (%)",
+            PlaceholderText = "Percent of own investors to gain before rebirth",
+            Flag = "main_rebirth_target_percent",
+            CurrentValue = tostring(rebirthTargetPercent),
+            Callback = function(value)
+                rebirthTargetPercent = math.max(0, tonumber(value) or rebirthTargetPercent)
+                requestRebirthInfoRefresh()
+            end,
+        })
+
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between auto rebirth checks",
+            Flag = "main_auto_rebirth_delay",
+            CurrentValue = tostring(autoRebirthDelaySec),
+            Callback = function(value)
+                autoRebirthDelaySec = math.max(0.1, tonumber(value) or 1)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Rebirth",
+            Flag = "main_auto_rebirth",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoRebirthRunning = enabled == true
+                if not autoRebirthRunning then
+                    return
+                end
+
+                autoRebirthLoopId += 1
+                local loopId = autoRebirthLoopId
+                task.spawn(function()
+                    while autoRebirthRunning and loopId == autoRebirthLoopId do
+                        local ok = pcall(function()
+                            tryAutoRebirthOnce()
+                            requestRebirthInfoRefresh()
+                            applyPlayerInfoParagraph()
+                        end)
+                        local delay = math.max(0.1, tonumber(autoRebirthDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        task.spawn(function()
+            requestRebirthInfoRefresh()
+            while rebirthInfoParagraph do
+                task.wait(rebirthInfoAutoRefreshSec)
+                requestRebirthInfoRefresh()
+            end
         end)
 
-        return entries
-    end
+        MainTab:CreateSection("Auto Evolve")
 
-    local function findUpgradePowerLevelRemote(tycoonInstance)
-        local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
-        local upgradeRemote = remotes and remotes:FindFirstChild("UpgradePowerLevel")
-        if upgradeRemote and upgradeRemote:IsA("RemoteFunction") then
-            return upgradeRemote
-        end
-        return nil
-    end
+        evolutionInfoParagraph = MainTab:CreateParagraph({
+            Title = "Evolution",
+            Content = "Loading...",
+        })
 
-    local function tryAutoBuyPowersOnce()
-        local ctx = getSellLemonsGameContext(true)
-        if not ctx then
-            return false
-        end
+        MainTab:CreateInput({
+            Name = "Starting Bonus",
+            PlaceholderText = "Minimum starting bonus before evolve (0 = any)",
+            Flag = "main_auto_evolve_starting_bonus",
+            CurrentValue = tostring(autoEvolveStartingBonusTarget),
+            Callback = function(value)
+                if type(value) == "string" and #value > 0 then
+                    autoEvolveStartingBonusTarget = value
+                else
+                    autoEvolveStartingBonusTarget = tostring(tonumber(value) or 0)
+                end
+                requestEvolutionInfoRefresh()
+            end,
+        })
 
-        local tycoon = getLocalTycoon(ctx)
-        if not tycoon then
-            return false
-        end
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between auto evolve checks",
+            Flag = "main_auto_evolve_delay",
+            CurrentValue = tostring(autoEvolveDelaySec),
+            Callback = function(value)
+                autoEvolveDelaySec = math.max(0.1, tonumber(value) or 1)
+            end,
+        })
 
-        local entries = collectAffordablePowerUpgrades(ctx, tycoon)
-        if type(entries) ~= "table" or #entries == 0 then
-            return false
-        end
+        MainTab:CreateToggle({
+            Name = "Auto Evolve",
+            Flag = "main_auto_evolve",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoEvolveRunning = enabled == true
+                if not autoEvolveRunning then
+                    return
+                end
 
-        local target = entries[1]
-        local remote = findUpgradePowerLevelRemote(tycoon.Instance)
-        if not remote then
-            return false
-        end
+                autoEvolveLoopId += 1
+                local loopId = autoEvolveLoopId
+                task.spawn(function()
+                    while autoEvolveRunning and loopId == autoEvolveLoopId do
+                        local ok = pcall(function()
+                            tryAutoEvolveOnce()
+                            requestEvolutionInfoRefresh()
+                            applyPlayerInfoParagraph()
+                        end)
+                        local delay = math.max(0.1, tonumber(autoEvolveDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
 
-        local ok = pcall(function()
-            remote:InvokeServer(target.name)
+        task.spawn(function()
+            requestEvolutionInfoRefresh()
+            while evolutionInfoParagraph do
+                task.wait(evolutionInfoAutoRefreshSec)
+                requestEvolutionInfoRefresh()
+            end
         end)
-        if ok then
-            mountNotify({
-                Title = "Auto Buy Powers",
-                Content = string.format(
-                    "Upgraded %s (%s investors).",
-                    target.displayTitle,
-                    formatHugeAmount(ctx, target.price)
-                ),
-                Icon = "check",
-            })
-        end
-        return ok
+
     end
 
     MainTab:CreateSection("Player Information")
@@ -4221,133 +4187,7 @@ do
 
     installOrchardAutomation(MainTab)
 
-    MainTab:CreateSection("Auto Rebirth")
-
-    rebirthInfoParagraph = MainTab:CreateParagraph({
-        Title = "Investors",
-        Content = "Loading...",
-    })
-
-    MainTab:CreateInput({
-        Name = "Target Gain (%)",
-        PlaceholderText = "Percent of own investors to gain before rebirth",
-        Flag = "main_rebirth_target_percent",
-        CurrentValue = tostring(rebirthTargetPercent),
-        Callback = function(value)
-            rebirthTargetPercent = math.max(0, tonumber(value) or rebirthTargetPercent)
-            requestRebirthInfoRefresh()
-        end,
-    })
-
-    MainTab:CreateInput({
-        Name = "Delay (seconds)",
-        PlaceholderText = "Seconds between auto rebirth checks",
-        Flag = "main_auto_rebirth_delay",
-        CurrentValue = tostring(autoRebirthDelaySec),
-        Callback = function(value)
-            autoRebirthDelaySec = math.max(0.1, tonumber(value) or 1)
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Auto Rebirth",
-        Flag = "main_auto_rebirth",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoRebirthRunning = enabled == true
-            if not autoRebirthRunning then
-                return
-            end
-
-            autoRebirthLoopId += 1
-            local loopId = autoRebirthLoopId
-            task.spawn(function()
-                while autoRebirthRunning and loopId == autoRebirthLoopId do
-                    local ok = pcall(function()
-                        tryAutoRebirthOnce()
-                        requestRebirthInfoRefresh()
-                        applyPlayerInfoParagraph()
-                    end)
-                    local delay = math.max(0.1, tonumber(autoRebirthDelaySec) or 1)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
-            end)
-        end,
-    })
-
-    task.spawn(function()
-        requestRebirthInfoRefresh()
-        while rebirthInfoParagraph do
-            task.wait(rebirthInfoAutoRefreshSec)
-            requestRebirthInfoRefresh()
-        end
-    end)
-
-    MainTab:CreateSection("Auto Evolve")
-
-    evolutionInfoParagraph = MainTab:CreateParagraph({
-        Title = "Evolution",
-        Content = "Loading...",
-    })
-
-    MainTab:CreateInput({
-        Name = "Starting Bonus",
-        PlaceholderText = "Minimum starting bonus before evolve (0 = any)",
-        Flag = "main_auto_evolve_starting_bonus",
-        CurrentValue = tostring(autoEvolveStartingBonusTarget),
-        Callback = function(value)
-            if type(value) == "string" and #value > 0 then
-                autoEvolveStartingBonusTarget = value
-            else
-                autoEvolveStartingBonusTarget = tostring(tonumber(value) or 0)
-            end
-            requestEvolutionInfoRefresh()
-        end,
-    })
-
-    MainTab:CreateInput({
-        Name = "Delay (seconds)",
-        PlaceholderText = "Seconds between auto evolve checks",
-        Flag = "main_auto_evolve_delay",
-        CurrentValue = tostring(autoEvolveDelaySec),
-        Callback = function(value)
-            autoEvolveDelaySec = math.max(0.1, tonumber(value) or 1)
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Auto Evolve",
-        Flag = "main_auto_evolve",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoEvolveRunning = enabled == true
-            if not autoEvolveRunning then
-                return
-            end
-
-            autoEvolveLoopId += 1
-            local loopId = autoEvolveLoopId
-            task.spawn(function()
-                while autoEvolveRunning and loopId == autoEvolveLoopId do
-                    local ok = pcall(function()
-                        tryAutoEvolveOnce()
-                        requestEvolutionInfoRefresh()
-                        applyPlayerInfoParagraph()
-                    end)
-                    local delay = math.max(0.1, tonumber(autoEvolveDelaySec) or 1)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
-            end)
-        end,
-    })
-
-    task.spawn(function()
-        requestEvolutionInfoRefresh()
-        while evolutionInfoParagraph do
-            task.wait(evolutionInfoAutoRefreshSec)
-            requestEvolutionInfoRefresh()
-        end
-    end)
+    installAutoRebirthEvolve()
 
     local function installAutoAscend()
         local ascensionInfoParagraph
@@ -4654,578 +4494,1043 @@ do
 
     installAutoAscend()
 
-    local fireClickDetectorFn = (typeof(fireclickdetector) == "function" and fireclickdetector)
-        or (typeof(clickdetector) == "function" and clickdetector)
-        or nil
+    local function installWorldPickups()
+        local fireClickDetectorFn = (typeof(fireclickdetector) == "function" and fireclickdetector)
+            or (typeof(clickdetector) == "function" and clickdetector)
+            or nil
 
-    local function getLocalHumanoidRootPart()
-        local player = Players.LocalPlayer
-        local character = player and player.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        if root and root:IsA("BasePart") then
-            return root
-        end
-        return nil
-    end
-
-    local function getFruitPosition(fruit)
-        if not fruit or not fruit.Parent then
-            return nil
-        end
-        if fruit:IsA("Model") then
-            return fruit:GetPivot().Position
-        end
-        if fruit:IsA("BasePart") then
-            return fruit.Position
-        end
-        local part = fruit:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.Position
-        end
-        return nil
-    end
-
-    local function getInstancePosition(instance)
-        if not instance or not instance.Parent then
-            return nil
-        end
-        if instance:IsA("Model") then
-            return instance:GetPivot().Position
-        end
-        if instance:IsA("BasePart") then
-            return instance.Position
-        end
-        local part = instance:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.Position
-        end
-        return nil
-    end
-
-    local function findLemonTreeAncestor(instance, tycoonInstance)
-        local current = instance
-        while current and current ~= tycoonInstance do
-            if current.Name == "LemonTree" then
-                return current
+        local function getLocalHumanoidRootPart()
+            local player = Players.LocalPlayer
+            local character = player and player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if root and root:IsA("BasePart") then
+                return root
             end
-            current = current.Parent
-        end
-        return nil
-    end
-
-    local function teleportRootToPosition(root, position)
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(position + Vector3.new(0, 2, 0))
-    end
-
-    local teleportActionQueue = {}
-    local teleportQueueWorkerRunning = false
-
-    local function processNextTeleportAction()
-        if teleportQueueWorkerRunning then
-            return
+            return nil
         end
 
-        local job = table.remove(teleportActionQueue, 1)
-        if not job then
-            return
+        local function getFruitPosition(fruit)
+            if not fruit or not fruit.Parent then
+                return nil
+            end
+            if fruit:IsA("Model") then
+                return fruit:GetPivot().Position
+            end
+            if fruit:IsA("BasePart") then
+                return fruit.Position
+            end
+            local part = fruit:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.Position
+            end
+            return nil
         end
 
-        teleportQueueWorkerRunning = true
-        task.spawn(function()
-            pcall(job)
-            teleportQueueWorkerRunning = false
+        local function getInstancePosition(instance)
+            if not instance or not instance.Parent then
+                return nil
+            end
+            if instance:IsA("Model") then
+                return instance:GetPivot().Position
+            end
+            if instance:IsA("BasePart") then
+                return instance.Position
+            end
+            local part = instance:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.Position
+            end
+            return nil
+        end
+
+        local function findLemonTreeAncestor(instance, tycoonInstance)
+            local current = instance
+            while current and current ~= tycoonInstance do
+                if current.Name == "LemonTree" then
+                    return current
+                end
+                current = current.Parent
+            end
+            return nil
+        end
+
+        local function teleportRootToPosition(root, position)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.CFrame = CFrame.new(position + Vector3.new(0, 2, 0))
+        end
+
+        local teleportActionQueue = {}
+        local teleportQueueWorkerRunning = false
+
+        local function processNextTeleportAction()
+            if teleportQueueWorkerRunning then
+                return
+            end
+
+            local job = table.remove(teleportActionQueue, 1)
+            if not job then
+                return
+            end
+
+            teleportQueueWorkerRunning = true
+            task.spawn(function()
+                pcall(job)
+                teleportQueueWorkerRunning = false
+                processNextTeleportAction()
+            end)
+        end
+
+        local function enqueueTeleportAction(actionFn)
+            table.insert(teleportActionQueue, actionFn)
             processNextTeleportAction()
-        end)
-    end
+        end
 
-    local function enqueueTeleportAction(actionFn)
-        table.insert(teleportActionQueue, actionFn)
-        processNextTeleportAction()
-    end
+        local function runInTeleportQueue(actionFn)
+            local finished = false
+            enqueueTeleportAction(function()
+                local ok, err = pcall(actionFn)
+                if not ok then
+                    warn("[Sell Lemons Teleport Queue]", err)
+                end
+                finished = true
+            end)
 
-    local function runInTeleportQueue(actionFn)
-        local finished = false
-        enqueueTeleportAction(function()
-            local ok, err = pcall(actionFn)
-            if not ok then
-                warn("[Sell Lemons Teleport Queue]", err)
+            while not finished do
+                task.wait()
             end
-            finished = true
-        end)
-
-        while not finished do
-            task.wait()
-        end
-    end
-
-    local function collectOwnTycoonLemonTreesWithFruit(tycoonInstance, originPos)
-        if not tycoonInstance or not originPos then
-            return {}
         end
 
-        local trees = {}
-        local seen = {}
-        for _, fruit in CollectionService:GetTagged("ClickFruit") do
-            if fruit.Parent and fruit:IsDescendantOf(tycoonInstance) then
-                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
-                if not detector then
+        local function collectOwnTycoonLemonTreesWithFruit(tycoonInstance, originPos)
+            if not tycoonInstance or not originPos then
+                return {}
+            end
+
+            local trees = {}
+            local seen = {}
+            for _, fruit in CollectionService:GetTagged("ClickFruit") do
+                if fruit.Parent and fruit:IsDescendantOf(tycoonInstance) then
+                    local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+                    if not detector then
+                        continue
+                    end
+                    local lemonTree = findLemonTreeAncestor(fruit, tycoonInstance)
+                    if lemonTree and not seen[lemonTree] then
+                        seen[lemonTree] = true
+                        local treePos = getInstancePosition(lemonTree)
+                        if treePos then
+                            table.insert(trees, {
+                                tree = lemonTree,
+                                position = treePos,
+                                distance = (originPos - treePos).Magnitude,
+                            })
+                        end
+                    end
+                end
+            end
+
+            table.sort(trees, function(a, b)
+                return a.distance < b.distance
+            end)
+            return trees
+        end
+
+        local function pickFruitNormalOnce()
+            if not fireClickDetectorFn then
+                return false
+            end
+
+            local picked = 0
+            for _, fruit in CollectionService:GetTagged("ClickFruit") do
+                if not fruit.Parent then
                     continue
                 end
-                local lemonTree = findLemonTreeAncestor(fruit, tycoonInstance)
-                if lemonTree and not seen[lemonTree] then
-                    seen[lemonTree] = true
-                    local treePos = getInstancePosition(lemonTree)
-                    if treePos then
-                        table.insert(trees, {
-                            tree = lemonTree,
-                            position = treePos,
-                            distance = (originPos - treePos).Magnitude,
+                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+                if detector then
+                    pcall(function()
+                        fireClickDetectorFn(detector, 1, "MouseClick")
+                    end)
+                    picked += 1
+                end
+            end
+            mountNotify({
+                Title = "Auto Pick Fruit",
+                Content = "Picked " .. picked .. " fruits",
+                Icon = "check",
+            })
+            return true, picked
+        end
+
+        local function pickFruitNearbyOnce(showNotify)
+            if showNotify == nil then
+                showNotify = true
+            end
+
+            if not fireClickDetectorFn then
+                return false
+            end
+
+            local root = getLocalHumanoidRootPart()
+            if not root then
+                return false
+            end
+
+            local rootPos = root.Position
+            local nearby = {}
+            for _, fruit in CollectionService:GetTagged("ClickFruit") do
+                if not fruit.Parent then
+                    continue
+                end
+                local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
+                local fruitPos = getFruitPosition(fruit)
+                if detector and fruitPos then
+                    local distance = (rootPos - fruitPos).Magnitude
+                    local maxDistance = detector.MaxActivationDistance
+                    if maxDistance <= 0 then
+                        maxDistance = 32
+                    end
+                    if distance <= maxDistance then
+                        table.insert(nearby, {
+                            detector = detector,
+                            distance = distance,
                         })
                     end
                 end
             end
-        end
 
-        table.sort(trees, function(a, b)
-            return a.distance < b.distance
-        end)
-        return trees
-    end
+            table.sort(nearby, function(a, b)
+                return a.distance < b.distance
+            end)
 
-    local function pickFruitNormalOnce()
-        if not fireClickDetectorFn then
-            return false
-        end
-
-        local picked = 0
-        for _, fruit in CollectionService:GetTagged("ClickFruit") do
-            if not fruit.Parent then
-                continue
+            if #nearby == 0 then
+                return false, 0
             end
-            local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
-            if detector then
+
+            local picked = 0
+            local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.5)
+            for index, entry in ipairs(nearby) do
+                if not autoPickFruitRunning then
+                    break
+                end
+
                 pcall(function()
-                    fireClickDetectorFn(detector, 1, "MouseClick")
+                    fireClickDetectorFn(entry.detector, 1, "MouseClick")
                 end)
                 picked += 1
-            end
-        end
-        mountNotify({
-            Title = "Auto Pick Fruit",
-            Content = "Picked " .. picked .. " fruits",
-            Icon = "check",
-        })
-        return true, picked
-    end
 
-    local function pickFruitNearbyOnce(showNotify)
-        if showNotify == nil then
-            showNotify = true
-        end
-
-        if not fireClickDetectorFn then
-            return false
-        end
-
-        local root = getLocalHumanoidRootPart()
-        if not root then
-            return false
-        end
-
-        local rootPos = root.Position
-        local nearby = {}
-        for _, fruit in CollectionService:GetTagged("ClickFruit") do
-            if not fruit.Parent then
-                continue
-            end
-            local detector = fruit:FindFirstChildWhichIsA("ClickDetector", true)
-            local fruitPos = getFruitPosition(fruit)
-            if detector and fruitPos then
-                local distance = (rootPos - fruitPos).Magnitude
-                local maxDistance = detector.MaxActivationDistance
-                if maxDistance <= 0 then
-                    maxDistance = 32
-                end
-                if distance <= maxDistance then
-                    table.insert(nearby, {
-                        detector = detector,
-                        distance = distance,
-                    })
+                if index < #nearby then
+                    task.wait(clickDelay)
                 end
             end
-        end
 
-        table.sort(nearby, function(a, b)
-            return a.distance < b.distance
-        end)
-
-        if #nearby == 0 then
-            return false, 0
-        end
-
-        local picked = 0
-        local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.5)
-        for index, entry in ipairs(nearby) do
-            if not autoPickFruitRunning then
-                break
-            end
-
-            pcall(function()
-                fireClickDetectorFn(entry.detector, 1, "MouseClick")
-            end)
-            picked += 1
-
-            if index < #nearby then
-                task.wait(clickDelay)
-            end
-        end
-
-        if picked > 0 and showNotify then
-            mountNotify({
-                Title = "Auto Pick Fruit",
-                Content = "Picked " .. picked .. " nearby fruits",
-                Icon = "check",
-            })
-        end
-
-        return picked > 0, picked
-    end
-
-    local function pickFruitNearbyWithTeleportOnce()
-        if not fireClickDetectorFn then
-            return false
-        end
-
-        pickFruitNearbyOnce(false)
-
-        if not autoPickFruitRunning then
-            return false
-        end
-
-        runInTeleportQueue(function()
-            local root = getLocalHumanoidRootPart()
-            if not root or not autoPickFruitRunning then
-                return
-            end
-
-            local tycoonInstance = findLocalTycoonInstance()
-            if not tycoonInstance then
-                return
-            end
-
-            local trees = collectOwnTycoonLemonTreesWithFruit(tycoonInstance, root.Position)
-            if #trees == 0 then
-                return
-            end
-
-            autoPickFruitTeleportTreeIndex = (autoPickFruitTeleportTreeIndex % #trees) + 1
-            local entry = trees[autoPickFruitTeleportTreeIndex]
-            if not entry or not entry.tree.Parent then
-                return
-            end
-
-            local savedCFrame = root.CFrame
-            teleportRootToPosition(root, entry.position)
-
-            local staySec = math.max(0.05, tonumber(autoPickFruitTeleportStaySec) or 1.5)
-            local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.2)
-            local stayEnd = tick() + staySec
-            while autoPickFruitRunning and tick() < stayEnd do
-                pickFruitNearbyOnce(false)
-                local remaining = stayEnd - tick()
-                if remaining <= 0 then
-                    break
-                end
-                task.wait(math.min(clickDelay, remaining))
-            end
-
-            root = getLocalHumanoidRootPart()
-            if root then
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.CFrame = savedCFrame
-            end
-        end)
-
-        return true
-    end
-
-    local function runAutoPickFruitOnce()
-        if autoPickFruitMode == "Normal" then
-            return pickFruitNormalOnce()
-        end
-        if autoPickFruitMode == "Nearby" then
-            return pickFruitNearbyOnce()
-        end
-        if autoPickFruitMode == "Nearby with Teleport" then
-            return pickFruitNearbyWithTeleportOnce()
-        end
-        return false
-    end
-
-    MainTab:CreateSection("Auto Pick Fruit")
-
-    MainTab:CreateDropdown({
-        Name = "Mode",
-        Flag = "main_auto_pick_fruit_mode",
-        Options = AUTO_PICK_FRUIT_MODES,
-        CurrentOption = { autoPickFruitMode },
-        Callback = function(value)
-            local picked = rayfieldDropdownFirst(value)
-            if picked and table.find(AUTO_PICK_FRUIT_MODES, picked) then
-                autoPickFruitMode = picked
-            end
-        end,
-    })
-
-    MainTab:CreateInput({
-        Name = "Delay (seconds)",
-        PlaceholderText = "Seconds between auto fruit picks",
-        Flag = "main_auto_pick_fruit_delay",
-        CurrentValue = tostring(autoPickFruitDelaySec),
-        Callback = function(value)
-            autoPickFruitDelaySec = math.max(0.05, tonumber(value) or autoPickFruitDelaySec)
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Auto Pick Fruit",
-        Flag = "main_auto_pick_fruit",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoPickFruitRunning = enabled == true
-            if not autoPickFruitRunning then
-                return
-            end
-
-            if not fireClickDetectorFn then
-                autoPickFruitRunning = false
+            if picked > 0 and showNotify then
                 mountNotify({
                     Title = "Auto Pick Fruit",
-                    Content = "Your executor does not support fireclickdetector.",
-                    Icon = "x",
+                    Content = "Picked " .. picked .. " nearby fruits",
+                    Icon = "check",
                 })
-                return
             end
 
-            autoPickFruitTeleportTreeIndex = 0
-            autoPickFruitLoopId += 1
-            local loopId = autoPickFruitLoopId
-            task.spawn(function()
-                while autoPickFruitRunning and loopId == autoPickFruitLoopId do
-                    local ok = pcall(runAutoPickFruitOnce)
-                    local delay = math.max(0.05, tonumber(autoPickFruitDelaySec) or 5)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
-            end)
-        end,
-    })
-
-    MainTab:CreateSection("Auto")
-
-    local function getCashDropPosition(cashDrop)
-        if not cashDrop or not cashDrop.Parent then
-            return nil
+            return picked > 0, picked
         end
 
-        local bag = cashDrop:FindFirstChild("Bag")
-        if bag and bag:IsA("BasePart") then
-            return bag.Position
-        end
-
-        if cashDrop:IsA("Model") then
-            return cashDrop:GetPivot().Position
-        end
-
-        if cashDrop:IsA("BasePart") then
-            return cashDrop.Position
-        end
-
-        return nil
-    end
-
-    local function collectCashDrops()
-        local folder = Workspace:FindFirstChild("CashDrops")
-        if not folder then
-            return {}
-        end
-
-        local drops = {}
-        for _, child in folder:GetChildren() do
-            if child.Name == "CashDrop" and child.Parent then
-                table.insert(drops, child)
-            end
-        end
-        return drops
-    end
-
-    local function pickCashDropsOnce()
-        local root = getLocalHumanoidRootPart()
-        if not root then
-            return false
-        end
-
-        local drops = collectCashDrops()
-        if #drops == 0 then
-            return false
-        end
-
-        runInTeleportQueue(function()
-            root = getLocalHumanoidRootPart()
-            if not root then
-                return
+        local function pickFruitNearbyWithTeleportOnce()
+            if not fireClickDetectorFn then
+                return false
             end
 
-            local savedCFrame = root.CFrame
-            for _, cashDrop in ipairs(drops) do
-                if not autoPickCashDropRunning then
-                    break
+            pickFruitNearbyOnce(false)
+
+            if not autoPickFruitRunning then
+                return false
+            end
+
+            runInTeleportQueue(function()
+                local root = getLocalHumanoidRootPart()
+                if not root or not autoPickFruitRunning then
+                    return
                 end
 
-                local dropPos = getCashDropPosition(cashDrop)
-                if dropPos then
-                    teleportRootToPosition(root, dropPos)
-                    task.wait(2)
-                    root = getLocalHumanoidRootPart()
-                    if not root then
+                local tycoonInstance = findLocalTycoonInstance()
+                if not tycoonInstance then
+                    return
+                end
+
+                local trees = collectOwnTycoonLemonTreesWithFruit(tycoonInstance, root.Position)
+                if #trees == 0 then
+                    return
+                end
+
+                autoPickFruitTeleportTreeIndex = (autoPickFruitTeleportTreeIndex % #trees) + 1
+                local entry = trees[autoPickFruitTeleportTreeIndex]
+                if not entry or not entry.tree.Parent then
+                    return
+                end
+
+                local savedCFrame = root.CFrame
+                teleportRootToPosition(root, entry.position)
+
+                local staySec = math.max(0.05, tonumber(autoPickFruitTeleportStaySec) or 1.5)
+                local clickDelay = math.max(0.05, tonumber(autoPickFruitNearbyClickDelaySec) or 0.2)
+                local stayEnd = tick() + staySec
+                while autoPickFruitRunning and tick() < stayEnd do
+                    pickFruitNearbyOnce(false)
+                    local remaining = stayEnd - tick()
+                    if remaining <= 0 then
                         break
                     end
+                    task.wait(math.min(clickDelay, remaining))
+                end
+
+                root = getLocalHumanoidRootPart()
+                if root then
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.CFrame = savedCFrame
                 end
-            end
-        end)
-
-        return true
-    end
-
-    MainTab:CreateToggle({
-        Name = "Auto Pick Cash Drop",
-        Flag = "main_auto_pick_cash_drop",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoPickCashDropRunning = enabled == true
-            if not autoPickCashDropRunning then
-                return
-            end
-
-            autoPickCashDropLoopId += 1
-            local loopId = autoPickCashDropLoopId
-            task.spawn(function()
-                while autoPickCashDropRunning and loopId == autoPickCashDropLoopId do
-                    local ok = pcall(pickCashDropsOnce)
-                    local delay = math.max(0.1, tonumber(autoPickCashDropDelaySec) or 0.5)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
             end)
-        end,
-    })
 
-    local function getPhoneOfferOptionsContainer()
-        local player = Players.LocalPlayer
-        if not player then
-            return nil
+            return true
         end
 
-        local playerGui = player:FindFirstChild("PlayerGui")
-        local phone = playerGui and playerGui:FindFirstChild("Phone")
-        local phoneInner = phone and phone:FindFirstChild("Phone")
-        local screen = phoneInner and phoneInner:FindFirstChild("Screen")
-        local footer = screen and screen:FindFirstChild("Footer")
-
-        return footer and footer:FindFirstChild("Container")
-    end
-
-    local function hasPhoneOfferOptions(container)
-        if not container then
+        local function runAutoPickFruitOnce()
+            if autoPickFruitMode == "Normal" then
+                return pickFruitNormalOnce()
+            end
+            if autoPickFruitMode == "Nearby" then
+                return pickFruitNearbyOnce()
+            end
+            if autoPickFruitMode == "Nearby with Teleport" then
+                return pickFruitNearbyWithTeleportOnce()
+            end
             return false
         end
 
-        for _, optionName in ipairs({ "Option1", "Option2", "Option3" }) do
-            if container:FindFirstChild(optionName) then
+        MainTab:CreateSection("Auto Pick Fruit")
+
+        MainTab:CreateDropdown({
+            Name = "Mode",
+            Flag = "main_auto_pick_fruit_mode",
+            Options = AUTO_PICK_FRUIT_MODES,
+            CurrentOption = { autoPickFruitMode },
+            Callback = function(value)
+                local picked = rayfieldDropdownFirst(value)
+                if picked and table.find(AUTO_PICK_FRUIT_MODES, picked) then
+                    autoPickFruitMode = picked
+                end
+            end,
+        })
+
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between auto fruit picks",
+            Flag = "main_auto_pick_fruit_delay",
+            CurrentValue = tostring(autoPickFruitDelaySec),
+            Callback = function(value)
+                autoPickFruitDelaySec = math.max(0.05, tonumber(value) or autoPickFruitDelaySec)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Pick Fruit",
+            Flag = "main_auto_pick_fruit",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoPickFruitRunning = enabled == true
+                if not autoPickFruitRunning then
+                    return
+                end
+
+                if not fireClickDetectorFn then
+                    autoPickFruitRunning = false
+                    mountNotify({
+                        Title = "Auto Pick Fruit",
+                        Content = "Your executor does not support fireclickdetector.",
+                        Icon = "x",
+                    })
+                    return
+                end
+
+                autoPickFruitTeleportTreeIndex = 0
+                autoPickFruitLoopId += 1
+                local loopId = autoPickFruitLoopId
+                task.spawn(function()
+                    while autoPickFruitRunning and loopId == autoPickFruitLoopId do
+                        local ok = pcall(runAutoPickFruitOnce)
+                        local delay = math.max(0.05, tonumber(autoPickFruitDelaySec) or 5)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        local pendingCashDropIds = {}
+        local cashDropNewListenerConnected = false
+        local cachedCashDropRedeemRemote = nil
+        local cachedCashDropNewRemote = nil
+        local autoCashDropPreferRedeem = true
+
+        local function getCashDropRedeemRemote()
+            if cachedCashDropRedeemRemote and cachedCashDropRedeemRemote.Parent then
+                return cachedCashDropRedeemRemote
+            end
+            local remote = ReplicatedStorage:FindFirstChild("CashDropService.Redeem", true)
+            if remote and remote:IsA("RemoteFunction") then
+                cachedCashDropRedeemRemote = remote
+                return remote
+            end
+            return nil
+        end
+
+        local function getCashDropNewRemote()
+            if cachedCashDropNewRemote and cachedCashDropNewRemote.Parent then
+                return cachedCashDropNewRemote
+            end
+            local remote = ReplicatedStorage:FindFirstChild("CashDropService.New", true)
+            if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+                cachedCashDropNewRemote = remote
+                return remote
+            end
+            return nil
+        end
+
+        local function getCashDropPosition(cashDrop)
+            if not cashDrop or not cashDrop.Parent then
+                return nil
+            end
+
+            local bag = cashDrop:FindFirstChild("Bag")
+            if bag and bag:IsA("BasePart") then
+                return bag.Position
+            end
+
+            if cashDrop:IsA("Model") then
+                return cashDrop:GetPivot().Position
+            end
+
+            if cashDrop:IsA("BasePart") then
+                return cashDrop.Position
+            end
+
+            return nil
+        end
+
+        local function getCashDropsFolder()
+            return Workspace:FindFirstChild("CashDrops")
+        end
+
+        local function collectCashDrops()
+            local folder = getCashDropsFolder()
+            if not folder then
+                return {}
+            end
+
+            local drops = {}
+            for _, child in folder:GetChildren() do
+                -- Prefab is usually named CashDrop; accept any child under the folder.
+                if child.Parent and (child.Name == "CashDrop" or child:IsA("BasePart") or child:IsA("Model")) then
+                    table.insert(drops, child)
+                end
+            end
+            return drops
+        end
+
+        -- Redeem skips CashDropEffect:Pop(). Visual often parents AFTER New/Redeem,
+        -- so queue cleanups and also catch ChildAdded.
+        local pendingCashDropVisualCleanups = {}
+        local cashDropFolderListenerConnected = false
+
+        local function pruneExpiredCashDropVisualCleanups()
+            local now = os.clock()
+            for i = #pendingCashDropVisualCleanups, 1, -1 do
+                local entry = pendingCashDropVisualCleanups[i]
+                if not entry or now > (tonumber(entry.expires) or 0) then
+                    table.remove(pendingCashDropVisualCleanups, i)
+                end
+            end
+        end
+
+        local function destroyCashDropInstance(cashDrop)
+            if not cashDrop or not cashDrop.Parent then
+                return false
+            end
+            pcall(function()
+                cashDrop:Destroy()
+            end)
+            return true
+        end
+
+        local function matchAndDestroyCashDropVisual(preferredPosition, maxDistance)
+            local drops = collectCashDrops()
+            if #drops == 0 then
+                return false
+            end
+
+            local target = drops[#drops]
+            if typeof(preferredPosition) == "Vector3" then
+                local bestDist = math.huge
+                target = nil
+                for _, cashDrop in ipairs(drops) do
+                    local pos = getCashDropPosition(cashDrop)
+                    if pos then
+                        local dist = (pos - preferredPosition).Magnitude
+                        if dist < bestDist then
+                            bestDist = dist
+                            target = cashDrop
+                        end
+                    end
+                end
+                if not target then
+                    return false
+                end
+                if maxDistance and bestDist > maxDistance then
+                    return false
+                end
+            end
+
+            return destroyCashDropInstance(target)
+        end
+
+        local function flushCashDropVisualCleanups()
+            pruneExpiredCashDropVisualCleanups()
+            if #pendingCashDropVisualCleanups == 0 then
+                return
+            end
+
+            for i = #pendingCashDropVisualCleanups, 1, -1 do
+                local entry = pendingCashDropVisualCleanups[i]
+                local preferredPosition = entry and entry.position or nil
+                -- Prefer a nearby bag when we have a spawn position; otherwise take newest.
+                local destroyed = matchAndDestroyCashDropVisual(preferredPosition, preferredPosition and 80 or nil)
+                if destroyed then
+                    table.remove(pendingCashDropVisualCleanups, i)
+                end
+            end
+        end
+
+        local function ensureCashDropFolderListener()
+            if cashDropFolderListenerConnected then
+                return
+            end
+            cashDropFolderListenerConnected = true
+
+            local function bindFolder(folder)
+                if not folder or folder:GetAttribute("CobaltCashDropBound") then
+                    return
+                end
+                folder:SetAttribute("CobaltCashDropBound", true)
+                folder.ChildAdded:Connect(function()
+                    task.defer(flushCashDropVisualCleanups)
+                end)
+            end
+
+            local existing = getCashDropsFolder()
+            if existing then
+                bindFolder(existing)
+            end
+            Workspace.ChildAdded:Connect(function(child)
+                if child.Name == "CashDrops" then
+                    bindFolder(child)
+                    task.defer(flushCashDropVisualCleanups)
+                end
+            end)
+        end
+
+        local function destroyCashDropVisual(preferredPosition)
+            ensureCashDropFolderListener()
+
+            -- Try immediately (visual already exists).
+            if matchAndDestroyCashDropVisual(preferredPosition, preferredPosition and 80 or nil) then
+                return
+            end
+
+            -- Queue for ChildAdded / retries — CashDropService often parents the bag after Redeem.
+            table.insert(pendingCashDropVisualCleanups, {
+                position = preferredPosition,
+                expires = os.clock() + 8,
+            })
+            flushCashDropVisualCleanups()
+            if #pendingCashDropVisualCleanups == 0 then
+                return
+            end
+
+            task.spawn(function()
+                for attempt = 1, 40 do
+                    task.wait(0.2)
+                    flushCashDropVisualCleanups()
+                    if #pendingCashDropVisualCleanups == 0 then
+                        return
+                    end
+                    -- Position match can miss (Y offset / bob). After ~1s, destroy newest bag.
+                    if attempt >= 5 and matchAndDestroyCashDropVisual(nil, nil) then
+                        if #pendingCashDropVisualCleanups > 0 then
+                            table.remove(pendingCashDropVisualCleanups)
+                        end
+                        return
+                    end
+                end
+            end)
+        end
+
+        local function redeemCashDropId(dropId)
+            if dropId == nil then
+                return false
+            end
+            local remote = getCashDropRedeemRemote()
+            if not remote then
+                return false
+            end
+            local entry = pendingCashDropIds[dropId]
+            local preferredPosition = type(entry) == "table" and entry.position or nil
+            local ok, result = pcall(function()
+                return remote:InvokeServer(dropId)
+            end)
+            if ok and result then
+                pendingCashDropIds[dropId] = nil
+                destroyCashDropVisual(preferredPosition)
                 return true
             end
+            if type(entry) == "table" then
+                entry.fails = (tonumber(entry.fails) or 0) + 1
+                if entry.fails >= 5 then
+                    pendingCashDropIds[dropId] = nil
+                end
+            elseif entry ~= nil then
+                pendingCashDropIds[dropId] = { fails = 1 }
+            end
+            return false
         end
 
-        return false
-    end
+        local function trackCashDropId(dropId, position)
+            if dropId == nil then
+                return
+            end
+            if pendingCashDropIds[dropId] == nil then
+                pendingCashDropIds[dropId] = { fails = 0, position = position }
+            elseif type(pendingCashDropIds[dropId]) == "table" and position ~= nil then
+                pendingCashDropIds[dropId].position = position
+            end
+            if autoPickCashDropRunning and autoCashDropPreferRedeem then
+                task.defer(function()
+                    if autoPickCashDropRunning then
+                        redeemCashDropId(dropId)
+                    end
+                end)
+            end
+        end
 
-    local function findPhoneOfferRemote()
-        local tycoonInstance = findLocalTycoonInstance()
-        if not tycoonInstance then
+        local function ensureCashDropNewListener()
+            ensureCashDropFolderListener()
+            if cashDropNewListenerConnected then
+                return
+            end
+            local newRemote = getCashDropNewRemote()
+            if not newRemote or not newRemote:IsA("RemoteEvent") then
+                return
+            end
+            cashDropNewListenerConnected = true
+            newRemote.OnClientEvent:Connect(function(dropId, _lifetime, position)
+                trackCashDropId(dropId, position)
+            end)
+        end
+
+        local function redeemPendingCashDropsOnce()
+            ensureCashDropNewListener()
+            if not getCashDropRedeemRemote() then
+                return false
+            end
+
+            local redeemed = 0
+            local ids = {}
+            for dropId in pairs(pendingCashDropIds) do
+                table.insert(ids, dropId)
+            end
+            for _, dropId in ipairs(ids) do
+                if not autoPickCashDropRunning then
+                    break
+                end
+                if redeemCashDropId(dropId) then
+                    redeemed += 1
+                end
+            end
+            return redeemed > 0
+        end
+
+        local function teleportPickCashDropsOnce()
+            local root = getLocalHumanoidRootPart()
+            if not root then
+                return false
+            end
+
+            local drops = collectCashDrops()
+            if #drops == 0 then
+                return false
+            end
+
+            runInTeleportQueue(function()
+                root = getLocalHumanoidRootPart()
+                if not root then
+                    return
+                end
+
+                local savedCFrame = root.CFrame
+                for _, cashDrop in ipairs(drops) do
+                    if not autoPickCashDropRunning then
+                        break
+                    end
+
+                    local dropPos = getCashDropPosition(cashDrop)
+                    if dropPos then
+                        teleportRootToPosition(root, dropPos)
+                        task.wait(2)
+                        root = getLocalHumanoidRootPart()
+                        if not root then
+                            break
+                        end
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.CFrame = savedCFrame
+                    end
+                end
+            end)
+
+            return true
+        end
+
+        local function pickCashDropsOnce()
+            ensureCashDropNewListener()
+
+            local redeemedAny = false
+            if autoCashDropPreferRedeem then
+                redeemedAny = redeemPendingCashDropsOnce()
+                if #collectCashDrops() == 0 then
+                    return redeemedAny
+                end
+                if getCashDropRedeemRemote() and next(pendingCashDropIds) == nil then
+                    return redeemedAny
+                end
+            end
+
+            local teleportedAny = teleportPickCashDropsOnce()
+            return redeemedAny or teleportedAny
+        end
+
+        ensureCashDropNewListener()
+
+        MainTab:CreateSection("Auto Pick Cash Drop")
+
+        MainTab:CreateToggle({
+            Name = "Prefer Redeem Remote",
+            Flag = "main_auto_cash_drop_prefer_redeem",
+            CurrentValue = true,
+            Callback = function(enabled)
+                autoCashDropPreferRedeem = enabled == true
+                if autoCashDropPreferRedeem then
+                    ensureCashDropNewListener()
+                end
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Pick Cash Drop",
+            Flag = "main_auto_pick_cash_drop",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoPickCashDropRunning = enabled == true
+                if not autoPickCashDropRunning then
+                    return
+                end
+
+                ensureCashDropNewListener()
+                autoPickCashDropLoopId += 1
+                local loopId = autoPickCashDropLoopId
+                task.spawn(function()
+                    while autoPickCashDropRunning and loopId == autoPickCashDropLoopId do
+                        local ok = pcall(pickCashDropsOnce)
+                        local delay = math.max(0.1, tonumber(autoPickCashDropDelaySec) or 0.5)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+    end
+    installWorldPickups()
+
+    local function installAutoExtras()
+        local function getTycoonPowersComponent(ctx, tycoon)
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonPowers then
+                local ok, component = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonPowers)
+                end)
+                if ok and component then
+                    return component
+                end
+            end
             return nil
         end
 
-        local remotes = tycoonInstance:FindFirstChild("Remotes")
-        local phoneOffer = remotes and remotes:FindFirstChild("PhoneOffer")
-        if phoneOffer and phoneOffer:IsA("RemoteEvent") then
-            return phoneOffer
+        local function isInvestorsDiscovered(ctx, tycoon)
+            local rebirth = getTycoonRebirthComponent(ctx, tycoon)
+            if not rebirth or type(rebirth.IsDiscovered) ~= "function" then
+                return false
+            end
+            local ok, discovered = pcall(function()
+                return rebirth:IsDiscovered() == true
+            end)
+            return ok and discovered == true
         end
 
-        return nil
-    end
+        local function getPowerDisplayTitle(ctx, powerName)
+            local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
+            if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Title) == "string" then
+                return powerConfig.Display.Title
+            end
+            return prettifyPurchaseName(powerName)
+        end
 
-    local function tryAcceptPhoneOfferOnce()
-        local container = getPhoneOfferOptionsContainer()
-        if not hasPhoneOfferOptions(container) then
+        local function getPowerDisplayOrder(ctx, powerName)
+            local powerConfig = ctx.Config and ctx.Config.Powers and ctx.Config.Powers[powerName]
+            if powerConfig and type(powerConfig.Display) == "table" and type(powerConfig.Display.Order) == "number" then
+                return powerConfig.Display.Order
+            end
+            return 0
+        end
+
+        local function compareHugeDescending(a, b)
+            if a == nil or b == nil then
+                return false
+            end
+            local ok, greaterOrEqual = pcall(function()
+                return a >= b
+            end)
+            return ok and greaterOrEqual == true
+        end
+
+        local function collectAffordablePowerUpgrades(ctx, tycoon)
+            local powers = getTycoonPowersComponent(ctx, tycoon)
+            if not powers or not ctx.Config or type(ctx.Config.Powers) ~= "table" then
+                return nil
+            end
+            if not isInvestorsDiscovered(ctx, tycoon) then
+                return {}
+            end
+
+            local investors = getCurrentInvestors(ctx, tycoon)
+            if investors == nil then
+                return nil
+            end
+
+            local entries = {}
+            for powerName in pairs(ctx.Config.Powers) do
+                if ctx.ClientTycoonPowers and type(ctx.ClientTycoonPowers.isPower) == "function" then
+                    local okPower, isPower = pcall(function()
+                        return ctx.ClientTycoonPowers.isPower(powerName) == true
+                    end)
+                    if not okPower or not isPower then
+                        continue
+                    end
+                end
+
+                local okMax, maxLevel = pcall(function()
+                    return powers:GetMaxLevel(powerName)
+                end)
+                if not okMax or not maxLevel then
+                    continue
+                end
+
+                local okLevel, currentLevel = pcall(function()
+                    return powers:GetLevel(powerName)
+                end)
+                if not okLevel or currentLevel == nil or currentLevel >= maxLevel then
+                    continue
+                end
+
+                local okPrice, price = pcall(function()
+                    return powers:GetUpgradePrice(powerName)
+                end)
+                if not okPrice or price == nil then
+                    continue
+                end
+
+                if canAffordPurchasePrice(investors, price) then
+                    table.insert(entries, {
+                        name = powerName,
+                        price = price,
+                        displayOrder = getPowerDisplayOrder(ctx, powerName),
+                        displayTitle = getPowerDisplayTitle(ctx, powerName),
+                    })
+                end
+            end
+
+            table.sort(entries, function(a, b)
+                if compareHugeDescending(a.price, b.price) then
+                    return true
+                end
+                if compareHugeDescending(b.price, a.price) then
+                    return false
+                end
+                return a.displayOrder > b.displayOrder
+            end)
+
+            return entries
+        end
+
+        local function findUpgradePowerLevelRemote(tycoonInstance)
+            local remotes = tycoonInstance and tycoonInstance:FindFirstChild("Remotes")
+            local upgradeRemote = remotes and remotes:FindFirstChild("UpgradePowerLevel")
+            if upgradeRemote and upgradeRemote:IsA("RemoteFunction") then
+                return upgradeRemote
+            end
+            return nil
+        end
+
+        local function tryAutoBuyPowersOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+
+            local entries = collectAffordablePowerUpgrades(ctx, tycoon)
+            if type(entries) ~= "table" or #entries == 0 then
+                return false
+            end
+
+            local target = entries[1]
+            local remote = findUpgradePowerLevelRemote(tycoon.Instance)
+            if not remote then
+                return false
+            end
+
+            local ok = pcall(function()
+                remote:InvokeServer(target.name)
+            end)
+            if ok then
+                mountNotify({
+                    Title = "Auto Buy Powers",
+                    Content = string.format(
+                        "Upgraded %s (%s investors).",
+                        target.displayTitle,
+                        formatHugeAmount(ctx, target.price)
+                    ),
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function getPhoneOfferOptionsContainer()
+            local player = Players.LocalPlayer
+            if not player then
+                return nil
+            end
+
+            local playerGui = player:FindFirstChild("PlayerGui")
+            local phone = playerGui and playerGui:FindFirstChild("Phone")
+            local phoneInner = phone and phone:FindFirstChild("Phone")
+            local screen = phoneInner and phoneInner:FindFirstChild("Screen")
+            local footer = screen and screen:FindFirstChild("Footer")
+
+            return footer and footer:FindFirstChild("Container")
+        end
+
+        local function hasPhoneOfferOptions(container)
+            if not container then
+                return false
+            end
+
+            for _, optionName in ipairs({ "Option1", "Option2", "Option3" }) do
+                if container:FindFirstChild(optionName) then
+                    return true
+                end
+            end
+
             return false
         end
 
-        local remote = findPhoneOfferRemote()
-        if not remote then
-            return false
+        local function findPhoneOfferRemote()
+            local tycoonInstance = findLocalTycoonInstance()
+            if not tycoonInstance then
+                return nil
+            end
+
+            local remotes = tycoonInstance:FindFirstChild("Remotes")
+            local phoneOffer = remotes and remotes:FindFirstChild("PhoneOffer")
+            if phoneOffer and phoneOffer:IsA("RemoteEvent") then
+                return phoneOffer
+            end
+
+            return nil
         end
 
-        local ok = pcall(function()
-            remote:FireServer("Accept")
-        end)
-        return ok
+        local function tryAcceptPhoneOfferOnce()
+            local container = getPhoneOfferOptionsContainer()
+            if not hasPhoneOfferOptions(container) then
+                return false
+            end
+
+            local remote = findPhoneOfferRemote()
+            if not remote then
+                return false
+            end
+
+            local ok = pcall(function()
+                remote:FireServer("Accept")
+            end)
+            return ok
+        end
+
+        MainTab:CreateSection("Auto")
+
+        MainTab:CreateToggle({
+            Name = "Auto Accept Offer",
+            Flag = "main_auto_accept_offer",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoAcceptOfferRunning = enabled == true
+                if not autoAcceptOfferRunning then
+                    return
+                end
+
+                autoAcceptOfferLoopId += 1
+                local loopId = autoAcceptOfferLoopId
+                task.spawn(function()
+                    while autoAcceptOfferRunning and loopId == autoAcceptOfferLoopId do
+                        local ok = pcall(tryAcceptPhoneOfferOnce)
+                        local delay = math.max(0.1, tonumber(autoAcceptOfferDelaySec) or 0.5)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Buy Powers",
+            Flag = "main_auto_buy_powers",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoBuyPowersRunning = enabled == true
+                if not autoBuyPowersRunning then
+                    return
+                end
+
+                autoBuyPowersLoopId += 1
+                local loopId = autoBuyPowersLoopId
+                task.spawn(function()
+                    while autoBuyPowersRunning and loopId == autoBuyPowersLoopId do
+                        local ok = pcall(tryAutoBuyPowersOnce)
+                        local delay = math.max(1, tonumber(autoBuyPowersDelaySec) or 120)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
     end
-
-    MainTab:CreateToggle({
-        Name = "Auto Accept Offer",
-        Flag = "main_auto_accept_offer",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoAcceptOfferRunning = enabled == true
-            if not autoAcceptOfferRunning then
-                return
-            end
-
-            autoAcceptOfferLoopId += 1
-            local loopId = autoAcceptOfferLoopId
-            task.spawn(function()
-                while autoAcceptOfferRunning and loopId == autoAcceptOfferLoopId do
-                    local ok = pcall(tryAcceptPhoneOfferOnce)
-                    local delay = math.max(0.1, tonumber(autoAcceptOfferDelaySec) or 0.5)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
-            end)
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Auto Buy Powers",
-        Flag = "main_auto_buy_powers",
-        CurrentValue = false,
-        Callback = function(enabled)
-            autoBuyPowersRunning = enabled == true
-            if not autoBuyPowersRunning then
-                return
-            end
-
-            autoBuyPowersLoopId += 1
-            local loopId = autoBuyPowersLoopId
-            task.spawn(function()
-                while autoBuyPowersRunning and loopId == autoBuyPowersLoopId do
-                    local ok = pcall(tryAutoBuyPowersOnce)
-                    local delay = math.max(1, tonumber(autoBuyPowersDelaySec) or 120)
-                    task.wait(if ok then delay else math.max(delay, 1))
-                end
-            end)
-        end,
-    })
+    installAutoExtras()
 end
+
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "sell_lemons" })
