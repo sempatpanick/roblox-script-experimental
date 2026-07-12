@@ -431,6 +431,22 @@ do
         ClientTycoonEvolution = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonEvolution" },
         ClientTycoonPowers = { "Modules", "Tycoon", "Component", "Client", "ClientTycoonPowers" },
         Config = { "Config" },
+        Orchard = { "Modules", "Tycoon", "Orchard", "Orchard" },
+        OrchardPlot = { "Modules", "Tycoon", "Orchard", "OrchardPlot" },
+        OrchardFruits = { "Modules", "Tycoon", "Orchard", "OrchardFruits" },
+        OrchardItems = { "Modules", "Tycoon", "Orchard", "OrchardItems" },
+        OrchardPlots = { "Modules", "Tycoon", "Orchard", "OrchardPlots" },
+        OrchardDecorations = { "Modules", "Tycoon", "Orchard", "OrchardDecorations" },
+        OrchardEatFruit = { "Modules", "Tycoon", "Orchard", "OrchardEatFruit" },
+        OrchardAutoEatFruitPower = { "Modules", "Tycoon", "Orchard", "OrchardAutoEatFruitPower" },
+        ClientOrchard = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchard" },
+        ClientOrchardPlot = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardPlot" },
+        ClientOrchardPlots = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardPlots" },
+        ClientOrchardItems = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardItems" },
+        ClientOrchardFruits = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardFruits" },
+        ClientOrchardEatFruit = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardEatFruit" },
+        ClientOrchardAutoEatFruitPower = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardAutoEatFruitPower" },
+        ClientOrchardDecorations = { "Modules", "Tycoon", "Orchard", "Client", "ClientOrchardDecorations" },
     }
 
     local function resolveModuleScript(pathParts)
@@ -495,6 +511,15 @@ do
             ClientTycoonEvolution = tryRequirePath(MODULE_PATHS.ClientTycoonEvolution),
             ClientTycoonPowers = tryRequirePath(MODULE_PATHS.ClientTycoonPowers),
             Config = tryRequirePath(MODULE_PATHS.Config),
+            Orchard = tryRequirePath(MODULE_PATHS.ClientOrchard) or tryRequirePath(MODULE_PATHS.Orchard),
+            OrchardPlot = tryRequirePath(MODULE_PATHS.ClientOrchardPlot) or tryRequirePath(MODULE_PATHS.OrchardPlot),
+            OrchardFruits = tryRequirePath(MODULE_PATHS.ClientOrchardFruits) or tryRequirePath(MODULE_PATHS.OrchardFruits),
+            OrchardItems = tryRequirePath(MODULE_PATHS.ClientOrchardItems) or tryRequirePath(MODULE_PATHS.OrchardItems),
+            OrchardPlots = tryRequirePath(MODULE_PATHS.ClientOrchardPlots) or tryRequirePath(MODULE_PATHS.OrchardPlots),
+            OrchardDecorations = tryRequirePath(MODULE_PATHS.ClientOrchardDecorations) or tryRequirePath(MODULE_PATHS.OrchardDecorations),
+            OrchardEatFruit = tryRequirePath(MODULE_PATHS.ClientOrchardEatFruit) or tryRequirePath(MODULE_PATHS.OrchardEatFruit),
+            OrchardAutoEatFruitPower = tryRequirePath(MODULE_PATHS.ClientOrchardAutoEatFruitPower)
+                or tryRequirePath(MODULE_PATHS.OrchardAutoEatFruitPower),
         }
         return cachedOptionalCtx
     end
@@ -520,6 +545,14 @@ do
             ctx.ClientTycoonEvolution = optional.ClientTycoonEvolution
             ctx.ClientTycoonPowers = optional.ClientTycoonPowers
             ctx.Config = optional.Config
+            ctx.Orchard = optional.Orchard
+            ctx.OrchardPlot = optional.OrchardPlot
+            ctx.OrchardFruits = optional.OrchardFruits
+            ctx.OrchardItems = optional.OrchardItems
+            ctx.OrchardPlots = optional.OrchardPlots
+            ctx.OrchardDecorations = optional.OrchardDecorations
+            ctx.OrchardEatFruit = optional.OrchardEatFruit
+            ctx.OrchardAutoEatFruitPower = optional.OrchardAutoEatFruitPower
         end
         return ctx
     end
@@ -1468,6 +1501,1578 @@ do
         return claimedAny
     end
 
+    local function installOrchardAutomation(MainTab)
+        local orchardInfoParagraph
+        local orchardInfoAutoRefreshSec = 1
+        local orchardDelaySec = 1
+        local orchardSelectedItem = "FertilizerMutate"
+        local orchardItemOptions = { "FertilizerMutate" }
+        local autoUnlockOrchardRunning = false
+        local autoUnlockOrchardLoopId = 0
+        local autoUnlockPlotsRunning = false
+        local autoUnlockPlotsLoopId = 0
+        local autoHarvestOrchardRunning = false
+        local autoHarvestOrchardLoopId = 0
+        local autoPlantOrchardRunning = false
+        local autoPlantOrchardLoopId = 0
+        local autoDestroyOrchardRunning = false
+        local autoDestroyOrchardLoopId = 0
+        local autoUseOrchardItemRunning = false
+        local autoUseOrchardItemLoopId = 0
+        local autoBuyOrchardItemsRunning = false
+        local autoBuyOrchardItemsLoopId = 0
+        local autoBuyOrchardDecorRunning = false
+        local autoBuyOrchardDecorLoopId = 0
+        local autoSellOrchardFruitRunning = false
+        local autoSellOrchardFruitLoopId = 0
+        local autoEatOrchardFruitRunning = false
+        local autoEatOrchardFruitLoopId = 0
+        local autoOrchardEatPowerRunning = false
+        local autoOrchardEatPowerLoopId = 0
+        local autoOrchardEatQueueRunning = false
+        local autoOrchardEatQueueLoopId = 0
+
+        local ORCHARD_PLOT_STATES = {
+            Empty = 0,
+            TreeGrowing = 1,
+            FruitGrowing = 2,
+            FruitReady = 3,
+        }
+
+        local function findTycoonFolderChild(tycoonInstance, folderName, childName, className)
+            local folder = tycoonInstance and tycoonInstance:FindFirstChild(folderName)
+            local child = folder and folder:FindFirstChild(childName)
+            if child and (not className or child:IsA(className)) then
+                return child
+            end
+            return nil
+        end
+
+        local cachedNamedRemoteFunctions = {}
+
+        local function findNamedRemoteFunction(remoteName)
+            local cached = cachedNamedRemoteFunctions[remoteName]
+            if cached and cached.Parent then
+                return cached
+            end
+
+            local tycoonInstance = findLocalTycoonInstance()
+            for _, folderName in ipairs({ "Remotes", "Values" }) do
+                local remote = findTycoonFolderChild(tycoonInstance, folderName, remoteName, "RemoteFunction")
+                if remote then
+                    cachedNamedRemoteFunctions[remoteName] = remote
+                    return remote
+                end
+            end
+
+            local rsRemote = ReplicatedStorage:FindFirstChild(remoteName, true)
+            if rsRemote and rsRemote:IsA("RemoteFunction") then
+                cachedNamedRemoteFunctions[remoteName] = rsRemote
+                return rsRemote
+            end
+
+            return nil
+        end
+
+        local function getOrchardComponent(orchard, componentClass)
+            if not orchard or not componentClass or type(orchard.GetComponent) ~= "function" then
+                return nil
+            end
+            local ok, component = pcall(function()
+                return orchard:GetComponent(componentClass)
+            end)
+            if ok then
+                return component
+            end
+            return nil
+        end
+
+        local function getLocalOrchard(ctx, tycoon)
+            if not tycoon then
+                return nil
+            end
+
+            local orchardMod = ctx and (ctx.Orchard)
+            if orchardMod and type(orchardMod.getFromTycoon) == "function" then
+                local ok, orchard = pcall(function()
+                    return orchardMod.getFromTycoon(tycoon)
+                end)
+                if ok and orchard then
+                    return orchard
+                end
+            end
+
+            local tycoonInstance = tycoon.Instance
+            if not tycoonInstance then
+                return nil
+            end
+
+            for _, child in tycoonInstance:GetChildren() do
+                if child:HasTag("Tycoon.Orchard") then
+                    return {
+                        Instance = child,
+                        Tycoon = tycoon,
+                    }
+                end
+            end
+
+            for _, tagged in CollectionService:GetTagged("Tycoon.Orchard") do
+                if tagged:IsDescendantOf(tycoonInstance) or tagged.Parent == tycoonInstance then
+                    return {
+                        Instance = tagged,
+                        Tycoon = tycoon,
+                    }
+                end
+            end
+
+            return nil
+        end
+
+        local function isOrchardUnlocked(orchard, tycoon)
+            if orchard and type(orchard.IsUnlocked) == "function" then
+                local ok, unlocked = pcall(function()
+                    return orchard:IsUnlocked() == true
+                end)
+                if ok then
+                    return unlocked
+                end
+            end
+
+            local tycoonInstance = tycoon and tycoon.Instance
+            local values = tycoonInstance and tycoonInstance:FindFirstChild("Values")
+            local unlockedValue = values and values:FindFirstChild("OrchardUnlocked")
+            if unlockedValue and unlockedValue:IsA("ValueBase") then
+                return unlockedValue.Value == true
+            end
+            if values then
+                local attr = values:GetAttribute("OrchardUnlocked")
+                if attr ~= nil then
+                    return attr == true
+                end
+            end
+            return false
+        end
+
+        local function getOrchardPlotStates(ctx)
+            if ctx and ctx.OrchardPlot and type(ctx.OrchardPlot.States) == "table" then
+                return ctx.OrchardPlot.States
+            end
+            return ORCHARD_PLOT_STATES
+        end
+
+        local function getPlotState(plotInstance, states)
+            local state = plotInstance:GetAttribute("State")
+            if state == nil then
+                return states.Empty or 0
+            end
+            return state
+        end
+
+        local function collectLocalOrchardPlots(orchard)
+            local orchardInstance = orchard and orchard.Instance
+            if not orchardInstance then
+                return {}
+            end
+
+            local plots = {}
+            for _, plotInstance in CollectionService:GetTagged("Tycoon.OrchardPlot") do
+                if plotInstance.Parent and plotInstance:IsDescendantOf(orchardInstance) then
+                    table.insert(plots, plotInstance)
+                end
+            end
+            table.sort(plots, function(a, b)
+                local idA = tonumber(a:GetAttribute("ID")) or 0
+                local idB = tonumber(b:GetAttribute("ID")) or 0
+                return idA < idB
+            end)
+            return plots
+        end
+
+        local function getPlotEntity(ctx, plotInstance)
+            if ctx.OrchardPlot and type(ctx.OrchardPlot.getUnsafe) == "function" then
+                local ok, entity = pcall(function()
+                    return ctx.OrchardPlot.getUnsafe(plotInstance)
+                end)
+                if ok and entity then
+                    return entity
+                end
+            end
+            if ctx.Entity and type(ctx.Entity.getUnsafe) == "function" then
+                local ok, entity = pcall(function()
+                    return ctx.Entity.getUnsafe(plotInstance)
+                end)
+                if ok and entity then
+                    return entity
+                end
+            end
+            return nil
+        end
+
+        local function getOrchardTokens(ctx, tycoon)
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx and ctx.ClientTycoonBalances then
+                local ok, balances = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonBalances)
+                end)
+                if ok and balances and type(balances.GetTokens) == "function" then
+                    local tokensOk, tokens = pcall(function()
+                        return balances:GetTokens()
+                    end)
+                    if tokensOk and tokens ~= nil then
+                        return tokens
+                    end
+                end
+            end
+
+            local values = tycoon and tycoon.Instance and tycoon.Instance:FindFirstChild("Values")
+            local tokensValue = values and values:FindFirstChild("Tokens")
+            if tokensValue and tokensValue:IsA("ValueBase") then
+                return tokensValue.Value
+            end
+            if values then
+                local attr = values:GetAttribute("Tokens")
+                if attr ~= nil then
+                    return attr
+                end
+            end
+            return 0
+        end
+
+        local function getOrchardItemOptions(ctx)
+            local items = ctx and ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.Items
+            if type(items) ~= "table" then
+                return { "FertilizerMutate", "FertilizerCleanse", "FertilizerQuickGrow", "FertilizerAscend" }
+            end
+
+            local options = {}
+            for itemName, info in pairs(items) do
+                if type(itemName) == "string" and type(info) == "table" then
+                    table.insert(options, {
+                        name = itemName,
+                        order = tonumber(info.Order) or 999,
+                        displayName = info.DisplayName or prettifyPurchaseName(itemName),
+                    })
+                end
+            end
+            table.sort(options, function(a, b)
+                if a.order == b.order then
+                    return a.name < b.name
+                end
+                return a.order < b.order
+            end)
+
+            local names = {}
+            for _, entry in ipairs(options) do
+                table.insert(names, entry.name)
+            end
+            if #names == 0 then
+                return { "FertilizerMutate" }
+            end
+            return names
+        end
+
+        local function getOrchardItemDisplayName(ctx, itemName)
+            local info = ctx and ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.Items and ctx.Config.Orchard.Items[itemName]
+            if info and type(info.DisplayName) == "string" and info.DisplayName ~= "" then
+                return info.DisplayName
+            end
+            return prettifyPurchaseName(itemName)
+        end
+
+        local function getOrchardDecorationEntries(ctx)
+            local decorations = ctx and ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.Decorations
+            if type(decorations) ~= "table" then
+                return {}
+            end
+
+            local entries = {}
+            for name, info in pairs(decorations) do
+                if type(name) == "string" and type(info) == "table" then
+                    table.insert(entries, {
+                        name = name,
+                        displayName = info.DisplayName or prettifyPurchaseName(name),
+                        price = tonumber(info.Price) or 0,
+                    })
+                end
+            end
+            table.sort(entries, function(a, b)
+                if a.price == b.price then
+                    return a.name < b.name
+                end
+                return a.price < b.price
+            end)
+            return entries
+        end
+
+        local function getInventoryFruitEntries(fruitsComp)
+            if not fruitsComp or type(fruitsComp.GetAll) ~= "function" then
+                return {}
+            end
+            local ok, entries = pcall(function()
+                return fruitsComp:GetAll()
+            end)
+            if not ok or type(entries) ~= "table" then
+                return {}
+            end
+
+            local result = {}
+            for _, entry in pairs(entries) do
+                if type(entry) == "table" and entry.Fruit then
+                    local count = tonumber(entry.Count) or 0
+                    if count > 0 then
+                        table.insert(result, {
+                            Fruit = entry.Fruit,
+                            Count = count,
+                        })
+                    end
+                end
+            end
+            return result
+        end
+
+        local function getOrchardInfoContent()
+            local ctx, ctxErr = getSellLemonsGameContext(true)
+            if not ctx then
+                return ctxErr or "Could not load game data."
+            end
+
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return "Waiting for tycoon..."
+            end
+
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard then
+                return "Waiting for orchard..."
+            end
+
+            local unlocked = isOrchardUnlocked(orchard, tycoon)
+            local states = getOrchardPlotStates(ctx)
+            local plots = collectLocalOrchardPlots(orchard)
+            local counts = {
+                total = #plots,
+                available = 0,
+                empty = 0,
+                growing = 0,
+                ready = 0,
+                enabled = 0,
+            }
+
+            for _, plotInstance in ipairs(plots) do
+                if plotInstance:GetAttribute("Enabled") then
+                    counts.enabled += 1
+                end
+                if plotInstance:GetAttribute("Available") == true and not plotInstance:GetAttribute("Enabled") then
+                    counts.available += 1
+                end
+                local state = getPlotState(plotInstance, states)
+                if state == states.Empty then
+                    counts.empty += 1
+                elseif state == states.FruitReady then
+                    counts.ready += 1
+                elseif state == states.TreeGrowing or state == states.FruitGrowing then
+                    counts.growing += 1
+                end
+            end
+
+            local fruitsComp = getOrchardComponent(orchard, ctx.OrchardFruits)
+            local fruitStock = 0
+            local fruitKinds = 0
+            for _, entry in ipairs(getInventoryFruitEntries(fruitsComp)) do
+                fruitKinds += 1
+                fruitStock += tonumber(entry.Count) or 0
+            end
+
+            local tokens = getOrchardTokens(ctx, tycoon)
+            local lines = {
+                string.format("Unlocked: %s", if unlocked then "Yes" else "No"),
+                string.format("Tokens: %s", tostring(tokens)),
+                string.format(
+                    "Plots: %d total | %d unlocked | %d available | %d empty | %d growing | %d ready",
+                    counts.total,
+                    counts.enabled,
+                    counts.available,
+                    counts.empty,
+                    counts.growing,
+                    counts.ready
+                ),
+                string.format("Fruit Inventory: %d kinds / %d total", fruitKinds, fruitStock),
+                string.format("Selected Item: %s", getOrchardItemDisplayName(ctx, orchardSelectedItem)),
+            }
+            return table.concat(lines, "\n")
+        end
+
+        local function applyOrchardInfoParagraph(content)
+            if not orchardInfoParagraph then
+                return
+            end
+            task.defer(function()
+                if not orchardInfoParagraph then
+                    return
+                end
+                orchardInfoParagraph:Set({
+                    Title = "Orchard",
+                    Content = content,
+                })
+            end)
+        end
+
+        local function requestOrchardInfoRefresh()
+            task.spawn(function()
+                local ok, contentOrErr = pcall(getOrchardInfoContent)
+                applyOrchardInfoParagraph(if ok then contentOrErr else ("Refresh error: " .. tostring(contentOrErr)))
+            end)
+        end
+
+        local function tryAutoUnlockOrchardOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            if type(orchard.UnlockAsync) == "function" then
+                local ok = pcall(function()
+                    orchard:UnlockAsync()
+                end)
+                if ok then
+                    mountNotify({
+                        Title = "Orchard",
+                        Content = "Unlocked orchard",
+                        Icon = "check",
+                    })
+                end
+                return ok
+            end
+
+            local remote = findTycoonFolderChild(tycoon.Instance, "Remotes", "UnlockOrchard", "RemoteFunction")
+            if not remote then
+                return false
+            end
+            local ok = pcall(function()
+                remote:InvokeServer()
+            end)
+            if ok then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Unlocked orchard",
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function tryAutoUnlockPlotsOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local plotsComp = getOrchardComponent(orchard, ctx.OrchardPlots)
+
+            -- Match game UI: only unlock when tokens cover GetNextPlotUnlockPrice().
+            local unlockPrice = nil
+            if plotsComp and type(plotsComp.GetNextPlotUnlockPrice) == "function" then
+                local okPrice, price = pcall(function()
+                    return plotsComp:GetNextPlotUnlockPrice()
+                end)
+                if okPrice then
+                    unlockPrice = tonumber(price)
+                end
+            end
+            if unlockPrice == nil then
+                local orchardInstance = orchard.Instance
+                local unlockedCount = tonumber(orchardInstance and orchardInstance:GetAttribute("PlotsUnlocked")) or 0
+                local priceFn = ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.PlotPriceFunction
+                if type(priceFn) == "function" then
+                    local okPrice, price = pcall(priceFn, unlockedCount)
+                    if okPrice then
+                        unlockPrice = tonumber(price)
+                    end
+                end
+            end
+            if unlockPrice ~= nil and unlockPrice > 0 then
+                local tokens = tonumber(getOrchardTokens(ctx, tycoon)) or 0
+                if tokens < unlockPrice then
+                    return false
+                end
+            end
+
+            local unlockedAny = false
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if plotInstance:GetAttribute("Available") == true and not plotInstance:GetAttribute("Enabled") then
+                    local plotId = plotInstance:GetAttribute("ID")
+                    if plotId ~= nil then
+                        local ok = false
+                        if plotsComp and type(plotsComp.UnlockPlotAsync) == "function" then
+                            local callOk, result = pcall(function()
+                                return plotsComp:UnlockPlotAsync(plotId)
+                            end)
+                            ok = callOk == true and result ~= false
+                        else
+                            local remote = findTycoonFolderChild(tycoon.Instance, "Remotes", "UnlockPlot", "RemoteFunction")
+                            if remote then
+                                local callOk, result = pcall(function()
+                                    return remote:InvokeServer(plotId)
+                                end)
+                                ok = callOk == true and result ~= false
+                            end
+                        end
+                        if ok then
+                            unlockedAny = true
+                            mountNotify({
+                                Title = "Orchard",
+                                Content = "Unlocked plot " .. tostring(plotId),
+                                Icon = "check",
+                            })
+                            break
+                        end
+                    end
+                end
+            end
+            return unlockedAny
+        end
+
+        local function tryAutoHarvestOrchardOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local states = getOrchardPlotStates(ctx)
+            local harvestRemote = findNamedRemoteFunction("OrchardPlot.Harvest")
+            local harvested = 0
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if plotInstance:GetAttribute("Enabled") and getPlotState(plotInstance, states) == states.FruitReady then
+                    local plotEntity = getPlotEntity(ctx, plotInstance)
+                    local ok = false
+                    if plotEntity and type(plotEntity.HarvestAsync) == "function" then
+                        ok = pcall(function()
+                            plotEntity:HarvestAsync()
+                        end)
+                    elseif harvestRemote then
+                        ok = pcall(function()
+                            harvestRemote:InvokeServer(plotInstance)
+                        end)
+                    end
+                    if ok then
+                        harvested += 1
+                    end
+                end
+            end
+            if harvested > 0 then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Harvested " .. harvested .. " plot(s)",
+                    Icon = "check",
+                })
+            end
+            return harvested > 0
+        end
+
+        local function tryAutoPlantOrchardOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local fruitsComp = getOrchardComponent(orchard, ctx.OrchardFruits)
+            local inventory = getInventoryFruitEntries(fruitsComp)
+            if #inventory == 0 then
+                return false
+            end
+
+            local states = getOrchardPlotStates(ctx)
+            local plantRemote = findNamedRemoteFunction("OrchardPlot.Plant")
+            local planted = 0
+            local fruitIndex = 1
+
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if not (plotInstance:GetAttribute("Enabled") and getPlotState(plotInstance, states) == states.Empty) then
+                    continue
+                end
+
+                while fruitIndex <= #inventory and (tonumber(inventory[fruitIndex].Count) or 0) <= 0 do
+                    fruitIndex += 1
+                end
+                local entry = inventory[fruitIndex]
+                if not entry then
+                    break
+                end
+
+                local fruit = entry.Fruit
+                local plotEntity = getPlotEntity(ctx, plotInstance)
+                local ok = false
+                if plotEntity and type(plotEntity.PlantAsync) == "function" then
+                    ok = pcall(function()
+                        plotEntity:PlantAsync(fruit)
+                    end)
+                elseif plantRemote and type(fruit.Serialize) == "function" then
+                    ok = pcall(function()
+                        plantRemote:InvokeServer(plotInstance, { fruit:Serialize() })
+                    end)
+                end
+
+                if ok then
+                    planted += 1
+                    entry.Count = (tonumber(entry.Count) or 1) - 1
+                end
+            end
+
+            if planted > 0 then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Planted " .. planted .. " plot(s)",
+                    Icon = "check",
+                })
+            end
+            return planted > 0
+        end
+
+        local function tryAutoDestroyOrchardOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local states = getOrchardPlotStates(ctx)
+            local destroyRemote = findNamedRemoteFunction("OrchardPlot.DestroyTree")
+            local destroyed = 0
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if not plotInstance:GetAttribute("Enabled") then
+                    continue
+                end
+                local state = getPlotState(plotInstance, states)
+                if state == states.TreeGrowing or state == states.FruitGrowing then
+                    local plotEntity = getPlotEntity(ctx, plotInstance)
+                    local ok = false
+                    if plotEntity and type(plotEntity.DestroyTreeAsync) == "function" then
+                        ok = pcall(function()
+                            plotEntity:DestroyTreeAsync()
+                        end)
+                    elseif destroyRemote then
+                        ok = pcall(function()
+                            destroyRemote:InvokeServer(plotInstance)
+                        end)
+                    end
+                    if ok then
+                        destroyed += 1
+                    end
+                end
+            end
+            if destroyed > 0 then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Destroyed " .. destroyed .. " tree(s)",
+                    Icon = "check",
+                })
+            end
+            return destroyed > 0
+        end
+
+        local function tryAutoUseOrchardItemOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local itemName = orchardSelectedItem
+            if type(itemName) ~= "string" or itemName == "" then
+                return false
+            end
+
+            local itemsComp = getOrchardComponent(orchard, ctx.OrchardItems)
+            if itemsComp and type(itemsComp.GetCount) == "function" then
+                local okCount, count = pcall(function()
+                    return itemsComp:GetCount(itemName)
+                end)
+                if okCount and (tonumber(count) or 0) <= 0 then
+                    return false
+                end
+            end
+
+            local itemInfo = ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.Items and ctx.Config.Orchard.Items[itemName]
+            local upgradeName = itemInfo and itemInfo.Upgrade
+            local states = getOrchardPlotStates(ctx)
+            local useRemote = findNamedRemoteFunction("OrchardPlot.UseItem")
+            local used = 0
+
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if not plotInstance:GetAttribute("Enabled") then
+                    continue
+                end
+                local state = getPlotState(plotInstance, states)
+                if not (state == states.TreeGrowing or state == states.FruitGrowing) then
+                    continue
+                end
+                if upgradeName and plotInstance:GetAttribute(upgradeName .. "Unlocked") == true then
+                    continue
+                end
+                -- Fertilizers can't stack while one is already pending on the plot.
+                if not upgradeName and plotInstance:GetAttribute("PendingMutationItem") ~= nil then
+                    continue
+                end
+
+                local plotEntity = getPlotEntity(ctx, plotInstance)
+                local ok = false
+                if plotEntity and type(plotEntity.UseItemAsync) == "function" then
+                    ok = pcall(function()
+                        plotEntity:UseItemAsync(itemName)
+                    end)
+                elseif useRemote then
+                    ok = pcall(function()
+                        useRemote:InvokeServer(plotInstance, itemName)
+                    end)
+                end
+                if ok then
+                    used += 1
+                    break
+                end
+            end
+
+            if used > 0 then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Used " .. getOrchardItemDisplayName(ctx, itemName),
+                    Icon = "check",
+                })
+            end
+            return used > 0
+        end
+
+        local function tryAutoBuyOrchardItemsOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local itemName = orchardSelectedItem
+            local itemInfo = ctx.Config and ctx.Config.Orchard and ctx.Config.Orchard.Items and ctx.Config.Orchard.Items[itemName]
+            if not itemInfo then
+                return false
+            end
+
+            local price = tonumber(itemInfo.Price)
+            if price == nil then
+                return false
+            end
+            local tokens = getOrchardTokens(ctx, tycoon)
+            if type(tokens) == "number" and tokens < price then
+                return false
+            end
+
+            local itemsComp = getOrchardComponent(orchard, ctx.OrchardItems)
+            local ok = false
+            if itemsComp and type(itemsComp.BuyItemsAsync) == "function" then
+                ok = pcall(function()
+                    itemsComp:BuyItemsAsync(itemName, 1, true)
+                end)
+            else
+                local remote = findTycoonFolderChild(tycoon.Instance, "Remotes", "BuyOrchardItems", "RemoteFunction")
+                if remote then
+                    ok = pcall(function()
+                        remote:InvokeServer(itemName, 1)
+                    end)
+                end
+            end
+
+            if ok then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Bought " .. getOrchardItemDisplayName(ctx, itemName),
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function tryAutoBuyOrchardDecorOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local decorComp = getOrchardComponent(orchard, ctx.OrchardDecorations)
+            local tokens = getOrchardTokens(ctx, tycoon)
+            local remote = findTycoonFolderChild(tycoon.Instance, "Values", "PurchaseOrchardDecoration", "RemoteFunction")
+                or findTycoonFolderChild(tycoon.Instance, "Remotes", "PurchaseOrchardDecoration", "RemoteFunction")
+
+            for _, entry in ipairs(getOrchardDecorationEntries(ctx)) do
+                local owned = false
+                if decorComp and type(decorComp.HasDecoration) == "function" then
+                    local okOwned, hasDecor = pcall(function()
+                        return decorComp:HasDecoration(entry.name) == true
+                    end)
+                    owned = okOwned and hasDecor
+                end
+                if owned then
+                    continue
+                end
+                if type(tokens) == "number" and tokens < entry.price then
+                    continue
+                end
+
+                local ok = false
+                if decorComp and type(decorComp.PurchaseDecorationAsync) == "function" then
+                    ok = pcall(function()
+                        decorComp:PurchaseDecorationAsync(entry.name)
+                    end)
+                elseif remote then
+                    ok = pcall(function()
+                        remote:InvokeServer(entry.name)
+                    end)
+                end
+                if ok then
+                    mountNotify({
+                        Title = "Orchard",
+                        Content = "Bought decoration " .. entry.displayName,
+                        Icon = "check",
+                    })
+                    return true
+                end
+            end
+            return false
+        end
+
+        local function tryAutoSellOrchardFruitOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local fruitsComp = getOrchardComponent(orchard, ctx.OrchardFruits)
+            local inventory = getInventoryFruitEntries(fruitsComp)
+            if #inventory == 0 then
+                return false
+            end
+
+            local function sellSucceeded(ok, result)
+                -- Client sell helpers return false on rejection without throwing.
+                return ok == true and result ~= false
+            end
+
+            local sold = 0
+
+            -- Game UI only uses SellFruitAsync(fruit, amount) against Values.SellFruit.
+            if fruitsComp and type(fruitsComp.SellFruitAsync) == "function" then
+                for _, entry in ipairs(inventory) do
+                    local amount = math.max(1, math.floor(tonumber(entry.Count) or 1))
+                    local ok, result = pcall(function()
+                        return fruitsComp:SellFruitAsync(entry.Fruit, amount)
+                    end)
+                    if sellSucceeded(ok, result) then
+                        sold += amount
+                    end
+                end
+            elseif fruitsComp and type(fruitsComp.SellFruitsAsync) == "function" then
+                local sellMap = {}
+                local total = 0
+                for _, entry in ipairs(inventory) do
+                    local amount = math.max(1, math.floor(tonumber(entry.Count) or 1))
+                    sellMap[entry.Fruit] = amount
+                    total += amount
+                end
+                local ok, result = pcall(function()
+                    return fruitsComp:SellFruitsAsync(sellMap)
+                end)
+                if sellSucceeded(ok, result) then
+                    sold = total
+                end
+            else
+                local remote = findTycoonFolderChild(tycoon.Instance, "Values", "SellFruit", "RemoteFunction")
+                    or findTycoonFolderChild(tycoon.Instance, "Remotes", "SellFruit", "RemoteFunction")
+                local serialization = tryRequirePath({ "Core", "SerializationService" })
+                if remote and serialization and type(serialization.Serialize) == "function" then
+                    for _, entry in ipairs(inventory) do
+                        local amount = math.max(1, math.floor(tonumber(entry.Count) or 1))
+                        local ok, result = pcall(function()
+                            return remote:InvokeServer(serialization:Serialize(entry.Fruit), amount)
+                        end)
+                        if sellSucceeded(ok, result) then
+                            sold += amount
+                        end
+                    end
+                end
+            end
+
+            if sold > 0 then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Sold " .. sold .. " fruit(s)",
+                    Icon = "check",
+                })
+            end
+            return sold > 0
+        end
+
+        local function tryAutoEatOrchardFruitOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local eatComp = getOrchardComponent(orchard, ctx.OrchardEatFruit)
+            if not eatComp or type(eatComp.EatFruitAsync) ~= "function" then
+                return false
+            end
+            if type(eatComp.GetCurrentFruit) == "function" then
+                local okCurrent, current = pcall(function()
+                    return eatComp:GetCurrentFruit()
+                end)
+                if okCurrent and current ~= nil then
+                    return false
+                end
+            end
+
+            local fruitsComp = getOrchardComponent(orchard, ctx.OrchardFruits)
+            local inventory = getInventoryFruitEntries(fruitsComp)
+            if #inventory == 0 then
+                return false
+            end
+
+            local target = inventory[1].Fruit
+            local ok = pcall(function()
+                eatComp:EatFruitAsync(target)
+            end)
+            if ok then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Ate a fruit",
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function tryAutoOrchardEatPowerOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local powers = nil
+            if tycoon and type(tycoon.GetComponent) == "function" and ctx.ClientTycoonPowers then
+                local okPowers, component = pcall(function()
+                    return tycoon:GetComponent(ctx.ClientTycoonPowers)
+                end)
+                if okPowers then
+                    powers = component
+                end
+            end
+
+            -- SelectLevel errors when the requested level exceeds the owned level,
+            -- so skip until the player has actually bought the AutoFruit power.
+            if powers and type(powers.GetLevel) == "function" then
+                local okLevel, level = pcall(function()
+                    return powers:GetLevel("AutoFruit")
+                end)
+                if okLevel and (tonumber(level) or 0) < 1 then
+                    return false
+                end
+            end
+
+            local autoEat = getOrchardComponent(orchard, ctx.OrchardAutoEatFruitPower)
+            if autoEat and type(autoEat.EnableAutoEat) == "function" then
+                local ok = pcall(function()
+                    autoEat:EnableAutoEat(true)
+                end)
+                return ok
+            end
+
+            if powers and type(powers.SelectLevel) == "function" then
+                local ok = pcall(function()
+                    powers:SelectLevel("AutoFruit", 1)
+                end)
+                return ok
+            end
+
+            local remote = findTycoonFolderChild(tycoon.Instance, "Remotes", "SelectPowerLevel", "RemoteFunction")
+            if not remote then
+                return false
+            end
+            return pcall(function()
+                remote:InvokeServer("AutoFruit", 1)
+            end)
+        end
+
+        local function tryAutoOrchardEatQueueOnce()
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local fruitsComp = getOrchardComponent(orchard, ctx.OrchardFruits)
+            local autoEat = getOrchardComponent(orchard, ctx.OrchardAutoEatFruitPower)
+            if not autoEat or type(autoEat.SetAutoEatOrderAsync) ~= "function" then
+                return false
+            end
+
+            local inventory = getInventoryFruitEntries(fruitsComp)
+            if #inventory == 0 then
+                return false
+            end
+
+            table.sort(inventory, function(a, b)
+                local valueA, valueB = 0, 0
+                if type(a.Fruit.GetTokenValue) == "function" then
+                    local ok, value = pcall(function()
+                        return a.Fruit:GetTokenValue()
+                    end)
+                    if ok and type(value) == "number" then
+                        valueA = value
+                    end
+                end
+                if type(b.Fruit.GetTokenValue) == "function" then
+                    local ok, value = pcall(function()
+                        return b.Fruit:GetTokenValue()
+                    end)
+                    if ok and type(value) == "number" then
+                        valueB = value
+                    end
+                end
+                return valueA > valueB
+            end)
+
+            local maxQueue = 16
+            if ctx.Config and ctx.Config.Orchard and type(ctx.Config.Orchard.MaxAutoEatQueue) == "number" then
+                maxQueue = ctx.Config.Orchard.MaxAutoEatQueue
+            end
+
+            local queue = {}
+            for index, entry in ipairs(inventory) do
+                if index > maxQueue then
+                    break
+                end
+                table.insert(queue, entry.Fruit)
+            end
+
+            -- Avoid re-sending an identical queue to the server every cycle.
+            if type(autoEat.GetAutoEatFruitOrder) == "function" then
+                local okOrder, currentOrder = pcall(function()
+                    return autoEat:GetAutoEatFruitOrder()
+                end)
+                if okOrder and type(currentOrder) == "table" and #currentOrder == #queue then
+                    local same = true
+                    for index, fruit in ipairs(queue) do
+                        local current = currentOrder[index]
+                        local equal = current == fruit
+                        if not equal and current ~= nil and type(fruit.IsEqual) == "function" then
+                            local okEqual, isEqual = pcall(function()
+                                return fruit:IsEqual(current)
+                            end)
+                            equal = okEqual and isEqual == true
+                        end
+                        if not equal then
+                            same = false
+                            break
+                        end
+                    end
+                    if same then
+                        return false
+                    end
+                end
+            end
+
+            local ok = pcall(function()
+                autoEat:SetAutoEatOrderAsync(queue)
+            end)
+            if ok and type(autoEat.EnableAutoEat) == "function" then
+                pcall(function()
+                    autoEat:EnableAutoEat(true)
+                end)
+            end
+            if ok then
+                mountNotify({
+                    Title = "Orchard",
+                    Content = "Updated auto-eat queue (" .. #queue .. ")",
+                    Icon = "check",
+                })
+            end
+            return ok
+        end
+
+        local function refreshOrchardPlotFruitsOnce()
+            -- Uses OrchardPlot.GetFruit / GetFruitAsync so plot fruit data stays warm for status/UI.
+            local ctx = getSellLemonsGameContext(true)
+            if not ctx then
+                return false
+            end
+            local tycoon = getLocalTycoon(ctx)
+            if not tycoon then
+                return false
+            end
+            local orchard = getLocalOrchard(ctx, tycoon)
+            if not orchard or not isOrchardUnlocked(orchard, tycoon) then
+                return false
+            end
+
+            local states = getOrchardPlotStates(ctx)
+            local refreshed = 0
+            for _, plotInstance in ipairs(collectLocalOrchardPlots(orchard)) do
+                if plotInstance:GetAttribute("Enabled") and getPlotState(plotInstance, states) ~= states.Empty then
+                    local plotEntity = getPlotEntity(ctx, plotInstance)
+                    if plotEntity and type(plotEntity.GetFruitAsync) == "function" then
+                        local ok = pcall(function()
+                            plotEntity:GetFruitAsync()
+                        end)
+                        if ok then
+                            refreshed += 1
+                        end
+                    elseif plotEntity and type(plotEntity.GetFruit) == "function" then
+                        local ok = pcall(function()
+                            plotEntity:GetFruit()
+                        end)
+                        if ok then
+                            refreshed += 1
+                        end
+                    end
+                end
+            end
+            return refreshed > 0
+        end
+
+
+        MainTab:CreateSection("Orchard Automation")
+
+        do
+            local ctxForItems = getSellLemonsGameContext(true)
+            if ctxForItems then
+                orchardItemOptions = getOrchardItemOptions(ctxForItems)
+                if not table.find(orchardItemOptions, orchardSelectedItem) then
+                    orchardSelectedItem = orchardItemOptions[1] or "FertilizerMutate"
+                end
+            end
+        end
+
+        orchardInfoParagraph = MainTab:CreateParagraph({
+            Title = "Orchard",
+            Content = "Loading...",
+        })
+
+        MainTab:CreateButton({
+            Name = "Refresh",
+            Callback = function()
+                pcall(refreshOrchardPlotFruitsOnce)
+                requestOrchardInfoRefresh()
+            end,
+        })
+
+        MainTab:CreateInput({
+            Name = "Delay (seconds)",
+            PlaceholderText = "Seconds between orchard automation checks",
+            Flag = "main_orchard_delay",
+            CurrentValue = tostring(orchardDelaySec),
+            Callback = function(value)
+                orchardDelaySec = math.max(0.1, tonumber(value) or 1)
+            end,
+        })
+
+        MainTab:CreateDropdown({
+            Name = "Item",
+            Flag = "main_orchard_item",
+            Options = orchardItemOptions,
+            CurrentOption = { orchardSelectedItem },
+            Callback = function(value)
+                local picked = rayfieldDropdownFirst(value)
+                if picked and table.find(orchardItemOptions, picked) then
+                    orchardSelectedItem = picked
+                    requestOrchardInfoRefresh()
+                end
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Unlock Orchard",
+            Flag = "main_auto_unlock_orchard",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoUnlockOrchardRunning = enabled == true
+                if not autoUnlockOrchardRunning then
+                    return
+                end
+                autoUnlockOrchardLoopId += 1
+                local loopId = autoUnlockOrchardLoopId
+                task.spawn(function()
+                    while autoUnlockOrchardRunning and loopId == autoUnlockOrchardLoopId do
+                        local ok = pcall(function()
+                            tryAutoUnlockOrchardOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Unlock Plots",
+            Flag = "main_auto_unlock_plots",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoUnlockPlotsRunning = enabled == true
+                if not autoUnlockPlotsRunning then
+                    return
+                end
+                autoUnlockPlotsLoopId += 1
+                local loopId = autoUnlockPlotsLoopId
+                task.spawn(function()
+                    while autoUnlockPlotsRunning and loopId == autoUnlockPlotsLoopId do
+                        local ok = pcall(function()
+                            tryAutoUnlockPlotsOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Harvest",
+            Flag = "main_auto_harvest_orchard",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoHarvestOrchardRunning = enabled == true
+                if not autoHarvestOrchardRunning then
+                    return
+                end
+                autoHarvestOrchardLoopId += 1
+                local loopId = autoHarvestOrchardLoopId
+                task.spawn(function()
+                    while autoHarvestOrchardRunning and loopId == autoHarvestOrchardLoopId do
+                        local ok = pcall(function()
+                            tryAutoHarvestOrchardOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Plant",
+            Flag = "main_auto_plant_orchard",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoPlantOrchardRunning = enabled == true
+                if not autoPlantOrchardRunning then
+                    return
+                end
+                autoPlantOrchardLoopId += 1
+                local loopId = autoPlantOrchardLoopId
+                task.spawn(function()
+                    while autoPlantOrchardRunning and loopId == autoPlantOrchardLoopId do
+                        local ok = pcall(function()
+                            tryAutoPlantOrchardOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Destroy Trees",
+            Flag = "main_auto_destroy_orchard",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoDestroyOrchardRunning = enabled == true
+                if not autoDestroyOrchardRunning then
+                    return
+                end
+                autoDestroyOrchardLoopId += 1
+                local loopId = autoDestroyOrchardLoopId
+                task.spawn(function()
+                    while autoDestroyOrchardRunning and loopId == autoDestroyOrchardLoopId do
+                        local ok = pcall(function()
+                            tryAutoDestroyOrchardOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Use Item",
+            Flag = "main_auto_use_orchard_item",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoUseOrchardItemRunning = enabled == true
+                if not autoUseOrchardItemRunning then
+                    return
+                end
+                autoUseOrchardItemLoopId += 1
+                local loopId = autoUseOrchardItemLoopId
+                task.spawn(function()
+                    while autoUseOrchardItemRunning and loopId == autoUseOrchardItemLoopId do
+                        local ok = pcall(function()
+                            tryAutoUseOrchardItemOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Buy Items",
+            Flag = "main_auto_buy_orchard_items",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoBuyOrchardItemsRunning = enabled == true
+                if not autoBuyOrchardItemsRunning then
+                    return
+                end
+                autoBuyOrchardItemsLoopId += 1
+                local loopId = autoBuyOrchardItemsLoopId
+                task.spawn(function()
+                    while autoBuyOrchardItemsRunning and loopId == autoBuyOrchardItemsLoopId do
+                        local ok = pcall(function()
+                            tryAutoBuyOrchardItemsOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Buy Decorations",
+            Flag = "main_auto_buy_orchard_decor",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoBuyOrchardDecorRunning = enabled == true
+                if not autoBuyOrchardDecorRunning then
+                    return
+                end
+                autoBuyOrchardDecorLoopId += 1
+                local loopId = autoBuyOrchardDecorLoopId
+                task.spawn(function()
+                    while autoBuyOrchardDecorRunning and loopId == autoBuyOrchardDecorLoopId do
+                        local ok = pcall(function()
+                            tryAutoBuyOrchardDecorOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Sell Fruit",
+            Flag = "main_auto_sell_orchard_fruit",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoSellOrchardFruitRunning = enabled == true
+                if not autoSellOrchardFruitRunning then
+                    return
+                end
+                autoSellOrchardFruitLoopId += 1
+                local loopId = autoSellOrchardFruitLoopId
+                task.spawn(function()
+                    while autoSellOrchardFruitRunning and loopId == autoSellOrchardFruitLoopId do
+                        local ok = pcall(function()
+                            tryAutoSellOrchardFruitOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Eat Fruit",
+            Flag = "main_auto_eat_orchard_fruit",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoEatOrchardFruitRunning = enabled == true
+                if not autoEatOrchardFruitRunning then
+                    return
+                end
+                autoEatOrchardFruitLoopId += 1
+                local loopId = autoEatOrchardFruitLoopId
+                task.spawn(function()
+                    while autoEatOrchardFruitRunning and loopId == autoEatOrchardFruitLoopId do
+                        local ok = pcall(function()
+                            tryAutoEatOrchardFruitOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Enable Auto Eat Power",
+            Flag = "main_auto_orchard_eat_power",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoOrchardEatPowerRunning = enabled == true
+                if not autoOrchardEatPowerRunning then
+                    return
+                end
+                autoOrchardEatPowerLoopId += 1
+                local loopId = autoOrchardEatPowerLoopId
+                task.spawn(function()
+                    while autoOrchardEatPowerRunning and loopId == autoOrchardEatPowerLoopId do
+                        local ok = pcall(function()
+                            tryAutoOrchardEatPowerOnce()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then delay else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        MainTab:CreateToggle({
+            Name = "Auto Fill Eat Queue",
+            Flag = "main_auto_orchard_eat_queue",
+            CurrentValue = false,
+            Callback = function(enabled)
+                autoOrchardEatQueueRunning = enabled == true
+                if not autoOrchardEatQueueRunning then
+                    return
+                end
+                autoOrchardEatQueueLoopId += 1
+                local loopId = autoOrchardEatQueueLoopId
+                task.spawn(function()
+                    while autoOrchardEatQueueRunning and loopId == autoOrchardEatQueueLoopId do
+                        local ok = pcall(function()
+                            tryAutoOrchardEatQueueOnce()
+                            requestOrchardInfoRefresh()
+                        end)
+                        local delay = math.max(0.1, tonumber(orchardDelaySec) or 1)
+                        task.wait(if ok then math.max(delay, 2) else math.max(delay, 1))
+                    end
+                end)
+            end,
+        })
+
+        task.spawn(function()
+            pcall(refreshOrchardPlotFruitsOnce)
+            requestOrchardInfoRefresh()
+            while orchardInfoParagraph do
+                task.wait(orchardInfoAutoRefreshSec)
+                requestOrchardInfoRefresh()
+            end
+        end)
+
+    end
+
     local function formatHugeAmount(ctx, value, prefix)
         if value == nil then
             return "?"
@@ -2313,6 +3918,8 @@ do
             requestUpgradeListRefresh(false)
         end
     end)
+
+    installOrchardAutomation(MainTab)
 
     MainTab:CreateSection("Auto Rebirth")
 
