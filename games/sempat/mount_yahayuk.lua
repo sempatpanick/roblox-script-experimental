@@ -940,7 +940,7 @@ do
         },
         {
             name = "Camp 1",
-            teleportPosition = "-407.77, 248.20, 794.09",
+            teleportPosition = "-423.65, 248.26, 788.96",
             teleportDelay = 5,
             teleportDelayRandomMin = 0,
             teleportDelayRandomMax = 5,
@@ -3579,24 +3579,19 @@ do
         })
     end
 
-    local campLocations = {
-        { label = "Camp 1", x = -407.77, y = 248.20, z = 794.09 },
-        { label = "Camp 2", x = -337.77, y = 388.27, z = 522.16 },
-        { label = "Camp 3", x = 294.19, y = 430.33, z = 494.17 },
-        { label = "Camp 4", x = 323.46, y = 490.24, z = 348.33 },
-        { label = "Camp 5", x = 226.70, y = 314.21, z = -143.64 },
-        { label = "Summit", x = -613.51, y = 905.28, z = -533.45 },
-    }
-
-    for _, loc in ipairs(campLocations) do
-        local label, cx, cy, cz = loc.label, loc.x, loc.y, loc.z
+    for _, wp in ipairs(summitRoute) do
+        local label = wp.name
+        local telePos = parseSummitTeleportPositionString(wp.teleportPosition)
+        if not label or not telePos then
+            continue
+        end
         local campSlug = string.gsub(label, "%s+", "_")
         local campFlag = "yahayuk_main_teleport_" .. string.lower(campSlug)
         MainTab:CreateButton({
             Name = label,
             Flag = campFlag,
             Callback = function()
-                teleportToCampCoords(cx, cy, cz, label)
+                teleportToCampCoords(telePos.X, telePos.Y, telePos.Z, label)
             end,
         })
     end
