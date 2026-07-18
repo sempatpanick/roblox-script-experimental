@@ -6,6 +6,7 @@ local games = {
 	[2693023319] = baseURL .. "/games/rayfield/expedition_antartica.lua",
 	[103593441753340] = baseURL .. "/games/rayfield/find_the_button.lua",
 	[82775216869079] = baseURL .. "/games/rayfield/find_the_button.lua",
+	[111385005478215] = baseURL .. "/games/sempat/fish_and_monsters.lua",
 	[14963184269] = baseURL .. "/games/rayfield/mount_sumbing.lua",
 	[76964310785698] = baseURL .. "/games/sempat/mount_yahayuk.lua",
 	[118098747383977] = baseURL .. "/games/rayfield/mancing_indo.lua",
