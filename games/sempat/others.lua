@@ -217,6 +217,61 @@ if not createTeleportTab then
         notifyFn({ Title = "Teleport", Content = "Failed to load Teleport Tab module", Icon = "x" })
     end
 end
+-- */  Recording Tab (module)  /* --
+local RECORDING_TAB_REPO = baseURL .. "/tabs/rayfield/recording_tab.lua"
+local function loadCreateRecordingTab(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("../../tabs/rayfield/recording_tab")
+    end)
+    if okReq and type(mod) == "function" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Recording Tab] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "recording_tab")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Recording Tab] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Recording Tab] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "function" then
+        warn("[Recording Tab] module must return a function, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local createRecordingTab = loadCreateRecordingTab(RECORDING_TAB_REPO)
+if not createRecordingTab then
+    createRecordingTab = function(_windowRef, notifyFn, _options)
+        notifyFn({ Title = "Recording", Content = "Failed to load Recording Tab module", Icon = "x" })
+    end
+end
 -- */  Config Tab (module)  /* --
 local CONFIG_TAB_REPO = baseURL .. "/tabs/rayfield/config_tab.lua"
 local function loadCreateConfigTab(repoUrl)
@@ -302,6 +357,12 @@ createObjectsTab(Window, mountNotify, {
     tabIcon = "boxes",
 })
 
+
+-- */  Recording Tab  /* --
+createRecordingTab(Window, mountNotify, {
+    gamePath = "sempatpanick/others",
+    tabIcon = "video",
+})
 
 -- */  Config Tab  /* --
 createConfigTab(Window, mountNotify, {
