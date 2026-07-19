@@ -802,11 +802,11 @@
                     "outcome": "success",
                     "chancePercent": 6.67,
                     "start": [
-                        176.48,
-                        316.54,
-                        -206.168
+                        175.871,
+                        316.474,
+                        -206.189
                     ],
-                    "duration": 41.1308
+                    "duration": 41.1057
                 },
                 {
                     "file": "cp5-summit_success_2.json",
@@ -824,143 +824,143 @@
                     "outcome": "success",
                     "chancePercent": 6.67,
                     "start": [
-                        177.167,
-                        316.572,
-                        -205.328
+                        176.556,
+                        316.562,
+                        -205.333
                     ],
-                    "duration": 41.1389
+                    "duration": 41.1149
                 },
                 {
                     "file": "cp5-summit_success_4.json",
                     "outcome": "success",
                     "chancePercent": 6.67,
                     "start": [
-                        180.122,
+                        179.51,
                         316.572,
-                        -205.989
+                        -206.005
                     ],
-                    "duration": 42.4967
+                    "duration": 42.4726
                 },
                 {
                     "file": "cp5-summit_success_5.json",
                     "outcome": "success",
                     "chancePercent": 6.67,
                     "start": [
-                        176.737,
-                        316.572,
-                        -206.261
+                        176.128,
+                        316.511,
+                        -206.251
                     ],
-                    "duration": 40.8239
+                    "duration": 40.7968
                 },
                 {
                     "file": "cp5-summit_success_6.json",
                     "outcome": "success",
                     "chancePercent": 6.67,
                     "start": [
-                        179.94,
+                        179.381,
                         316.572,
-                        -206.585
+                        -206.604
                     ],
-                    "duration": 40.417
+                    "duration": 40.391
                 },
                 {
                     "file": "cp5-summit_failed_1.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        179.371,
+                        178.759,
                         316.572,
                         -204.994
                     ],
-                    "duration": 12.138
+                    "duration": 12.1125
                 },
                 {
                     "file": "cp5-summit_failed_2.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        177.306,
+                        176.693,
                         316.572,
-                        -205.159
+                        -205.154
                     ],
-                    "duration": 16.5077
+                    "duration": 16.4797
                 },
                 {
                     "file": "cp5-summit_failed_3.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        178.289,
+                        177.796,
                         316.572,
-                        -205.487
+                        -205.491
                     ],
-                    "duration": 28.386
+                    "duration": 28.3592
                 },
                 {
                     "file": "cp5-summit_failed_4.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        178.421,
+                        177.809,
                         316.572,
-                        -205.945
+                        -205.935
                     ],
-                    "duration": 16.1992
+                    "duration": 16.1758
                 },
                 {
                     "file": "cp5-summit_failed_5.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        177.878,
+                        177.265,
                         316.572,
-                        -206.871
+                        -206.876
                     ],
-                    "duration": 26.6312
+                    "duration": 26.6073
                 },
                 {
                     "file": "cp5-summit_failed_6.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        180.777,
+                        180.165,
                         316.572,
-                        -207.026
+                        -207.01
                     ],
-                    "duration": 24.6415
+                    "duration": 24.6144
                 },
                 {
                     "file": "cp5-summit_failed_7.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        179.283,
+                        178.67,
                         316.572,
-                        -207.356
+                        -207.361
                     ],
-                    "duration": 24.8891
+                    "duration": 24.864
                 },
                 {
                     "file": "cp5-summit_failed_8.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        178.616,
+                        178.004,
                         316.572,
-                        -206.11
+                        -206.132
                     ],
-                    "duration": 11.2905
+                    "duration": 11.2671
                 },
                 {
                     "file": "cp5-summit_failed_9.json",
                     "outcome": "failed",
                     "chancePercent": 6.67,
                     "start": [
-                        177.329,
+                        176.674,
                         316.572,
-                        -206.676
+                        -206.659
                     ],
-                    "duration": 11.1255
+                    "duration": 11.1006
                 }
             ]
         },
