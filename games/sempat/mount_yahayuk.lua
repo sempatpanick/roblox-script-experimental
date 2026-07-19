@@ -283,6 +283,57 @@ if not createRecordingTab then
     end
 end
 
+-- */  Route Player (module)  /* --
+local ROUTE_PLAYER_REPO = baseURL .. "/functions/player/route_player.lua"
+local function loadRoutePlayerModule(repoUrl)
+    local okReq, mod = pcall(function()
+        return require("../../functions/player/route_player")
+    end)
+    if okReq and type(mod) == "table" then
+        return mod
+    end
+
+    local okHttp, source = pcall(function()
+        return game:HttpGet(repoUrl)
+    end)
+    if not okHttp or type(source) ~= "string" or #source < 64 then
+        warn("[Route Player] HttpGet failed:", tostring(source))
+        return nil
+    end
+
+    local chunk, compileErr
+    if type(load) == "function" then
+        local okLoad
+        okLoad, chunk = pcall(function()
+            return load(source, "route_player")
+        end)
+        if not okLoad then
+            compileErr = chunk
+            chunk = nil
+        end
+    end
+    if type(chunk) ~= "function" and type(loadstring) == "function" then
+        chunk, compileErr = loadstring(source)
+    end
+    if type(chunk) ~= "function" then
+        warn("[Route Player] compile failed:", tostring(compileErr))
+        return nil
+    end
+
+    local okRun, result = pcall(chunk)
+    if not okRun then
+        warn("[Route Player] module execute failed:", tostring(result))
+        return nil
+    end
+    if type(result) ~= "table" then
+        warn("[Route Player] module must return a table, got", type(result))
+        return nil
+    end
+    return result
+end
+
+local RoutePlayer = loadRoutePlayerModule(ROUTE_PLAYER_REPO)
+
 -- */  Config Tab (module)  /* --
 local CONFIG_TAB_REPO = baseURL .. "/tabs/rayfield/config_tab.lua"
 local function loadCreateConfigTab(repoUrl)
@@ -442,7 +493,13 @@ do
     local summitQty = ""
     local autoSummitRandomizeTeleportDelay = false
     local autoSummitRestartFromDeath = false
-    local updateAutoSummitRouteModeParagraph: () -> ()
+    local autoSummitMode = "Walk" -- "Walk" | "Teleport"
+    local autoSummitIncludeFailedRoutes = true
+    local syncRoutesFromRepo: ((boolean?) -> ())? = nil
+    local AutoSummitRoutesParagraph: any = nil
+    local routeSyncActive = false
+    local routePossibilities: any = nil
+    local updateAutoSummitRouteSequenceParagraph: () -> ()
     local BETWEEN_RUN_DELAY_MIN = 0
     local BETWEEN_RUN_DELAY_MAX = 1
     local autoSummitRng = Random.new()
@@ -643,6 +700,20 @@ do
 
     MainTab:CreateSection("Auto Summit")
 
+    MainTab:CreateButton({
+        Name = "Refresh Routes",
+        Callback = function()
+            if syncRoutesFromRepo then
+                task.spawn(syncRoutesFromRepo, true)
+            end
+        end,
+    })
+
+    AutoSummitRoutesParagraph = MainTab:CreateParagraph({
+        Title = "Walk routes",
+        Content = "Not synced yet.",
+    })
+
     local lpAutoSummit = Players.LocalPlayer
 
     -- Periodic jumps during post-teleport MoveTo when summitRoute[*].teleportWalkToWithJump is true.
@@ -693,23 +764,56 @@ do
 
     local autoSummitDeathCheckConn: any = nil
 
-    local autoSummitTeleportStepDisplay = "—"
+    local autoSummitTeleportStepDisplay = "—" -- teleport mode: current waypoint name
 
-    local AutoSummitRouteModeParagraph: any = nil
-    updateAutoSummitRouteModeParagraph = function()
-        if not AutoSummitRouteModeParagraph or not AutoSummitRouteModeParagraph.Set then
+    -- Walk mode route sequence display (filenames).
+    local ROUTE_SEQUENCE_TITLE = "Route sequence"
+    local NEXT_ROUTE_PENDING = "(choosing on arrival)"
+    local autoSummitPrevRouteFile = "—"
+    local autoSummitCurrentRouteFile = "—"
+    local autoSummitNextRouteFile = "—"
+
+    local function resetAutoSummitRouteSequence()
+        autoSummitPrevRouteFile = "—"
+        autoSummitCurrentRouteFile = "—"
+        autoSummitNextRouteFile = "—"
+    end
+
+    -- A route was just chosen and is about to be walked into (shown as "Next").
+    local function markRoutePicked(file: string)
+        autoSummitNextRouteFile = file
+        task.defer(updateAutoSummitRouteSequenceParagraph)
+    end
+
+    -- Playback of a route is starting: it becomes "Current", the old current
+    -- shifts to "Previous", and "Next" reverts to pending until the next pick.
+    local function markRoutePlaying(file: string)
+        autoSummitPrevRouteFile = autoSummitCurrentRouteFile
+        autoSummitCurrentRouteFile = file
+        autoSummitNextRouteFile = NEXT_ROUTE_PENDING
+        task.defer(updateAutoSummitRouteSequenceParagraph)
+    end
+
+    local AutoSummitRouteSequenceParagraph: any = nil
+    updateAutoSummitRouteSequenceParagraph = function()
+        if not AutoSummitRouteSequenceParagraph or not AutoSummitRouteSequenceParagraph.Set then
             return
         end
+        local content
         if not autoSummitEnabled then
-            AutoSummitRouteModeParagraph:Set({
-                Title = "Active route",
-                Content = "Auto Summit is off.",
-            })
-            return
+            content = "Auto Summit is off."
+        elseif autoSummitMode == "Walk" then
+            content = ("Previous: %s\nCurrent: %s\nNext: %s"):format(
+                autoSummitPrevRouteFile,
+                autoSummitCurrentRouteFile,
+                autoSummitNextRouteFile
+            )
+        else
+            content = "Step: " .. autoSummitTeleportStepDisplay
         end
-        AutoSummitRouteModeParagraph:Set({
-            Title = "Active route",
-            Content = "Step: " .. autoSummitTeleportStepDisplay,
+        AutoSummitRouteSequenceParagraph:Set({
+            Title = ROUTE_SEQUENCE_TITLE,
+            Content = content,
         })
     end
 
@@ -1025,7 +1129,7 @@ do
             end
 
             autoSummitTeleportStepDisplay = wp.name
-            task.defer(updateAutoSummitRouteModeParagraph)
+            task.defer(updateAutoSummitRouteSequenceParagraph)
 
             syncAutoSummitCurrentCheckpointSnapshot()
             local cpBeforeStep = autoSummitCurrentCpLabel
@@ -1126,6 +1230,566 @@ do
         return tr, ts, tu
     end
 
+    -- */  Walk mode: replay recorded routes fetched from the repo  /* --
+    local ROUTES_DIR = "sempatpanick/mount_yahayuk/routes"
+    local POSSIBILITIES_FILE = ROUTES_DIR .. "/possibilities.json"
+    local POSSIBILITIES_REMOTE_URL = baseURL .. "/mount_yahayuk/possibilities.json"
+    local ROUTES_REMOTE_DIR = baseURL .. "/mount_yahayuk/routes/"
+    local WALK_CONNECT_ARRIVAL_DIST = 2
+    local WALK_CONNECT_GIVE_UP_DIST = 25
+    local WALK_START_BLEND_SEC = 0.1 -- glide into a route's first frame instead of snapping
+    local WALK_MAX_LEG_ATTEMPTS = 6
+    local FALL_SETTLE_TIMEOUT_SEC = 25
+    local WALK_CP_ACK_TIMEOUT_SEC = 12
+    local WALK_PLAYBACK_NOCLIP = false -- real collisions so CP / fall triggers fire naturally
+
+    -- summitRoute step index (the camp we are AT) -> the leg that climbs out of it.
+    local WALK_LEG_BY_STEP = { "start-cp1", "cp1-cp2", "cp2-cp3", "cp3-cp4", "cp4-cp5", "cp5-summit" }
+    local WALK_DESCENT_LEG = "summit-start"
+
+    -- From mount_yahayuk/fallspawns.json (Workspace.SpawnLocation / Workspace.Checkpoints.CPn.FallSpawn).
+    -- Index matches the summitRoute step index of the camp a failed route falls back to.
+    local WALK_FALL_SPAWNS = {
+        [1] = Vector3.new(-922.9354, 166.3552, 856.2858), -- Start
+        [2] = Vector3.new(-433, 245.3983, 793), -- Camp 1
+        [3] = Vector3.new(-357.8944, 385.4008, 544.6857), -- Camp 2
+        [4] = Vector3.new(276.1503, 426.5, 510.5456), -- Camp 3
+        [5] = Vector3.new(343.7578, 481.3751, 378.8087), -- Camp 4
+        [6] = Vector3.new(235.9059, 310.4505, -203.1223), -- Camp 5
+    }
+
+    local hasWalkFileApi = type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+        and type(isfolder) == "function"
+        and type(makefolder) == "function"
+
+    local function ensureRoutesFolder()
+        local acc = nil
+        for part in string.gmatch(ROUTES_DIR, "[^/]+") do
+            acc = acc and (acc .. "/" .. part) or part
+            if not isfolder(acc) then
+                makefolder(acc)
+            end
+        end
+    end
+
+    local function setRoutesParagraph(content: string)
+        local p = AutoSummitRoutesParagraph
+        if p and p.Set then
+            pcall(function()
+                p:Set({ Title = "Walk routes", Content = content })
+            end)
+        end
+    end
+
+    local function loadLocalPossibilities(): boolean
+        if not hasWalkFileApi or not isfile(POSSIBILITIES_FILE) then
+            return false
+        end
+        local okRead, raw = pcall(readfile, POSSIBILITIES_FILE)
+        if not okRead or type(raw) ~= "string" then
+            return false
+        end
+        local okDec, decoded = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if not okDec or type(decoded) ~= "table" or type(decoded.legs) ~= "table" or #decoded.legs == 0 then
+            return false
+        end
+        routePossibilities = decoded
+        return true
+    end
+
+    local function loadRouteData(fileName: string): (any, string?)
+        local path = ROUTES_DIR .. "/" .. fileName
+        local okRead, raw = pcall(readfile, path)
+        if not okRead or type(raw) ~= "string" then
+            return nil, "cannot read " .. path
+        end
+        local okDec, data = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if not okDec or type(data) ~= "table" or type(data.frames) ~= "table" or #data.frames < 2 then
+            return nil, "invalid route file " .. fileName
+        end
+        return data, nil
+    end
+
+    local function findLegEntry(legName: string): any
+        if type(routePossibilities) ~= "table" or type(routePossibilities.legs) ~= "table" then
+            return nil
+        end
+        for _, leg in ipairs(routePossibilities.legs) do
+            if leg.leg == legName then
+                return leg
+            end
+        end
+        return nil
+    end
+
+    syncRoutesFromRepo = function(fromButton: boolean?)
+        if routeSyncActive then
+            if fromButton then
+                notifyAutoSummit("Route sync already running", "x")
+            end
+            return
+        end
+        if not hasWalkFileApi then
+            setRoutesParagraph("Executor has no file API — Walk mode unavailable.")
+            if fromButton then
+                notifyAutoSummit("Executor has no file API — Walk mode unavailable", "x")
+            end
+            return
+        end
+        routeSyncActive = true
+        local okAll, syncErr = pcall(function()
+            ensureRoutesFolder()
+            setRoutesParagraph("Fetching possibilities…")
+
+            local okHttp, raw = pcall(function()
+                return game:HttpGet(POSSIBILITIES_REMOTE_URL)
+            end)
+            if not okHttp or type(raw) ~= "string" or #raw < 16 then
+                error("possibilities.json fetch failed", 0)
+            end
+            local okDec, decoded = pcall(function()
+                return HttpService:JSONDecode(raw)
+            end)
+            if not okDec or type(decoded) ~= "table" or type(decoded.legs) ~= "table" or #decoded.legs == 0 then
+                error("possibilities.json invalid", 0)
+            end
+            writefile(POSSIBILITIES_FILE, raw)
+            routePossibilities = decoded
+
+            local fileList = {}
+            for _, leg in ipairs(decoded.legs) do
+                if type(leg.routes) == "table" then
+                    for _, r in ipairs(leg.routes) do
+                        if type(r.file) == "string" and r.file ~= "" then
+                            table.insert(fileList, r.file)
+                        end
+                    end
+                end
+            end
+
+            local total = #fileList
+            local synced = 0
+            local failed = 0
+            for i, fileName in ipairs(fileList) do
+                local okGet, src = pcall(function()
+                    return game:HttpGet(ROUTES_REMOTE_DIR .. fileName)
+                end)
+                if okGet and type(src) == "string" and #src > 64 and string.sub(src, 1, 1) == "{" then
+                    local okWrite = pcall(function()
+                        writefile(ROUTES_DIR .. "/" .. fileName, src)
+                    end)
+                    if okWrite then
+                        synced = synced + 1
+                    else
+                        failed = failed + 1
+                    end
+                else
+                    failed = failed + 1
+                end
+                setRoutesParagraph(("Syncing routes… %d/%d (%d failed)"):format(i, total, failed))
+                if i % 4 == 0 then
+                    task.wait()
+                end
+            end
+
+            setRoutesParagraph(("Routes: %d/%d synced (%d failed)."):format(synced, total, failed))
+            if fromButton or failed > 0 then
+                notifyAutoSummit(
+                    ("Routes synced: %d/%d (%d failed)"):format(synced, total, failed),
+                    failed > 0 and "x" or "check"
+                )
+            end
+        end)
+        routeSyncActive = false
+        if not okAll then
+            setRoutesParagraph("Route sync failed: " .. tostring(syncErr))
+            if fromButton then
+                notifyAutoSummit("Route sync failed: " .. tostring(syncErr), "x")
+            end
+        end
+    end
+
+    -- Outcome by recorded success chance, then weighted roulette over the
+    -- outcome's routes with the recorded per-route chance scaled by closeness
+    -- of the route's start to the character ("chance + closest start").
+    local function pickRouteForLeg(legEntry: any, includeFailed: boolean, currentPos: Vector3?): any
+        local routes = type(legEntry.routes) == "table" and legEntry.routes or {}
+        local wantOutcome = "success"
+        if includeFailed and (tonumber(legEntry.failedCount) or 0) > 0 then
+            if (tonumber(legEntry.successCount) or 0) <= 0 then
+                wantOutcome = "failed"
+            elseif autoSummitRng:NextNumber(0, 100) >= (tonumber(legEntry.successChancePercent) or 100) then
+                wantOutcome = "failed"
+            end
+        end
+
+        local function candidatesFor(outcome)
+            local out = {}
+            for _, r in ipairs(routes) do
+                if r.outcome == outcome and type(r.file) == "string" and isfile(ROUTES_DIR .. "/" .. r.file) then
+                    table.insert(out, r)
+                end
+            end
+            return out
+        end
+
+        local candidates = candidatesFor(wantOutcome)
+        if #candidates == 0 then
+            candidates = candidatesFor(wantOutcome == "success" and "failed" or "success")
+        end
+        if #candidates == 0 then
+            return nil
+        end
+
+        local weights = {}
+        local total = 0
+        for i, r in ipairs(candidates) do
+            local w = tonumber(r.chancePercent) or 1
+            local s = r.start
+            if currentPos and type(s) == "table" and #s >= 3 then
+                local d = (currentPos - Vector3.new(s[1], s[2], s[3])).Magnitude
+                w = w / (1 + d)
+            end
+            weights[i] = w
+            total = total + w
+        end
+        local roll = autoSummitRng:NextNumber(0, total)
+        local acc = 0
+        for i, r in ipairs(candidates) do
+            acc = acc + weights[i]
+            if roll <= acc then
+                return r
+            end
+        end
+        return candidates[#candidates]
+    end
+
+    -- Walk (never teleport) from wherever the character is to the route's
+    -- first frame; playback's frame-1 snap covers the last few studs.
+    local function walkConnectToRouteStart(targetPos: Vector3, shouldAbort: () -> boolean): boolean
+        local char = lpAutoSummit.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum then
+            return false
+        end
+        if (root.Position - targetPos).Magnitude <= WALK_CONNECT_ARRIVAL_DIST then
+            return true
+        end
+        local arrived = humanoidWalkToWorldPosition(hum, root, targetPos, shouldAbort, WALK_CONNECT_ARRIVAL_DIST)
+        if shouldAbort() then
+            return false
+        end
+        if not arrived then
+            arrived = humanoidWalkToWorldPosition(hum, root, targetPos, shouldAbort, WALK_CONNECT_ARRIVAL_DIST)
+            if shouldAbort() then
+                return false
+            end
+        end
+        local ch = lpAutoSummit.Character
+        local newRoot = ch and ch:FindFirstChild("HumanoidRootPart")
+        if not newRoot then
+            return false
+        end
+        return (newRoot.Position - targetPos).Magnitude <= WALK_CONNECT_GIVE_UP_DIST
+    end
+
+    -- After a failed route the character keeps falling until the game CFrames
+    -- it back to the camp's FallSpawn; resume the moment we are back on the
+    -- ground there — no extra settle delay, the next route starts immediately.
+    local function waitForFallRespawnSettle(
+        shouldAbort: () -> boolean,
+        campStepIdx: number
+    ): "settled" | "died" | "abort" | "timeout"
+        local spawnPos = WALK_FALL_SPAWNS[campStepIdx]
+        local waitStart = os.clock()
+        local lastPos: Vector3? = nil
+        local respawnSeen = false
+        while true do
+            if shouldAbort() then
+                return autoSummitRestartFromDeath and "died" or "abort"
+            end
+            if os.clock() - waitStart > FALL_SETTLE_TIMEOUT_SEC then
+                return "timeout"
+            end
+            local char = lpAutoSummit.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if root and hum then
+                local pos = root.Position
+                if not respawnSeen then
+                    if spawnPos and (pos - spawnPos).Magnitude < 40 then
+                        respawnSeen = true
+                    elseif lastPos and (pos - lastPos).Magnitude > 50 then
+                        respawnSeen = true -- teleport-sized jump = the game respawned us
+                    end
+                end
+                lastPos = pos
+                if respawnSeen and hum.FloorMaterial ~= Enum.Material.Air then
+                    return "settled"
+                end
+            end
+            RunService.Heartbeat:Wait()
+        end
+    end
+
+    -- Success when LastCheckpoint changes OR CP_Notify ok arrives; unlike the
+    -- teleport variant, a timeout is returned to the caller (walk mode retries
+    -- the leg instead of aborting the run) and "Terlalu cepat" is ignored.
+    local function walkWaitForCpAdvance(
+        cpLabelBefore: string,
+        shouldAbort: () -> boolean
+    ): "confirmed" | "abort" | "timeout"
+        local waitStart = os.clock()
+        while not shouldAbort() do
+            if os.clock() - waitStart > WALK_CP_ACK_TIMEOUT_SEC then
+                return "timeout"
+            end
+
+            syncAutoSummitCurrentCheckpointSnapshot()
+            if autoSummitCurrentCpLabel ~= cpLabelBefore then
+                return "confirmed"
+            end
+
+            while #cpNotifyRealtimeQueue > 0 do
+                local payload = table.remove(cpNotifyRealtimeQueue, 1)
+                if cpNotifyPayloadIsOkSaved(payload) then
+                    return "confirmed"
+                end
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+        return "abort"
+    end
+
+    local function runAutoSummitWalkCycle(
+        shouldAbort: () -> boolean,
+        getRootPart: (number?) -> BasePart?,
+        skipNextCpResumeNotify: boolean
+    ): (boolean, boolean, boolean)
+        if not RoutePlayer then
+            skipNextCpResumeNotify = false
+            disableAutoSummit("Walk mode: Route Player module failed to load")
+            return false, false, skipNextCpResumeNotify
+        end
+        if not hasWalkFileApi then
+            skipNextCpResumeNotify = false
+            disableAutoSummit("Walk mode: executor has no file API — use Teleport mode")
+            return false, false, skipNextCpResumeNotify
+        end
+        while routeSyncActive do
+            if shouldAbort() then
+                return false, false, skipNextCpResumeNotify
+            end
+            task.wait(0.25)
+        end
+        if not routePossibilities and not loadLocalPossibilities() then
+            skipNextCpResumeNotify = false
+            disableAutoSummit("Walk mode: routes not downloaded — press Refresh Routes")
+            return false, false, skipNextCpResumeNotify
+        end
+
+        -- Subscribe for the whole cycle so CPs that fire mid-playback are never missed.
+        ensureCpNotifyRealtimeListener()
+
+        local function walkCycleImpl(): (boolean, boolean, boolean)
+            local reachedSummitThisCycle = false
+            local descendedThisCycle = false
+            local ascendedLegThisCycle = false
+            local legAttempts: { [string]: number } = {}
+            local legFailedOnce: { [string]: boolean } = {}
+            local stepOverride: number? = nil
+
+            syncAutoSummitCurrentCheckpointSnapshot()
+            local routeStepNow = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+            if routeStepNow == nil then
+                skipNextCpResumeNotify = false
+                disableAutoSummit(
+                    "Unknown checkpoint label (not on summit route): " .. tostring(autoSummitCurrentCpLabel)
+                )
+                return false, false, skipNextCpResumeNotify
+            end
+
+            if not skipNextCpResumeNotify then
+                local canonical = summitRoute[routeStepNow].name or autoSummitCurrentCpLabel
+                notifyAutoSummit(("%s — walk mode..."):format(canonical))
+            else
+                skipNextCpResumeNotify = false
+            end
+
+            while true do
+                if not autoSummitEnabled or shouldAbort() then
+                    return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                end
+
+                syncAutoSummitCurrentCheckpointSnapshot()
+                local step = stepOverride or summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+                stepOverride = nil
+                if step == nil then
+                    disableAutoSummit(
+                        "Unknown checkpoint label (not on summit route): " .. tostring(autoSummitCurrentCpLabel)
+                    )
+                    return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                end
+
+                if step >= #summitRoute then
+                    if ascendedLegThisCycle then
+                        reachedSummitThisCycle = true
+                        return true, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+                    if descendedThisCycle then
+                        -- Descended but the label still reads Summit and we are not
+                        -- near Start: bail out instead of looping forever.
+                        disableAutoSummit("Walk mode: descent finished but current camp unknown")
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    -- Cycle started at Summit: walk back down before the next ascent.
+                    local legEntry = findLegEntry(WALK_DESCENT_LEG)
+                    local rootPart = getRootPart()
+                    local route = legEntry and rootPart and pickRouteForLeg(legEntry, false, rootPart.Position)
+                    if not route then
+                        disableAutoSummit("Walk mode: no descent route — press Refresh Routes")
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+                    local data, loadErr = loadRouteData(route.file)
+                    if not data then
+                        disableAutoSummit("Walk mode: " .. tostring(loadErr))
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    notifyAutoSummit("Walking down to Start...")
+                    markRoutePicked(route.file)
+
+                    local startPos = Vector3.new(route.start[1], route.start[2], route.start[3])
+                    if not walkConnectToRouteStart(startPos, shouldAbort) then
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+                    markRoutePlaying(route.file)
+                    local completed = RoutePlayer.playRouteData(data, {
+                        shouldCancel = shouldAbort,
+                        noClip = WALK_PLAYBACK_NOCLIP,
+                        blendInSeconds = WALK_START_BLEND_SEC,
+                    })
+                    if not completed or autoSummitRestartFromDeath then
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+                    descendedThisCycle = true
+
+                    syncAutoSummitCurrentCheckpointSnapshot()
+                    local stepAfter = summitRouteStepIndexFromLabel(autoSummitCurrentCpLabel)
+                    if stepAfter == nil or stepAfter >= #summitRoute then
+                        local rp = getRootPart()
+                        if rp and (rp.Position - WALK_FALL_SPAWNS[1]).Magnitude < 80 then
+                            stepOverride = 1
+                        end
+                        -- else: loop re-enters the summit branch and bails out above.
+                    end
+                else
+                    local legName = WALK_LEG_BY_STEP[step]
+                    local legEntry = findLegEntry(legName)
+                    if not legEntry then
+                        disableAutoSummit("Walk mode: possibilities.json is missing leg " .. legName)
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    legAttempts[legName] = (legAttempts[legName] or 0) + 1
+                    if legAttempts[legName] > WALK_MAX_LEG_ATTEMPTS then
+                        disableAutoSummit(
+                            ("Walk mode: leg %s did not advance after %d attempts"):format(legName, WALK_MAX_LEG_ATTEMPTS)
+                        )
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    local rootPart = getRootPart()
+                    if not rootPart then
+                        notifyAutoSummit("Walk mode: HumanoidRootPart missing", "x")
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    -- Once this leg has already run a failed route this cycle, force a
+                    -- success route on the retry so the same cp is not failed repeatedly.
+                    local includeFailedThisPick = autoSummitIncludeFailedRoutes and not legFailedOnce[legName]
+                    local route = pickRouteForLeg(legEntry, includeFailedThisPick, rootPart.Position)
+                    if not route then
+                        disableAutoSummit(
+                            ("Walk mode: no local routes for %s — press Refresh Routes"):format(legName)
+                        )
+                        return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                    end
+
+                    local data, loadErr = loadRouteData(route.file)
+                    if not data then
+                        notifyAutoSummit("Walk mode: " .. tostring(loadErr), "x")
+                    else
+                        markRoutePicked(route.file)
+
+                        local startPos = Vector3.new(route.start[1], route.start[2], route.start[3])
+                        if not walkConnectToRouteStart(startPos, shouldAbort) then
+                            if shouldAbort() then
+                                return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                            end
+                            notifyAutoSummit(
+                                ("Walk mode: could not reach start of %s — retrying"):format(route.file),
+                                "x"
+                            )
+                        else
+                            syncAutoSummitCurrentCheckpointSnapshot()
+                            local cpBefore = autoSummitCurrentCpLabel
+                            flushCpNotifyRealtimeQueue()
+                            markRoutePlaying(route.file)
+                            local completed, reason = RoutePlayer.playRouteData(data, {
+                                shouldCancel = shouldAbort,
+                                noClip = WALK_PLAYBACK_NOCLIP,
+                                blendInSeconds = WALK_START_BLEND_SEC,
+                            })
+                            if reason == "died" or autoSummitRestartFromDeath then
+                                return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                            end
+                            if not completed then
+                                return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                            end
+
+                            if route.outcome == "success" then
+                                local ack = walkWaitForCpAdvance(cpBefore, shouldAbort)
+                                if ack == "confirmed" then
+                                    legAttempts[legName] = 0
+                                    ascendedLegThisCycle = true
+                                elseif ack == "abort" then
+                                    return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                                else
+                                    notifyAutoSummit(
+                                        ("Walk mode: %s ended without CP register — retrying leg"):format(route.file),
+                                        "x"
+                                    )
+                                end
+                            else
+                                -- Failed route ran on this leg: the retry is forced to success.
+                                legFailedOnce[legName] = true
+                                local settle = waitForFallRespawnSettle(shouldAbort, step)
+                                if settle == "died" or settle == "abort" then
+                                    return false, reachedSummitThisCycle, skipNextCpResumeNotify
+                                end
+                                -- settled / timeout: loop re-picks the same leg (now success-only).
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        local wr, ws, wu = walkCycleImpl()
+        stopCpNotifyRealtimeListener()
+        return wr, ws, wu
+    end
+
     local function getAutoSummitBetweenRunDelay()
         return autoSummitRng:NextNumber(BETWEEN_RUN_DELAY_MIN, BETWEEN_RUN_DELAY_MAX)
     end
@@ -1148,7 +1812,7 @@ do
                 Content = desc,
             })
         end
-        task.defer(updateAutoSummitRouteModeParagraph)
+        task.defer(updateAutoSummitRouteSequenceParagraph)
     end
 
     AutoSummitCpParagraph = MainTab:CreateParagraph({
@@ -1156,11 +1820,11 @@ do
         Content = "POSISI: —\nRoute: Start",
     })
 
-    AutoSummitRouteModeParagraph = MainTab:CreateParagraph({
-        Title = "Active route",
+    AutoSummitRouteSequenceParagraph = MainTab:CreateParagraph({
+        Title = ROUTE_SEQUENCE_TITLE,
         Content = "Auto Summit is off.",
     })
-    task.defer(updateAutoSummitRouteModeParagraph)
+    task.defer(updateAutoSummitRouteSequenceParagraph)
 
     AutoSummitTimesParagraph = MainTab:CreateParagraph({
         Title = AUTO_SUMMIT_TIMES_TITLE,
@@ -1207,6 +1871,19 @@ do
     end)
     task.defer(updateAutoSummitCpParagraph)
 
+    MainTab:CreateDropdown({
+        Name = "Auto Summit Mode",
+        Flag = "yahayuk_main_auto_summit_mode",
+        Options = { "Walk", "Teleport" },
+        CurrentOption = { "Walk" },
+        Callback = function(value)
+            local mode = rayfieldDropdownFirst(value)
+            if mode == "Walk" or mode == "Teleport" then
+                autoSummitMode = mode
+            end
+        end,
+    })
+
     local SummitQtyInput = MainTab:CreateInput({
         Name = "Qty of summit",
         Flag = "yahayuk_main_summit_qty",
@@ -1223,6 +1900,15 @@ do
         CurrentValue = false,
         Callback = function(enabled)
             autoSummitRandomizeTeleportDelay = enabled
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Include failed routes (Walk mode)",
+        Flag = "yahayuk_main_include_failed_routes",
+        CurrentValue = true,
+        Callback = function(enabled)
+            autoSummitIncludeFailedRoutes = enabled
         end,
     })
 
@@ -1262,8 +1948,14 @@ do
                     autoSummitDeathCheckConn:Disconnect()
                     autoSummitDeathCheckConn = nil
                 end
+                if RoutePlayer then
+                    pcall(function()
+                        RoutePlayer.stop()
+                    end)
+                end
                 autoSummitTeleportStepDisplay = "—"
-                task.defer(updateAutoSummitRouteModeParagraph)
+                resetAutoSummitRouteSequence()
+                task.defer(updateAutoSummitRouteSequenceParagraph)
                 return
             end
 
@@ -1271,7 +1963,7 @@ do
             autoSummitRunTimes = {}
             updateAutoSummitTimesParagraph()
             updateAutoSummitCpParagraph()
-            updateAutoSummitRouteModeParagraph()
+            updateAutoSummitRouteSequenceParagraph()
 
             if autoSummitDeathCheckConn then
                 autoSummitDeathCheckConn:Disconnect()
@@ -1317,7 +2009,8 @@ do
                         return not autoSummitEnabled or autoSummitRestartFromDeath
                     end
                     autoSummitTeleportStepDisplay = "—"
-                    updateAutoSummitRouteModeParagraph()
+                    resetAutoSummitRouteSequence()
+                    updateAutoSummitRouteSequenceParagraph()
                     local runStartTime = os.clock()
                     rootPart = getRootPart()
                     if not rootPart then
@@ -1337,8 +2030,13 @@ do
                     end
 
                     local routeCompleted, reachedSummitThisCycle
-                    routeCompleted, reachedSummitThisCycle, skipNextCpResumeNotify =
-                        runAutoSummitTeleportCycle(shouldAbort, getRootPart, skipNextCpResumeNotify)
+                    if autoSummitMode == "Walk" then
+                        routeCompleted, reachedSummitThisCycle, skipNextCpResumeNotify =
+                            runAutoSummitWalkCycle(shouldAbort, getRootPart, skipNextCpResumeNotify)
+                    else
+                        routeCompleted, reachedSummitThisCycle, skipNextCpResumeNotify =
+                            runAutoSummitTeleportCycle(shouldAbort, getRootPart, skipNextCpResumeNotify)
+                    end
 
                     if autoSummitRestartFromDeath then
                         notifyAutoSummit("Character died â€” waiting for respawnâ€¦")
@@ -1409,7 +2107,8 @@ do
                                     end
                                 end)
                             end
-                            if autoSummitEnabled and (not qtyNum or remaining > 0) then
+                            -- Walk mode runs back-to-back with no between-run delay.
+                            if autoSummitEnabled and autoSummitMode ~= "Walk" and (not qtyNum or remaining > 0) then
                                 local betweenRunDelay = getAutoSummitBetweenRunDelay()
                                 if not waitWithCancel(betweenRunDelay, shouldAbort) then
                                     if not autoSummitEnabled then
@@ -1423,8 +2122,11 @@ do
                                     autoSummitCurrentCpLabel
                                 )
                             )
-                            if not waitWithCancel(1, shouldAbort) and not autoSummitEnabled then
-                                break
+                            -- Teleport mode pauses ~1s for the camp label to change; Walk mode does not.
+                            if autoSummitMode ~= "Walk" then
+                                if not waitWithCancel(1, shouldAbort) and not autoSummitEnabled then
+                                    break
+                                end
                             end
                         else
                             notifyAutoSummit(
@@ -1451,6 +2153,19 @@ do
             end)
         end,
     })
+
+    -- Sync walk routes in the background at startup so the UI never blocks;
+    -- show whatever is already on disk immediately.
+    if hasWalkFileApi then
+        task.spawn(function()
+            if loadLocalPossibilities() then
+                setRoutesParagraph("Routes loaded from disk — refreshing in background…")
+            end
+            if syncRoutesFromRepo then
+                syncRoutesFromRepo(false)
+            end
+        end)
+    end
 
     MainTab:CreateSection("Send Request Carry")
 

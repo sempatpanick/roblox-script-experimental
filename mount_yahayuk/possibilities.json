@@ -1,0 +1,987 @@
+{
+    "version": 1,
+    "generatedAt": "2026-07-19T11:13:14Z",
+    "placeId": 76964310785698,
+    "legs": [
+        {
+            "leg": "start-cp1",
+            "successCount": 6,
+            "failedCount": 6,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "start-cp1_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.623,
+                        172.642,
+                        858.236
+                    ],
+                    "duration": 20.9855
+                },
+                {
+                    "file": "start-cp1_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -878.228,
+                        172.642,
+                        858.274
+                    ],
+                    "duration": 20.1725
+                },
+                {
+                    "file": "start-cp1_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.402,
+                        172.642,
+                        858.324
+                    ],
+                    "duration": 20.9646
+                },
+                {
+                    "file": "start-cp1_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.343,
+                        172.642,
+                        857.26
+                    ],
+                    "duration": 20.5641
+                },
+                {
+                    "file": "start-cp1_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -878.005,
+                        172.642,
+                        856.434
+                    ],
+                    "duration": 19.332
+                },
+                {
+                    "file": "start-cp1_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -876.021,
+                        172.642,
+                        856.55
+                    ],
+                    "duration": 20.2554
+                },
+                {
+                    "file": "start-cp1_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -878.699,
+                        172.642,
+                        856.612
+                    ],
+                    "duration": 13.6804
+                },
+                {
+                    "file": "start-cp1_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.55,
+                        172.642,
+                        857.176
+                    ],
+                    "duration": 6.6657
+                },
+                {
+                    "file": "start-cp1_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.252,
+                        172.642,
+                        856.807
+                    ],
+                    "duration": 8.5831
+                },
+                {
+                    "file": "start-cp1_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -876.056,
+                        172.642,
+                        855.162
+                    ],
+                    "duration": 14.3294
+                },
+                {
+                    "file": "start-cp1_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -879.545,
+                        172.642,
+                        856.855
+                    ],
+                    "duration": 2.2391
+                },
+                {
+                    "file": "start-cp1_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -877.651,
+                        172.642,
+                        857.206
+                    ],
+                    "duration": 13.774
+                }
+            ]
+        },
+        {
+            "leg": "cp1-cp2",
+            "successCount": 6,
+            "failedCount": 6,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "cp1-cp2_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.391,
+                        250.617,
+                        715.064
+                    ],
+                    "duration": 12.6773
+                },
+                {
+                    "file": "cp1-cp2_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -438.52,
+                        250.617,
+                        714.453
+                    ],
+                    "duration": 12.4647
+                },
+                {
+                    "file": "cp1-cp2_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.838,
+                        250.617,
+                        714.177
+                    ],
+                    "duration": 12.1678
+                },
+                {
+                    "file": "cp1-cp2_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.677,
+                        250.617,
+                        713.747
+                    ],
+                    "duration": 12.184
+                },
+                {
+                    "file": "cp1-cp2_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -436.091,
+                        250.617,
+                        719.525
+                    ],
+                    "duration": 12.8135
+                },
+                {
+                    "file": "cp1-cp2_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.006,
+                        250.617,
+                        716.152
+                    ],
+                    "duration": 12.2649
+                },
+                {
+                    "file": "cp1-cp2_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -436.13,
+                        250.617,
+                        717.576
+                    ],
+                    "duration": 9.0991
+                },
+                {
+                    "file": "cp1-cp2_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.889,
+                        250.617,
+                        716.436
+                    ],
+                    "duration": 2.1522
+                },
+                {
+                    "file": "cp1-cp2_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -436.433,
+                        250.617,
+                        713.694
+                    ],
+                    "duration": 8.8753
+                },
+                {
+                    "file": "cp1-cp2_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.456,
+                        250.617,
+                        716.176
+                    ],
+                    "duration": 10.3835
+                },
+                {
+                    "file": "cp1-cp2_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -434.475,
+                        250.617,
+                        715.878
+                    ],
+                    "duration": 8.1582
+                },
+                {
+                    "file": "cp1-cp2_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 8.33,
+                    "start": [
+                        -435.713,
+                        250.617,
+                        715.678
+                    ],
+                    "duration": 7.6588
+                }
+            ]
+        },
+        {
+            "leg": "cp2-cp3",
+            "successCount": 6,
+            "failedCount": 7,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "cp2-cp3_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -311.511,
+                        390.909,
+                        554.524
+                    ],
+                    "duration": 22.1804
+                },
+                {
+                    "file": "cp2-cp3_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -311.977,
+                        390.909,
+                        554.042
+                    ],
+                    "duration": 22.449
+                },
+                {
+                    "file": "cp2-cp3_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -310.914,
+                        390.909,
+                        555.632
+                    ],
+                    "duration": 21.8922
+                },
+                {
+                    "file": "cp2-cp3_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -310.192,
+                        390.909,
+                        555.457
+                    ],
+                    "duration": 22.0309
+                },
+                {
+                    "file": "cp2-cp3_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -313.55,
+                        390.909,
+                        555.337
+                    ],
+                    "duration": 21.9575
+                },
+                {
+                    "file": "cp2-cp3_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -314.15,
+                        390.909,
+                        554.029
+                    ],
+                    "duration": 21.9647
+                },
+                {
+                    "file": "cp2-cp3_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -312.803,
+                        390.909,
+                        556.342
+                    ],
+                    "duration": 3.1834
+                },
+                {
+                    "file": "cp2-cp3_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -312.389,
+                        390.909,
+                        555.494
+                    ],
+                    "duration": 3.808
+                },
+                {
+                    "file": "cp2-cp3_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -313.23,
+                        390.909,
+                        556.24
+                    ],
+                    "duration": 4.2335
+                },
+                {
+                    "file": "cp2-cp3_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -314.391,
+                        390.909,
+                        555.245
+                    ],
+                    "duration": 7.1098
+                },
+                {
+                    "file": "cp2-cp3_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -312.608,
+                        390.909,
+                        556.065
+                    ],
+                    "duration": 6.4168
+                },
+                {
+                    "file": "cp2-cp3_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -312.104,
+                        390.909,
+                        555.776
+                    ],
+                    "duration": 5.4427
+                },
+                {
+                    "file": "cp2-cp3_failed_7.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        -314.382,
+                        390.909,
+                        555.713
+                    ],
+                    "duration": 5.4355
+                }
+            ]
+        },
+        {
+            "leg": "cp3-cp4",
+            "successCount": 6,
+            "failedCount": 12,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "cp3-cp4_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        314.308,
+                        434.911,
+                        497.238
+                    ],
+                    "duration": 13.2908
+                },
+                {
+                    "file": "cp3-cp4_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        312.074,
+                        435.505,
+                        497.073
+                    ],
+                    "duration": 14.239
+                },
+                {
+                    "file": "cp3-cp4_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        310.338,
+                        435.572,
+                        497.054
+                    ],
+                    "duration": 14.7815
+                },
+                {
+                    "file": "cp3-cp4_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        312.314,
+                        435.457,
+                        496.597
+                    ],
+                    "duration": 13.334
+                },
+                {
+                    "file": "cp3-cp4_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        308.878,
+                        435.556,
+                        496.339
+                    ],
+                    "duration": 13.6077
+                },
+                {
+                    "file": "cp3-cp4_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 5.56,
+                    "start": [
+                        309.651,
+                        435.572,
+                        496.307
+                    ],
+                    "duration": 12.9753
+                },
+                {
+                    "file": "cp3-cp4_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        311.583,
+                        435.54,
+                        495.899
+                    ],
+                    "duration": 2.5993
+                },
+                {
+                    "file": "cp3-cp4_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        313.63,
+                        435.037,
+                        496.245
+                    ],
+                    "duration": 8.9754
+                },
+                {
+                    "file": "cp3-cp4_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        313.848,
+                        435.04,
+                        496.997
+                    ],
+                    "duration": 3.1579
+                },
+                {
+                    "file": "cp3-cp4_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        311.438,
+                        435.562,
+                        496.181
+                    ],
+                    "duration": 7.0157
+                },
+                {
+                    "file": "cp3-cp4_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        312.258,
+                        435.428,
+                        496.027
+                    ],
+                    "duration": 11.3079
+                },
+                {
+                    "file": "cp3-cp4_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        311.572,
+                        435.555,
+                        496.264
+                    ],
+                    "duration": 8.2094
+                },
+                {
+                    "file": "cp3-cp4_failed_7.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        309.836,
+                        435.572,
+                        496.466
+                    ],
+                    "duration": 10.3842
+                },
+                {
+                    "file": "cp3-cp4_failed_8.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        309.188,
+                        435.572,
+                        496.233
+                    ],
+                    "duration": 11.2235
+                },
+                {
+                    "file": "cp3-cp4_failed_9.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        308.888,
+                        435.557,
+                        497.976
+                    ],
+                    "duration": 5.0247
+                },
+                {
+                    "file": "cp3-cp4_failed_10.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        310.773,
+                        435.572,
+                        497.127
+                    ],
+                    "duration": 8.7403
+                },
+                {
+                    "file": "cp3-cp4_failed_11.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        310.968,
+                        435.572,
+                        496.865
+                    ],
+                    "duration": 11.8106
+                },
+                {
+                    "file": "cp3-cp4_failed_12.json",
+                    "outcome": "failed",
+                    "chancePercent": 5.56,
+                    "start": [
+                        310.434,
+                        435.572,
+                        495.892
+                    ],
+                    "duration": 11.3839
+                }
+            ]
+        },
+        {
+            "leg": "cp4-cp5",
+            "successCount": 6,
+            "failedCount": 7,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "cp4-cp5_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.273,
+                        486.295,
+                        331.441
+                    ],
+                    "duration": 38.5943
+                },
+                {
+                    "file": "cp4-cp5_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.615,
+                        487.874,
+                        333.367
+                    ],
+                    "duration": 38.847
+                },
+                {
+                    "file": "cp4-cp5_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        340.518,
+                        488.081,
+                        335.048
+                    ],
+                    "duration": 38.3242
+                },
+                {
+                    "file": "cp4-cp5_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        341.657,
+                        487.658,
+                        335.948
+                    ],
+                    "duration": 39.2146
+                },
+                {
+                    "file": "cp4-cp5_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        340.737,
+                        488.196,
+                        335.638
+                    ],
+                    "duration": 37.557
+                },
+                {
+                    "file": "cp4-cp5_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 7.69,
+                    "start": [
+                        340.787,
+                        487.952,
+                        335.008
+                    ],
+                    "duration": 43.2727
+                },
+                {
+                    "file": "cp4-cp5_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        338.417,
+                        488.753,
+                        334.157
+                    ],
+                    "duration": 29.541
+                },
+                {
+                    "file": "cp4-cp5_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.427,
+                        488.777,
+                        335.071
+                    ],
+                    "duration": 25.0077
+                },
+                {
+                    "file": "cp4-cp5_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.206,
+                        489.303,
+                        335.778
+                    ],
+                    "duration": 5.2327
+                },
+                {
+                    "file": "cp4-cp5_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        340.683,
+                        488.886,
+                        336.559
+                    ],
+                    "duration": 5.5092
+                },
+                {
+                    "file": "cp4-cp5_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.007,
+                        489.146,
+                        335.294
+                    ],
+                    "duration": 11.7082
+                },
+                {
+                    "file": "cp4-cp5_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        340.037,
+                        488.737,
+                        335.503
+                    ],
+                    "duration": 11.4511
+                },
+                {
+                    "file": "cp4-cp5_failed_7.json",
+                    "outcome": "failed",
+                    "chancePercent": 7.69,
+                    "start": [
+                        339.983,
+                        489.166,
+                        336.194
+                    ],
+                    "duration": 6.242
+                }
+            ]
+        },
+        {
+            "leg": "cp5-summit",
+            "successCount": 6,
+            "failedCount": 9,
+            "successChancePercent": 75,
+            "routes": [
+                {
+                    "file": "cp5-summit_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        176.48,
+                        316.54,
+                        -206.168
+                    ],
+                    "duration": 41.1308
+                },
+                {
+                    "file": "cp5-summit_success_2.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        176.333,
+                        316.525,
+                        -206.364
+                    ],
+                    "duration": 40.6493
+                },
+                {
+                    "file": "cp5-summit_success_3.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        177.167,
+                        316.572,
+                        -205.328
+                    ],
+                    "duration": 41.1389
+                },
+                {
+                    "file": "cp5-summit_success_4.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        180.122,
+                        316.572,
+                        -205.989
+                    ],
+                    "duration": 42.4967
+                },
+                {
+                    "file": "cp5-summit_success_5.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        176.737,
+                        316.572,
+                        -206.261
+                    ],
+                    "duration": 40.8239
+                },
+                {
+                    "file": "cp5-summit_success_6.json",
+                    "outcome": "success",
+                    "chancePercent": 6.67,
+                    "start": [
+                        179.94,
+                        316.572,
+                        -206.585
+                    ],
+                    "duration": 40.417
+                },
+                {
+                    "file": "cp5-summit_failed_1.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        179.371,
+                        316.572,
+                        -204.994
+                    ],
+                    "duration": 12.138
+                },
+                {
+                    "file": "cp5-summit_failed_2.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        177.306,
+                        316.572,
+                        -205.159
+                    ],
+                    "duration": 16.5077
+                },
+                {
+                    "file": "cp5-summit_failed_3.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        178.289,
+                        316.572,
+                        -205.487
+                    ],
+                    "duration": 28.386
+                },
+                {
+                    "file": "cp5-summit_failed_4.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        178.421,
+                        316.572,
+                        -205.945
+                    ],
+                    "duration": 16.1992
+                },
+                {
+                    "file": "cp5-summit_failed_5.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        177.878,
+                        316.572,
+                        -206.871
+                    ],
+                    "duration": 26.6312
+                },
+                {
+                    "file": "cp5-summit_failed_6.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        180.777,
+                        316.572,
+                        -207.026
+                    ],
+                    "duration": 24.6415
+                },
+                {
+                    "file": "cp5-summit_failed_7.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        179.283,
+                        316.572,
+                        -207.356
+                    ],
+                    "duration": 24.8891
+                },
+                {
+                    "file": "cp5-summit_failed_8.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        178.616,
+                        316.572,
+                        -206.11
+                    ],
+                    "duration": 11.2905
+                },
+                {
+                    "file": "cp5-summit_failed_9.json",
+                    "outcome": "failed",
+                    "chancePercent": 6.67,
+                    "start": [
+                        177.329,
+                        316.572,
+                        -206.676
+                    ],
+                    "duration": 11.1255
+                }
+            ]
+        },
+        {
+            "leg": "summit-start",
+            "successCount": 1,
+            "failedCount": 0,
+            "successChancePercent": 100,
+            "routes": [
+                {
+                    "file": "summit-start_success_1.json",
+                    "outcome": "success",
+                    "chancePercent": 100,
+                    "start": [
+                        -620.975,
+                        908.704,
+                        -505.203
+                    ],
+                    "duration": 0.8919
+                }
+            ]
+        }
+    ]
+}
