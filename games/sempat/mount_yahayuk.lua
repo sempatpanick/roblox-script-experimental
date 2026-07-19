@@ -794,6 +794,90 @@ do
         task.defer(updateAutoSummitRouteSequenceParagraph)
     end
 
+    -- Route tracker: draws the current route's path in the world as a neon trail.
+    local autoSummitShowTracker = false
+    local routeTrackerFolder: Instance? = nil
+    local routeTrackerCurrentFrames: { any }? = nil
+    local ROUTE_TRACKER_FOLDER_NAME = "SempatPanickRouteTracker"
+    local ROUTE_TRACKER_MIN_SPACING = 3 -- studs between sampled path points
+
+    local function clearRouteTracker()
+        if routeTrackerFolder then
+            pcall(function()
+                routeTrackerFolder:Destroy()
+            end)
+            routeTrackerFolder = nil
+        end
+    end
+
+    -- Sample frame positions so points are at least ROUTE_TRACKER_MIN_SPACING
+    -- apart (keeps part count sane on long routes); always keep first and last.
+    local function sampleRouteTrackerPoints(frames: { any }): { Vector3 }
+        local pts = {}
+        local last: Vector3? = nil
+        for i, f in ipairs(frames) do
+            local p = Vector3.new(f[2], f[3], f[4])
+            if not last or (p - last).Magnitude >= ROUTE_TRACKER_MIN_SPACING then
+                table.insert(pts, p)
+                last = p
+            end
+        end
+        local lastFrame = frames[#frames]
+        if lastFrame then
+            local lp = Vector3.new(lastFrame[2], lastFrame[3], lastFrame[4])
+            if not last or (lp - last).Magnitude > 0.01 then
+                table.insert(pts, lp)
+            end
+        end
+        return pts
+    end
+
+    -- Current UI accent color, falling back to neon blue if unavailable.
+    local function getRouteTrackerColor(): Color3
+        local ok, color = pcall(function()
+            return Window:GetAccentColor()
+        end)
+        if ok and typeof(color) == "Color3" then
+            return color
+        end
+        return Color3.fromRGB(0, 200, 255)
+    end
+
+    local function drawRouteTracker(frames: { any }?)
+        clearRouteTracker()
+        if not autoSummitShowTracker or type(frames) ~= "table" or #frames < 2 then
+            return
+        end
+        local pts = sampleRouteTrackerPoints(frames)
+        if #pts < 2 then
+            return
+        end
+        local trackerColor = getRouteTrackerColor()
+        local folder = Instance.new("Folder")
+        folder.Name = ROUTE_TRACKER_FOLDER_NAME
+        for i = 1, #pts - 1 do
+            local a, b = pts[i], pts[i + 1]
+            local dist = (b - a).Magnitude
+            if dist > 0.01 then
+                local seg = Instance.new("Part")
+                seg.Anchored = true
+                seg.CanCollide = false
+                seg.CanQuery = false
+                seg.CanTouch = false
+                seg.Massless = true
+                seg.CastShadow = false
+                seg.Material = Enum.Material.Neon
+                seg.Color = trackerColor
+                seg.Transparency = 0.3
+                seg.Size = Vector3.new(0.35, 0.35, dist)
+                seg.CFrame = CFrame.lookAt((a + b) / 2, b)
+                seg.Parent = folder
+            end
+        end
+        folder.Parent = workspace
+        routeTrackerFolder = folder
+    end
+
     local AutoSummitRouteSequenceParagraph: any = nil
     updateAutoSummitRouteSequenceParagraph = function()
         if not AutoSummitRouteSequenceParagraph or not AutoSummitRouteSequenceParagraph.Set then
@@ -1673,6 +1757,8 @@ do
                         return false, reachedSummitThisCycle, skipNextCpResumeNotify
                     end
                     markRoutePlaying(route.file)
+                    routeTrackerCurrentFrames = data.frames
+                    drawRouteTracker(data.frames)
                     local completed = RoutePlayer.playRouteData(data, {
                         shouldCancel = shouldAbort,
                         noClip = WALK_PLAYBACK_NOCLIP,
@@ -1745,6 +1831,8 @@ do
                             local cpBefore = autoSummitCurrentCpLabel
                             flushCpNotifyRealtimeQueue()
                             markRoutePlaying(route.file)
+                            routeTrackerCurrentFrames = data.frames
+                            drawRouteTracker(data.frames)
                             local completed, reason = RoutePlayer.playRouteData(data, {
                                 shouldCancel = shouldAbort,
                                 noClip = WALK_PLAYBACK_NOCLIP,
@@ -1912,6 +2000,22 @@ do
         end,
     })
 
+    MainTab:CreateToggle({
+        Name = "Show Tracker (Walk mode)",
+        Flag = "yahayuk_main_show_tracker",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoSummitShowTracker = enabled
+            if enabled then
+                if autoSummitEnabled and routeTrackerCurrentFrames then
+                    drawRouteTracker(routeTrackerCurrentFrames)
+                end
+            else
+                clearRouteTracker()
+            end
+        end,
+    })
+
     local function onAutoSummitDeath()
         autoSummitRestartFromDeath = true
     end
@@ -1955,6 +2059,8 @@ do
                 end
                 autoSummitTeleportStepDisplay = "—"
                 resetAutoSummitRouteSequence()
+                routeTrackerCurrentFrames = nil
+                clearRouteTracker()
                 task.defer(updateAutoSummitRouteSequenceParagraph)
                 return
             end
