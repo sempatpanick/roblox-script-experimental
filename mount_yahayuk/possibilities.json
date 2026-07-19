@@ -198,11 +198,11 @@
                     "outcome": "success",
                     "chancePercent": 8.33,
                     "start": [
-                        -436.091,
+                        -436.139,
                         250.617,
-                        719.525
+                        719.034
                     ],
-                    "duration": 12.8135
+                    "duration": 12.7964
                 },
                 {
                     "file": "cp1-cp2_success_6.json",
@@ -975,11 +975,11 @@
                     "outcome": "success",
                     "chancePercent": 100,
                     "start": [
-                        -620.975,
+                        -620.949,
                         908.704,
-                        -505.203
+                        -504.591
                     ],
-                    "duration": 0.8919
+                    "duration": 0.8657
                 }
             ]
         }
