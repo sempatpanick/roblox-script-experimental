@@ -2287,10 +2287,13 @@ do
     local sendRequestCarryAdditionalPlayersText = ""
     local SendRequestCarryPlayersDropdown
     local sendRequestCarryAutoLoopToken = 0
+    local sendRequestCarryAutoNearbyLoopToken = 0
+    local sendRequestCarryAutoEnabled = false
+    local sendRequestCarryAutoNearbyEnabled = false
 
     local SEND_REQUEST_CARRY_DELAY_PER_TARGET = 4
     local SEND_REQUEST_CARRY_CYCLE_GAP = 6
-    local SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS = 18
+    local SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS = 20
     local SEND_REQUEST_CARRY_DECLINED_COOLDOWN_SEC = 5 * 60
     local sendRequestCarryDeclinedUntilByUserId = {}
     local sendRequestCarryCarrierListIds = {}
@@ -2560,6 +2563,74 @@ do
         return filtered
     end
 
+    -- Every other player in the server that is not on the carrier list and not
+    -- on the declined cooldown (used by Auto Send Nearby). The in-range check
+    -- happens later in the send loop, so "nearby" is enforced there.
+    local function sendRequestCarryCollectAllOtherIds()
+        local ids = {}
+        local seen = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lpAutoSummit and plr.ClassName == "Player" then
+                local uid = plr.UserId
+                if typeof(uid) == "number" and uid > 0 and not seen[uid] then
+                    seen[uid] = true
+                    if not sendRequestCarryIsDeclinedCooldownActive(uid) and not sendRequestCarryIsOnCarrierList(uid) then
+                        table.insert(ids, uid)
+                    end
+                end
+            end
+        end
+        return ids
+    end
+
+    local function sendRequestCarryGetCarryRemote()
+        local ok, carryRemote = pcall(function()
+            return ReplicatedStorage:WaitForChild("CarryRemote", 10)
+        end)
+        if ok and carryRemote then
+            return carryRemote
+        end
+        return nil
+    end
+
+    -- Shared send loop: fires "Request" to in-range targets from getTargets()
+    -- until getToken() no longer matches startToken (i.e. the toggle changed).
+    local function sendRequestCarrySpawnAutoLoop(carryRemote, startToken, getToken, getTargets, noTargetMsg)
+        local warnedNoTargets = false
+        task.spawn(function()
+            while startToken == getToken() do
+                local targets = getTargets()
+                if #targets == 0 then
+                    if not warnedNoTargets and noTargetMsg then
+                        warnedNoTargets = true
+                        mountNotify({
+                            Title = "Send Request Carry",
+                            Content = noTargetMsg,
+                            Icon = "x",
+                        })
+                    end
+                    task.wait(5)
+                else
+                    warnedNoTargets = false
+                    for _, targetId in ipairs(targets) do
+                        if startToken ~= getToken() then
+                            break
+                        end
+                        if sendRequestCarryIsTargetWithinRange(targetId, SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS) then
+                            pcall(function()
+                                carryRemote:FireServer("Request", {
+                                    targetId = targetId,
+                                })
+                            end)
+                            task.wait(SEND_REQUEST_CARRY_DELAY_PER_TARGET)
+                        end
+                    end
+                    task.wait(SEND_REQUEST_CARRY_CYCLE_GAP)
+                end
+            end
+        end)
+    end
+
     local function sendRequestCarryPurgeStaleSelections()
         local opts = sendRequestCarryDropdownOptions()
         local valid = {}
@@ -2612,20 +2683,25 @@ do
     })
 
     local SendRequestCarryAutoToggle
+    local SendRequestCarryAutoNearbyToggle
     SendRequestCarryAutoToggle = MainTab:CreateToggle({
         Name = "Auto Send",
         Flag = "yahayuk_main_send_carry_auto",
         CurrentValue = false,
         Callback = function(enabled)
+            sendRequestCarryAutoEnabled = enabled
             sendRequestCarryAutoLoopToken = sendRequestCarryAutoLoopToken + 1
             if not enabled then
                 return
             end
 
-            local ok, carryRemote = pcall(function()
-                return ReplicatedStorage:WaitForChild("CarryRemote", 10)
-            end)
-            if not ok or not carryRemote then
+            -- Only one auto-send mode runs at a time so nobody is double-sent.
+            if sendRequestCarryAutoNearbyEnabled and SendRequestCarryAutoNearbyToggle and SendRequestCarryAutoNearbyToggle.Set then
+                SendRequestCarryAutoNearbyToggle:Set(false)
+            end
+
+            local carryRemote = sendRequestCarryGetCarryRemote()
+            if not carryRemote then
                 mountNotify({
                     Title = "Send Request Carry",
                     Content = "CarryRemote not found in ReplicatedStorage",
@@ -2637,45 +2713,66 @@ do
                 return
             end
 
-            local loopId = sendRequestCarryAutoLoopToken
-            local warnedNoTargets = false
-
-            task.spawn(function()
-                while loopId == sendRequestCarryAutoLoopToken do
-                    local targets = sendRequestCarryCollectTargetIds()
-                    if #targets == 0 then
-                        if not warnedNoTargets then
-                            warnedNoTargets = true
-                            mountNotify({
-                                Title = "Send Request Carry",
-                                Content = "No targets — select players and/or add names that match someone in the server",
-                                Icon = "x",
-                            })
-                        end
-                        task.wait(5)
-                    else
-                        warnedNoTargets = false
-                        for _, targetId in ipairs(targets) do
-                            if loopId ~= sendRequestCarryAutoLoopToken then
-                                break
-                            end
-                            if sendRequestCarryIsTargetWithinRange(targetId, SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS) then
-                                pcall(function()
-                                    carryRemote:FireServer("Request", {
-                                        targetId = targetId,
-                                    })
-                                end)
-                                task.wait(SEND_REQUEST_CARRY_DELAY_PER_TARGET)
-                            end
-                        end
-                        task.wait(SEND_REQUEST_CARRY_CYCLE_GAP)
-                    end
-                end
-            end)
+            sendRequestCarrySpawnAutoLoop(
+                carryRemote,
+                sendRequestCarryAutoLoopToken,
+                function()
+                    return sendRequestCarryAutoLoopToken
+                end,
+                sendRequestCarryCollectTargetIds,
+                "No targets — select players and/or add names that match someone in the server"
+            )
 
             mountNotify({
                 Title = "Send Request Carry",
                 Content = "Auto send started",
+                Icon = "check",
+            })
+        end,
+    })
+
+    SendRequestCarryAutoNearbyToggle = MainTab:CreateToggle({
+        Name = "Auto Send Nearby",
+        Flag = "yahayuk_main_send_carry_auto_nearby",
+        CurrentValue = false,
+        Callback = function(enabled)
+            sendRequestCarryAutoNearbyEnabled = enabled
+            sendRequestCarryAutoNearbyLoopToken = sendRequestCarryAutoNearbyLoopToken + 1
+            if not enabled then
+                return
+            end
+
+            -- Only one auto-send mode runs at a time so nobody is double-sent.
+            if sendRequestCarryAutoEnabled and SendRequestCarryAutoToggle and SendRequestCarryAutoToggle.Set then
+                SendRequestCarryAutoToggle:Set(false)
+            end
+
+            local carryRemote = sendRequestCarryGetCarryRemote()
+            if not carryRemote then
+                mountNotify({
+                    Title = "Send Request Carry",
+                    Content = "CarryRemote not found in ReplicatedStorage",
+                    Icon = "x",
+                })
+                if SendRequestCarryAutoNearbyToggle and SendRequestCarryAutoNearbyToggle.Set then
+                    SendRequestCarryAutoNearbyToggle:Set(false)
+                end
+                return
+            end
+
+            sendRequestCarrySpawnAutoLoop(
+                carryRemote,
+                sendRequestCarryAutoNearbyLoopToken,
+                function()
+                    return sendRequestCarryAutoNearbyLoopToken
+                end,
+                sendRequestCarryCollectAllOtherIds,
+                "No nearby players (not on the carrier list) to send to"
+            )
+
+            mountNotify({
+                Title = "Send Request Carry",
+                Content = "Auto send nearby started",
                 Icon = "check",
             })
         end,
