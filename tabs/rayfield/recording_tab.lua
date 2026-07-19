@@ -62,6 +62,56 @@ local function round(n, decimals)
     return math.floor(n * m + 0.5) / m
 end
 
+-- Re-indent a compact JSON string into a 4-space pretty-printed form
+-- (matching Python's json.dump(indent=4)): each object/array element on its
+-- own line, ": " after keys, empty {} / [] kept inline. Only inserts
+-- whitespace, so numbers/strings serialize exactly as JSONEncode produced them.
+local function prettyPrintJson(s)
+    local INDENT = "    "
+    local out = {}
+    local indent = 0
+    local inStr = false
+    local esc = false
+    local n = #s
+    local i = 1
+    while i <= n do
+        local c = string.sub(s, i, i)
+        if inStr then
+            out[#out + 1] = c
+            if esc then
+                esc = false
+            elseif c == "\\" then
+                esc = true
+            elseif c == '"' then
+                inStr = false
+            end
+        elseif c == '"' then
+            inStr = true
+            out[#out + 1] = c
+        elseif c == "{" or c == "[" then
+            local nxt = string.sub(s, i + 1, i + 1)
+            if (c == "{" and nxt == "}") or (c == "[" and nxt == "]") then
+                out[#out + 1] = c .. nxt
+                i = i + 1
+            else
+                indent = indent + 1
+                out[#out + 1] = c .. "\n" .. string.rep(INDENT, indent)
+            end
+        elseif c == "}" or c == "]" then
+            indent = indent - 1
+            out[#out + 1] = "\n" .. string.rep(INDENT, indent) .. c
+        elseif c == "," then
+            out[#out + 1] = ",\n" .. string.rep(INDENT, indent)
+        elseif c == ":" then
+            out[#out + 1] = ": "
+        else
+            out[#out + 1] = c
+        end
+        i = i + 1
+    end
+    return table.concat(out)
+end
+
 -- Distance from the root part's center to the ground for this avatar.
 -- R15 keeps it in HipHeight; R6 ignores HipHeight and stands on 2-stud legs.
 local function characterRootOffset(humanoid, rootPart)
@@ -311,6 +361,12 @@ local function createRecordingTab(windowRef, notifyFn, options)
         if not okEncode then
             safeNotify({ Title = "Recording", Content = "Encode failed: " .. tostring(encoded), Icon = "x" })
             return
+        end
+
+        -- Save in pretty-printed form; fall back to the compact string on any error.
+        local okPretty, pretty = pcall(prettyPrintJson, encoded)
+        if okPretty and type(pretty) == "string" then
+            encoded = pretty
         end
 
         local okWrite, writeErr = pcall(writefile, recordingFilePath(finalName), encoded)
