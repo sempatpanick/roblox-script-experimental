@@ -487,22 +487,22 @@ createLocalPlayerTab(Window, mountNotify, {
 do
     local MainTab = Window:CreateTab("Main", "mountain")
 
-    local autoSummitEnabled = false
+    autoSummitEnabled = false
     local autoSummitMainToggle: any = nil
-    local autoSummitSkipFinalStoppedNotify = false
-    local summitQty = ""
-    local autoSummitRandomizeTeleportDelay = false
-    local autoSummitRestartFromDeath = false
-    local autoSummitMode = "Walk" -- "Walk" | "Teleport"
-    local autoSummitIncludeFailedRoutes = true
+    autoSummitSkipFinalStoppedNotify = false
+    summitQty = ""
+    autoSummitRandomizeTeleportDelay = false
+    autoSummitRestartFromDeath = false
+    autoSummitMode = "Walk" -- "Walk" | "Teleport"
+    autoSummitIncludeFailedRoutes = true
     local syncRoutesFromRepo: ((boolean?) -> ())? = nil
     local AutoSummitRoutesParagraph: any = nil
-    local routeSyncActive = false
+    routeSyncActive = false
     local routePossibilities: any = nil
     local updateAutoSummitRouteSequenceParagraph: () -> ()
-    local BETWEEN_RUN_DELAY_MIN = 0
-    local BETWEEN_RUN_DELAY_MAX = 1
-    local autoSummitRng = Random.new()
+    BETWEEN_RUN_DELAY_MIN = 0
+    BETWEEN_RUN_DELAY_MAX = 1
+    autoSummitRng = Random.new()
 
     local function humanoidWalkToWorldPosition(
         humanoid: Humanoid,
