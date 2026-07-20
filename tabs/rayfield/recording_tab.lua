@@ -552,6 +552,8 @@ local function createRecordingTab(windowRef, notifyFn, options)
     local playCollideStates = nil
     local playerControlsCache = nil
     local playerControlsTried = false
+    local showRecordingTracker = false
+    local recordingTrackerFolder = nil
 
     local function updatePlayStatus(text)
         runOnUiThread(function()
@@ -938,6 +940,83 @@ local function createRecordingTab(windowRef, notifyFn, options)
         return names
     end
 
+    -- Route tracker: draws the selected recording's path in the world as a neon
+    -- trail (colored by the UI accent), so you can preview where it goes.
+    local RECORDING_TRACKER_FOLDER_NAME = "SempatPanickRecordingTracker"
+    local RECORDING_TRACKER_MIN_SPACING = 3 -- studs between sampled path points
+
+    local function clearRecordingTracker()
+        if recordingTrackerFolder then
+            pcall(function()
+                recordingTrackerFolder:Destroy()
+            end)
+            recordingTrackerFolder = nil
+        end
+    end
+
+    local function recordingTrackerColor()
+        local ok, color = pcall(function()
+            return windowRef:GetAccentColor()
+        end)
+        if ok and typeof(color) == "Color3" then
+            return color
+        end
+        return Color3.fromRGB(0, 200, 255)
+    end
+
+    local function drawRecordingTracker()
+        clearRecordingTracker()
+        if not showRecordingTracker or not selectedRecordingName then
+            return
+        end
+        local data = loadRecording(selectedRecordingName)
+        if not data or type(data.frames) ~= "table" or #data.frames < 2 then
+            return
+        end
+        local frames = data.frames
+        local pts = {}
+        local last = nil
+        for _, f in ipairs(frames) do
+            local p = Vector3.new(f[2], f[3], f[4])
+            if not last or (p - last).Magnitude >= RECORDING_TRACKER_MIN_SPACING then
+                table.insert(pts, p)
+                last = p
+            end
+        end
+        local lastFrame = frames[#frames]
+        local lp = Vector3.new(lastFrame[2], lastFrame[3], lastFrame[4])
+        if not last or (lp - last).Magnitude > 0.01 then
+            table.insert(pts, lp)
+        end
+        if #pts < 2 then
+            return
+        end
+        local color = recordingTrackerColor()
+        local folder = Instance.new("Folder")
+        folder.Name = RECORDING_TRACKER_FOLDER_NAME
+        for i = 1, #pts - 1 do
+            local a, b = pts[i], pts[i + 1]
+            local dist = (b - a).Magnitude
+            if dist > 0.01 then
+                local seg = Instance.new("Part")
+                seg.Anchored = true
+                seg.CanCollide = false
+                seg.CanQuery = false
+                seg.CanTouch = false
+                seg.Massless = true
+                seg.CastShadow = false
+                seg.Material = Enum.Material.Neon
+                seg.Color = color
+                seg.Transparency = 0.3
+                seg.Size = Vector3.new(0.35, 0.35, dist)
+                seg.CFrame = CFrame.lookAt((a + b) / 2, b)
+                seg.Parent = folder
+            end
+        end
+        folder.Parent = workspace
+        recordingTrackerFolder = folder
+    end
+
     refreshRecordingsList = function(showNotify)
         recordingNames = listSavedRecordingNames()
         local names = recordingNames
@@ -960,6 +1039,7 @@ local function createRecordingTab(windowRef, notifyFn, options)
                 Content = "Found " .. #recordingNames .. " recording(s)",
             })
         end
+        drawRecordingTracker()
     end
 
     RecordingsDropdown = RecordingTab:CreateDropdown({
@@ -987,12 +1067,22 @@ local function createRecordingTab(windowRef, notifyFn, options)
             else
                 selectedRecordingName = nil
             end
+            drawRecordingTracker()
         end,
     })
 
     PlayStatusParagraph = RecordingTab:CreateParagraph({
         Title = "Playback",
         Content = "Idle",
+    })
+
+    RecordingTab:CreateToggle({
+        Name = "Show Tracker",
+        CurrentValue = false,
+        Callback = function(enabled)
+            showRecordingTracker = enabled
+            drawRecordingTracker()
+        end,
     })
 
     RecordingTab:CreateButton({
