@@ -553,6 +553,8 @@ local function createRecordingTab(windowRef, notifyFn, options)
     local playerControlsCache = nil
     local playerControlsTried = false
     local showRecordingTracker = false
+    local recordingTrackerSensitivity = 1.8 -- thickness growth per extra overlap
+    local recordingTrackerCellSize = 4 -- studs; how close two passes count as the same position
     local recordingTrackerFolder = nil
 
     local function updatePlayStatus(text)
@@ -992,12 +994,32 @@ local function createRecordingTab(windowRef, notifyFn, options)
             return
         end
         local color = recordingTrackerColor()
+
+        -- Count how many separate times the path enters each spatial cell, so
+        -- stretches where the route overlaps itself can be drawn thicker/bolder.
+        local CELL = recordingTrackerCellSize
+        local function cellKey(p)
+            return math.floor(p.X / CELL) .. "_" .. math.floor(p.Y / CELL) .. "_" .. math.floor(p.Z / CELL)
+        end
+        local visits = {}
+        local lastKey = nil
+        for _, p in ipairs(pts) do
+            local k = cellKey(p)
+            if k ~= lastKey then
+                visits[k] = (visits[k] or 0) + 1
+                lastKey = k
+            end
+        end
+
+        local BASE_THICKNESS = 0.18
         local folder = Instance.new("Folder")
         folder.Name = RECORDING_TRACKER_FOLDER_NAME
         for i = 1, #pts - 1 do
             local a, b = pts[i], pts[i + 1]
             local dist = (b - a).Magnitude
             if dist > 0.01 then
+                local overlap = math.max(visits[cellKey(a)] or 1, visits[cellKey(b)] or 1)
+                local thickness = math.min(BASE_THICKNESS * (1 + (overlap - 1) * recordingTrackerSensitivity), BASE_THICKNESS * 6)
                 local seg = Instance.new("Part")
                 seg.Anchored = true
                 seg.CanCollide = false
@@ -1007,8 +1029,8 @@ local function createRecordingTab(windowRef, notifyFn, options)
                 seg.CastShadow = false
                 seg.Material = Enum.Material.Neon
                 seg.Color = color
-                seg.Transparency = 0.3
-                seg.Size = Vector3.new(0.35, 0.35, dist)
+                seg.Transparency = math.max(0.3 - (overlap - 1) * 0.08, 0.05)
+                seg.Size = Vector3.new(thickness, thickness, dist)
                 seg.CFrame = CFrame.lookAt((a + b) / 2, b)
                 seg.Parent = folder
             end
@@ -1082,6 +1104,34 @@ local function createRecordingTab(windowRef, notifyFn, options)
         Callback = function(enabled)
             showRecordingTracker = enabled
             drawRecordingTracker()
+        end,
+    })
+
+    RecordingTab:CreateSlider({
+        Name = "Tracker Overlap Sensitivity",
+        Range = { 0, 5 },
+        Increment = 0.1,
+        Suffix = "x",
+        CurrentValue = recordingTrackerSensitivity,
+        Callback = function(value)
+            recordingTrackerSensitivity = tonumber(value) or recordingTrackerSensitivity
+            if showRecordingTracker then
+                drawRecordingTracker()
+            end
+        end,
+    })
+
+    RecordingTab:CreateSlider({
+        Name = "Tracker Overlap Detect Distance",
+        Range = { 1, 15 },
+        Increment = 0.5,
+        Suffix = "studs",
+        CurrentValue = recordingTrackerCellSize,
+        Callback = function(value)
+            recordingTrackerCellSize = tonumber(value) or recordingTrackerCellSize
+            if showRecordingTracker then
+                drawRecordingTracker()
+            end
         end,
     })
 
