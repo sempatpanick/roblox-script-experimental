@@ -57,8 +57,6 @@ local function rayfieldDropdownFirst(valueOrTable)
     return valueOrTable
 end
 
-end
-
 -- */  Local Player Tab (module)  /* --
 local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/rayfield/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)

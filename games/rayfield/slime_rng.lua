@@ -229,8 +229,6 @@ end
 local normalizeAutoFeedFoodConfigValue: ((any) -> any)? = nil
 local syncAutoFeedFoodAfterConfigLoad: (() -> ())? = nil
 
-end
-
 -- */  Local Player Tab (module)  /* --
 local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/rayfield/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)

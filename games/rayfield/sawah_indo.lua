@@ -232,8 +232,6 @@ local function forceCloseRobloxPurchasePrompt(timeoutSeconds: number?): boolean
     return false
 end
 
-end
-
 -- */  Local Player Tab (module)  /* --
 local LOCAL_PLAYER_TAB_REPO = baseURL .. "/tabs/rayfield/local_player_tab.lua"
 local function loadCreateLocalPlayerTab(repoUrl)
