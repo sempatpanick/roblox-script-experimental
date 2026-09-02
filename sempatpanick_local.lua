@@ -17,6 +17,7 @@ local games = {
 	[93978595733734] = baseURL .. "/games/rayfield/violence_district.lua",
 	[135285569232987] = baseURL .. "/games/sempat/mount_velora.lua",
 	[95496064393804] = baseURL .. "/games/sempat/find_the_chameleons.lua",
+	[120336108521610] = baseURL .. "/games/sempat/capybara_onsen.lua",
 }
 
 local excludedGameIds = {
