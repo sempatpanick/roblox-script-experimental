@@ -656,20 +656,12 @@ local function getLocalRoot()
     return nil
 end
 
-local savedReturnCFrame = nil
-local function saveReturn()
+local function restoreCFrame(cframe)
     local root = getLocalRoot()
-    if root then
-        savedReturnCFrame = root.CFrame
-    end
-end
-
-local function restoreReturn()
-    local root = getLocalRoot()
-    if root and savedReturnCFrame then
+    if root and cframe then
         root.AssemblyLinearVelocity = Vector3.zero
         root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame = savedReturnCFrame
+        root.CFrame = cframe
         return true
     end
     return false
@@ -730,8 +722,7 @@ local function fireTouchPart(targetPart)
     return ok
 end
 
--- Serialize any Main-tab feature that moves the character / saves return CFrame,
--- so concurrent autos don't race the start position.
+-- Serialize travel features: each job saves position, runs, restores, then next job.
 local travelQueue = {}
 local travelBusy = false
 local travelDepth = 0
@@ -748,7 +739,21 @@ local function pumpTravelQueue()
         local job = table.remove(travelQueue, 1)
         if job then
             travelDepth += 1
+
+            local savedCFrame = nil
+            if job.restoreAfter then
+                local root = getLocalRoot()
+                if root then
+                    savedCFrame = root.CFrame
+                end
+            end
+
             local ok, a, b, c, d = pcall(job.fn)
+
+            if job.restoreAfter and savedCFrame then
+                restoreCFrame(savedCFrame)
+            end
+
             travelDepth -= 1
             if ok then
                 job.results = table.pack(a, b, c, d)
@@ -762,16 +767,18 @@ local function pumpTravelQueue()
     end)
 end
 
-local function runExclusiveTravel(fn)
+local function runExclusiveTravel(fn, opts)
     if type(fn) ~= "function" then
         return false, "invalid travel fn"
     end
+    opts = type(opts) == "table" and opts or {}
     if travelDepth > 0 then
         return fn()
     end
 
     local job = {
         fn = fn,
+        restoreAfter = opts.restoreAfter ~= false,
         finished = false,
         results = nil,
     }
@@ -1302,24 +1309,16 @@ do
             if getLocalRoot() == nil then
                 return false, "character not loaded"
             end
-            if doReturn then
-                saveReturn()
-            end
-            -- Deposit Yuzu at the market (payout scales with the current rate).
             if depositPad then
                 teleportToPart(depositPad, 3)
                 task.wait(0.4)
             end
-            -- Bank the resulting PendingCash into spendable Cash.
             if cashierPad and cashierPad ~= depositPad then
                 teleportToPart(cashierPad, 3)
                 task.wait(0.35)
             end
-            if doReturn then
-                restoreReturn()
-            end
             return true, rate
-        end)
+        end, { restoreAfter = doReturn ~= false })
     end
 
     local function runAutoDepositLoop(token)
@@ -1357,16 +1356,10 @@ do
                 return false, "firetouchinterest unavailable — enable Teleport To Collect"
             end
 
-            if doReturn then
-                saveReturn()
-            end
             teleportToPart(pad, 3)
             task.wait(0.45)
-            if doReturn then
-                restoreReturn()
-            end
             return true
-        end)
+        end, { restoreAfter = doReturn ~= false })
     end
 
     local function runAutoCollectCashLoop(token)
@@ -1402,16 +1395,10 @@ do
                 return true, info.nextTier
             end
 
-            if doReturn then
-                saveReturn()
-            end
             teleportToPart(pad, 2)
             task.wait(0.35)
-            if doReturn then
-                restoreReturn()
-            end
             return true, info.nextTier
-        end)
+        end, { restoreAfter = doReturn ~= false })
     end
 
     local function runAutoBuyLoop(token)
@@ -1515,16 +1502,10 @@ do
                 return true, info
             end
 
-            if doReturn then
-                saveReturn()
-            end
             teleportToPart(pad, 2)
             task.wait(0.25)
-            if doReturn then
-                restoreReturn()
-            end
             return true, info
-        end)
+        end, { restoreAfter = doReturn ~= false })
     end
 
     local function runAutoBuyCapybaraLoop(token)
@@ -2466,7 +2447,7 @@ do
             end
             mountNotify({ Title = "Teleport", Content = "No " .. kindLabel .. " tracked" })
             return false
-        end)
+        end, { restoreAfter = false })
     end
 
     MainTab:CreateButton({
@@ -2474,7 +2455,7 @@ do
         Callback = function()
             local ok = runExclusiveTravel(function()
                 return teleportToPart(getCashierPad(), 3)
-            end)
+            end, { restoreAfter = false })
             mountNotify({ Title = "Teleport", Content = ok and "To cashier" or "Cashier not found" })
         end,
     })
@@ -2484,7 +2465,7 @@ do
         Callback = function()
             local ok = runExclusiveTravel(function()
                 return teleportToPart(getTowerPart(), 4)
-            end)
+            end, { restoreAfter = false })
             mountNotify({ Title = "Teleport", Content = ok and "To tower" or "Tower not found" })
         end,
     })
@@ -2504,7 +2485,7 @@ do
                     return false
                 end
                 return teleportToPosition(pivot.Position, 5)
-            end)
+            end, { restoreAfter = false })
             mountNotify({ Title = "Teleport", Content = ok and "To plot center" or "Plot not found" })
         end,
     })
