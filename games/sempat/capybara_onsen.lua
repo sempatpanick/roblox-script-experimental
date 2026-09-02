@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -934,6 +935,13 @@ do
     local autoRejoinToken = 0
     local autoRejoinIntervalSec = 300
 
+    -- Prevent idle rejoin (game IdleClient teleports after ~16m of no input)
+    local preventRejoinEnabled = false
+    local allowIntentionalRejoin = false
+    local teleportHooksInstalled = false
+    local disabledIdleScripts = {}
+    local idledConn = nil
+
     -- R4 ESP
     local dropEspEnabled = false
     local chestEspEnabled = false
@@ -1542,19 +1550,187 @@ do
         end
     end
 
-    -- A2 — rejoin farm
+    -- A2 — rejoin farm / prevent idle rejoin
+    local function resolveHookFunction()
+        local fn = rawget(_G, "hookfunction")
+        if type(fn) == "function" then
+            return fn
+        end
+        local syn = rawget(_G, "syn")
+        if type(syn) == "table" and type(syn.hook_function) == "function" then
+            return syn.hook_function
+        end
+        local getgenvFn = rawget(_G, "getgenv")
+        if type(getgenvFn) == "function" then
+            local ok, genv = pcall(getgenvFn)
+            if ok and type(genv) == "table" and type(rawget(genv, "hookfunction")) == "function" then
+                return rawget(genv, "hookfunction")
+            end
+        end
+        return nil
+    end
+
+    local function resolveHookMetaMethod()
+        local fn = rawget(_G, "hookmetamethod")
+        if type(fn) == "function" then
+            return fn
+        end
+        local getgenvFn = rawget(_G, "getgenv")
+        if type(getgenvFn) == "function" then
+            local ok, genv = pcall(getgenvFn)
+            if ok and type(genv) == "table" and type(rawget(genv, "hookmetamethod")) == "function" then
+                return rawget(genv, "hookmetamethod")
+            end
+        end
+        return nil
+    end
+
+    local function shouldBlockTeleport(placeId)
+        if not preventRejoinEnabled or allowIntentionalRejoin then
+            return false
+        end
+        return placeId == nil or placeId == game.PlaceId
+    end
+
+    local function installTeleportHooks()
+        if teleportHooksInstalled then
+            return true
+        end
+
+        local hooked = false
+        local hookFn = resolveHookFunction()
+        if hookFn then
+            local okTeleport = pcall(function()
+                local original
+                original = hookFn(TeleportService.Teleport, function(self, placeId, ...)
+                    if shouldBlockTeleport(placeId) then
+                        return
+                    end
+                    return original(self, placeId, ...)
+                end)
+            end)
+            hooked = hooked or okTeleport
+
+            local okAsync = pcall(function()
+                if type(TeleportService.TeleportAsync) ~= "function" then
+                    return
+                end
+                local original
+                original = hookFn(TeleportService.TeleportAsync, function(self, placeId, ...)
+                    if shouldBlockTeleport(placeId) then
+                        return
+                    end
+                    return original(self, placeId, ...)
+                end)
+            end)
+            hooked = hooked or okAsync
+        end
+
+        local hookMeta = resolveHookMetaMethod()
+        local getNamecall = rawget(_G, "getnamecallmethod")
+        if hookMeta and type(getNamecall) == "function" then
+            local okMeta = pcall(function()
+                local oldNamecall
+                oldNamecall = hookMeta(game, "__namecall", function(self, ...)
+                    if self == TeleportService and preventRejoinEnabled and not allowIntentionalRejoin then
+                        local method = string.lower(tostring(getNamecall()))
+                        if method == "teleport" or method == "teleportasync" or method == "teleporttoplaceinstance" then
+                            local placeId = ...
+                            if shouldBlockTeleport(placeId) then
+                                return
+                            end
+                        end
+                    end
+                    return oldNamecall(self, ...)
+                end)
+            end)
+            hooked = hooked or okMeta
+        end
+
+        teleportHooksInstalled = hooked
+        return hooked
+    end
+
+    local function setIdleClientDisabled(disabled)
+        local roots = {
+            LocalPlayer:FindFirstChild("PlayerScripts"),
+            LocalPlayer:FindFirstChild("PlayerGui"),
+        }
+        for _, root in ipairs(roots) do
+            if root then
+                for _, descendant in ipairs(root:GetDescendants()) do
+                    if descendant:IsA("LocalScript") and descendant.Name == "IdleClient" then
+                        if disabled then
+                            if disabledIdleScripts[descendant] == nil then
+                                disabledIdleScripts[descendant] = descendant.Disabled
+                            end
+                            descendant.Disabled = true
+                        elseif disabledIdleScripts[descendant] ~= nil then
+                            descendant.Disabled = disabledIdleScripts[descendant]
+                            disabledIdleScripts[descendant] = nil
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local function bindAntiIdleKick(enabled)
+        if idledConn then
+            idledConn:Disconnect()
+            idledConn = nil
+        end
+        if not enabled then
+            return
+        end
+        idledConn = LocalPlayer.Idled:Connect(function()
+            if not preventRejoinEnabled then
+                return
+            end
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+        end)
+    end
+
+    local function setPreventRejoinEnabled(enabled)
+        preventRejoinEnabled = enabled == true
+        if preventRejoinEnabled then
+            installTeleportHooks()
+            setIdleClientDisabled(true)
+            bindAntiIdleKick(true)
+            if autoRejoinEnabled then
+                autoRejoinEnabled = false
+                autoRejoinToken += 1
+            end
+        else
+            setIdleClientDisabled(false)
+            bindAntiIdleKick(false)
+        end
+    end
+
     local function doRejoin()
-        return pcall(function()
+        if preventRejoinEnabled then
+            return false, "blocked by Prevent Rejoin"
+        end
+        allowIntentionalRejoin = true
+        local ok, err = pcall(function()
             TeleportService:Teleport(game.PlaceId, LocalPlayer)
         end)
+        allowIntentionalRejoin = false
+        return ok, err
     end
 
     local function runAutoRejoinLoop(token)
         while autoRejoinEnabled and token == autoRejoinToken do
+            if preventRejoinEnabled then
+                break
+            end
             if not waitToken(token, function() return autoRejoinToken end, function() return autoRejoinEnabled end, math.max(60, autoRejoinIntervalSec)) then
                 break
             end
-            if autoRejoinEnabled and token == autoRejoinToken then
+            if autoRejoinEnabled and token == autoRejoinToken and not preventRejoinEnabled then
                 doRejoin()
             end
         end
@@ -2432,9 +2608,26 @@ do
 
     MainTab:CreateSection("Rejoin Farm (offline reward)")
 
+    MainTab:CreateToggle({
+        Name = "Prevent Rejoin",
+        Flag = "co_prevent_rejoin",
+        CurrentValue = false,
+        Callback = function(enabled)
+            setPreventRejoinEnabled(enabled == true)
+            mountNotify({
+                Title = "Prevent Rejoin",
+                Content = preventRejoinEnabled and "Idle rejoin blocked" or "Idle rejoin allowed",
+            })
+        end,
+    })
+
     MainTab:CreateButton({
         Name = "Rejoin Now",
         Callback = function()
+            if preventRejoinEnabled then
+                mountNotify({ Title = "Rejoin", Content = "Disable Prevent Rejoin first" })
+                return
+            end
             mountNotify({ Title = "Rejoin", Content = "Rejoining…" })
             doRejoin()
         end,
@@ -2460,6 +2653,10 @@ do
         Flag = "co_auto_rejoin",
         CurrentValue = false,
         Callback = function(enabled)
+            if enabled and preventRejoinEnabled then
+                mountNotify({ Title = "Auto Rejoin", Content = "Disable Prevent Rejoin first" })
+                return
+            end
             autoRejoinEnabled = enabled == true
             autoRejoinToken += 1
             if not autoRejoinEnabled then
