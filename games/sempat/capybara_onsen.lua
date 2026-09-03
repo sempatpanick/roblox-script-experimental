@@ -9,6 +9,8 @@ local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 local VirtualUser = game:GetService("VirtualUser")
+local GroupService = game:GetService("GroupService")
+local AvatarEditorService = game:GetService("AvatarEditorService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -560,6 +562,65 @@ local function getCashierPad()
     return getButtonHead("Cashier") or getPlotPad("Cashier") or getCashierPart()
 end
 
+local DEFAULT_COMMUNITY_GROUP_ID = 140648141
+local DEFAULT_GROUP_REWARD_COOLDOWN_SEC = 600
+
+local function getGroupRewardConfig()
+    local cfg = getPlotConfig()
+    return cfg and cfg.GroupReward
+end
+
+local function getCommunityGroupId()
+    local gr = getGroupRewardConfig()
+    local id = gr and tonumber(gr.GroupId)
+    return id or DEFAULT_COMMUNITY_GROUP_ID
+end
+
+local function getFreeMoneyCooldownSec()
+    local gr = getGroupRewardConfig()
+    local sec = gr and tonumber(gr.CooldownSec)
+    return sec or DEFAULT_GROUP_REWARD_COOLDOWN_SEC
+end
+
+local function getGroupJoinPad()
+    return getButtonHead("GroupJoin")
+end
+
+local function isInCommunityGroup()
+    local ok, result = pcall(function()
+        return LocalPlayer:IsInGroup(getCommunityGroupId())
+    end)
+    return ok and result == true
+end
+
+-- Returns true/false when detectable, nil when the API is unavailable.
+local function isGameFavorited()
+    local ok, result = pcall(function()
+        return AvatarEditorService:GetFavorite(game.PlaceId, Enum.AvatarItemType.Asset)
+    end)
+    if ok then
+        return result == true
+    end
+    return nil
+end
+
+local function promptJoinCommunityGroup()
+    local groupId = getCommunityGroupId()
+    return pcall(function()
+        GroupService:PromptJoinAsync(groupId)
+    end)
+end
+
+local function promptFavoriteGame()
+    if fireServer("FavoritePrompt") then
+        return true
+    end
+    local ok = pcall(function()
+        AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
+    end)
+    return ok
+end
+
 -- Yuzu Market rate lives on the DropBonus map node as a "Multiplier" attribute
 -- (fluctuates between DropBonus.MinMultiplier..MaxMultiplier, cycles every CycleSec).
 local function getDropBonusNode()
@@ -881,7 +942,7 @@ local function countTable(t)
 end
 
 -- */  Main Tab  /* --
-do
+local function createMainTab()
     local MainTab = Window:CreateTab("Main", "coins")
 
     local statusParagraph
@@ -899,6 +960,19 @@ do
 
     local autoClaimOfflineEnabled = false
     local autoClaimOfflineToken = 0
+
+    -- Free money (GroupJoin pad — like game + join group)
+    local autoClaimFreeMoneyEnabled = false
+    local autoClaimFreeMoneyToken = 0
+    local autoClaimFreeMoneyIntervalSec = 30
+    local autoClaimFreeMoneyReturn = true
+    local autoPromptJoinGroup = true
+    local autoPromptFavorite = true
+    local lastFreeMoneyClaimAt = 0
+    local lastJoinPromptAt = 0
+    local lastFavoritePromptAt = 0
+    local FREE_MONEY_PROMPT_COOLDOWN_SEC = 120
+    local freeMoneyParagraph
 
     -- R1 Auto Deposit Carry
     local autoDepositEnabled = false
@@ -1280,6 +1354,128 @@ do
                 fireServer("ClaimOfflineReward")
             end
             if not waitToken(token, function() return autoClaimOfflineToken end, function() return autoClaimOfflineEnabled end, 3.0) then
+                break
+            end
+        end
+    end
+
+    local function getFreeMoneyClaimCooldownRemaining()
+        if lastFreeMoneyClaimAt <= 0 then
+            return 0
+        end
+        return math.max(0, getFreeMoneyCooldownSec() - (os.clock() - lastFreeMoneyClaimAt))
+    end
+
+    local function formatBoolStatus(value)
+        if value == true then
+            return "yes"
+        elseif value == false then
+            return "no"
+        end
+        return "unknown"
+    end
+
+    local function refreshFreeMoneyStatus()
+        if not freeMoneyParagraph or not freeMoneyParagraph.Set then
+            return
+        end
+        local cdRemaining = getFreeMoneyClaimCooldownRemaining()
+        freeMoneyParagraph:Set({
+            Content = string.format(
+                "Group (%d): %s · Liked: %s\nPad: %s · Cooldown: %s",
+                getCommunityGroupId(),
+                formatBoolStatus(isInCommunityGroup()),
+                formatBoolStatus(isGameFavorited()),
+                getGroupJoinPad() and "found" or "missing",
+                cdRemaining > 0 and string.format("%.0fs left", cdRemaining) or "ready"
+            ),
+        })
+    end
+
+    local function ensureFreeMoneyPrerequisites(promptJoin, promptFavorite)
+        if not isInCommunityGroup() then
+            if promptJoin then
+                local now = os.clock()
+                if now - lastJoinPromptAt >= FREE_MONEY_PROMPT_COOLDOWN_SEC then
+                    lastJoinPromptAt = now
+                    promptJoinCommunityGroup()
+                end
+            end
+            return false, "join the community group first"
+        end
+
+        local favorited = isGameFavorited()
+        if favorited == false then
+            if promptFavorite then
+                local now = os.clock()
+                if now - lastFavoritePromptAt >= FREE_MONEY_PROMPT_COOLDOWN_SEC then
+                    lastFavoritePromptAt = now
+                    promptFavoriteGame()
+                end
+            end
+            return false, "like the game first"
+        end
+
+        return true
+    end
+
+    local function tryClaimFreeMoneyOnce(doReturn, force)
+        if not force then
+            local cdRemaining = getFreeMoneyClaimCooldownRemaining()
+            if cdRemaining > 0 then
+                refreshFreeMoneyStatus()
+                return false, string.format("cooldown %.0fs", cdRemaining)
+            end
+            local ready, reason = ensureFreeMoneyPrerequisites(autoPromptJoinGroup, autoPromptFavorite)
+            if not ready then
+                refreshFreeMoneyStatus()
+                return false, reason
+            end
+        end
+
+        return runExclusiveTravel(function()
+            if getLocalRoot() == nil then
+                return false, "character not loaded"
+            end
+
+            local pad = getGroupJoinPad()
+            if not pad then
+                return false, "GroupJoin pad not found (plot not resolved)"
+            end
+
+            if not force then
+                local ready, reason = ensureFreeMoneyPrerequisites(autoPromptJoinGroup, autoPromptFavorite)
+                if not ready then
+                    return false, reason
+                end
+            end
+
+            if fireTouchPart(pad) then
+                task.wait(0.25)
+                lastFreeMoneyClaimAt = os.clock()
+                refreshFreeMoneyStatus()
+                return true
+            end
+
+            teleportToPart(pad, 3)
+            task.wait(0.45)
+            lastFreeMoneyClaimAt = os.clock()
+            refreshFreeMoneyStatus()
+            return true
+        end, { restoreAfter = doReturn ~= false })
+    end
+
+    local function runAutoClaimFreeMoneyLoop(token)
+        while autoClaimFreeMoneyEnabled and token == autoClaimFreeMoneyToken do
+            refreshFreeMoneyStatus()
+            ensureFreeMoneyPrerequisites(autoPromptJoinGroup, autoPromptFavorite)
+            if isInCommunityGroup() then
+                local favorited = isGameFavorited()
+                if favorited ~= false then
+                    tryClaimFreeMoneyOnce(autoClaimFreeMoneyReturn, false)
+                end
+            end
+            if not waitToken(token, function() return autoClaimFreeMoneyToken end, function() return autoClaimFreeMoneyEnabled end, math.max(5, autoClaimFreeMoneyIntervalSec)) then
                 break
             end
         end
@@ -2255,6 +2451,111 @@ do
         end,
     })
 
+    MainTab:CreateSection("Free Money (Group + Like)")
+
+    freeMoneyParagraph = MainTab:CreateParagraph({
+        Title = "Group Reward Status",
+        Content = "Checking…",
+    })
+    task.defer(refreshFreeMoneyStatus)
+
+    MainTab:CreateButton({
+        Name = "Check Group Status",
+        Callback = function()
+            refreshFreeMoneyStatus()
+            mountNotify({ Title = "Free Money", Content = "Status refreshed" })
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "Join Group + Like Game",
+        Callback = function()
+            promptJoinCommunityGroup()
+            task.wait(0.3)
+            promptFavoriteGame()
+            task.delay(1, refreshFreeMoneyStatus)
+            mountNotify({
+                Title = "Free Money",
+                Content = "Prompts opened — accept in Roblox UI, then claim",
+            })
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "Claim Free Money Now",
+        Callback = function()
+            local ok, info = tryClaimFreeMoneyOnce(autoClaimFreeMoneyReturn, false)
+            if ok then
+                mountNotify({ Title = "Free Money", Content = "Touched GroupJoin pad" })
+            else
+                mountNotify({ Title = "Free Money", Content = tostring(info) })
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Prompt Join Group",
+        Flag = "co_free_money_prompt_join",
+        CurrentValue = true,
+        Callback = function(enabled)
+            autoPromptJoinGroup = enabled == true
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Prompt Like Game",
+        Flag = "co_free_money_prompt_favorite",
+        CurrentValue = true,
+        Callback = function(enabled)
+            autoPromptFavorite = enabled == true
+        end,
+    })
+
+    MainTab:CreateSlider({
+        Name = "Auto Claim Interval",
+        Flag = "co_free_money_interval",
+        Range = { 5, 600 },
+        Increment = 5,
+        Suffix = "s",
+        CurrentValue = autoClaimFreeMoneyIntervalSec,
+        Callback = function(value)
+            local parsed = tonumber(value) or (type(value) == "table" and tonumber(value[1]))
+            if parsed then
+                autoClaimFreeMoneyIntervalSec = math.clamp(parsed, 5, 600)
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Return After Claim",
+        Flag = "co_free_money_return",
+        CurrentValue = true,
+        Callback = function(enabled)
+            autoClaimFreeMoneyReturn = enabled == true
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "Auto Claim Free Money",
+        Flag = "co_auto_claim_free_money",
+        CurrentValue = false,
+        Callback = function(enabled)
+            autoClaimFreeMoneyEnabled = enabled == true
+            autoClaimFreeMoneyToken += 1
+            if not autoClaimFreeMoneyEnabled then
+                return
+            end
+            local myToken = autoClaimFreeMoneyToken
+            task.spawn(function()
+                runAutoClaimFreeMoneyLoop(myToken)
+            end)
+            mountNotify({
+                Title = "Auto Free Money",
+                Content = "Started (prompts join/like, then touches GroupJoin pad)",
+            })
+        end,
+    })
+
     MainTab:CreateSection("Auto Buy Capybara")
 
     MainTab:CreateDropdown({
@@ -2688,9 +2989,12 @@ do
             bindDropChestTracking()
             refreshData()
             refreshRewardLog()
+            refreshFreeMoneyStatus()
         end
     end)
 end
+
+createMainTab()
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "capybara_onsen", tabIcon = "map-pin" })
