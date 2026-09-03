@@ -787,6 +787,7 @@ end
 local travelQueue = {}
 local travelBusy = false
 local travelDepth = 0
+local TRAVEL_QUEUE_DELAY_SEC = 1
 
 local function pumpTravelQueue()
     if travelBusy then
@@ -824,6 +825,9 @@ local function pumpTravelQueue()
             job.finished = true
         end
         travelBusy = false
+        if #travelQueue > 0 then
+            task.wait(TRAVEL_QUEUE_DELAY_SEC)
+        end
         pumpTravelQueue()
     end)
 end
