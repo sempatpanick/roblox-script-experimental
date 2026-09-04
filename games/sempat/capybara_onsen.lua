@@ -717,15 +717,52 @@ local function getLocalRoot()
     return nil
 end
 
-local function restoreCFrame(cframe)
-    local root = getLocalRoot()
-    if root and cframe then
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame = cframe
-        return true
+local function getCharacterCFrame()
+    local char = LocalPlayer.Character
+    if char then
+        local ok, pivot = pcall(function()
+            return char:GetPivot()
+        end)
+        if ok and typeof(pivot) == "CFrame" then
+            return pivot
+        end
     end
-    return false
+    local root = getLocalRoot()
+    if root then
+        return root.CFrame
+    end
+    return nil
+end
+
+-- Re-apply over several frames so physics / pad collision doesn't snap us back.
+local function restoreCFrame(cframe)
+    if typeof(cframe) ~= "CFrame" then
+        return false
+    end
+    local applied = false
+    for _ = 1, 8 do
+        local char = LocalPlayer.Character
+        local root = getLocalRoot()
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Sit = false
+                hum.PlatformStand = false
+            end
+            pcall(function()
+                char:PivotTo(cframe)
+            end)
+            applied = true
+        end
+        if root then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = cframe
+            applied = true
+        end
+        task.wait()
+    end
+    return applied
 end
 
 local function teleportToPosition(pos, yOffset)
@@ -804,15 +841,13 @@ local function pumpTravelQueue()
 
             local savedCFrame = nil
             if job.restoreAfter then
-                local root = getLocalRoot()
-                if root then
-                    savedCFrame = root.CFrame
-                end
+                savedCFrame = getCharacterCFrame()
             end
 
             local ok, a, b, c, d = pcall(job.fn)
 
             if job.restoreAfter and savedCFrame then
+                task.wait(0.05)
                 restoreCFrame(savedCFrame)
             end
 
@@ -969,7 +1004,6 @@ local function createMainTab()
     local autoClaimFreeMoneyEnabled = false
     local autoClaimFreeMoneyToken = 0
     local autoClaimFreeMoneyIntervalSec = 30
-    local autoClaimFreeMoneyReturn = true
     local autoPromptJoinGroup = true
     local autoPromptFavorite = true
     local lastFreeMoneyClaimAt = 0
@@ -982,7 +1016,6 @@ local function createMainTab()
     local autoDepositEnabled = false
     local autoDepositToken = 0
     local autoDepositIntervalSec = 3
-    local autoDepositReturn = true
     local minDepositRate = 1.0
     local gateDepositByRate = true
 
@@ -990,7 +1023,6 @@ local function createMainTab()
     local autoCollectCashEnabled = false
     local autoCollectCashToken = 0
     local autoCollectCashIntervalSec = 2
-    local autoCollectCashReturn = true
     local autoCollectCashUseTeleport = false
 
     -- R2 Smart chest opening
@@ -1000,7 +1032,6 @@ local function createMainTab()
     local autoBuyEnabled = false
     local autoBuyToken = 0
     local autoBuyIntervalSec = 2
-    local autoBuyReturn = true
 
     -- Auto Buy Capybara (Add1 / Add5 / Add25 / Add100)
     local CAPYBARA_BUY_OPTIONS = {
@@ -1012,7 +1043,6 @@ local function createMainTab()
     local autoBuyCapybaraEnabled = false
     local autoBuyCapybaraToken = 0
     local autoBuyCapybaraIntervalSec = 0.5
-    local autoBuyCapybaraReturn = true
     local autoBuyCapybaraSelected = { ["1"] = true } -- label -> enabled
 
     -- A2 Rejoin farm
@@ -1423,7 +1453,7 @@ local function createMainTab()
         return true
     end
 
-    local function tryClaimFreeMoneyOnce(doReturn, force)
+    local function tryClaimFreeMoneyOnce(force)
         if not force then
             local cdRemaining = getFreeMoneyClaimCooldownRemaining()
             if cdRemaining > 0 then
@@ -1466,7 +1496,7 @@ local function createMainTab()
             lastFreeMoneyClaimAt = os.clock()
             refreshFreeMoneyStatus()
             return true
-        end, { restoreAfter = doReturn ~= false })
+        end)
     end
 
     local function runAutoClaimFreeMoneyLoop(token)
@@ -1476,7 +1506,7 @@ local function createMainTab()
             if isInCommunityGroup() then
                 local favorited = isGameFavorited()
                 if favorited ~= false then
-                    tryClaimFreeMoneyOnce(autoClaimFreeMoneyReturn, false)
+                    tryClaimFreeMoneyOnce(false)
                 end
             end
             if not waitToken(token, function() return autoClaimFreeMoneyToken end, function() return autoClaimFreeMoneyEnabled end, math.max(5, autoClaimFreeMoneyIntervalSec)) then
@@ -1488,7 +1518,7 @@ local function createMainTab()
     -- R1 — deposit carried Yuzu at the market pad (rate applies), then bank at cashier.
     -- Unless `force`, the deposit is skipped while the market rate is below minDepositRate,
     -- so Yuzu is only sold when the Yuzu Market multiplier is favorable.
-    local function depositCarryOnce(doReturn, force)
+    local function depositCarryOnce(force)
         return runExclusiveTravel(function()
             local depositPad = getDepositPad()
             local cashierPad = getCashierPad()
@@ -1518,13 +1548,13 @@ local function createMainTab()
                 task.wait(0.35)
             end
             return true, rate
-        end, { restoreAfter = doReturn ~= false })
+        end)
     end
 
     local function runAutoDepositLoop(token)
         while autoDepositEnabled and token == autoDepositToken do
             if getTycoonNum("Carry") > 0 then
-                depositCarryOnce(autoDepositReturn, false)
+                depositCarryOnce(false)
             end
             if not waitToken(token, function() return autoDepositToken end, function() return autoDepositEnabled end, math.max(0.5, autoDepositIntervalSec)) then
                 break
@@ -1534,7 +1564,7 @@ local function createMainTab()
 
     -- Auto Collect Cash — touch the plot's "Cashier" button Head to bank PendingCash -> Cash.
     -- Uses firetouchinterest when available; falls back to teleport if not.
-    local function collectCashOnce(doReturn, force)
+    local function collectCashOnce(force)
         return runExclusiveTravel(function()
             if not force and getPendingCash() <= 0 then
                 return false, "no pending cash"
@@ -1559,13 +1589,13 @@ local function createMainTab()
             teleportToPart(pad, 3)
             task.wait(0.45)
             return true
-        end, { restoreAfter = doReturn ~= false })
+        end)
     end
 
     local function runAutoCollectCashLoop(token)
         while autoCollectCashEnabled and token == autoCollectCashToken do
             if getPendingCash() > 0 then
-                collectCashOnce(autoCollectCashReturn, false)
+                collectCashOnce(false)
             end
             if not waitToken(token, function() return autoCollectCashToken end, function() return autoCollectCashEnabled end, math.max(0.5, autoCollectCashIntervalSec)) then
                 break
@@ -1574,7 +1604,7 @@ local function createMainTab()
     end
 
     -- Upgrade BuyTier via the TierUpgrader pad when cash + unit requirements are met.
-    local function tryUpgradeTierOnce(doReturn, force)
+    local function tryUpgradeTierOnce()
         return runExclusiveTravel(function()
             local affordable, infoOrReason = getTierUpgradeAffordability()
             if not affordable then
@@ -1598,14 +1628,14 @@ local function createMainTab()
             teleportToPart(pad, 2)
             task.wait(0.35)
             return true, info.nextTier
-        end, { restoreAfter = doReturn ~= false })
+        end)
     end
 
     local function runAutoBuyLoop(token)
         while autoBuyEnabled and token == autoBuyToken do
             local affordable = select(1, getTierUpgradeAffordability())
             if affordable then
-                tryUpgradeTierOnce(autoBuyReturn, false)
+                tryUpgradeTierOnce()
             end
             if not waitToken(token, function() return autoBuyToken end, function() return autoBuyEnabled end, math.max(0.5, autoBuyIntervalSec)) then
                 break
@@ -1682,7 +1712,7 @@ local function createMainTab()
         return nil, lastReason or "not affordable"
     end
 
-    local function tryBuyCapybaraOnce(doReturn)
+    local function tryBuyCapybaraOnce()
         return runExclusiveTravel(function()
             local info, reason = pickAffordableCapybaraBuy()
             if not info then
@@ -1705,7 +1735,7 @@ local function createMainTab()
             teleportToPart(pad, 2)
             task.wait(0.25)
             return true, info
-        end, { restoreAfter = doReturn ~= false })
+        end)
     end
 
     local function runAutoBuyCapybaraLoop(token)
@@ -1713,7 +1743,7 @@ local function createMainTab()
             if next(autoBuyCapybaraSelected) ~= nil then
                 local info = select(1, pickAffordableCapybaraBuy())
                 if info then
-                    tryBuyCapybaraOnce(autoBuyCapybaraReturn)
+                    tryBuyCapybaraOnce()
                 end
             end
             if not waitToken(
@@ -2116,7 +2146,7 @@ local function createMainTab()
     MainTab:CreateButton({
         Name = "Deposit Now (ignore rate)",
         Callback = function()
-            local ok, info = depositCarryOnce(autoDepositReturn, true)
+            local ok, info = depositCarryOnce(true)
             if ok then
                 mountNotify({ Title = "Deposit", Content = info and string.format("Deposited at rate %.2f", info) or "Deposited" })
             else
@@ -2184,15 +2214,6 @@ local function createMainTab()
     })
 
     MainTab:CreateToggle({
-        Name = "Return After Deposit",
-        Flag = "co_deposit_return",
-        CurrentValue = true,
-        Callback = function(enabled)
-            autoDepositReturn = enabled == true
-        end,
-    })
-
-    MainTab:CreateToggle({
         Name = "Auto Deposit Carry",
         Flag = "co_auto_deposit",
         CurrentValue = false,
@@ -2216,7 +2237,7 @@ local function createMainTab()
         Name = "Collect Cash Now",
         Callback = function()
             refreshData()
-            local ok, info = collectCashOnce(autoCollectCashReturn, true)
+            local ok, info = collectCashOnce(true)
             if ok then
                 mountNotify({ Title = "Collect Cash", Content = "Collected pending cash" })
             else
@@ -2246,15 +2267,6 @@ local function createMainTab()
         CurrentValue = false,
         Callback = function(enabled)
             autoCollectCashUseTeleport = enabled == true
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Return After Collect",
-        Flag = "co_collect_cash_return",
-        CurrentValue = true,
-        Callback = function(enabled)
-            autoCollectCashReturn = enabled == true
         end,
     })
 
@@ -2488,7 +2500,7 @@ local function createMainTab()
     MainTab:CreateButton({
         Name = "Claim Free Money Now",
         Callback = function()
-            local ok, info = tryClaimFreeMoneyOnce(autoClaimFreeMoneyReturn, false)
+            local ok, info = tryClaimFreeMoneyOnce(false)
             if ok then
                 mountNotify({ Title = "Free Money", Content = "Touched GroupJoin pad" })
             else
@@ -2527,15 +2539,6 @@ local function createMainTab()
             if parsed then
                 autoClaimFreeMoneyIntervalSec = math.clamp(parsed, 5, 600)
             end
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Return After Claim",
-        Flag = "co_free_money_return",
-        CurrentValue = true,
-        Callback = function(enabled)
-            autoClaimFreeMoneyReturn = enabled == true
         end,
     })
 
@@ -2589,7 +2592,7 @@ local function createMainTab()
     MainTab:CreateButton({
         Name = "Buy Capybara Now",
         Callback = function()
-            local ok, info = tryBuyCapybaraOnce(autoBuyCapybaraReturn)
+            local ok, info = tryBuyCapybaraOnce()
             if ok then
                 mountNotify({
                     Title = "Buy Capybara",
@@ -2613,15 +2616,6 @@ local function createMainTab()
             if parsed then
                 autoBuyCapybaraIntervalSec = math.clamp(parsed, 0.1, 10)
             end
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Return After Buy",
-        Flag = "co_buy_capybara_return",
-        CurrentValue = true,
-        Callback = function(enabled)
-            autoBuyCapybaraReturn = enabled == true
         end,
     })
 
@@ -2652,7 +2646,7 @@ local function createMainTab()
     MainTab:CreateButton({
         Name = "Upgrade Tier Now",
         Callback = function()
-            local ok, info = tryUpgradeTierOnce(autoBuyReturn, true)
+            local ok, info = tryUpgradeTierOnce()
             if ok then
                 mountNotify({ Title = "Tier Upgrade", Content = "Requested upgrade to tier " .. tostring(info) })
             else
@@ -2673,15 +2667,6 @@ local function createMainTab()
             if parsed then
                 autoBuyIntervalSec = math.clamp(parsed, 0.5, 30)
             end
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "Return After Upgrade",
-        Flag = "co_buy_return",
-        CurrentValue = true,
-        Callback = function(enabled)
-            autoBuyReturn = enabled == true
         end,
     })
 
