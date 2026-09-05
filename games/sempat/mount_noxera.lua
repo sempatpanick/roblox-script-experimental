@@ -1000,7 +1000,7 @@ do
     MainTab:CreateSlider({
         Name = "Teleport Duration",
         Flag = "noxera_auto_summit_teleportDuration",
-        Range = { 0, 30 },
+        Range = { 0, 50 },
         Increment = 0.5,
         Suffix = "s",
         CurrentValue = DEFAULT_TELEPORT_DURATION_SEC,
