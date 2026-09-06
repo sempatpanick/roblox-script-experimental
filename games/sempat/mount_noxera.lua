@@ -412,7 +412,7 @@ do
 
     -- Teleport mode: teleport to pos[1], then tween to pos[2] (checkpoint pad).
     local summitRoute = {
-        { name = "CP1", pos = { "612.26, 300.99, 260.02", "636.09, 303.18, 258.62" }, modePos = "tween" },
+        { name = "CP1", pos = { "612.26, 300.99, 260.02", "655.12, 301.07, 259.89" }, modePos = "tween" },
         { name = "CP2", pos = { "1145.03, 328.53, 248.35", "1167.72, 330.70, 247.49" }, modePos = "tween" },
         { name = "CP3", pos = { "1940.40, 477.51, 162.30", "1971.43, 477.60, 133.58" }, modePos = "tween" },
         { name = "CP4", pos = { "2114.96, 545.77, -1372.77", "2112.64, 547.73, -1405.20" }, modePos = "tween" },
