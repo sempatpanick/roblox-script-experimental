@@ -355,6 +355,11 @@ local Window = SempatLibrary:CreateWindow({
 -- */  Local Player Tab  /* --
 createLocalPlayerTab(Window, mountNotify, { flagsPrefix = "lp", tabIcon = "user" })
 
+-- Set by Config Tab when applying noxera_auto_summit_enabled = true (manual toggle skips delay).
+local autoSummitConfigBridge = {
+    pendingStartDelay = false,
+}
+
 -- */  Main Tab  /* --
 do
     local MainTab = Window:CreateTab("Main", "mountain")
@@ -366,6 +371,7 @@ do
     local PRE_RESET_DELAY_SEC = 1
     local POST_TELEPORT_POLL_SEC = 0.15
     local POST_RESET_WAIT_SEC = 15
+    local AUTO_SUMMIT_CONFIG_START_DELAY_SEC = 5
 
     local function parsePositionStr(posStr)
         if type(posStr) ~= "string" then
@@ -902,6 +908,21 @@ do
         local qtyNum = parseSummitQty(summitQty)
         local remaining = qtyNum
         resumeFromStart = false
+
+        if autoSummitConfigBridge.pendingStartDelay then
+            autoSummitConfigBridge.pendingStartDelay = false
+            mountNotify({
+                Title = "Auto Summit",
+                Content = "Config load — starting in " .. tostring(AUTO_SUMMIT_CONFIG_START_DELAY_SEC) .. "s",
+            })
+            if not waitWithCountdown(token, AUTO_SUMMIT_CONFIG_START_DELAY_SEC, function(remain)
+                setStatusContent(string.format("Config load delay…\nStarting Auto Summit in %.1fs", remain))
+            end) then
+                refreshIdleStatus()
+                return
+            end
+        end
+
         summitRunStartedAt = os.clock()
 
         while autoSummitEnabled and token == autoSummitLoopToken do
@@ -1030,6 +1051,7 @@ do
         Callback = function(enabled)
             autoSummitEnabled = enabled == true
             if not autoSummitEnabled then
+                autoSummitConfigBridge.pendingStartDelay = false
                 autoSummitLoopToken += 1
                 cancelActiveTween()
                 refreshIdleStatus()
@@ -1037,10 +1059,13 @@ do
             end
             autoSummitLoopToken += 1
             local myToken = autoSummitLoopToken
+            local fromConfig = autoSummitConfigBridge.pendingStartDelay
             task.spawn(function()
                 runAutoSummitLoop(myToken)
             end)
-            mountNotify({ Title = "Auto Summit", Content = "Auto Summit started" })
+            if not fromConfig then
+                mountNotify({ Title = "Auto Summit", Content = "Auto Summit started" })
+            end
         end,
     })
 
@@ -1855,4 +1880,11 @@ createConfigTab(Window, mountNotify, {
     configDir = "sempatpanick/mount_noxera",
     rayfieldLibrary = SempatLibrary,
     tabIcon = "settings",
+    applyLastFlags = { "noxera_auto_summit_enabled" },
+    onApplyFlag = function(flagName, saved)
+        if flagName == "noxera_auto_summit_enabled" then
+            autoSummitConfigBridge.pendingStartDelay = saved == true
+        end
+        return saved
+    end,
 })
