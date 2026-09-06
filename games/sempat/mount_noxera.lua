@@ -365,7 +365,7 @@ do
     local CHECKPOINT_TELEPORT_RETRY_SEC = 5
     local PRE_RESET_DELAY_SEC = 1
     local POST_TELEPORT_POLL_SEC = 0.15
-    local POST_RESET_WAIT_SEC = 10
+    local POST_RESET_WAIT_SEC = 15
 
     local function parsePositionStr(posStr)
         if type(posStr) ~= "string" then
