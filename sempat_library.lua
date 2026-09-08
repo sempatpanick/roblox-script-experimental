@@ -6,7 +6,7 @@
 ]]
 
 local SempatLibrary = {
-	Version = "1.0.0",
+	Version = "1.1.0",
 	Flags = {},
 }
 
@@ -3221,8 +3221,348 @@ local function createSection(contentParent, title, scrollFrame)
 	return sectionApi
 end
 
+local POPUP_WIDTH = 440
+local POPUP_HEIGHT = 380
+local POPUP_HEADER_HEIGHT = 48
+local POPUP_FOOTER_HEIGHT = 52
+local POPUP_MARGIN_DESKTOP = 24
+local POPUP_MARGIN_MOBILE = 12
+local POPUP_MOBILE_BREAKPOINT = 520
+local POPUP_MIN_WIDTH = 240
+local POPUP_MIN_HEIGHT = 200
+
+local function createPopup(screenGui, opts, accentScrollbars)
+	opts = opts or {}
+	local titleText = opts.Title or opts.Name or "Popup"
+	local contentText = opts.Content or opts.Desc or ""
+	local closeOnOverlay = opts.CloseOnOverlayClick ~= false
+	local preferredWidth = tonumber(opts.Width) or POPUP_WIDTH
+	local preferredHeight = tonumber(opts.Height) or POPUP_HEIGHT
+	if typeof(opts.Size) == "UDim2" then
+		preferredWidth = opts.Size.X.Offset > 0 and opts.Size.X.Offset or preferredWidth
+		preferredHeight = opts.Size.Y.Offset > 0 and opts.Size.Y.Offset or preferredHeight
+	end
+
+	local overlay = new("TextButton", {
+		Name = "PopupOverlay",
+		BackgroundColor3 = Color3.fromRGB(8, 10, 14),
+		BackgroundTransparency = 0.4,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		Modal = true,
+		ZIndex = 80,
+		Parent = screenGui,
+	})
+
+	local panel = new("Frame", {
+		Name = "Popup",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(preferredWidth, preferredHeight),
+		BackgroundColor3 = THEME.window,
+		BorderSizePixel = 0,
+		Active = true,
+		ClipsDescendants = true,
+		ZIndex = 81,
+		Parent = overlay,
+	})
+	corner(panel, CORNER)
+	stroke(panel, THEME.stroke, 0.25)
+	registerThemeTarget(panel, "window")
+
+	local header = new("Frame", {
+		Name = "Header",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, POPUP_HEADER_HEIGHT),
+		ZIndex = 82,
+		Parent = panel,
+	})
+	registerThemeTarget(header, "sidebar")
+
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 0),
+		Size = UDim2.new(1, -52, 1, 0),
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextColor3 = THEME.text,
+		Text = titleText,
+		ZIndex = 83,
+		Parent = header,
+	})
+	registerThemeTarget(titleLabel, "text")
+
+	local closeBtn = new("TextButton", {
+		Name = "Close",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(32, 32),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 84,
+		Parent = header,
+	})
+	createLucideImage(closeBtn, LUCIDE_ICON_CLOSE, {
+		size = CHROME_ICON_SIZE,
+		color = THEME.muted,
+		zIndex = 85,
+	})
+
+	local hasDesc = type(contentText) == "string" and contentText ~= ""
+	local descLabel = new("TextLabel", {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, POPUP_HEADER_HEIGHT + 4),
+		Size = UDim2.new(1, -32, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = THEME.muted,
+		Text = contentText,
+		Visible = hasDesc,
+		ZIndex = 82,
+		Parent = panel,
+	})
+	registerThemeTarget(descLabel, "muted")
+
+	local footer = new("Frame", {
+		Name = "Footer",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, POPUP_FOOTER_HEIGHT),
+		ZIndex = 82,
+		Parent = panel,
+	})
+
+	local doneButton = new("TextButton", {
+		Name = "Done",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -16, 0.5, 0),
+		Size = UDim2.fromOffset(88, 32),
+		BackgroundColor3 = THEME.accent,
+		BorderSizePixel = 0,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = getButtonTextColor(),
+		Text = opts.DoneText or "Done",
+		AutoButtonColor = false,
+		ZIndex = 83,
+		Parent = footer,
+	})
+	corner(doneButton, 8)
+	registerAccentRefresher(function(color)
+		if doneButton.Parent then
+			doneButton.BackgroundColor3 = color
+			doneButton.TextColor3 = getButtonTextColor()
+		end
+	end)
+
+	local scroll = new("ScrollingFrame", {
+		Name = "Scroll",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, POPUP_HEADER_HEIGHT),
+		Size = UDim2.new(1, -8, 1, -(POPUP_HEADER_HEIGHT + POPUP_FOOTER_HEIGHT)),
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = appliedAccentColor,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollingEnabled = true,
+		Active = true,
+		CanvasSize = UDim2.new(),
+		ZIndex = 82,
+		Parent = panel,
+	})
+	if type(accentScrollbars) == "table" then
+		table.insert(accentScrollbars, scroll)
+	end
+	padding(scroll, 8, 8, 16, 16)
+
+	local function isCompactPopupLayout(viewport)
+		if isMobileDevice() then
+			return true
+		end
+		return viewport.X > 0 and viewport.X < POPUP_MOBILE_BREAKPOINT
+	end
+
+	local function applyResponsiveLayout()
+		local viewport = overlay.AbsoluteSize
+		if viewport.X < 1 or viewport.Y < 1 then
+			return
+		end
+		local compact = isCompactPopupLayout(viewport)
+		local margin = compact and POPUP_MARGIN_MOBILE or POPUP_MARGIN_DESKTOP
+		local maxW = math.max(POPUP_MIN_WIDTH, viewport.X - margin * 2)
+		local maxH = math.max(POPUP_MIN_HEIGHT, viewport.Y - margin * 2)
+		local width = compact and maxW or math.min(preferredWidth, maxW)
+		local height = compact and maxH or math.min(preferredHeight, maxH)
+		panel.Size = UDim2.fromOffset(math.floor(width + 0.5), math.floor(height + 0.5))
+
+		local headerH = compact and 56 or POPUP_HEADER_HEIGHT
+		local footerH = compact and 60 or POPUP_FOOTER_HEIGHT
+		header.Size = UDim2.new(1, 0, 0, headerH)
+		footer.Size = UDim2.new(1, 0, 0, footerH)
+		titleLabel.Position = UDim2.new(0, compact and 14 or 16, 0, 0)
+		titleLabel.Size = UDim2.new(1, compact and -62 or -52, 1, 0)
+		titleLabel.TextSize = compact and 15 or 16
+		closeBtn.Size = UDim2.fromOffset(compact and 44 or 32, compact and 44 or 32)
+		closeBtn.Position = UDim2.new(1, compact and -6 or -8, 0.5, 0)
+
+		if compact then
+			doneButton.AnchorPoint = Vector2.new(0.5, 0.5)
+			doneButton.Position = UDim2.new(0.5, 0, 0.5, 0)
+			doneButton.Size = UDim2.new(1, -24, 0, 40)
+			doneButton.TextSize = 14
+			scroll.ScrollBarThickness = 6
+		else
+			doneButton.AnchorPoint = Vector2.new(1, 0.5)
+			doneButton.Position = UDim2.new(1, -16, 0.5, 0)
+			doneButton.Size = UDim2.fromOffset(88, 32)
+			doneButton.TextSize = 13
+			scroll.ScrollBarThickness = 3
+		end
+
+		local descH = 0
+		if hasDesc and descLabel.Visible then
+			descLabel.Position = UDim2.new(0, compact and 14 or 16, 0, headerH + 4)
+			descLabel.Size = UDim2.new(1, compact and -28 or -32, 0, 0)
+			descH = math.max(descLabel.AbsoluteSize.Y, 0) + 10
+		end
+		scroll.Position = UDim2.new(0, 0, 0, headerH + descH)
+		scroll.Size = UDim2.new(1, compact and -10 or -8, 1, -(headerH + descH + footerH))
+		scheduleCanvasUpdate(scroll)
+	end
+
+	local list = new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = scroll,
+	})
+	list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scheduleCanvasUpdate(scroll)
+	end)
+
+	local currentSectionBody = scroll
+	local isOpen = false
+	local escapeConn = nil
+
+	local popup = {
+		_overlay = overlay,
+		_panel = panel,
+		_scroll = scroll,
+	}
+
+	local function closePopup()
+		isOpen = false
+		overlay.Visible = false
+		if escapeConn then
+			escapeConn:Disconnect()
+			escapeConn = nil
+		end
+		if type(opts.OnClose) == "function" then
+			safeCallback(opts.OnClose)
+		end
+	end
+
+	local function openPopup()
+		isOpen = true
+		overlay.Visible = true
+		overlay.ZIndex = 80
+		panel.ZIndex = 81
+		applyResponsiveLayout()
+		task.defer(applyResponsiveLayout)
+		scheduleCanvasUpdate(scroll)
+		if escapeConn then
+			escapeConn:Disconnect()
+		end
+		escapeConn = UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then
+				return
+			end
+			if input.KeyCode == Enum.KeyCode.Escape then
+				closePopup()
+			end
+		end)
+		if type(opts.OnOpen) == "function" then
+			safeCallback(opts.OnOpen)
+		end
+	end
+
+	function popup:CreateSection(title)
+		local section = createSection(scroll, title, scroll)
+		currentSectionBody = section._body
+		return section
+	end
+
+	function popup:Section(props)
+		props = props or {}
+		return popup:CreateSection(props.Title or props.Name or "Section")
+	end
+
+	bindElementCreators(popup, function()
+		return currentSectionBody
+	end, scroll)
+
+	function popup:Open()
+		openPopup()
+	end
+
+	function popup:Close()
+		closePopup()
+	end
+
+	function popup:IsOpen()
+		return isOpen
+	end
+
+	function popup:SetTitle(text)
+		titleLabel.Text = tostring(text or "")
+	end
+
+	function popup:SetContent(text)
+		contentText = tostring(text or "")
+		hasDesc = contentText ~= ""
+		descLabel.Text = contentText
+		descLabel.Visible = hasDesc
+		applyResponsiveLayout()
+	end
+
+	function popup:Destroy()
+		closePopup()
+		overlay:Destroy()
+	end
+
+	closeBtn.MouseButton1Click:Connect(closePopup)
+	doneButton.MouseButton1Click:Connect(closePopup)
+	if closeOnOverlay then
+		overlay.MouseButton1Click:Connect(function()
+			closePopup()
+		end)
+	end
+
+	overlay:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyResponsiveLayout)
+	descLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if overlay.Visible then
+			applyResponsiveLayout()
+		end
+	end)
+	applyResponsiveLayout()
+	scheduleCanvasUpdate(scroll)
+	return popup
+end
+
 local function createTabApi(tabFrame, scrollFrame, contentTitle)
-	local contentParent = scrollFrame
 	local currentSectionBody = scrollFrame
 
 	local function targetParent()
@@ -4371,6 +4711,14 @@ local function bindWindowPublicApi(window, w)
 		props = props or {}
 		return self:CreateTab(props.Title or props.Name or "Tab", props.Icon)
 	end
+
+	function window:CreatePopup(props)
+		local popup = createPopup(w.screenGui, props or {}, w.accentScrollbars)
+		self._popups = self._popups or {}
+		table.insert(self._popups, popup)
+		return popup
+	end
+	window.Popup = window.CreatePopup
 
 	function window:SetCurrentConfig(_cfg)
 		return nil
