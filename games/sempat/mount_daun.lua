@@ -1135,6 +1135,608 @@ do
         end,
     })
 
+    -- */  Auto Carry  /* --
+    -- Place uses Zap Network: ContextMenuAction.Fire to request, CarryRespond.Fire to accept.
+    MainTab:CreateSection("Auto Carry")
+
+    local CARRY_ACTIONS = {
+        ["Head Carry"] = "HeadCarry",
+        ["Piggyback Carry"] = "PiggybackCarry",
+        ["Drag Carry"] = "DragCarry",
+    }
+    local CARRY_TYPE_OPTIONS = { "Head Carry", "Piggyback Carry", "Drag Carry" }
+    local SEND_REQUEST_CARRY_DELAY_PER_TARGET = 4
+    local SEND_REQUEST_CARRY_CYCLE_GAP = 6
+    local SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS = 20
+
+    local lpCarry = Players.LocalPlayer
+    local carryNetwork = nil
+    local carryTypeLabel = "Head Carry"
+    local sendRequestCarrySelected = {}
+    local sendRequestCarryAdditionalPlayersText = ""
+    local sendRequestCarryAutoLoopToken = 0
+    local sendRequestCarryAutoNearbyLoopToken = 0
+    local sendRequestCarryAutoEnabled = false
+    local sendRequestCarryAutoNearbyEnabled = false
+    local carriedSlotIds = {}
+    local carriedSlotEntries = {}
+    local acceptIncomingCarrySelected = {}
+    local acceptIncomingCarryEnabled = false
+    local acceptIncomingCarryDisconnect = nil
+
+    local SendRequestCarryCarrierListParagraph
+    local SendRequestCarryPlayersDropdown
+    local AcceptIncomingCarryPlayersDropdown
+
+    local function getCarryNetwork()
+        if carryNetwork then
+            return carryNetwork
+        end
+        local ok, network = pcall(function()
+            return require(ReplicatedStorage:WaitForChild("Network", 15))
+        end)
+        if ok and type(network) == "table" and network.ContextMenuAction and network.CarryRespond and network.CarryRequestPrompt then
+            carryNetwork = network
+            return network
+        end
+        return nil
+    end
+
+    local function carryActionFromLabel(label)
+        return CARRY_ACTIONS[label] or "HeadCarry"
+    end
+
+    local function carryNormalizeUserId(userId)
+        if typeof(userId) ~= "number" then
+            userId = tonumber(tostring(userId))
+        end
+        if not userId or userId <= 0 then
+            return nil
+        end
+        return userId
+    end
+
+    local function carryOtherPlayerLabel(player)
+        if not player then
+            return ""
+        end
+        local dn = player.DisplayName
+        if dn and dn ~= "" then
+            return dn
+        end
+        return player.Name
+    end
+
+    local function carryDropdownOptions()
+        local opts = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lpCarry and plr.ClassName == "Player" then
+                table.insert(opts, carryOtherPlayerLabel(plr))
+            end
+        end
+        table.sort(opts, function(a, b)
+            return string.lower(a) < string.lower(b)
+        end)
+        return opts
+    end
+
+    local function carryFindPlayerByLabel(label)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lpCarry and carryOtherPlayerLabel(plr) == label then
+                return plr
+            end
+        end
+        return nil
+    end
+
+    local function carryTrim(s)
+        if typeof(s) ~= "string" then
+            return ""
+        end
+        return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+
+    local function carryFindOtherPlayerByVisibleName(nameQuery)
+        local q = carryTrim(nameQuery)
+        if q == "" then
+            return nil
+        end
+        local lowerQ = string.lower(q)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lpCarry and plr.ClassName == "Player" then
+                local label = carryOtherPlayerLabel(plr)
+                if label == q or string.lower(label) == lowerQ or string.lower(plr.Name) == lowerQ then
+                    return plr
+                end
+            end
+        end
+        return nil
+    end
+
+    local function carryResolveAdditionalPlayersToUserIds(str)
+        local out = {}
+        local seen = {}
+        if typeof(str) ~= "string" or str == "" then
+            return out
+        end
+        for segment in string.gmatch(str, "([^,;\n]+)") do
+            local plr = carryFindOtherPlayerByVisibleName(segment)
+            if plr then
+                local uid = carryNormalizeUserId(plr.UserId)
+                if uid and not seen[uid] then
+                    seen[uid] = true
+                    table.insert(out, uid)
+                end
+            end
+        end
+        return out
+    end
+
+    local function carryGetRootPart(character)
+        if not character then
+            return nil
+        end
+        local r = character:FindFirstChild("HumanoidRootPart")
+        if r and r:IsA("BasePart") then
+            return r
+        end
+        local pp = character.PrimaryPart
+        if pp and pp:IsA("BasePart") then
+            return pp
+        end
+        return nil
+    end
+
+    local function carryIsTargetWithinRange(targetUserId, maxDist)
+        local uid = carryNormalizeUserId(targetUserId)
+        if not uid then
+            return false
+        end
+        local myRoot = carryGetRootPart(lpCarry and lpCarry.Character)
+        if not myRoot then
+            return false
+        end
+        local tgtPlr = Players:GetPlayerByUserId(uid)
+        if not tgtPlr or tgtPlr == lpCarry then
+            return false
+        end
+        local tRoot = carryGetRootPart(tgtPlr.Character)
+        if not tRoot then
+            return false
+        end
+        return (myRoot.Position - tRoot.Position).Magnitude <= maxDist
+    end
+
+    local function carryIsAlreadyCarrying(userId)
+        local uid = carryNormalizeUserId(userId)
+        return uid ~= nil and carriedSlotIds[uid] == true
+    end
+
+    local function carryUpdateCarrierListParagraph()
+        if not SendRequestCarryCarrierListParagraph or not SendRequestCarryCarrierListParagraph.Set then
+            return
+        end
+        local content
+        if #carriedSlotEntries == 0 then
+            content = "(not carrying anyone)"
+        else
+            local lines = {}
+            for _, e in ipairs(carriedSlotEntries) do
+                local nm = e.name
+                if not nm or nm == "" then
+                    nm = "?"
+                end
+                local line = "• " .. nm .. "  [" .. tostring(e.id) .. "]"
+                if e.carryType and e.carryType ~= "" then
+                    line = line .. "  (" .. e.carryType .. ")"
+                end
+                table.insert(lines, line)
+            end
+            content = table.concat(lines, "\n")
+        end
+        SendRequestCarryCarrierListParagraph:Set({
+            Title = "Carrying",
+            Content = content,
+        })
+    end
+
+    local function carryApplySlots(data)
+        local newSet = {}
+        local entries = {}
+        local slots = type(data) == "table" and data.slots or nil
+        if type(slots) == "table" then
+            for _, entry in ipairs(slots) do
+                if type(entry) == "table" then
+                    local eid = carryNormalizeUserId(entry.userId)
+                    if eid then
+                        newSet[eid] = true
+                        local ename = entry.name
+                        if typeof(ename) ~= "string" or ename == "" then
+                            local plr = Players:GetPlayerByUserId(eid)
+                            ename = plr and carryOtherPlayerLabel(plr) or "?"
+                        end
+                        table.insert(entries, {
+                            name = ename,
+                            id = eid,
+                            carryType = typeof(entry.carryType) == "string" and entry.carryType or "",
+                        })
+                    end
+                end
+            end
+        end
+        carriedSlotIds = newSet
+        carriedSlotEntries = entries
+        carryUpdateCarrierListParagraph()
+    end
+
+    local function carryFireRequest(network, targetUserId)
+        local uid = carryNormalizeUserId(targetUserId)
+        if not network or not uid then
+            return false
+        end
+        local ok = pcall(function()
+            network.ContextMenuAction.Fire({
+                action = carryActionFromLabel(carryTypeLabel),
+                targetUserId = uid,
+                amount = 0,
+            })
+        end)
+        return ok
+    end
+
+    local function carryCollectTargetIds()
+        local ids = {}
+        local seen = {}
+        local function addId(id)
+            local uid = carryNormalizeUserId(id)
+            if uid and not seen[uid] and not carryIsAlreadyCarrying(uid) then
+                seen[uid] = true
+                table.insert(ids, uid)
+            end
+        end
+        for _, label in ipairs(sendRequestCarrySelected) do
+            local plr = carryFindPlayerByLabel(label)
+            if plr then
+                addId(plr.UserId)
+            end
+        end
+        for _, n in ipairs(carryResolveAdditionalPlayersToUserIds(sendRequestCarryAdditionalPlayersText)) do
+            addId(n)
+        end
+        return ids
+    end
+
+    local function carryCollectAllOtherIds()
+        local ids = {}
+        local seen = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lpCarry and plr.ClassName == "Player" then
+                local uid = carryNormalizeUserId(plr.UserId)
+                if uid and not seen[uid] and not carryIsAlreadyCarrying(uid) then
+                    seen[uid] = true
+                    table.insert(ids, uid)
+                end
+            end
+        end
+        return ids
+    end
+
+    local function carrySpawnAutoLoop(network, startToken, getToken, getTargets, noTargetMsg)
+        local warnedNoTargets = false
+        task.spawn(function()
+            while startToken == getToken() do
+                local targets = getTargets()
+                if #targets == 0 then
+                    if not warnedNoTargets and noTargetMsg then
+                        warnedNoTargets = true
+                        mountNotify({
+                            Title = "Auto Carry",
+                            Content = noTargetMsg,
+                        })
+                    end
+                    task.wait(5)
+                else
+                    warnedNoTargets = false
+                    for _, targetId in ipairs(targets) do
+                        if startToken ~= getToken() then
+                            break
+                        end
+                        if carryIsTargetWithinRange(targetId, SEND_REQUEST_CARRY_MAX_DISTANCE_STUDS) then
+                            carryFireRequest(network, targetId)
+                            task.wait(SEND_REQUEST_CARRY_DELAY_PER_TARGET)
+                        end
+                    end
+                    task.wait(SEND_REQUEST_CARRY_CYCLE_GAP)
+                end
+            end
+        end)
+    end
+
+    local function carryPurgeStaleSelections(selected, dropdown)
+        local opts = carryDropdownOptions()
+        local valid = {}
+        for _, sel in ipairs(selected) do
+            if table.find(opts, sel) then
+                table.insert(valid, sel)
+            end
+        end
+        if #valid ~= #selected and dropdown and dropdown.Set then
+            dropdown:Set(valid)
+        end
+        return valid
+    end
+
+    local function carryRefreshPlayerLists()
+        local opts = carryDropdownOptions()
+        if SendRequestCarryPlayersDropdown and SendRequestCarryPlayersDropdown.Refresh then
+            SendRequestCarryPlayersDropdown:Refresh(opts)
+        end
+        if AcceptIncomingCarryPlayersDropdown and AcceptIncomingCarryPlayersDropdown.Refresh then
+            AcceptIncomingCarryPlayersDropdown:Refresh(opts)
+        end
+        sendRequestCarrySelected = carryPurgeStaleSelections(sendRequestCarrySelected, SendRequestCarryPlayersDropdown)
+        acceptIncomingCarrySelected = carryPurgeStaleSelections(acceptIncomingCarrySelected, AcceptIncomingCarryPlayersDropdown)
+    end
+
+    local function acceptIncomingCarryShouldAccept(prompt)
+        if not acceptIncomingCarrySelected or #acceptIncomingCarrySelected == 0 then
+            return true
+        end
+        local fromName = prompt and tostring(prompt.requesterName or "") or ""
+        local fromId = carryNormalizeUserId(prompt and prompt.requesterUserId)
+        for _, opt in ipairs(acceptIncomingCarrySelected) do
+            if fromName ~= "" and fromName == opt then
+                return true
+            end
+            local plr = carryFindPlayerByLabel(opt)
+            if plr then
+                if fromId and carryNormalizeUserId(plr.UserId) == fromId then
+                    return true
+                end
+                if fromName == plr.Name or fromName == plr.DisplayName or fromName == carryOtherPlayerLabel(plr) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local function acceptIncomingCarryOnPrompt(prompt)
+        if not acceptIncomingCarryEnabled or type(prompt) ~= "table" then
+            return
+        end
+        if not acceptIncomingCarryShouldAccept(prompt) then
+            return
+        end
+        local requestId = prompt.requestId
+        if typeof(requestId) ~= "number" then
+            requestId = tonumber(tostring(requestId))
+        end
+        if not requestId then
+            return
+        end
+        local network = getCarryNetwork()
+        if not network then
+            return
+        end
+        pcall(function()
+            network.CarryRespond.Fire({
+                requestId = requestId,
+                accepted = true,
+            })
+        end)
+    end
+
+    SendRequestCarryCarrierListParagraph = MainTab:CreateParagraph({
+        Title = "Carrying",
+        Content = "(not carrying anyone)",
+    })
+
+    MainTab:CreateDropdown({
+        Name = "Carry Type",
+        Flag = "daun_carry_type",
+        Options = CARRY_TYPE_OPTIONS,
+        CurrentOption = { carryTypeLabel },
+        Callback = function(value)
+            carryTypeLabel = rayfieldDropdownFirst(value) or "Head Carry"
+        end,
+    })
+
+    SendRequestCarryPlayersDropdown = MainTab:CreateDropdown({
+        Name = "To",
+        Flag = "daun_main_send_carry_to",
+        Options = carryDropdownOptions(),
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
+        Callback = function(selected)
+            if type(selected) == "table" then
+                sendRequestCarrySelected = selected
+            elseif selected then
+                sendRequestCarrySelected = { selected }
+            else
+                sendRequestCarrySelected = {}
+            end
+        end,
+    })
+
+    MainTab:CreateInput({
+        Name = "By Name (additional)",
+        Flag = "daun_main_send_carry_by_name",
+        PlaceholderText = "Display names, e.g. kyazuramoe, FriendName",
+        CurrentValue = "",
+        Callback = function(value)
+            sendRequestCarryAdditionalPlayersText = value or ""
+        end,
+    })
+
+    local SendRequestCarryAutoToggle
+    local SendRequestCarryAutoNearbyToggle
+    SendRequestCarryAutoToggle = MainTab:CreateToggle({
+        Name = "Auto Send",
+        Flag = "daun_main_send_carry_auto",
+        CurrentValue = false,
+        Callback = function(enabled)
+            sendRequestCarryAutoEnabled = enabled == true
+            sendRequestCarryAutoLoopToken += 1
+            if not sendRequestCarryAutoEnabled then
+                return
+            end
+
+            if sendRequestCarryAutoNearbyEnabled and SendRequestCarryAutoNearbyToggle and SendRequestCarryAutoNearbyToggle.Set then
+                SendRequestCarryAutoNearbyToggle:Set(false)
+            end
+
+            local network = getCarryNetwork()
+            if not network then
+                mountNotify({
+                    Title = "Auto Carry",
+                    Content = "Network module not found",
+                })
+                if SendRequestCarryAutoToggle and SendRequestCarryAutoToggle.Set then
+                    SendRequestCarryAutoToggle:Set(false)
+                end
+                return
+            end
+
+            carrySpawnAutoLoop(
+                network,
+                sendRequestCarryAutoLoopToken,
+                function()
+                    return sendRequestCarryAutoLoopToken
+                end,
+                carryCollectTargetIds,
+                "No targets — select players and/or add names that match someone in the server"
+            )
+
+            mountNotify({
+                Title = "Auto Carry",
+                Content = "Auto send started (" .. carryTypeLabel .. ")",
+            })
+        end,
+    })
+
+    SendRequestCarryAutoNearbyToggle = MainTab:CreateToggle({
+        Name = "Auto Send Nearby",
+        Flag = "daun_main_send_carry_auto_nearby",
+        CurrentValue = false,
+        Callback = function(enabled)
+            sendRequestCarryAutoNearbyEnabled = enabled == true
+            sendRequestCarryAutoNearbyLoopToken += 1
+            if not sendRequestCarryAutoNearbyEnabled then
+                return
+            end
+
+            if sendRequestCarryAutoEnabled and SendRequestCarryAutoToggle and SendRequestCarryAutoToggle.Set then
+                SendRequestCarryAutoToggle:Set(false)
+            end
+
+            local network = getCarryNetwork()
+            if not network then
+                mountNotify({
+                    Title = "Auto Carry",
+                    Content = "Network module not found",
+                })
+                if SendRequestCarryAutoNearbyToggle and SendRequestCarryAutoNearbyToggle.Set then
+                    SendRequestCarryAutoNearbyToggle:Set(false)
+                end
+                return
+            end
+
+            carrySpawnAutoLoop(
+                network,
+                sendRequestCarryAutoNearbyLoopToken,
+                function()
+                    return sendRequestCarryAutoNearbyLoopToken
+                end,
+                carryCollectAllOtherIds,
+                "No nearby players to send to"
+            )
+
+            mountNotify({
+                Title = "Auto Carry",
+                Content = "Auto send nearby started (" .. carryTypeLabel .. ")",
+            })
+        end,
+    })
+
+    -- */  Auto Accept Carry  /* --
+    MainTab:CreateSection("Auto Accept Carry")
+
+    AcceptIncomingCarryPlayersDropdown = MainTab:CreateDropdown({
+        Name = "From",
+        Flag = "daun_main_accept_carry_from",
+        Options = carryDropdownOptions(),
+        CurrentOption = {},
+        MultipleOptions = true,
+        Search = true,
+        Callback = function(selected)
+            if type(selected) == "table" then
+                acceptIncomingCarrySelected = selected
+            elseif selected then
+                acceptIncomingCarrySelected = { selected }
+            else
+                acceptIncomingCarrySelected = {}
+            end
+        end,
+    })
+
+    local AcceptIncomingCarryListenToggle
+    AcceptIncomingCarryListenToggle = MainTab:CreateToggle({
+        Name = "Auto Accept",
+        Flag = "daun_main_accept_carry_auto",
+        CurrentValue = false,
+        Callback = function(enabled)
+            acceptIncomingCarryEnabled = enabled == true
+            if acceptIncomingCarryDisconnect then
+                pcall(acceptIncomingCarryDisconnect)
+                acceptIncomingCarryDisconnect = nil
+            end
+            if not acceptIncomingCarryEnabled then
+                return
+            end
+            local network = getCarryNetwork()
+            if not network or not network.CarryRequestPrompt or not network.CarryRequestPrompt.On then
+                mountNotify({
+                    Title = "Auto Accept Carry",
+                    Content = "Network module not found",
+                })
+                if AcceptIncomingCarryListenToggle and AcceptIncomingCarryListenToggle.Set then
+                    AcceptIncomingCarryListenToggle:Set(false)
+                end
+                return
+            end
+            local ok, disconnect = pcall(function()
+                return network.CarryRequestPrompt.On(acceptIncomingCarryOnPrompt)
+            end)
+            if ok and type(disconnect) == "function" then
+                acceptIncomingCarryDisconnect = disconnect
+            end
+            mountNotify({
+                Title = "Auto Accept Carry",
+                Content = "Listening for carry prompts",
+            })
+        end,
+    })
+
+    Players.PlayerAdded:Connect(function()
+        task.defer(carryRefreshPlayerLists)
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(carryRefreshPlayerLists)
+    end)
+    task.defer(carryRefreshPlayerLists)
+
+    task.defer(function()
+        local network = getCarryNetwork()
+        if not network or not network.CarrySlots or not network.CarrySlots.On then
+            return
+        end
+        pcall(function()
+            network.CarrySlots.On(carryApplySlots)
+        end)
+    end)
+
     local function hookCheckpointInstance(inst)
         if not inst then
             return
