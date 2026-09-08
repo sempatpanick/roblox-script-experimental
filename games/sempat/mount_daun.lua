@@ -370,7 +370,7 @@ do
     local CHECKPOINT_TELEPORT_RETRY_SEC = 5
     local PRE_RESET_DELAY_SEC = 1
     local POST_TELEPORT_POLL_SEC = 0.15
-    local POST_RESET_WAIT_SEC = 15
+    local POST_RESET_WAIT_SEC = 5
     local AUTO_SUMMIT_CONFIG_START_DELAY_SEC = 5
     local GAMEPLAY_PAUSE_APPEAR_SEC = 0.75
 
@@ -409,15 +409,19 @@ do
             entry.pos = { entry.pos }
         end
         entry.modePos = entry.modePos or "tween"
+        if entry.delay == nil then
+            entry.delay = DEFAULT_TELEPORT_DURATION_SEC
+        end
     end
 
+    -- delay = wait after this CP before the next teleport (seconds).
     -- 1 position = teleport only; 2+ positions = teleport to pos[1], then tween remaining.
     local summitRoute = {
-        { name = "CP1", pos = { "-622.54, 250.33, -383.30" }, modePos = "tween" },
-        { name = "CP2", pos = { "-1203.06, 261.69, -486.73" }, modePos = "tween" },
-        { name = "CP3", pos = { "-1399.34, 578.44, -950.07" }, modePos = "tween" },
-        { name = "CP4", pos = { "-1700.81, 816.68, -1399.42" }, modePos = "tween" },
-        { name = "Summit", pos = { "-3208.45, 1720.33, -2613.27", "-3241.28, 1713.15, -2557.37" }, modePos = "tween" },
+        { name = "CP1", pos = { "-622.54, 250.33, -383.30" }, modePos = "tween", delay = 20 },
+        { name = "CP2", pos = { "-1203.06, 261.69, -486.73" }, modePos = "tween", delay = 20 },
+        { name = "CP3", pos = { "-1399.34, 578.44, -950.07" }, modePos = "tween", delay = 20 },
+        { name = "CP4", pos = { "-1700.81, 816.68, -1399.42" }, modePos = "tween", delay = 20 },
+        { name = "Summit", pos = { "-3208.45, 1720.33, -2613.27", "-3241.28, 1713.15, -2557.37" }, modePos = "tween", delay = 30 },
     }
 
     for i, entry in ipairs(summitRoute) do
@@ -458,6 +462,14 @@ do
     local logParagraph
     local autoSummitMainToggle
     local summitQtyInput
+
+    local function getRouteDelaySec(entry)
+        local d = entry and tonumber(entry.delay)
+        if d ~= nil then
+            return math.max(0, d)
+        end
+        return math.max(0, tonumber(teleportDurationSec) or DEFAULT_TELEPORT_DURATION_SEC)
+    end
 
     local function normalizeCheckpointLabel(value)
         if typeof(value) ~= "string" then
@@ -804,20 +816,21 @@ do
         local nextIndex = math.min(nextRouteIndexFromCheckpoint(), #summitRoute)
         local nextEntry = summitRoute[nextIndex]
         local nextName = nextEntry and nextEntry.name or "—"
+        local nextDelay = getRouteDelaySec(nextEntry)
         if autoSummitEnabled then
             setStatusContent(string.format(
-                "Current: %s\nNext: %s\nTeleport: %.1fs  Tween: %.1fs\nWaiting to continue…",
+                "Current: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs\nWaiting to continue…",
                 displayCheckpointLabel(checkpoint),
                 nextName,
-                teleportDurationSec,
+                nextDelay,
                 tweenDurationSec
             ))
         else
             setStatusContent(string.format(
-                "Auto Summit is off.\nCurrent: %s\nNext: %s\nTeleport: %.1fs  Tween: %.1fs",
+                "Auto Summit is off.\nCurrent: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs",
                 displayCheckpointLabel(checkpoint),
                 nextName,
-                teleportDurationSec,
+                nextDelay,
                 tweenDurationSec
             ))
         end
@@ -879,7 +892,7 @@ do
     end
 
     local function waitAfterCheckpoint(token, routeEntry)
-        return waitWithCountdown(token, teleportDurationSec, function(remaining)
+        return waitWithCountdown(token, getRouteDelaySec(routeEntry), function(remaining)
             setStatusContent(string.format(
                 "At %s\nCheckpoint: %s\nNext teleport in %.1fs",
                 routeEntry.name,
@@ -1055,16 +1068,31 @@ do
         end,
     })
 
-    MainTab:CreateSlider({
-        Name = "Teleport Duration",
-        Flag = "daun_auto_summit_teleportDuration",
-        Range = { 0, 50 },
-        Increment = 0.5,
-        Suffix = "s",
-        CurrentValue = DEFAULT_TELEPORT_DURATION_SEC,
-        Callback = function(value)
-            teleportDurationSec = tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC
-            refreshIdleStatus()
+    local checkpointDelayPopup = Window:CreatePopup({
+        Title = "Checkpoint delays",
+        Content = "Wait after each checkpoint before the next teleport",
+        Height = 400,
+    })
+    checkpointDelayPopup:CreateSection("Delay")
+    for _, entry in ipairs(summitRoute) do
+        checkpointDelayPopup:CreateSlider({
+            Name = entry.label or entry.name,
+            Flag = "daun_auto_summit_delay_" .. tostring(entry.name),
+            Range = { 0, 50 },
+            Increment = 0.5,
+            Suffix = "s",
+            CurrentValue = getRouteDelaySec(entry),
+            Callback = function(value)
+                entry.delay = tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC
+                refreshIdleStatus()
+            end,
+        })
+    end
+
+    MainTab:CreateButton({
+        Name = "Checkpoint delays",
+        Callback = function()
+            checkpointDelayPopup:Open()
         end,
     })
 

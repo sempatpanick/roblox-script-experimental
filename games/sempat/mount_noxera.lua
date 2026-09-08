@@ -408,36 +408,40 @@ do
             entry.pos = { entry.pos }
         end
         entry.modePos = entry.modePos or "tween"
+        if entry.delay == nil then
+            entry.delay = DEFAULT_TELEPORT_DURATION_SEC
+        end
     end
 
+    -- delay = wait after this CP before the next teleport (seconds).
     -- Teleport mode: teleport to pos[1], then tween to pos[2] (checkpoint pad).
     local summitRoute = {
-        { name = "CP1", pos = { "612.26, 300.99, 260.02", "655.12, 301.07, 259.89" }, modePos = "tween" },
-        { name = "CP2", pos = { "1145.03, 328.53, 248.35", "1167.72, 330.70, 247.49" }, modePos = "tween" },
-        { name = "CP3", pos = { "1940.40, 477.51, 162.30", "1971.43, 477.60, 133.58" }, modePos = "tween" },
-        { name = "CP4", pos = { "2114.96, 545.77, -1372.77", "2112.64, 547.73, -1405.20" }, modePos = "tween" },
-        { name = "CP5", pos = { "1995.55, 979.77, -2020.47", "1992.06, 980.71, -2060.08" }, modePos = "tween" },
-        { name = "CP6", pos = { "2171.41, 556.77, -3973.57", "2196.97, 556.87, -3994.40" }, modePos = "tween" },
-        { name = "CP7", pos = { "3015.75, 682.77, -3981.52", "3043.92, 684.07, -3926.10" }, modePos = "tween" },
-        { name = "CP8", pos = { "3518.11, 978.73, -3324.23", "3521.02, 980.74, -3286.22" }, modePos = "tween" },
-        { name = "CP9", pos = { "3636.61, 1301.63, -2429.15", "3707.41, 1306.34, -2403.67" }, modePos = "tween" },
-        { name = "CP10", pos = { "3989.24, 2204.73, -2415.93", "3962.74, 2205.92, -2469.34" }, modePos = "tween" },
-        { name = "CP11", pos = { "4185.80, 2650.13, -3646.23", "4185.06, 2652.29, -3681.81" }, modePos = "tween" },
-        { name = "CP12", pos = { "4167.96, 2873.19, -4922.54", "4170.21, 2872.83, -4978.54" }, modePos = "tween" },
-        { name = "CP13", pos = { "4366.12, 3295.89, -6218.65", "4364.82, 3295.88, -6262.02" }, modePos = "tween" },
-        { name = "CP14", pos = { "4257.08, 3082.01, -7430.10", "4256.80, 3081.73, -7486.13" }, modePos = "tween" },
-        { name = "CP15", pos = { "3895.58, 3815.08, -8524.99", "3829.64, 3817.29, -8529.97" }, modePos = "tween" },
-        { name = "CP16", pos = { "2960.20, 4203.04, -9593.78", "2901.31, 4206.81, -9599.48" }, modePos = "tween" },
-        { name = "CP17", pos = { "1291.80, 4539.00, -10495.19", "1294.34, 4538.66, -10548.19" }, modePos = "tween" },
-        { name = "CP18", pos = { "1351.08, 4722.49, -11933.44", "1401.85, 4723.50, -11972.00" }, modePos = "tween" },
-        { name = "CP19", pos = { "2287.31, 5272.87, -12332.59", "2323.63, 5272.58, -12375.91" }, modePos = "tween" },
-        { name = "CP20", pos = { "2711.22, 5649.85, -12801.50", "2752.82, 5650.06, -12850.46" }, modePos = "tween" },
-        { name = "CP21", pos = { "2971.44, 6024.37, -13661.66", "2974.11, 6024.31, -13712.61" }, modePos = "tween" },
-        { name = "CP22", pos = { "3275.64, 6143.34, -14841.03", "3280.29, 6143.38, -14901.69" }, modePos = "tween" },
-        { name = "CP23", pos = { "3573.51, 6544.04, -15397.59", "3617.43, 6544.80, -15425.90" }, modePos = "tween" },
-        { name = "CP24", pos = { "4386.13, 7052.16, -16306.98", "4448.26, 7056.50, -16329.58" }, modePos = "tween" },
-        { name = "CP25", pos = { "5464.97, 7886.18, -16584.09", "5482.37, 7885.88, -16639.14" }, modePos = "tween" },
-        { name = "Summit", pos = { "5547.84, 8675.22, -17220.66", "5503.97, 8676.21, -17271.42" }, modePos = "tween" },
+        { name = "CP1", pos = { "612.26, 300.99, 260.02", "655.12, 301.07, 259.89" }, modePos = "tween", delay = 5 },
+        { name = "CP2", pos = { "1145.03, 328.53, 248.35", "1167.72, 330.70, 247.49" }, modePos = "tween", delay = 5 },
+        { name = "CP3", pos = { "1940.40, 477.51, 162.30", "1971.43, 477.60, 133.58" }, modePos = "tween", delay = 5 },
+        { name = "CP4", pos = { "2114.96, 545.77, -1372.77", "2112.64, 547.73, -1405.20" }, modePos = "tween", delay = 5 },
+        { name = "CP5", pos = { "1995.55, 979.77, -2020.47", "1992.06, 980.71, -2060.08" }, modePos = "tween", delay = 5 },
+        { name = "CP6", pos = { "2171.41, 556.77, -3973.57", "2196.97, 556.87, -3994.40" }, modePos = "tween", delay = 5 },
+        { name = "CP7", pos = { "3015.75, 682.77, -3981.52", "3043.92, 684.07, -3926.10" }, modePos = "tween", delay = 5 },
+        { name = "CP8", pos = { "3518.11, 978.73, -3324.23", "3521.02, 980.74, -3286.22" }, modePos = "tween", delay = 5 },
+        { name = "CP9", pos = { "3636.61, 1301.63, -2429.15", "3707.41, 1306.34, -2403.67" }, modePos = "tween", delay = 5 },
+        { name = "CP10", pos = { "3989.24, 2204.73, -2415.93", "3962.74, 2205.92, -2469.34" }, modePos = "tween", delay = 5 },
+        { name = "CP11", pos = { "4185.80, 2650.13, -3646.23", "4185.06, 2652.29, -3681.81" }, modePos = "tween", delay = 5 },
+        { name = "CP12", pos = { "4167.96, 2873.19, -4922.54", "4170.21, 2872.83, -4978.54" }, modePos = "tween", delay = 5 },
+        { name = "CP13", pos = { "4366.12, 3295.89, -6218.65", "4364.82, 3295.88, -6262.02" }, modePos = "tween", delay = 5 },
+        { name = "CP14", pos = { "4257.08, 3082.01, -7430.10", "4256.80, 3081.73, -7486.13" }, modePos = "tween", delay = 5 },
+        { name = "CP15", pos = { "3895.58, 3815.08, -8524.99", "3829.64, 3817.29, -8529.97" }, modePos = "tween", delay = 5 },
+        { name = "CP16", pos = { "2960.20, 4203.04, -9593.78", "2901.31, 4206.81, -9599.48" }, modePos = "tween", delay = 5 },
+        { name = "CP17", pos = { "1291.80, 4539.00, -10495.19", "1294.34, 4538.66, -10548.19" }, modePos = "tween", delay = 5 },
+        { name = "CP18", pos = { "1351.08, 4722.49, -11933.44", "1401.85, 4723.50, -11972.00" }, modePos = "tween", delay = 5 },
+        { name = "CP19", pos = { "2287.31, 5272.87, -12332.59", "2323.63, 5272.58, -12375.91" }, modePos = "tween", delay = 5 },
+        { name = "CP20", pos = { "2711.22, 5649.85, -12801.50", "2752.82, 5650.06, -12850.46" }, modePos = "tween", delay = 5 },
+        { name = "CP21", pos = { "2971.44, 6024.37, -13661.66", "2974.11, 6024.31, -13712.61" }, modePos = "tween", delay = 5 },
+        { name = "CP22", pos = { "3275.64, 6143.34, -14841.03", "3280.29, 6143.38, -14901.69" }, modePos = "tween", delay = 5 },
+        { name = "CP23", pos = { "3573.51, 6544.04, -15397.59", "3617.43, 6544.80, -15425.90" }, modePos = "tween", delay = 5 },
+        { name = "CP24", pos = { "4386.13, 7052.16, -16306.98", "4448.26, 7056.50, -16329.58" }, modePos = "tween", delay = 5 },
+        { name = "CP25", pos = { "5464.97, 7886.18, -16584.09", "5482.37, 7885.88, -16639.14" }, modePos = "tween", delay = 5 },
+        { name = "Summit", pos = { "5547.84, 8675.22, -17220.66", "5503.97, 8676.21, -17271.42" }, modePos = "tween", delay = 5 },
     }
 
     for i, entry in ipairs(summitRoute) do
@@ -478,6 +482,14 @@ do
     local logParagraph
     local autoSummitMainToggle
     local summitQtyInput
+
+    local function getRouteDelaySec(entry)
+        local d = entry and tonumber(entry.delay)
+        if d ~= nil then
+            return math.max(0, d)
+        end
+        return math.max(0, tonumber(teleportDurationSec) or DEFAULT_TELEPORT_DURATION_SEC)
+    end
 
     local function normalizePosisiLabel(value)
         if typeof(value) ~= "string" then
@@ -767,20 +779,21 @@ do
         local nextIndex = math.min(nextRouteIndexFromPosisi(), #summitRoute)
         local nextEntry = summitRoute[nextIndex]
         local nextName = nextEntry and nextEntry.name or "—"
+        local nextDelay = getRouteDelaySec(nextEntry)
         if autoSummitEnabled then
             setStatusContent(string.format(
-                "Current: %s\nNext: %s\nTeleport: %.1fs  Tween: %.1fs\nWaiting to continue…",
+                "Current: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs\nWaiting to continue…",
                 displayPosisiLabel(posisi),
                 nextName,
-                teleportDurationSec,
+                nextDelay,
                 tweenDurationSec
             ))
         else
             setStatusContent(string.format(
-                "Auto Summit is off.\nCurrent: %s\nNext: %s\nTeleport: %.1fs  Tween: %.1fs",
+                "Auto Summit is off.\nCurrent: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs",
                 displayPosisiLabel(posisi),
                 nextName,
-                teleportDurationSec,
+                nextDelay,
                 tweenDurationSec
             ))
         end
@@ -842,7 +855,7 @@ do
     end
 
     local function waitAfterCheckpoint(token, routeEntry)
-        return waitWithCountdown(token, teleportDurationSec, function(remaining)
+        return waitWithCountdown(token, getRouteDelaySec(routeEntry), function(remaining)
             setStatusContent(string.format(
                 "At %s\nPosisi: %s\nNext teleport in %.1fs",
                 routeEntry.name,
@@ -1018,16 +1031,31 @@ do
         end,
     })
 
-    MainTab:CreateSlider({
-        Name = "Teleport Duration",
-        Flag = "noxera_auto_summit_teleportDuration",
-        Range = { 0, 50 },
-        Increment = 0.5,
-        Suffix = "s",
-        CurrentValue = DEFAULT_TELEPORT_DURATION_SEC,
-        Callback = function(value)
-            teleportDurationSec = tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC
-            refreshIdleStatus()
+    local checkpointDelayPopup = Window:CreatePopup({
+        Title = "Checkpoint delays",
+        Content = "Wait after each checkpoint before the next teleport",
+        Height = 400,
+    })
+    checkpointDelayPopup:CreateSection("Delay")
+    for _, entry in ipairs(summitRoute) do
+        checkpointDelayPopup:CreateSlider({
+            Name = entry.label or entry.name,
+            Flag = "noxera_auto_summit_delay_" .. tostring(entry.name),
+            Range = { 0, 50 },
+            Increment = 0.5,
+            Suffix = "s",
+            CurrentValue = getRouteDelaySec(entry),
+            Callback = function(value)
+                entry.delay = tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC
+                refreshIdleStatus()
+            end,
+        })
+    end
+
+    MainTab:CreateButton({
+        Name = "Checkpoint delays",
+        Callback = function()
+            checkpointDelayPopup:Open()
         end,
     })
 
