@@ -1,0 +1,24 @@
+---
+description: Generate Git commit messages with Conventional Commits (Source Control sparkle button)
+alwaysApply: true
+---
+
+# Generate commit message
+
+When generating a Git commit message (including the Source Control **Generate Commit Message** button), output Conventional Commits only.
+
+Do not imitate older commits in this repo (`Add …`, `Update …`, `Refactor …` as a sentence).
+
+```
+<type>(<optional-scope>): <short why>
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `style`, `chore`, `perf`, `revert`
+
+```
+feat(mount-daun): add auto carry and auto accept carry
+fix(mount-noxera): wait for GameplayPaused before summit teleports
+docs: add agent knowledge base and commit rules
+```
+
+One subject line, lowercase, imperative, no trailing period, no quotes, no extra commentary. Full spec: `docs/style/commits.md`.

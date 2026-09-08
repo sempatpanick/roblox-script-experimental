@@ -1,0 +1,17 @@
+---
+description: How to add or wire a PlaceId game script
+globs: games/**/*.lua,sempatpanick.lua,sempatpanick_local.lua,functions/loader/*.lua
+alwaysApply: false
+---
+
+# Adding games
+
+Follow `docs/knowledge/adding-a-game.md`. PlaceId table: `docs/knowledge/games.md`.
+
+- Default path: `games/sempat/<slug>.lua` copied from a recent Sempat game.
+- Register the same PlaceId in **both** entry files.
+- Load shared tabs from `tabs/rayfield/` (Sempat is Rayfield-API compatible). WindUI games use `tabs/windui/` wrappers only.
+- `ConfigurationSaving.FolderName = "sempatpanick"`, `FileName` / `configDir` / `gamePath` use the slug.
+- Game-only automation stays in the game file’s Main tab, not in shared tabs.
+
+Do not point the live map at a leftover `games/rayfield/` copy when a Sempat script is the registered one.

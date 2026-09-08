@@ -1,0 +1,17 @@
+---
+description: Core sempatpanick project context for Cursor agents
+alwaysApply: true
+---
+
+# Project context
+
+This workspace is **sempatpanick** (Roblox executor hub). The folder name `cobalt` is local only.
+
+Read `AGENTS.md` and `docs/README.md` before non-trivial changes. Details live in `docs/knowledge/`, `docs/style/`, and `docs/prd/product.md`.
+
+- Do not edit `Cobalt.luau`.
+- New games: `games/sempat/`, register PlaceId in **both** `sempatpanick.lua` and `sempatpanick_local.lua`.
+- Dual-load modules (`require` then `HttpGet`); use `shared.sempatpanick_baseURL`; strip BOM.
+- Shared tabs: `tabs/rayfield/*`. WindUI only wraps them.
+- Match existing file style. Do not mass-reformat.
+- Commits: Conventional Commits (`docs/style/commits.md`), and only when asked.

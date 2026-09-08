@@ -1,4 +1,12 @@
 {
 	"stylua.targetReleaseVersion": "latest",
-	"luau-lsp.studioPlugin.enabled": true
+	"luau-lsp.studioPlugin.enabled": true,
+	"github.copilot.chat.commitMessageGeneration.instructions": [
+		{
+			"file": "docs/style/commits.md"
+		},
+		{
+			"text": "Use Conventional Commits only: type(optional-scope): short why. Imperative, lowercase, no trailing period, max 72 chars. Do not copy this repo's older sentence-style history (Add/Update/Refactor …). Output only the commit message."
+		}
+	]
 }

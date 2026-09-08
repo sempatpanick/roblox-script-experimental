@@ -1,0 +1,24 @@
+When Cursor auto-generates a Git commit message for this repository (Source Control sparkle / Generate Commit Message), you MUST use Conventional Commits.
+
+Do NOT copy this repo’s older git history. Old messages look like “Add Auto Carry to Mount Daun.” That style is deprecated.
+
+Required format (single subject line, no trailing period, lowercase description, imperative, max 72 chars):
+
+<type>(<optional-scope>): <short why>
+
+Types: feat, fix, refactor, docs, style, chore, perf, revert
+Scopes when useful: loader, sempat-ui, rayfield, windui, tabs, or a game slug (mount-daun, capybara-onsen)
+
+Output ONLY the commit message. No quotes, no markdown, no preamble.
+
+Good:
+feat(mount-daun): add auto carry and auto accept carry
+fix(mount-noxera): wait for GameplayPaused before summit teleports
+docs: add agent knowledge base and commit rules
+
+Bad:
+Add Auto Carry to Mount Daun.
+update stuff
+WIP
+Fixed bug
+This commit adds...

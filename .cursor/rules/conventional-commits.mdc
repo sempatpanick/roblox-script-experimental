@@ -1,0 +1,30 @@
+---
+description: Conventional Commits required for every git commit
+alwaysApply: true
+---
+
+# Conventional Commits
+
+When the user asks to commit, the message **must** be Conventional Commits. Full rules: `docs/style/commits.md`.
+
+```
+<type>(<optional-scope>): <short why>
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `style`, `chore`, `perf`, `revert`.
+
+```
+# ✅
+feat(mount-daun): add auto carry and auto accept carry
+fix(mount-noxera): wait for GameplayPaused before summit teleports
+docs: add agent knowledge base and commit rules
+
+# ❌
+Add Auto Carry to Mount Daun.
+update stuff
+WIP
+```
+
+- Imperative, lowercase description, no trailing period, header ≤ 72 chars.
+- Scope examples: `loader`, `sempat-ui`, `tabs`, `mount-daun`.
+- Split unrelated changes. Do not commit unless asked.

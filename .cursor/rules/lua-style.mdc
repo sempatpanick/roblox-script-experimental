@@ -1,0 +1,23 @@
+---
+description: Lua conventions for sempatpanick hub and game scripts
+globs: "**/*.lua"
+alwaysApply: false
+---
+
+# Lua style
+
+Follow `docs/style/lua.md`. Match the current file’s indent (games: 4 spaces; many `functions/` files: tabs).
+
+```lua
+-- ✅ dual load + baseURL
+local baseURL = shared.sempatpanick_baseURL
+assert(type(baseURL) == "string" and #baseURL > 0, "[sempatpanick] baseURL not set")
+
+-- ❌ require-only (breaks executor HttpGet)
+local mod = require("../../functions/player/character")
+```
+
+- Keep require-then-HttpGet loaders; strip UTF-8 BOM; `loadstring or load`.
+- Sempat/Rayfield window title: `sempatpanick | <Name>`. Persist flags via `flagsPrefix`, not ad-hoc names.
+- Do not fork `tabs/rayfield` logic into a game file or into `tabs/windui` beyond the wrap.
+- Do not edit `rayfield_library.lua` / `windui_library.lua` for a single-game feature.
