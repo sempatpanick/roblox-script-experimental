@@ -13,5 +13,6 @@ Follow `docs/knowledge/adding-a-game.md`. PlaceId table: `docs/knowledge/games.m
 - Load shared tabs from `tabs/rayfield/` (Sempat is Rayfield-API compatible). WindUI games use `tabs/windui/` wrappers only.
 - `ConfigurationSaving.FolderName = "sempatpanick"`, `FileName` / `configDir` / `gamePath` use the slug.
 - Game-only automation stays in the game file’s Main tab, not in shared tabs.
+- Always check the 200-local limit; wrap large tabs in `local function createXTab()` (`docs/style/lua.md`).
 
 Do not point the live map at a leftover `games/rayfield/` copy when a Sempat script is the registered one.

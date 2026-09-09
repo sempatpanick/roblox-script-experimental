@@ -21,6 +21,7 @@ When adding or wiring a game, also read [docs/knowledge/adding-a-game.md](docs/k
 - Modules must keep the dual load path: local `require`, then `HttpGet` + `loadstring`/`load` via `shared.sempatpanick_baseURL`. Strip UTF-8 BOM before compile.
 - Reuse `tabs/rayfield/*` for shared tabs. WindUI wrappers live in `tabs/windui/*` and must not fork tab logic.
 - Match the file you are editing. Do not reformat unrelated code.
+- Always check the **200 local** limit before adding `local` in a game script (Lua chunk + current `do` share one pool). Wrap large tabs in `local function createXTab()`. See [docs/style/lua.md](docs/style/lua.md).
 - Git commits must follow [Conventional Commits](docs/style/commits.md). Only commit when the user asks. The IDE sparkle button uses [`.cursorrules`](.cursorrules), not `.cursor/rules`.
 
 ## Runtime map

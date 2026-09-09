@@ -18,3 +18,4 @@ This repository uses the same agent knowledge as Cursor. Follow it.
 - Dual-load every remote module (`require` then `HttpGet`). Set `shared.sempatpanick_baseURL` from the entry script.
 - Mirror PlaceId entries in both `sempatpanick.lua` and `sempatpanick_local.lua`.
 - Commits: Conventional Commits only (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `style:`, `perf:`, `test:`). Commit only when asked.
+- Always check Lua’s 200-local limit before adding `local` in a game script; wrap large tabs in functions (`docs/style/lua.md`).

@@ -14,4 +14,5 @@ Read `AGENTS.md` and `docs/README.md` before non-trivial changes. Details live i
 - Dual-load modules (`require` then `HttpGet`); use `shared.sempatpanick_baseURL`; strip BOM.
 - Shared tabs: `tabs/rayfield/*`. WindUI only wraps them.
 - Match existing file style. Do not mass-reformat.
+- Always check Lua’s 200-local limit before adding locals to a game script; wrap large tabs in `local function createXTab()` (`docs/style/lua.md`).
 - Commits: Conventional Commits (`docs/style/commits.md`), and only when asked.

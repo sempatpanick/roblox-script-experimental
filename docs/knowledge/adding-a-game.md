@@ -21,7 +21,7 @@ Copy a recent Sempat script (for example `games/sempat/mount_daun.lua` or `games
    - `createRecordingTab(..., { gamePath = "sempatpanick/<slug>", tabIcon = "video" })`
    - `createConfigTab(..., { configDir = "sempatpanick/<slug>", rayfieldLibrary = SempatLibrary, tabIcon = "settings" })`
 
-6. **Game tab** — put automation in a `Main` (or similarly named) tab. Keep Place-specific remotes, routes, and loops in this file, not in shared tabs.
+6. **Game tab** — put automation in a `Main` (or similarly named) tab. Keep Place-specific remotes, routes, and loops in this file, not in shared tabs. Wrap each large tab in `local function createXTab() … end` then call it. File-level `do` blocks still count against the chunk’s **200 local** limit — always check before adding locals (see [style/lua.md](../style/lua.md)).
 7. **Notify** — Sempat: `SempatLibrary:Notify({ Title, Content, Duration })`. Do not pass Rayfield image ids unless the library is Rayfield.
 8. **Update** [games.md](games.md) PlaceId table if you add or move a game.
 

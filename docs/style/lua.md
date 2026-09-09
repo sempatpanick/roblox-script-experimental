@@ -17,6 +17,35 @@ This repo is Lua 5.1 / Luau for Roblox executors. There is no StyLua config in t
 - `task.defer` / `task.wait` over deprecated `spawn`/`wait` in new code.
 - Do not add types unless the surrounding file already uses Luau types (`Cobalt.luau` does; hub scripts generally do not).
 
+## 200 local limit (always check)
+
+Lua 5.1 / Luau allows **200 locals per function**, including the **file chunk**. Game scripts grow past this quickly (`mount_daun.lua` already has). **Before adding locals, UI handles, or helpers to a game file, check the enclosing function’s local count.** Compile after edits. The executor error looks like `too many local variables (limit is 200)`.
+
+What counts:
+
+- Every `local x` / `local function foo` in the **same function** (the file is one function until you nest).
+- A `do … end` block does **not** give a fresh 200. Outer chunk locals stay live **during** the block; they only free after `end`.
+- Nested `function` / `local function` **does** reset the counter (that function has its own 200). Upvalues into it are limited separately (about 60).
+
+Always wrap each large tab like [games/sempat/capybara_onsen.lua](../../games/sempat/capybara_onsen.lua):
+
+```lua
+-- */  Main Tab  /* --
+local function createMainTab()
+    local MainTab = Window:CreateTab("Main", "mountain")
+    -- tab locals live here, not on the chunk
+end
+createMainTab()
+
+-- */  Fishing Tab  /* --
+local function createFishingTab()
+    local FishingTab = Window:CreateTab("Fishing", "fish")
+end
+createFishingTab()
+```
+
+Do **not** keep dumping new `local` into the file root or a file-level `do` when the script is already large. If a tab is approaching 200 internals, split that tab into another `local function` or a module under `functions/`.
+
 ## Loaders
 
 Keep require-then-HttpGet. Strip BOM. Compile with `loadstring or load`. If a tab module fails, stub a function that notifies instead of erroring the whole hub.

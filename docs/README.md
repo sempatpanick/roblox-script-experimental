@@ -17,7 +17,7 @@ Agents (Cursor, Claude Code, and similar) must treat this folder as the project 
 
 | Doc | Use it for |
 | --- | --- |
-| [style/lua.md](style/lua.md) | Indent, loaders, UI flags, comments |
+| [style/lua.md](style/lua.md) | Indent, loaders, UI flags, **200 local limit**, comments |
 | [style/commits.md](style/commits.md) | Conventional Commits |
 
 ## Product

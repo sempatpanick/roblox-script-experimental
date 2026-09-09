@@ -18,6 +18,7 @@ local mod = require("../../functions/player/character")
 ```
 
 - Keep require-then-HttpGet loaders; strip UTF-8 BOM; `loadstring or load`.
+- Always check Lua’s **200 local** limit before adding locals to a game file. `do` does not reset it; wrap large tabs in `local function createXTab()`. Details: `docs/style/lua.md`.
 - Sempat/Rayfield window title: `sempatpanick | <Name>`. Persist flags via `flagsPrefix`, not ad-hoc names.
 - Do not fork `tabs/rayfield` logic into a game file or into `tabs/windui` beyond the wrap.
 - Do not edit `rayfield_library.lua` / `windui_library.lua` for a single-game feature.
