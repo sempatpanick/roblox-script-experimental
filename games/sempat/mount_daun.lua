@@ -378,7 +378,7 @@ local function getDaunNetwork()
 end
 
 -- */  Main Tab  /* --
-do
+local function createMainTab()
     local MainTab = Window:CreateTab("Main", "mountain")
 
     local SUMMIT_ARRIVAL_RADIUS = 80
@@ -672,7 +672,30 @@ do
         return 0
     end
 
-    -- Trust world position over CP0. CP0 means start and also "summit done".
+    local function hopRadius(index)
+        if index == #summitRoute then
+            return SUMMIT_ARRIVAL_RADIUS
+        end
+        return CP_VERIFY_RADIUS
+    end
+
+    -- A hop is done only when we are on that pad (CPs also need the checkpoint value).
+    local function hopCompleted(index)
+        local entry = summitRoute[index]
+        if not entry then
+            return false
+        end
+        local isSummit = index == #summitRoute
+        if not isNearRouteEntry(entry, hopRadius(index)) then
+            return false
+        end
+        if isSummit then
+            return true
+        end
+        return checkpointMatchesRouteEntry(getCheckpointLabel(), entry)
+    end
+
+    -- Trust world position over the checkpoint value. CP0 is start and also "summit done".
     local function verifiedCurrentRouteIndex()
         local claimed = checkpointRouteIndex(getCheckpointLabel())
         local here = physicalRouteIndex()
@@ -686,7 +709,6 @@ do
             if here >= 1 then
                 return here
             end
-            -- Off the tight pad: only treat as still on-mountain near CP4/Summit.
             local nearIndex = nearestRouteIndex(CP_NEAREST_RADIUS)
             if nearIndex >= summitIndex - 1 then
                 return summitIndex - 1
@@ -708,19 +730,32 @@ do
         return (entry and entry.name) or "spawn"
     end
 
+    -- If the game already credits a CP/summit but we are not on that pad, retry that hop.
     local function nextRouteIndexFromCheckpoint()
-        local current = verifiedCurrentRouteIndex()
+        local claimed = checkpointRouteIndex(getCheckpointLabel())
+        local here = physicalRouteIndex()
         local summitIndex = #summitRoute
-        if current >= summitIndex then
-            if physicalRouteIndex() == summitIndex then
-                return summitIndex + 1
-            end
-            return summitIndex
+
+        if hopCompleted(summitIndex) then
+            return summitIndex + 1
         end
-        if current <= 0 then
+
+        if claimed <= 0 then
+            if here >= 1 then
+                return summitIndex
+            end
+            local nearIndex = nearestRouteIndex(CP_NEAREST_RADIUS)
+            if nearIndex >= summitIndex - 1 then
+                return summitIndex
+            end
             return 1
         end
-        return current + 1
+
+        local target = math.min(claimed, summitIndex)
+        if hopCompleted(target) then
+            return target + 1
+        end
+        return target
     end
 
     local function cancelActiveTween()
@@ -943,15 +978,19 @@ do
 
     local function waitForCheckpointConfirm(token, routeEntry, isSummitStep)
         local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
+        local routeIndex = isSummitStep and #summitRoute or 0
+        if routeIndex == 0 then
+            for i, entry in ipairs(summitRoute) do
+                if entry == routeEntry or (entry.name == routeEntry.name) then
+                    routeIndex = i
+                    break
+                end
+            end
+        end
         while autoSummitEnabled and token == autoSummitLoopToken do
             local checkpointNow = getCheckpointLabel()
-            local atPad = isNearRouteEntry(routeEntry, isSummitStep and SUMMIT_ARRIVAL_RADIUS or CP_VERIFY_RADIUS)
-            if isSummitStep then
-                -- CP0 also means start; only count summit when we are actually there.
-                if atPad then
-                    return true
-                end
-            elseif atPad and checkpointMatchesRouteEntry(checkpointNow, routeEntry) then
+            local atPad = isNearRouteEntry(routeEntry, hopRadius(routeIndex))
+            if hopCompleted(routeIndex) then
                 return true
             end
             if os.clock() >= retryDeadline then
@@ -1121,15 +1160,8 @@ do
 
             local routeEntry = summitRoute[nextIndex]
             local isSummitStep = nextIndex == #summitRoute
-            local atTarget = isNearRouteEntry(routeEntry, isSummitStep and SUMMIT_ARRIVAL_RADIUS or CP_VERIFY_RADIUS)
-            local checkpointOk
-            if isSummitStep then
-                checkpointOk = atTarget
-            else
-                checkpointOk = atTarget and checkpointMatchesRouteEntry(getCheckpointLabel(), routeEntry)
-            end
 
-            if not (atTarget and checkpointOk) then
+            if not hopCompleted(nextIndex) then
                 if not moveUntilCheckpointRegistered(token, routeEntry, isSummitStep) then
                     break
                 end
@@ -1938,9 +1970,10 @@ do
 
     task.defer(refreshIdleStatus)
 end
+createMainTab()
 
 -- */  Fishing Tab  /* --
-do
+local function createFishingTab()
     local FishingTab = Window:CreateTab("Fishing", "fish")
 
     local FISH_INVENTORY_MAX = 500
@@ -3377,6 +3410,7 @@ do
         refreshFishIndexParagraph()
     end)
 end
+createFishingTab()
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "daun", tabIcon = "map-pin" })
