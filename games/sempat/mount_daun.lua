@@ -378,12 +378,10 @@ local function getDaunNetwork()
 end
 
 -- */  Main Tab  /* --
-local function createMainTab()
+do
     local MainTab = Window:CreateTab("Main", "mountain")
 
     local SUMMIT_ARRIVAL_RADIUS = 80
-    local CP_VERIFY_RADIUS = 120
-    local CP_NEAREST_RADIUS = 400
     local DEFAULT_TELEPORT_DURATION_SEC = 5
     local DEFAULT_TWEEN_DURATION_SEC = 0.5
     local CHECKPOINT_TELEPORT_RETRY_SEC = 5
@@ -571,6 +569,14 @@ local function createMainTab()
         return 0
     end
 
+    local function nextRouteIndexFromCheckpoint()
+        local idx = checkpointRouteIndex(getCheckpointLabel())
+        if idx >= #summitRoute then
+            return #summitRoute + 1
+        end
+        return idx + 1
+    end
+
     local function checkpointMatchesRouteEntry(label, entry)
         local raw = normalizeCheckpointLabel(label)
         if raw == "" or not entry then
@@ -625,137 +631,11 @@ local function createMainTab()
     end
 
     local function isNearRouteEntry(entry, radius)
-        if not entry then
+        local finalPos = getRouteFinalPosStr(entry)
+        if not finalPos then
             return false
         end
-        for _, posStr in ipairs(getRoutePosList(entry)) do
-            if isNearPosition(posStr, radius) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function nearestRouteIndex(maxRadius)
-        local rootPart = getLocalRootPart()
-        if not rootPart then
-            return 0, math.huge
-        end
-        local bestIndex = 0
-        local bestDist = math.huge
-        for i = #summitRoute, 1, -1 do
-            for _, posStr in ipairs(getRoutePosList(summitRoute[i])) do
-                local targetPos = parsePositionStr(posStr)
-                if targetPos then
-                    local dist = (rootPart.Position - targetPos).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestIndex = i
-                    end
-                end
-            end
-        end
-        if maxRadius and bestDist > maxRadius then
-            return 0, bestDist
-        end
-        return bestIndex, bestDist
-    end
-
-    -- Which route pad we are standing on (Summit first, then CP4…CP1). 0 = not on a pad.
-    local function physicalRouteIndex()
-        for i = #summitRoute, 1, -1 do
-            local radius = i == #summitRoute and SUMMIT_ARRIVAL_RADIUS or CP_VERIFY_RADIUS
-            if isNearRouteEntry(summitRoute[i], radius) then
-                return i
-            end
-        end
-        return 0
-    end
-
-    local function hopRadius(index)
-        if index == #summitRoute then
-            return SUMMIT_ARRIVAL_RADIUS
-        end
-        return CP_VERIFY_RADIUS
-    end
-
-    -- A hop is done only when we are on that pad (CPs also need the checkpoint value).
-    local function hopCompleted(index)
-        local entry = summitRoute[index]
-        if not entry then
-            return false
-        end
-        local isSummit = index == #summitRoute
-        if not isNearRouteEntry(entry, hopRadius(index)) then
-            return false
-        end
-        if isSummit then
-            return true
-        end
-        return checkpointMatchesRouteEntry(getCheckpointLabel(), entry)
-    end
-
-    -- Trust world position over the checkpoint value. CP0 is start and also "summit done".
-    local function verifiedCurrentRouteIndex()
-        local claimed = checkpointRouteIndex(getCheckpointLabel())
-        local here = physicalRouteIndex()
-        local summitIndex = #summitRoute
-
-        if here == summitIndex then
-            return summitIndex
-        end
-
-        if claimed == 0 or claimed >= summitIndex then
-            if here >= 1 then
-                return here
-            end
-            local nearIndex = nearestRouteIndex(CP_NEAREST_RADIUS)
-            if nearIndex >= summitIndex - 1 then
-                return summitIndex - 1
-            end
-            return 0
-        end
-
-        if here ~= 0 then
-            return here
-        end
-        return claimed
-    end
-
-    local function standingLabel(index)
-        if index == #summitRoute then
-            return "Summit"
-        end
-        local entry = summitRoute[index]
-        return (entry and entry.name) or "spawn"
-    end
-
-    -- If the game already credits a CP/summit but we are not on that pad, retry that hop.
-    local function nextRouteIndexFromCheckpoint()
-        local claimed = checkpointRouteIndex(getCheckpointLabel())
-        local here = physicalRouteIndex()
-        local summitIndex = #summitRoute
-
-        if hopCompleted(summitIndex) then
-            return summitIndex + 1
-        end
-
-        if claimed <= 0 then
-            if here >= 1 then
-                return summitIndex
-            end
-            local nearIndex = nearestRouteIndex(CP_NEAREST_RADIUS)
-            if nearIndex >= summitIndex - 1 then
-                return summitIndex
-            end
-            return 1
-        end
-
-        local target = math.min(claimed, summitIndex)
-        if hopCompleted(target) then
-            return target + 1
-        end
-        return target
+        return isNearPosition(finalPos, radius)
     end
 
     local function cancelActiveTween()
@@ -950,25 +830,22 @@ local function createMainTab()
 
     local function refreshIdleStatus()
         local checkpoint = getCheckpointLabel()
-        local standing = standingLabel(verifiedCurrentRouteIndex())
         local nextIndex = math.min(nextRouteIndexFromCheckpoint(), #summitRoute)
         local nextEntry = summitRoute[nextIndex]
         local nextName = nextEntry and nextEntry.name or "—"
         local nextDelay = getRouteDelaySec(nextEntry)
         if autoSummitEnabled then
             setStatusContent(string.format(
-                "Current: %s\nStanding: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs\nWaiting to continue…",
+                "Current: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs\nWaiting to continue…",
                 displayCheckpointLabel(checkpoint),
-                standing,
                 nextName,
                 nextDelay,
                 tweenDurationSec
             ))
         else
             setStatusContent(string.format(
-                "Auto Summit is off.\nCurrent: %s\nStanding: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs",
+                "Auto Summit is off.\nCurrent: %s\nNext: %s\nDelay: %.1fs  Tween: %.1fs",
                 displayCheckpointLabel(checkpoint),
-                standing,
                 nextName,
                 nextDelay,
                 tweenDurationSec
@@ -978,34 +855,37 @@ local function createMainTab()
 
     local function waitForCheckpointConfirm(token, routeEntry, isSummitStep)
         local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
-        local routeIndex = isSummitStep and #summitRoute or 0
-        if routeIndex == 0 then
-            for i, entry in ipairs(summitRoute) do
-                if entry == routeEntry or (entry.name == routeEntry.name) then
-                    routeIndex = i
-                    break
-                end
-            end
-        end
         while autoSummitEnabled and token == autoSummitLoopToken do
             local checkpointNow = getCheckpointLabel()
-            local atPad = isNearRouteEntry(routeEntry, hopRadius(routeIndex))
-            if hopCompleted(routeIndex) then
+            local cpOk = checkpointMatchesRouteEntry(checkpointNow, routeEntry)
+            local posOk = isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS)
+            if cpOk and posOk then
+                return true
+            end
+            if isSummitStep and posOk then
                 return true
             end
             if os.clock() >= retryDeadline then
                 return false
             end
             setStatusContent(string.format(
-                "Confirming %s…\nCheckpoint: %s\nExpected: %s\nAt pad: %s",
+                "Confirming %s…\nCheckpoint: %s\nExpected: %s",
                 routeEntry.name,
                 displayCheckpointLabel(checkpointNow),
-                expectedCheckpointName(routeEntry),
-                atPad and "yes" or "no"
+                expectedCheckpointName(routeEntry)
             ))
             task.wait(POST_TELEPORT_POLL_SEC)
         end
         return false
+    end
+
+    local function isAtRouteCheckpoint(entry)
+        if not entry then
+            return false
+        end
+        local cpOk = checkpointMatchesRouteEntry(getCheckpointLabel(), entry)
+        local posOk = isNearRouteEntry(entry, SUMMIT_ARRIVAL_RADIUS)
+        return cpOk and posOk
     end
 
     local function moveUntilCheckpointRegistered(token, routeEntry, isSummitStep)
@@ -1037,6 +917,27 @@ local function createMainTab()
             ))
         end
         return false
+    end
+
+    -- Before teleporting to the next CP, confirm the current one registered.
+    -- If leaderstats or position still do not match this CP, retry that teleport.
+    local function ensureCurrentCheckpointBeforeNext(token, nextIndex)
+        if nextIndex <= 1 then
+            return true
+        end
+        local currentEntry = summitRoute[nextIndex - 1]
+        if not currentEntry then
+            return true
+        end
+        if isAtRouteCheckpoint(currentEntry) then
+            return true
+        end
+        setStatusContent(string.format(
+            "Current CP not confirmed — retrying %s…\nCheckpoint: %s",
+            currentEntry.name,
+            displayCheckpointLabel(getCheckpointLabel())
+        ))
+        return moveUntilCheckpointRegistered(token, currentEntry, currentEntry.name == "Summit")
     end
 
     local function waitAfterCheckpoint(token, routeEntry)
@@ -1129,25 +1030,11 @@ local function createMainTab()
                 continue
             end
 
-            local checkpoint = getCheckpointLabel()
-            local currentIndex = verifiedCurrentRouteIndex()
             local nextIndex = nextRouteIndexFromCheckpoint()
             if resumeFromStart then
                 resumeFromStart = false
-                if currentIndex <= 0 then
-                    nextIndex = 1
-                else
-                    nextIndex = nextRouteIndexFromCheckpoint()
-                end
+                nextIndex = 1
             end
-
-            setStatusContent(string.format(
-                "Verify CP\nCheckpoint: %s\nStanding: %s\nNext: %s",
-                displayCheckpointLabel(checkpoint),
-                standingLabel(currentIndex),
-                (nextIndex > #summitRoute and "Reset") or (summitRoute[nextIndex] and summitRoute[nextIndex].name) or "—"
-            ))
-
             if nextIndex > #summitRoute then
                 if waitBeforeResetProgress(token) and fireResetProgress() then
                     waitAfterResetProgress(token)
@@ -1158,13 +1045,25 @@ local function createMainTab()
                 continue
             end
 
+            if not ensureCurrentCheckpointBeforeNext(token, nextIndex) then
+                break
+            end
+            nextIndex = nextRouteIndexFromCheckpoint()
+            if resumeFromStart then
+                resumeFromStart = false
+                nextIndex = 1
+            end
+            if nextIndex > #summitRoute then
+                refreshIdleStatus()
+                task.wait(0.5)
+                continue
+            end
+
             local routeEntry = summitRoute[nextIndex]
             local isSummitStep = nextIndex == #summitRoute
 
-            if not hopCompleted(nextIndex) then
-                if not moveUntilCheckpointRegistered(token, routeEntry, isSummitStep) then
-                    break
-                end
+            if not moveUntilCheckpointRegistered(token, routeEntry, isSummitStep) then
+                break
             end
             if not waitAfterCheckpoint(token, routeEntry) then
                 break
@@ -1970,10 +1869,9 @@ local function createMainTab()
 
     task.defer(refreshIdleStatus)
 end
-createMainTab()
 
 -- */  Fishing Tab  /* --
-local function createFishingTab()
+do
     local FishingTab = Window:CreateTab("Fishing", "fish")
 
     local FISH_INVENTORY_MAX = 500
@@ -3410,7 +3308,6 @@ local function createFishingTab()
         refreshFishIndexParagraph()
     end)
 end
-createFishingTab()
 
 -- */  Teleport Tab  /* --
 createTeleportTab(Window, mountNotify, { flagsPrefix = "daun", tabIcon = "map-pin" })
