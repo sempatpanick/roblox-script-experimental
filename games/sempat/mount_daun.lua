@@ -383,6 +383,7 @@ do
 
     local SUMMIT_ARRIVAL_RADIUS = 80
     local DEFAULT_TELEPORT_DURATION_SEC = 5
+    local MIN_ROUTE_DELAY_SEC = 5
     local DEFAULT_TWEEN_DURATION_SEC = 0.5
     local CHECKPOINT_TELEPORT_RETRY_SEC = 5
     local PRE_RESET_DELAY_SEC = 1
@@ -426,9 +427,7 @@ do
             entry.pos = { entry.pos }
         end
         entry.modePos = entry.modePos or "tween"
-        if entry.delay == nil then
-            entry.delay = DEFAULT_TELEPORT_DURATION_SEC
-        end
+        entry.delay = math.max(MIN_ROUTE_DELAY_SEC, tonumber(entry.delay) or DEFAULT_TELEPORT_DURATION_SEC)
     end
 
     -- delay = wait after this CP before the next teleport (seconds).
@@ -483,9 +482,9 @@ do
     local function getRouteDelaySec(entry)
         local d = entry and tonumber(entry.delay)
         if d ~= nil then
-            return math.max(0, d)
+            return math.max(MIN_ROUTE_DELAY_SEC, d)
         end
-        return math.max(0, tonumber(teleportDurationSec) or DEFAULT_TELEPORT_DURATION_SEC)
+        return math.max(MIN_ROUTE_DELAY_SEC, tonumber(teleportDurationSec) or DEFAULT_TELEPORT_DURATION_SEC)
     end
 
     local function normalizeCheckpointLabel(value)
@@ -1141,12 +1140,12 @@ do
         checkpointDelayPopup:CreateSlider({
             Name = entry.label or entry.name,
             Flag = "daun_auto_summit_delay_" .. tostring(entry.name),
-            Range = { 0, 50 },
+            Range = { MIN_ROUTE_DELAY_SEC, 50 },
             Increment = 0.5,
             Suffix = "s",
             CurrentValue = getRouteDelaySec(entry),
             Callback = function(value)
-                entry.delay = tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC
+                entry.delay = math.max(MIN_ROUTE_DELAY_SEC, tonumber(value) or DEFAULT_TELEPORT_DURATION_SEC)
                 refreshIdleStatus()
             end,
         })
@@ -1909,8 +1908,9 @@ do
 
     local autoFishEnabled = false
     local autoFishLoopToken = 0
-    local autoFishDelaySec = 0.35
-    local instantAfterCastSec = 0.75
+    local MIN_INSTANT_FISH_DELAY_SEC = 3
+    local autoFishDelaySec = MIN_INSTANT_FISH_DELAY_SEC
+    local instantAfterCastSec = MIN_INSTANT_FISH_DELAY_SEC
     local autoFishPower = 100
     local autoSellWhenFull = false
     local autoFavoriteEnabled = false
@@ -2332,7 +2332,7 @@ do
             velocity = fishVec(velocity),
             rodName = rodName,
         })
-        task.wait(math.max(0.1, tonumber(instantAfterCastSec) or 0.75))
+        task.wait(math.max(MIN_INSTANT_FISH_DELAY_SEC, tonumber(instantAfterCastSec) or MIN_INSTANT_FISH_DELAY_SEC))
 
         local ok = fireNetwork(network.FishCatchRequest, {
             rodName = rodName,
@@ -2588,23 +2588,23 @@ do
     FishingTab:CreateSlider({
         Name = "Delay",
         Flag = "daun_fish_delay",
-        Range = { 0.05, 5 },
+        Range = { MIN_INSTANT_FISH_DELAY_SEC, 5 },
         Increment = 0.05,
         Suffix = "s",
         CurrentValue = autoFishDelaySec,
         Callback = function(value)
-            autoFishDelaySec = math.max(0.05, tonumber(value) or 0.35)
+            autoFishDelaySec = math.max(MIN_INSTANT_FISH_DELAY_SEC, tonumber(value) or MIN_INSTANT_FISH_DELAY_SEC)
         end,
     })
     FishingTab:CreateSlider({
         Name = "Delay after cast",
         Flag = "daun_fish_instant_after_cast",
-        Range = { 0.1, 5 },
+        Range = { MIN_INSTANT_FISH_DELAY_SEC, 5 },
         Increment = 0.05,
         Suffix = "s",
         CurrentValue = instantAfterCastSec,
         Callback = function(value)
-            instantAfterCastSec = math.max(0.1, tonumber(value) or 0.75)
+            instantAfterCastSec = math.max(MIN_INSTANT_FISH_DELAY_SEC, tonumber(value) or MIN_INSTANT_FISH_DELAY_SEC)
         end,
     })
     FishingTab:CreateSlider({
@@ -2657,7 +2657,7 @@ do
                         end
                     end
                     refreshFishingStatus()
-                    task.wait(autoFishDelaySec)
+                    task.wait(math.max(MIN_INSTANT_FISH_DELAY_SEC, tonumber(autoFishDelaySec) or MIN_INSTANT_FISH_DELAY_SEC))
                 end
             end)
         end,
