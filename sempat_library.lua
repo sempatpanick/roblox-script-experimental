@@ -369,7 +369,7 @@ local DROPDOWN_VISIBLE_SLOTS = math.ceil(DROPDOWN_MAX_HEIGHT / DROPDOWN_ITEM_HEI
 
 local ELEMENT_HEIGHT = 52
 local SECTION_HEADER_HEIGHT = 36
-local CORNER = 10
+local CORNER = 12
 local CARD_CORNER = 8
 local DROPDOWN_MENU_CORNER = 8
 local SIDEBAR_WIDTH = 170
@@ -1762,28 +1762,158 @@ local function buildSlider(contentParent, props, scrollFrame)
 	end
 	current = math.clamp(current, minValue, maxValue)
 
-	local card, _, _, right = createElementCard(contentParent, props.Name or props.Title, props.Content or props.Desc, 180)
+	local titleText = props.Name or props.Title or "Slider"
+	local descText = props.Content or props.Desc
+	local hasDesc = type(descText) == "string" and descText ~= ""
+	local valueReserve = props.Suffix and 80 or 64
 
-	local valueLabel = new("TextLabel", {
+	local card = new("Frame", {
+		Name = "ElementCard",
+		BackgroundColor3 = THEME.card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = contentParent,
+	})
+	corner(card, CARD_CORNER)
+	registerThemeTarget(card, "card")
+	padding(card, 10, 12, 14, 14)
+	new("UISizeConstraint", {
+		MinSize = Vector2.new(0, ELEMENT_HEIGHT),
+		Parent = card,
+	})
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = card,
+	})
+
+	local topRow = new("Frame", {
+		Name = "TopRow",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 1,
+		Parent = card,
+	})
+	new("UISizeConstraint", {
+		MinSize = Vector2.new(0, 18),
+		Parent = topRow,
+	})
+
+	local textCol = new("Frame", {
+		Name = "Text",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -(valueReserve + 8), 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = topRow,
+	})
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 2),
+		Parent = textCol,
+	})
+
+	local titleLabel = new("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = THEME.text,
+		Text = titleText,
+		LayoutOrder = 1,
+		Parent = textCol,
+	})
+	registerThemeTarget(titleLabel, "text")
+
+	if hasDesc then
+		local descLabel = new("TextLabel", {
+			Name = "Desc",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = THEME.muted,
+			Text = descText,
+			LayoutOrder = 2,
+			Parent = textCol,
+		})
+		registerThemeTarget(descLabel, "muted")
+	end
+
+	local valueRow = new("Frame", {
+		Name = "ValueRow",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 0, 0, 2),
-		Size = UDim2.new(0, 48, 0, 16),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 0, 0, 18),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = topRow,
+	})
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 4),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = valueRow,
+	})
+
+	local valueBox = new("TextBox", {
+		Name = "Value",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 56, 0, 18),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Right,
+		TextXAlignment = Enum.TextXAlignment.Center,
 		TextColor3 = THEME.accent,
-		Text = tostring(current) .. (props.Suffix and (" " .. props.Suffix) or ""),
-		Parent = right,
+		ClearTextOnFocus = false,
+		Text = "",
+		LayoutOrder = 1,
+		Parent = valueRow,
 	})
+	corner(valueBox, 6)
+	padding(valueBox, 0, 0, 4, 4)
+	local valueStroke = stroke(valueBox, THEME.stroke, 0.4)
+	registerThemeTarget(valueBox, "inputBg")
+	registerThemeTarget(valueStroke, "stroke")
+
+	if props.Suffix then
+		local suffixLabel = new("TextLabel", {
+			Name = "Suffix",
+			BackgroundTransparency = 1,
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 0, 18),
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextColor3 = THEME.muted,
+			Text = tostring(props.Suffix),
+			LayoutOrder = 2,
+			Parent = valueRow,
+		})
+		registerThemeTarget(suffixLabel, "muted")
+	end
 
 	local track = new("Frame", {
 		Name = "Track",
 		BackgroundColor3 = THEME.sliderTrack,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 1, -16),
 		Size = UDim2.new(1, 0, 0, 6),
-		Parent = right,
+		LayoutOrder = 2,
+		Parent = card,
 	})
 	corner(track, 3)
 	registerThemeTarget(track, "sliderTrack")
@@ -1821,12 +1951,23 @@ local function buildSlider(contentParent, props, scrollFrame)
 		return (value - minValue) / (maxValue - minValue)
 	end
 
-	local function displayValue(value)
-		local text = tostring(value)
-		if props.Suffix then
-			text = text .. " " .. props.Suffix
+	local function formatSliderNumber(value)
+		return (string.format("%.8g", value))
+	end
+
+	local function parseSliderText(text)
+		if type(text) ~= "string" then
+			return nil
 		end
-		valueLabel.Text = text
+		local numeric = string.match(text, "[-+]?%d*%.?%d+")
+		return numeric and tonumber(numeric) or nil
+	end
+
+	local function displayValue(value)
+		if valueBox:IsFocused() then
+			return
+		end
+		valueBox.Text = formatSliderNumber(value)
 	end
 
 	local function applyVisual(value, fireCallback)
@@ -1853,6 +1994,14 @@ local function buildSlider(contentParent, props, scrollFrame)
 		local rel = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
 		return minValue + rel * (maxValue - minValue)
 	end
+
+	valueBox.FocusLost:Connect(function()
+		local parsed = parseSliderText(valueBox.Text)
+		if parsed then
+			applyVisual(parsed, true)
+		end
+		valueBox.Text = formatSliderNumber(element.CurrentValue)
+	end)
 
 	hit.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1890,8 +2039,8 @@ local function buildSlider(contentParent, props, scrollFrame)
 		if fill.Parent then
 			fill.BackgroundColor3 = color
 		end
-		if valueLabel.Parent then
-			valueLabel.TextColor3 = color
+		if valueBox.Parent then
+			valueBox.TextColor3 = color
 		end
 	end)
 
@@ -2197,7 +2346,82 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 	closeActiveDropdown()
 	ensureOverlayGuis(getGuiParent())
 
-	local menuWidth = math.max(button.AbsoluteSize.X, 220)
+	local menuInset = 8
+	local menuGap = 6
+
+	local function getClampRect()
+		local parent = getGuiParent()
+		if parent then
+			local gui = parent:FindFirstChild("SempatUI")
+			local window = gui and gui:FindFirstChild("Window")
+			if window and window.AbsoluteSize.X > 0 and window.AbsoluteSize.Y > 0 then
+				return window.AbsolutePosition, window.AbsoluteSize
+			end
+		end
+		local camera = workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(800, 600)
+		return Vector2.new(0, 0), viewport
+	end
+
+	local function getMaxListHeight(chromeHeight)
+		if not button or not button.Parent then
+			return DROPDOWN_MAX_HEIGHT
+		end
+		local boundsPos, boundsSize = getClampRect()
+		local buttonPos = button.AbsolutePosition
+		local buttonSize = button.AbsoluteSize
+		local below = boundsPos.Y + boundsSize.Y - menuInset - (buttonPos.Y + buttonSize.Y + menuGap) - chromeHeight
+		local above = buttonPos.Y - menuGap - (boundsPos.Y + menuInset) - chromeHeight
+		local available = math.max(below, above, DROPDOWN_ITEM_HEIGHT)
+		return math.clamp(math.floor(available), DROPDOWN_ITEM_HEIGHT, DROPDOWN_MAX_HEIGHT)
+	end
+
+	local function placeMenu(overlayFrame, menuFrame, width)
+		if not (overlayFrame and menuFrame and button) then
+			return
+		end
+		if not overlayFrame.Parent or not menuFrame.Parent or not button.Parent then
+			return
+		end
+		local origin = overlayFrame.AbsolutePosition
+		local buttonPos = button.AbsolutePosition
+		local buttonSize = button.AbsoluteSize
+		local boundsPos, boundsSize = getClampRect()
+		if type(width) ~= "number" or width < 1 then
+			width = menuFrame.AbsoluteSize.X
+		end
+		if width < 1 then
+			width = menuFrame.Size.X.Offset
+		end
+		local height = menuFrame.AbsoluteSize.Y
+		if height < 1 then
+			height = menuFrame.Size.Y.Offset
+		end
+		local minX = boundsPos.X + menuInset
+		local maxX = boundsPos.X + boundsSize.X - width - menuInset
+		local absX = buttonPos.X
+		if absX + width > boundsPos.X + boundsSize.X - menuInset then
+			absX = buttonPos.X + buttonSize.X - width
+		end
+		absX = math.clamp(absX, minX, math.max(minX, maxX))
+		local belowY = buttonPos.Y + buttonSize.Y + menuGap
+		local aboveY = buttonPos.Y - menuGap - height
+		local minY = boundsPos.Y + menuInset
+		local maxBottom = boundsPos.Y + boundsSize.Y - menuInset
+		local absY = belowY
+		if belowY + height > maxBottom then
+			if aboveY >= minY then
+				absY = aboveY
+			else
+				absY = math.max(minY, maxBottom - height)
+			end
+		end
+		menuFrame.Position = UDim2.fromOffset(absX - origin.X, absY - origin.Y)
+	end
+
+	local _, boundsSize = getClampRect()
+	local maxWidth = math.max(120, boundsSize.X - menuInset * 2)
+	local menuWidth = math.min(math.max(button.AbsoluteSize.X, 180), maxWidth)
 	local menuHeight = DROPDOWN_SEARCH_HEIGHT + 8
 
 	local overlay = new("Frame", {
@@ -2224,15 +2448,12 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		Name = "DropdownMenu",
 		BackgroundColor3 = THEME.dropdownMenu,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(
-			button.AbsolutePosition.X,
-			button.AbsolutePosition.Y + button.AbsoluteSize.Y + 6
-		),
 		Size = UDim2.new(0, menuWidth, 0, menuHeight),
 		ClipsDescendants = true,
 		ZIndex = 2,
 		Parent = overlay,
 	})
+	placeMenu(overlay, menu, menuWidth)
 	corner(menu, DROPDOWN_MENU_CORNER)
 	stroke(menu, THEME.stroke, 0.3)
 	padding(menu, 8, 8, 8, 8)
@@ -2315,6 +2536,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		local countH = menuItemCount and (DROPDOWN_COUNT_HEIGHT + DROPDOWN_COUNT_GAP) or 0
 		local listH = menuScroll.Size.Y.Offset
 		menu.Size = UDim2.new(0, menuWidth, 0, padY + searchH + countH + listH)
+		placeMenu(overlay, menu, menuWidth)
 	end
 
 	menuLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncMenuSize)
@@ -2332,7 +2554,7 @@ local function createDropdownMenuHost(button, props, filterText, populateOptions
 		end)
 	end
 
-	return menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize
+	return menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize, getMaxListHeight
 end
 
 local function buildDropdown(contentParent, props, scrollFrame)
@@ -2390,6 +2612,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local menuItemCount
 	local menuWidth = math.max(200, 220)
 	local syncMenuSize
+	local getMaxListHeight
 	local filteredOptions = {}
 	local scrollConnection
 	local virtualSyncScheduled = false
@@ -2464,7 +2687,15 @@ local function buildDropdown(contentParent, props, scrollFrame)
 			return
 		end
 		local contentHeight = #filteredOptions * DROPDOWN_ITEM_HEIGHT
-		local viewportHeight = math.min(contentHeight, DROPDOWN_MAX_HEIGHT)
+		local chromeHeight = 16 + DROPDOWN_COUNT_HEIGHT + DROPDOWN_COUNT_GAP
+		if props.Search == true or props.SearchBarEnabled == true then
+			chromeHeight = chromeHeight + DROPDOWN_SEARCH_HEIGHT + 4
+		end
+		local maxListHeight = DROPDOWN_MAX_HEIGHT
+		if type(getMaxListHeight) == "function" then
+			maxListHeight = getMaxListHeight(chromeHeight)
+		end
+		local viewportHeight = math.min(contentHeight, maxListHeight)
 		menuList.Size = UDim2.new(1, 0, 0, math.max(0, contentHeight))
 		menuScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(0, contentHeight))
 		menuScroll.Size = UDim2.new(1, 0, 0, viewportHeight)
@@ -2612,7 +2843,7 @@ local function buildDropdown(contentParent, props, scrollFrame)
 	local function renderMenu(filterText)
 		disconnectDropdownScroll()
 
-		menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize = createDropdownMenuHost(
+		menuList, menuScroll, menuSearchBox, menuWidth, menuItemCount, syncMenuSize, getMaxListHeight = createDropdownMenuHost(
 			button,
 			props,
 			filterText,
@@ -3547,6 +3778,13 @@ local function createPopup(screenGui, opts, accentScrollbars)
 	doneButton.MouseButton1Click:Connect(closePopup)
 	if closeOnOverlay then
 		overlay.MouseButton1Click:Connect(function()
+			local inset = getService("GuiService"):GetGuiInset()
+			local mouse = UserInputService:GetMouseLocation() - inset
+			local pos = panel.AbsolutePosition
+			local size = panel.AbsoluteSize
+			if mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
+				return
+			end
 			closePopup()
 		end)
 	end
@@ -4035,6 +4273,8 @@ local function createWindowHeader(root, settings, title, subtitle, folderName, a
 		Size = UDim2.new(1, 0, 0, HEADER_HEIGHT),
 		Parent = root,
 	})
+	corner(headerBar, CORNER)
+	registerThemeTarget(headerBar, "sidebar")
 	padding(headerBar, 12, 12, 16, 16)
 
 	local headerBrand = new("Frame", {
@@ -4120,7 +4360,7 @@ local function createWindowSidebar(body, accentScrollbars)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 0),
-		Size = UDim2.new(1, 0, 1, -PROFILE_CARD_HEIGHT),
+		Size = UDim2.new(1, 0, 1, -(PROFILE_CARD_HEIGHT + 8)),
 		ScrollBarThickness = 2,
 		ScrollBarImageColor3 = appliedAccentColor,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -4146,11 +4386,11 @@ local function createWindowSidebar(body, accentScrollbars)
 		BackgroundColor3 = THEME.card,
 		BorderSizePixel = 0,
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, PROFILE_CARD_HEIGHT),
+		Position = UDim2.new(0, 10, 1, -8),
+		Size = UDim2.new(1, -20, 0, PROFILE_CARD_HEIGHT),
 		Parent = sidebar,
 	})
-	corner(profileCard, 10)
+	corner(profileCard, 8)
 	registerThemeTarget(profileCard, "card")
 
 	local profileTextLeft = PROFILE_PAD_X + PROFILE_AVATAR_SIZE + PROFILE_TEXT_GAP
@@ -4878,13 +5118,14 @@ function SempatLibrary:CreateWindow(settings)
 	})
 	protect(screenGui)
 
-	local root = new("Frame", {
+	local root = new("CanvasGroup", {
 		Name = "Window",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.new(0, WINDOW_SIZE.X, 0, WINDOW_SIZE.Y),
 		BackgroundColor3 = THEME.window,
 		BorderSizePixel = 0,
+		ClipsDescendants = true,
 		Parent = screenGui,
 	})
 	corner(root, CORNER)
@@ -4908,6 +5149,29 @@ function SempatLibrary:CreateWindow(settings)
 		Size = UDim2.new(1, 0, 1, -HEADER_HEIGHT),
 		Parent = root,
 	})
+	corner(body, CORNER)
+	registerThemeTarget(body, "content")
+
+	local headerSeam = new("Frame", {
+		Name = "HeaderSeam",
+		BackgroundColor3 = THEME.sidebar,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, HEADER_HEIGHT - CORNER),
+		Size = UDim2.new(1, 0, 0, CORNER),
+		ZIndex = 0,
+		Parent = root,
+	})
+	registerThemeTarget(headerSeam, "sidebar")
+
+	local bodySeam = new("Frame", {
+		Name = "BodySeam",
+		BackgroundColor3 = THEME.content,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, CORNER),
+		ZIndex = 0,
+		Parent = body,
+	})
+	registerThemeTarget(bodySeam, "content")
 
 	local sidebarParts = createWindowSidebar(body, accentScrollbars)
 	local tabScroll = sidebarParts.tabScroll
@@ -4930,7 +5194,7 @@ function SempatLibrary:CreateWindow(settings)
 	end
 	local defaultWindowTransparency = windowTransparency
 
-	local windowPanels = { root, headerBar, body }
+	local windowPanels = { root, headerBar, headerSeam, body, bodySeam }
 	local settingsGearButton
 	local defaultThemeName = DEFAULT_THEME_NAME
 	local themeName = defaultThemeName
