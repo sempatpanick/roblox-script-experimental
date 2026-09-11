@@ -515,8 +515,10 @@ do
         return ""
     end
 
-    local function getCheckpointInstance()
-        local player = Players.LocalPlayer
+    -- Updated by Auto Carry (CarrySlots). Used when LocalPlayer Checkpoint does not advance.
+    local carriedProgressIds = {}
+
+    local function getCheckpointInstanceForPlayer(player)
         if not player then
             return nil
         end
@@ -527,8 +529,16 @@ do
         return leaderstats:FindFirstChild("Checkpoint")
     end
 
+    local function getCheckpointInstance()
+        return getCheckpointInstanceForPlayer(Players.LocalPlayer)
+    end
+
+    local function getCheckpointLabelForPlayer(player)
+        return readValueInstance(getCheckpointInstanceForPlayer(player))
+    end
+
     local function getCheckpointLabel()
-        return readValueInstance(getCheckpointInstance())
+        return getCheckpointLabelForPlayer(Players.LocalPlayer)
     end
 
     local function displayCheckpointLabel(label)
@@ -568,14 +578,6 @@ do
         return 0
     end
 
-    local function nextRouteIndexFromCheckpoint()
-        local idx = checkpointRouteIndex(getCheckpointLabel())
-        if idx >= #summitRoute then
-            return #summitRoute + 1
-        end
-        return idx + 1
-    end
-
     local function checkpointMatchesRouteEntry(label, entry)
         local raw = normalizeCheckpointLabel(label)
         if raw == "" or not entry then
@@ -591,6 +593,65 @@ do
         local labelNum = tonumber(string.match(raw, "(%d+)"))
         local entryNum = tonumber(string.match(entry.name, "^CP(%d+)$"))
         return labelNum ~= nil and entryNum ~= nil and labelNum == entryNum
+    end
+
+    local function carryOtherPlayerDisplayName(player)
+        if not player then
+            return "?"
+        end
+        local dn = player.DisplayName
+        if dn and dn ~= "" then
+            return dn
+        end
+        return player.Name
+    end
+
+    -- Prefer LocalPlayer; if their Checkpoint is behind, use the furthest carried player.
+    local function getEffectiveCheckpointRouteIndex()
+        local maxIdx = checkpointRouteIndex(getCheckpointLabel())
+        local lp = Players.LocalPlayer
+        for userId in pairs(carriedProgressIds) do
+            local plr = Players:GetPlayerByUserId(userId)
+            if plr and plr ~= lp then
+                maxIdx = math.max(maxIdx, checkpointRouteIndex(getCheckpointLabelForPlayer(plr)))
+            end
+        end
+        return maxIdx
+    end
+
+    local function nextRouteIndexFromCheckpoint()
+        local idx = getEffectiveCheckpointRouteIndex()
+        if idx >= #summitRoute then
+            return #summitRoute + 1
+        end
+        return idx + 1
+    end
+
+    -- Returns matched, label, viaName (nil = LocalPlayer).
+    local function checkpointMatchesAnyProgress(entry)
+        local localLabel = getCheckpointLabel()
+        if checkpointMatchesRouteEntry(localLabel, entry) then
+            return true, localLabel, nil
+        end
+        local lp = Players.LocalPlayer
+        for userId in pairs(carriedProgressIds) do
+            local plr = Players:GetPlayerByUserId(userId)
+            if plr and plr ~= lp then
+                local label = getCheckpointLabelForPlayer(plr)
+                if checkpointMatchesRouteEntry(label, entry) then
+                    return true, label, carryOtherPlayerDisplayName(plr)
+                end
+            end
+        end
+        return false, localLabel, nil
+    end
+
+    local function formatCheckpointStatusLabel(label, viaName)
+        local shown = displayCheckpointLabel(label)
+        if viaName then
+            return shown .. " (via " .. viaName .. ")"
+        end
+        return shown
     end
 
     local function formatDurationSec(totalSec)
@@ -855,8 +916,7 @@ do
     local function waitForCheckpointConfirm(token, routeEntry, isSummitStep)
         local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
         while autoSummitEnabled and token == autoSummitLoopToken do
-            local checkpointNow = getCheckpointLabel()
-            local cpOk = checkpointMatchesRouteEntry(checkpointNow, routeEntry)
+            local cpOk, checkpointNow, viaName = checkpointMatchesAnyProgress(routeEntry)
             local posOk = isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS)
             if cpOk and posOk then
                 return true
@@ -870,7 +930,7 @@ do
             setStatusContent(string.format(
                 "Confirming %s…\nCheckpoint: %s\nExpected: %s",
                 routeEntry.name,
-                displayCheckpointLabel(checkpointNow),
+                formatCheckpointStatusLabel(checkpointNow, viaName),
                 expectedCheckpointName(routeEntry)
             ))
             task.wait(POST_TELEPORT_POLL_SEC)
@@ -882,7 +942,7 @@ do
         if not entry then
             return false
         end
-        local cpOk = checkpointMatchesRouteEntry(getCheckpointLabel(), entry)
+        local cpOk = checkpointMatchesAnyProgress(entry)
         local posOk = isNearRouteEntry(entry, SUMMIT_ARRIVAL_RADIUS)
         return cpOk and posOk
     end
@@ -1454,6 +1514,7 @@ do
         end
         carriedSlotIds = newSet
         carriedSlotEntries = entries
+        carriedProgressIds = newSet
         carryUpdateCarrierListParagraph()
     end
 

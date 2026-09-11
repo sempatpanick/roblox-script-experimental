@@ -516,8 +516,10 @@ do
         return ""
     end
 
-    local function getPosisiInstance()
-        local player = Players.LocalPlayer
+    -- Updated by Auto Carry (CarrierList). Used when LocalPlayer Posisi does not advance.
+    local carriedProgressIds = {}
+
+    local function getPosisiInstanceForPlayer(player)
         if not player then
             return nil
         end
@@ -528,8 +530,16 @@ do
         return leaderstats:FindFirstChild("Posisi")
     end
 
+    local function getPosisiInstance()
+        return getPosisiInstanceForPlayer(Players.LocalPlayer)
+    end
+
+    local function getPosisiLabelForPlayer(player)
+        return readValueInstance(getPosisiInstanceForPlayer(player))
+    end
+
     local function getPosisiLabel()
-        return readValueInstance(getPosisiInstance())
+        return getPosisiLabelForPlayer(Players.LocalPlayer)
     end
 
     local function displayPosisiLabel(label)
@@ -558,14 +568,6 @@ do
         return 0
     end
 
-    local function nextRouteIndexFromPosisi()
-        local idx = posisiRouteIndex(getPosisiLabel())
-        if idx >= #summitRoute then
-            return #summitRoute + 1
-        end
-        return idx + 1
-    end
-
     local function posisiMatchesRouteEntry(label, entry)
         local raw = normalizePosisiLabel(label)
         if raw == "" or not entry then
@@ -580,6 +582,64 @@ do
         local labelNum = tonumber(string.match(raw, "(%d+)"))
         local entryNum = tonumber(string.match(entry.name, "^CP(%d+)$"))
         return labelNum ~= nil and entryNum ~= nil and labelNum == entryNum
+    end
+
+    local function carryOtherPlayerDisplayName(player)
+        if not player then
+            return "?"
+        end
+        local dn = player.DisplayName
+        if dn and dn ~= "" then
+            return dn
+        end
+        return player.Name
+    end
+
+    local function getEffectivePosisiRouteIndex()
+        local maxIdx = posisiRouteIndex(getPosisiLabel())
+        local lp = Players.LocalPlayer
+        for userId in pairs(carriedProgressIds) do
+            local plr = Players:GetPlayerByUserId(userId)
+            if plr and plr ~= lp then
+                maxIdx = math.max(maxIdx, posisiRouteIndex(getPosisiLabelForPlayer(plr)))
+            end
+        end
+        return maxIdx
+    end
+
+    local function nextRouteIndexFromPosisi()
+        local idx = getEffectivePosisiRouteIndex()
+        if idx >= #summitRoute then
+            return #summitRoute + 1
+        end
+        return idx + 1
+    end
+
+    -- Returns matched, label, viaName (nil = LocalPlayer).
+    local function posisiMatchesAnyProgress(entry)
+        local localLabel = getPosisiLabel()
+        if posisiMatchesRouteEntry(localLabel, entry) then
+            return true, localLabel, nil
+        end
+        local lp = Players.LocalPlayer
+        for userId in pairs(carriedProgressIds) do
+            local plr = Players:GetPlayerByUserId(userId)
+            if plr and plr ~= lp then
+                local label = getPosisiLabelForPlayer(plr)
+                if posisiMatchesRouteEntry(label, entry) then
+                    return true, label, carryOtherPlayerDisplayName(plr)
+                end
+            end
+        end
+        return false, localLabel, nil
+    end
+
+    local function formatPosisiStatusLabel(label, viaName)
+        local shown = displayPosisiLabel(label)
+        if viaName then
+            return shown .. " (via " .. viaName .. ")"
+        end
+        return shown
     end
 
     local function formatDurationSec(totalSec)
@@ -845,8 +905,8 @@ do
     local function waitForPosisiConfirm(token, routeEntry, isSummitStep)
         local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
         while autoSummitEnabled and token == autoSummitLoopToken do
-            local posisiNow = getPosisiLabel()
-            if posisiMatchesRouteEntry(posisiNow, routeEntry) then
+            local matched, posisiNow, viaName = posisiMatchesAnyProgress(routeEntry)
+            if matched then
                 return true
             end
             if isSummitStep and isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS) then
@@ -858,7 +918,7 @@ do
             setStatusContent(string.format(
                 "Confirming %s…\nPosisi: %s\nExpected: %s",
                 routeEntry.name,
-                displayPosisiLabel(posisiNow),
+                formatPosisiStatusLabel(posisiNow, viaName),
                 routeEntry.name
             ))
             task.wait(POST_TELEPORT_POLL_SEC)
@@ -1238,6 +1298,7 @@ do
         end
         sendRequestCarryCarrierListIds = newSet
         sendRequestCarryCarrierListEntries = entries
+        carriedProgressIds = newSet
         if sendRequestCarryUpdateCarrierListParagraph then
             sendRequestCarryUpdateCarrierListParagraph()
         end
