@@ -516,7 +516,7 @@ do
         return ""
     end
 
-    -- Updated by Auto Carry (CarrierList). Used when LocalPlayer Posisi does not advance.
+    -- Updated by Auto Carry (CarrierList). Retry waits for LocalPlayer and every carried player.
     local carriedProgressIds = {}
 
     local function getPosisiInstanceForPlayer(player)
@@ -596,15 +596,15 @@ do
     end
 
     local function getEffectivePosisiRouteIndex()
-        local maxIdx = posisiRouteIndex(getPosisiLabel())
+        local minIdx = posisiRouteIndex(getPosisiLabel())
         local lp = Players.LocalPlayer
         for userId in pairs(carriedProgressIds) do
             local plr = Players:GetPlayerByUserId(userId)
             if plr and plr ~= lp then
-                maxIdx = math.max(maxIdx, posisiRouteIndex(getPosisiLabelForPlayer(plr)))
+                minIdx = math.min(minIdx, posisiRouteIndex(getPosisiLabelForPlayer(plr)))
             end
         end
-        return maxIdx
+        return minIdx
     end
 
     local function nextRouteIndexFromPosisi()
@@ -615,23 +615,36 @@ do
         return idx + 1
     end
 
-    -- Returns matched, label, viaName (nil = LocalPlayer).
-    local function posisiMatchesAnyProgress(entry)
-        local localLabel = getPosisiLabel()
-        if posisiMatchesRouteEntry(localLabel, entry) then
-            return true, localLabel, nil
-        end
+    -- LocalPlayer first, then every in-server carried player. viaName is nil for LocalPlayer.
+    local function posisiMatchesAllProgress(entry)
         local lp = Players.LocalPlayer
+        local localLabel = getPosisiLabel()
+        if not posisiMatchesRouteEntry(localLabel, entry) then
+            return false, localLabel, nil
+        end
         for userId in pairs(carriedProgressIds) do
             local plr = Players:GetPlayerByUserId(userId)
             if plr and plr ~= lp then
                 local label = getPosisiLabelForPlayer(plr)
-                if posisiMatchesRouteEntry(label, entry) then
-                    return true, label, carryOtherPlayerDisplayName(plr)
+                if not posisiMatchesRouteEntry(label, entry) then
+                    return false, label, carryOtherPlayerDisplayName(plr)
                 end
             end
         end
-        return false, localLabel, nil
+        return true, localLabel, nil
+    end
+
+    local function carriedPlayersMatchRouteEntry(entry)
+        local lp = Players.LocalPlayer
+        for userId in pairs(carriedProgressIds) do
+            local plr = Players:GetPlayerByUserId(userId)
+            if plr and plr ~= lp then
+                if not posisiMatchesRouteEntry(getPosisiLabelForPlayer(plr), entry) then
+                    return false
+                end
+            end
+        end
+        return true
     end
 
     local function formatPosisiStatusLabel(label, viaName)
@@ -905,11 +918,11 @@ do
     local function waitForPosisiConfirm(token, routeEntry, isSummitStep)
         local retryDeadline = os.clock() + CHECKPOINT_TELEPORT_RETRY_SEC
         while autoSummitEnabled and token == autoSummitLoopToken do
-            local matched, posisiNow, viaName = posisiMatchesAnyProgress(routeEntry)
+            local matched, posisiNow, viaName = posisiMatchesAllProgress(routeEntry)
             if matched then
                 return true
             end
-            if isSummitStep and isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS) then
+            if isSummitStep and isNearRouteEntry(routeEntry, SUMMIT_ARRIVAL_RADIUS) and carriedPlayersMatchRouteEntry(routeEntry) then
                 return true
             end
             if os.clock() >= retryDeadline then
@@ -929,7 +942,7 @@ do
     local function moveUntilCheckpointRegistered(token, routeEntry, isSummitStep)
         while autoSummitEnabled and token == autoSummitLoopToken do
             setStatusContent(string.format(
-                "Teleport â†’ %s\nTween: %.1fs",
+                "Teleport → %s\nTween: %.1fs",
                 routeEntry.name,
                 tweenDurationSec
             ))
@@ -948,10 +961,11 @@ do
             if shouldStopRoute(token) then
                 return false
             end
+            local _, lagLabel, lagVia = posisiMatchesAllProgress(routeEntry)
             setStatusContent(string.format(
                 "Retrying route to %s…\nPosisi: %s",
                 routeEntry.name,
-                displayPosisiLabel(getPosisiLabel())
+                formatPosisiStatusLabel(lagLabel, lagVia)
             ))
         end
         return false
