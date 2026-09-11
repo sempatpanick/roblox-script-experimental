@@ -15,6 +15,7 @@ Source of truth is the `games` table in `sempatpanick.lua` / `sempatpanick_local
 | 135285569232987 | `mount_velora.lua` | sempat |
 | 84918151469196 | `mount_noxera.lua` | sempat |
 | 130444125462169 | `mount_daun.lua` | sempat |
+| 82683242850322 | `mount_victor.lua` | sempat |
 | 118098747383977 | `mancing_indo.lua` | rayfield |
 | 78404864377525 | `mancing_indo_galatama.lua` | rayfield |
 | 77843161404023 | `run_a_restaurant.lua` | sempat |

@@ -12,6 +12,7 @@ local games = {
 	[135285569232987] = baseURL .. "/games/sempat/mount_velora.lua",
 	[84918151469196] = baseURL .. "/games/sempat/mount_noxera.lua",
 	[130444125462169] = baseURL .. "/games/sempat/mount_daun.lua",
+	[82683242850322] = baseURL .. "/games/sempat/mount_victor.lua",
 	[118098747383977] = baseURL .. "/games/rayfield/mancing_indo.lua",
 	[78404864377525] = baseURL .. "/games/rayfield/mancing_indo_galatama.lua",
 	[77843161404023 ] = baseURL .. "/games/sempat/run_a_restaurant.lua",
